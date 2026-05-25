@@ -1,0 +1,703 @@
+@layer components {
+  .public-article {
+    --public-article-scroll-offset: 24px;
+  }
+
+  .public-article--retypeset {
+    --public-article-scroll-offset: 48px;
+    --background: var(--retypeset-background);
+    --foreground: var(--retypeset-primary);
+    --card: color-mix(in oklab, var(--retypeset-surface-tint) 6%, transparent);
+    --card-foreground: var(--retypeset-primary);
+    --primary: var(--retypeset-accent);
+    --primary-foreground: var(--retypeset-background);
+    --muted: color-mix(in oklab, var(--retypeset-surface-tint) 10%, transparent);
+    --muted-foreground: color-mix(in oklab, var(--retypeset-secondary) 80%, transparent);
+    --accent: color-mix(in oklab, var(--retypeset-surface-tint) 12%, transparent);
+    --accent-foreground: var(--retypeset-primary);
+    --border: color-mix(in oklab, var(--retypeset-secondary) 22%, transparent);
+    --ring: color-mix(in oklab, var(--retypeset-accent) 60%, transparent);
+    color: var(--retypeset-secondary);
+  }
+
+  /* ── Header: title + date, no border ── */
+
+  .public-article .post-header {
+    @apply mb-12;
+  }
+
+  .public-article .post-title {
+    @apply mb-2 mt-0 text-balance text-3xl font-bold leading-[1.33] tracking-tight md:text-4xl;
+  }
+
+  .public-article .post-repost-source {
+    @apply mb-3 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm leading-6;
+    color: color-mix(in oklab, var(--retypeset-secondary) 75%, transparent);
+    font-family: Georgia, "Times New Roman", serif;
+    letter-spacing: 0;
+  }
+
+  .public-article .post-repost-label {
+    @apply inline-flex shrink-0 items-center rounded-[2px] border px-1.5 py-0.5 font-mono text-[0.62rem] font-semibold leading-none;
+    border-color: color-mix(in oklab, var(--retypeset-secondary) 35%, transparent);
+    color: var(--retypeset-accent);
+    letter-spacing: 0;
+  }
+
+  .public-article .post-repost-author {
+    @apply min-w-0 break-words;
+  }
+
+  .public-article .post-repost-author::after {
+    @apply ml-2;
+    color: color-mix(in oklab, var(--retypeset-secondary) 40%, transparent);
+    content: "·";
+  }
+
+  .public-article .post-repost-author strong {
+    @apply font-medium;
+    color: var(--retypeset-primary);
+  }
+
+  .public-article .post-repost-link {
+    @apply rounded-sm font-medium underline underline-offset-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2;
+    color: var(--retypeset-accent);
+    text-decoration-color: color-mix(in oklab, var(--retypeset-accent) 45%, transparent);
+  }
+
+  .public-article .post-repost-link:hover {
+    color: var(--retypeset-primary);
+    text-decoration-color: color-mix(in oklab, var(--retypeset-primary) 70%, transparent);
+  }
+
+  .public-article--retypeset .post-repost-link {
+    --tw-ring-color: color-mix(in oklab, var(--retypeset-accent) 60%, transparent);
+    --tw-ring-offset-color: var(--retypeset-background);
+  }
+
+  .public-article--retypeset .post-title {
+    color: var(--retypeset-primary);
+    letter-spacing: 0;
+  }
+
+  .public-article .post-date {
+    @apply mt-3 block text-sm;
+    color: color-mix(in oklab, var(--retypeset-secondary) 80%, transparent);
+    font-family: Georgia, "Times New Roman", serif;
+    letter-spacing: 0.01em;
+  }
+
+  .public-article--retypeset .post-date {
+    color: color-mix(in oklab, var(--retypeset-secondary) 70%, transparent);
+    letter-spacing: 0;
+  }
+
+  .public-article.public-article--retypeset .post-date-updated {
+    color: color-mix(in oklab, var(--retypeset-secondary) 55%, transparent);
+  }
+
+  .public-article .post-date time {
+    @apply inline;
+  }
+
+  .public-article .post-date-sep {
+    @apply mx-1.5 text-muted-foreground/50;
+  }
+
+  .public-article .post-date-updated {
+    @apply text-muted-foreground/70;
+    font-family: Georgia, "Times New Roman", serif;
+  }
+
+  .public-article .post-ai-summary {
+    @apply mb-8 rounded-md border px-4 py-3 shadow-sm backdrop-blur-sm;
+    border-color: color-mix(in oklab, var(--retypeset-secondary) 22%, transparent);
+    background-color: color-mix(in oklab, var(--retypeset-surface-tint) 8%, transparent);
+    color: var(--retypeset-primary);
+  }
+
+  .public-article .post-ai-summary-label {
+    @apply mb-2 text-xs font-medium;
+    color: var(--retypeset-accent);
+    letter-spacing: 0;
+  }
+
+  .public-article .post-ai-summary-text {
+    @apply relative m-0 whitespace-pre-wrap break-words text-[0.9375rem] leading-7;
+    color: var(--retypeset-secondary);
+    text-indent: 2em;
+  }
+
+  .public-article .post-ai-summary-caret {
+    @apply ml-0.5 inline-block h-[1em] w-px translate-y-0.5 align-baseline;
+    background-color: var(--retypeset-accent);
+    animation: public-article-summary-caret 1s steps(2, start) infinite;
+  }
+
+  .public-article .post-ai-summary-caret[data-done="true"] {
+    background-color: color-mix(in oklab, var(--retypeset-secondary) 55%, transparent);
+  }
+
+  @keyframes public-article-summary-caret {
+    0%,
+    45% {
+      opacity: 1;
+    }
+    46%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  /* ── Tags footer: below content ── */
+
+  .public-article .post-tags-footer {
+    @apply mt-14;
+  }
+
+  .public-article .post-tags-line {
+    @apply mb-5 h-px w-16 bg-border/60;
+  }
+
+  .public-article--retypeset .post-tags-line {
+    background-color: color-mix(in oklab, var(--retypeset-secondary) 28%, transparent);
+  }
+
+  .public-article .post-tags {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .public-article .post-tag {
+    @apply rounded-full px-3 py-0.5 text-xs transition-colors hover:border-primary/40 hover:text-primary;
+  }
+
+  .public-article--retypeset .post-tag {
+    @apply rounded-full border px-3 py-0.5 text-xs transition-colors;
+    border-color: color-mix(in oklab, var(--retypeset-secondary) 25%, transparent);
+    background-color: color-mix(in oklab, var(--retypeset-surface-tint) 8%, transparent);
+    color: color-mix(in oklab, var(--retypeset-secondary) 90%, transparent);
+  }
+
+  .public-article--retypeset .post-tag:hover {
+    border-color: color-mix(in oklab, var(--retypeset-accent) 65%, transparent);
+    color: var(--retypeset-accent);
+  }
+
+  /* ── Skeleton loading bars ── */
+
+  .public-article .skeleton-bar {
+    @apply rounded-lg bg-muted/60;
+    animation: skeleton-pulse 1.8s ease-in-out infinite;
+  }
+
+  .public-article--retypeset .skeleton-bar {
+    background-color: color-mix(in oklab, var(--retypeset-secondary) 18%, transparent);
+  }
+
+  .public-article--retypeset .plate-article {
+    color: var(--retypeset-secondary);
+  }
+
+  .public-article--retypeset .plate-article-content {
+    @apply text-[1rem] leading-8 md:text-[1.035rem] md:leading-9;
+  }
+
+  .public-article--retypeset .plate-article-content :where(h1, h2, h3, h4, h5, h6) {
+    color: var(--retypeset-primary);
+    letter-spacing: 0;
+  }
+
+  /* h1/h2：用主题 highlight 在标题文字下铺一道荧光笔（retypeset 招牌效果） */
+  .public-article--retypeset .plate-article-content :where(h1, h2) {
+    position: relative;
+    display: inline-block;
+    z-index: 0;
+    color: var(--retypeset-primary);
+  }
+
+  .public-article--retypeset .plate-article-content :where(h1, h2)::after {
+    content: "";
+    position: absolute;
+    left: -0.05em;
+    right: -0.05em;
+    bottom: 0.05em;
+    height: 0.42em;
+    background-color: var(--retypeset-highlight);
+    z-index: -1;
+    border-radius: 1px;
+  }
+
+  .public-article--retypeset .plate-article-content :where(p) {
+    color: var(--retypeset-secondary);
+  }
+
+  .public-article--retypeset .plate-article-content :where(a) {
+    color: var(--retypeset-accent);
+    text-decoration-color: color-mix(in oklab, var(--retypeset-accent) 55%, transparent);
+  }
+
+  .public-article--retypeset .plate-article-content :where(a):hover {
+    color: var(--retypeset-primary);
+    text-decoration-color: color-mix(in oklab, var(--retypeset-primary) 70%, transparent);
+  }
+
+  .public-article--retypeset .plate-article-content :where(blockquote) {
+    border-color: color-mix(in oklab, var(--retypeset-accent) 60%, transparent);
+    color: color-mix(in oklab, var(--retypeset-secondary) 85%, transparent);
+  }
+
+  .public-article--retypeset .plate-article-content :where(code) {
+    border-color: color-mix(in oklab, var(--retypeset-secondary) 22%, transparent);
+    background-color: color-mix(in oklab, var(--retypeset-surface-tint) 10%, transparent);
+    color: var(--retypeset-primary);
+  }
+
+  .public-article--retypeset .plate-article-content :where(pre) {
+    border-color: color-mix(in oklab, var(--retypeset-secondary) 22%, transparent);
+    background-color: color-mix(in oklab, var(--retypeset-surface-tint) 14%, transparent);
+  }
+
+  .public-article--retypeset .plate-article-content :where(hr) {
+    border-color: color-mix(in oklab, var(--retypeset-secondary) 22%, transparent);
+  }
+
+  .public-article--retypeset .plate-article-content :where(h1, h2, h3, h4, h5, h6):target {
+    --tw-ring-color: color-mix(in oklab, var(--retypeset-accent) 50%, transparent);
+    --tw-ring-offset-color: var(--retypeset-background);
+  }
+
+  @keyframes skeleton-pulse {
+    0%, 100% { opacity: 0.45; }
+    50% { opacity: 0.85; }
+  }
+
+  .public-article .heti {
+    @apply break-words leading-normal text-foreground/90;
+  }
+
+  .public-article .heti :where(h1, h2, h3, h4, h5, h6) {
+    margin-top: 1.5em;
+    margin-bottom: 1rem;
+    scroll-margin-top: var(--public-article-scroll-offset);
+    @apply font-semibold;
+  }
+
+  .public-article .heti :where(h1, h2, h3, h4, h5, h6):target {
+    @apply rounded-lg ring-1 ring-primary/20 ring-offset-4 ring-offset-background;
+  }
+
+  .public-article .md-typography :where(h1, h2, h3, h4, h5, h6) {
+    scroll-margin-top: var(--public-article-scroll-offset);
+  }
+
+  .public-article .md-typography :where(h1, h2, h3, h4, h5, h6):target {
+    @apply rounded-lg ring-1 ring-primary/20 ring-offset-4 ring-offset-background;
+  }
+
+  .public-article .heti :where(h1, h2, h3) {
+    @apply text-balance leading-[1.33em];
+  }
+
+  .public-article .heti :where(h1) {
+    @apply text-3xl text-primary;
+  }
+
+  .public-article .heti :where(h2) {
+    @apply text-2xl text-primary;
+  }
+
+  .public-article .heti :where(h3) {
+    @apply text-xl;
+  }
+
+  .public-article .heti :where(h4) {
+    @apply text-lg;
+  }
+
+  .public-article .heti :where(h5) {
+    @apply text-base;
+  }
+
+  .public-article .heti :where(h6) {
+    @apply text-sm font-normal;
+  }
+
+  .public-article .heti :where(p) {
+    @apply mb-4 text-pretty;
+  }
+
+  .public-article .heti :where(a) {
+    @apply font-semibold underline decoration-muted-foreground/60 underline-offset-2 transition-colors hover:text-primary hover:decoration-primary/70;
+  }
+
+  .public-article .heti :where(img) {
+    @apply mx-auto my-6 max-w-full cursor-zoom-in rounded-xl border shadow-sm;
+  }
+
+  .public-article .heti :where(pre) {
+    @apply my-6 overflow-auto rounded-xl border bg-muted/40 px-4 py-3;
+  }
+
+  .public-article .heti :where(code) {
+    @apply rounded border border-border/60 bg-muted/35 px-1.5 py-0.5 font-mono text-[0.85em];
+  }
+
+  .public-article .heti pre code {
+    @apply border-0 bg-transparent p-0;
+  }
+
+  .public-article .heti :where(blockquote) {
+    @apply my-6 border-l-4 border-muted-foreground/20 px-4 py-1 text-muted-foreground;
+  }
+
+  .public-article .heti :where(table) {
+    @apply my-6 block max-w-full overflow-x-auto;
+  }
+
+  .public-article .heti :where(th, td) {
+    @apply border-b border-border/60 px-3 pb-2;
+  }
+
+  .public-article .heti :where(ul, ol) {
+    @apply my-6 pl-8;
+  }
+
+  .public-article .heti :where(ul) {
+    @apply list-disc;
+  }
+
+  .public-article .heti :where(ol) {
+    @apply list-decimal;
+  }
+
+  .public-article .heti :where(li) {
+    @apply mt-1;
+  }
+
+  .public-article .heti :where(hr) {
+    @apply my-10 border-border/60;
+  }
+
+  /* ═══════════════════════════════════════════════
+     Floating TOC — bars collapse, text left-aligned
+     ═══════════════════════════════════════════════ */
+
+  .ftoc {
+    position: fixed;
+    right: 28px;
+    top: 20%;
+    z-index: 30;
+    box-sizing: border-box;
+
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px 12px;
+    border-radius: 12px;
+
+    max-height: min(55vh, 420px);
+    overflow-y: hidden;
+    overflow-x: hidden;
+
+    /* Default: transparent, no glass */
+    background: transparent;
+    border: 1px solid transparent;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .public-article--retypeset .ftoc {
+    right: max(5rem, calc(50vw - 35rem));
+    left: auto;
+    top: 12rem;
+    z-index: 25;
+    width: 2.875rem;
+    max-height: min(36vh, 17.5rem);
+    padding-block: 10px;
+  }
+
+  /* Container hover → glassmorphism bg + scrollable */
+  .ftoc:hover {
+    overflow-y: auto;
+    border-color: rgb(0 0 0 / 0.06);
+    box-shadow: 0 8px 32px rgb(0 0 0 / 0.06);
+
+    /* Light mode glass */
+    background: rgb(255 255 255 / 0.65);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .public-article--retypeset .ftoc:hover {
+    width: 13rem;
+    border-color: color-mix(in oklab, var(--retypeset-secondary) 20%, transparent);
+    box-shadow: 0 14px 36px color-mix(in oklab, var(--retypeset-primary) 18%, transparent);
+    background: color-mix(in oklab, var(--retypeset-surface-tint) 10%, transparent);
+  }
+
+  :is(.dark, [data-theme="dark"]) .ftoc:hover {
+    border-color: rgb(255 255 255 / 0.08);
+    box-shadow: 0 8px 32px rgb(0 0 0 / 0.3);
+    background: rgb(24 24 27 / 0.7);
+  }
+
+  :is(.dark, [data-theme="dark"]) .public-article--retypeset .ftoc:hover {
+    border-color: rgb(255 255 255 / 0.16);
+    box-shadow: 0 14px 36px rgb(0 24 90 / 0.22);
+    background: rgb(255 255 255 / 0.12);
+  }
+
+  /* Scrollbar — hidden by default, subtle on hover */
+  .ftoc::-webkit-scrollbar { width: 3px; }
+  .ftoc::-webkit-scrollbar-track { background: transparent; }
+  .ftoc::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
+  .ftoc:hover::-webkit-scrollbar-thumb { background: rgb(0 0 0 / 0.12); }
+  :is(.dark, [data-theme="dark"]) .ftoc:hover::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 0.15); }
+
+  /* ── Each row ── */
+
+  .ftoc-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    cursor: pointer;
+    padding: 4px 0;
+    width: 100%;
+    border-radius: 6px;
+    transition: justify-content 0s,
+                transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                background 0.25s ease;
+  }
+
+  /* Expanded: flip to left-aligned */
+  .ftoc:hover .ftoc-item {
+    justify-content: flex-start;
+  }
+
+  /* Hover: bg highlight */
+  .ftoc:hover .ftoc-item:hover {
+    background: rgb(0 0 0 / 0.04);
+  }
+  :is(.dark, [data-theme="dark"]) .ftoc:hover .ftoc-item:hover {
+    background: rgb(255 255 255 / 0.06);
+  }
+
+  /* Active item: left accent bar */
+  .ftoc:hover .ftoc-item.is-active {
+    background: rgb(0 0 0 / 0.04);
+  }
+  :is(.dark, [data-theme="dark"]) .ftoc:hover .ftoc-item.is-active {
+    background: rgb(255 255 255 / 0.06);
+  }
+
+  .ftoc:hover .ftoc-item.is-active::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 4px;
+    bottom: 4px;
+    width: 2px;
+    border-radius: 2px;
+    background: rgb(0 0 0 / 0.75);
+  }
+  :is(.dark, [data-theme="dark"]) .ftoc:hover .ftoc-item.is-active::before {
+    background: rgb(255 255 255 / 0.8);
+  }
+
+  /* ── The line (bar) — visible collapsed, hidden expanded ── */
+
+  .ftoc-line {
+    display: block;
+    height: 2px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* Light mode */
+    background: rgb(0 0 0 / 0.18);
+  }
+
+  .public-article--retypeset .ftoc-line {
+    background: color-mix(in oklab, var(--retypeset-secondary) 42%, transparent);
+  }
+
+  .public-article--retypeset .ftoc-item:hover .ftoc-line {
+    background: color-mix(in oklab, var(--retypeset-primary) 75%, transparent);
+  }
+
+  .public-article--retypeset .ftoc-item.is-active .ftoc-line {
+    background: var(--retypeset-primary);
+  }
+
+  :is(.dark, [data-theme="dark"]) .ftoc-line {
+    background: rgb(255 255 255 / 0.22);
+  }
+
+  .ftoc-item:hover .ftoc-line {
+    background: rgb(0 0 0 / 0.45);
+  }
+  :is(.dark, [data-theme="dark"]) .ftoc-item:hover .ftoc-line {
+    background: rgb(255 255 255 / 0.5);
+  }
+
+  .ftoc-item.is-active .ftoc-line {
+    background: rgb(0 0 0 / 0.78);
+  }
+  :is(.dark, [data-theme="dark"]) .ftoc-item.is-active .ftoc-line {
+    background: rgb(255 255 255 / 0.85);
+  }
+
+  /* Expanded: fade out bars */
+  .ftoc:hover .ftoc-line {
+    width: 0 !important;
+    opacity: 0;
+  }
+
+  /* ── Text label ── */
+
+  .ftoc-text {
+    opacity: 0;
+    max-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    text-align: left;
+    font-size: 12.5px;
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+    padding-right: 0;
+    padding-left: 0;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* Light mode text */
+    color: rgb(0 0 0 / 0.4);
+  }
+
+  .public-article--retypeset .ftoc-text {
+    color: color-mix(in oklab, var(--retypeset-secondary) 70%, transparent);
+    letter-spacing: 0;
+  }
+
+  .public-article--retypeset .ftoc:hover .ftoc-item[data-level="2"] .ftoc-text,
+  .public-article--retypeset .ftoc:hover .ftoc-item:hover .ftoc-text {
+    color: var(--retypeset-primary);
+  }
+
+  .public-article--retypeset .ftoc:hover .ftoc-item[data-level="3"] .ftoc-text {
+    color: color-mix(in oklab, var(--retypeset-secondary) 90%, transparent);
+  }
+
+  .public-article--retypeset .ftoc:hover .ftoc-item[data-level="4"] .ftoc-text {
+    color: color-mix(in oklab, var(--retypeset-secondary) 70%, transparent);
+  }
+
+  .public-article--retypeset .ftoc-item.is-active .ftoc-text,
+  :is(.dark, [data-theme="dark"]) .public-article--retypeset .ftoc-item.is-active .ftoc-text {
+    color: var(--retypeset-primary);
+  }
+
+  .public-article--retypeset .ftoc:hover .ftoc-item.is-active,
+  :is(.dark, [data-theme="dark"]) .public-article--retypeset .ftoc:hover .ftoc-item.is-active,
+  .public-article--retypeset .ftoc:hover .ftoc-item:hover,
+  :is(.dark, [data-theme="dark"]) .public-article--retypeset .ftoc:hover .ftoc-item:hover {
+    background: color-mix(in oklab, var(--retypeset-surface-tint) 10%, transparent);
+  }
+
+  .public-article--retypeset .ftoc:hover .ftoc-item.is-active::before,
+  :is(.dark, [data-theme="dark"]) .public-article--retypeset .ftoc:hover .ftoc-item.is-active::before {
+    background: var(--retypeset-primary);
+  }
+
+  :is(.dark, [data-theme="dark"]) .ftoc-text {
+    color: rgb(255 255 255 / 0.4);
+  }
+
+  /* Container hover → expand text, left-aligned */
+  .ftoc:hover .ftoc-text {
+    max-width: 180px;
+    opacity: 1;
+    padding-left: 8px;
+    padding-right: 6px;
+  }
+
+  /* ── Level-based hierarchy ── */
+
+  /* h2: semibold, no indent */
+  .ftoc-item[data-level="2"] .ftoc-text {
+    font-weight: 600;
+  }
+  .ftoc:hover .ftoc-item[data-level="2"] .ftoc-text {
+    color: rgb(0 0 0 / 0.7);
+  }
+  :is(.dark, [data-theme="dark"]) .ftoc:hover .ftoc-item[data-level="2"] .ftoc-text {
+    color: rgb(255 255 255 / 0.7);
+  }
+
+  /* h3: normal weight, indent */
+  .ftoc-item[data-level="3"] .ftoc-text {
+    font-weight: 400;
+  }
+  .ftoc:hover .ftoc-item[data-level="3"] .ftoc-text {
+    padding-left: 20px;
+    color: rgb(0 0 0 / 0.48);
+  }
+  :is(.dark, [data-theme="dark"]) .ftoc:hover .ftoc-item[data-level="3"] .ftoc-text {
+    color: rgb(255 255 255 / 0.48);
+  }
+
+  /* h4: smaller, deeper indent */
+  .ftoc-item[data-level="4"] .ftoc-text {
+    font-weight: 400;
+    font-size: 11.5px;
+  }
+  .ftoc:hover .ftoc-item[data-level="4"] .ftoc-text {
+    padding-left: 32px;
+    color: rgb(0 0 0 / 0.36);
+  }
+  :is(.dark, [data-theme="dark"]) .ftoc:hover .ftoc-item[data-level="4"] .ftoc-text {
+    color: rgb(255 255 255 / 0.36);
+  }
+
+  /* ── Active / hover text overrides ── */
+
+  .ftoc-item.is-active .ftoc-text {
+    color: rgb(0 0 0 / 0.88);
+    font-weight: 600;
+  }
+  :is(.dark, [data-theme="dark"]) .ftoc-item.is-active .ftoc-text {
+    color: rgb(255 255 255 / 0.92);
+  }
+
+  .ftoc:hover .ftoc-item:hover .ftoc-text {
+    color: rgb(0 0 0 / 0.7);
+  }
+  :is(.dark, [data-theme="dark"]) .ftoc:hover .ftoc-item:hover .ftoc-text {
+    color: rgb(255 255 255 / 0.75);
+  }
+
+  /* ── Heading anchor ── */
+
+  .heading-anchor-link {
+    @apply inline-block translate-y-[0.1em] no-underline;
+  }
+
+  .heading-anchor-link svg {
+    @apply ml-2 aspect-square w-[0.9em] opacity-0 transition-opacity active:scale-90;
+  }
+
+  .public-article :is(h1, h2, h3, h4):hover .heading-anchor-link svg {
+    @apply opacity-40;
+  }
+
+  .public-article :is(h1, h2, h3, h4) .heading-anchor-link svg:hover {
+    @apply opacity-80;
+  }
+
+  /* ── Hide on small screens ── */
+  @media (max-width: 1023px) {
+    .ftoc {
+      display: none;
+    }
+  }
+
+}

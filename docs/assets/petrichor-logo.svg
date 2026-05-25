@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="328" height="329" viewBox="0 0 328 329" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">DoSphere 标志</title>
+  <desc id="desc">黑色圆形背景上由白色交错线条组成的 DoSphere 标志。</desc>
+  <rect y="0.5" width="328" height="328" rx="164" fill="#000000"/>
+  <path d="M165.018 72.3008V132.771C165.018 152.653 148.9 168.771 129.018 168.771H70.2288" stroke="#ffffff" stroke-width="20"/>
+  <path d="M166.627 265.241V204.771C166.627 184.889 182.744 168.771 202.627 168.771H261.416" stroke="#ffffff" stroke-width="20"/>
+  <line x1="238.136" y1="98.8184" x2="196.76" y2="139.707" stroke="#ffffff" stroke-width="20"/>
+  <line x1="135.688" y1="200.957" x2="94.3128" y2="241.845" stroke="#ffffff" stroke-width="20"/>
+  <line x1="133.689" y1="137.524" x2="92.5566" y2="96.3914" stroke="#ffffff" stroke-width="20"/>
+  <line x1="237.679" y1="241.803" x2="196.547" y2="200.671" stroke="#ffffff" stroke-width="20"/>
+</svg>

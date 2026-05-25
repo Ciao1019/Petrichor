@@ -1,0 +1,55 @@
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+.cursor/
+.codex/
+*.iml
+.fastRequest/
+.trellis
+.agents
+# Workflow
+.spec-workflow/
+.worktrees/
+.factory/
+docs/superpowers/
+helloagents/plan/
+helloagents/history/
+helloagents/wiki/modules/reminder-session-p0.md
+helloagents/wiki/modules/go-launcher.md
+
+# Node.js
+node_modules/
+.next/
+.vite/
+dist/
+out/
+coverage/
+*.tsbuildinfo
+dev/
+
+# Generated local files
+petrichor-init.sql
+*-init.sql
+!docs/petrichor-init.sql
+*.bak-*
+
+# Java/Maven
+target/
+*.class
+*.jar
+*.war
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.*
+!.env.example
+!apps/**/.env.example
+.env.local
+.env.*.local

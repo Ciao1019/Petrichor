@@ -1,0 +1,68 @@
+name: ✨ 功能建议 / Feature Request
+description: 提议一个新功能或增强
+title: "[Feature] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢提议新功能！请先在 [Issues](../issues?q=is%3Aissue) 和 Discussions 中搜索是否已有类似建议。
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: 提交前检查
+      options:
+        - label: 我已搜索过现有 Issue 和 Discussion，没有重复
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想解决什么问题？
+      description: 用一段话描述当前的痛点或场景。**先描述问题，再描述方案。**
+      placeholder: 我有一个长文章想拆分成多个 …，但目前 …
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议的解决方案
+      description: 你期望系统怎么做？如有 UI 设想，可附草图 / 截图 / Figma 链接
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 考虑过的替代方案
+      description: 还想过什么方式？为什么不采用？
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: 涉及模块
+      multiple: true
+      options:
+        - 富文本编辑器 (PlateJS)
+        - 知识库 / 文章
+        - AI 助手 / AI 回顾
+        - 认证 / 账号 / OAuth
+        - 上传 / 对象存储
+        - 仪表盘 / 统计
+        - 公开站点 / RSS / SEO
+        - 主题 / 外观
+        - 通知
+        - 数据库 / 后端 API
+        - 部署 / 配置
+        - 文档
+        - 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 其他补充信息
+      description: 关联的 Issue / 引用的产品 / 想法来源等

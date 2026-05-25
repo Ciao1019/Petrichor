@@ -1,0 +1,476 @@
+/*
+ * Retypeset 前台主题样式。
+ * 主题色完全由 :root[data-retypeset-theme] 的 CSS 变量驱动，
+ * 同时在 .retypeset-home 容器内接管原蓝色像素风遗留的写死颜色类。
+ */
+
+:root {
+  /* 主题 fallback：与 paper 主题一致，避免 SSR 阶段无属性时露出原色 */
+  --retypeset-primary: oklch(22% 0.012 80);
+  --retypeset-secondary: oklch(32% 0.014 80);
+  --retypeset-background: oklch(96% 0.012 85);
+  --retypeset-surface-tint: oklch(18% 0.012 80);
+  --retypeset-highlight: oklch(0.93 0.19 102 / 0.55);
+  --retypeset-accent: oklch(46% 0.18 30);
+}
+
+/* Paper 米白：暖灰墨字，黄色荧光笔（最贴近 retypeset 默认 light 主题） */
+:root[data-retypeset-theme="paper"] {
+  --retypeset-primary: oklch(22% 0.012 80);
+  --retypeset-secondary: oklch(32% 0.014 80);
+  --retypeset-background: oklch(96% 0.012 85);
+  --retypeset-surface-tint: oklch(18% 0.012 80);
+  --retypeset-highlight: oklch(0.93 0.19 102 / 0.55);
+  --retypeset-accent: oklch(46% 0.18 30);
+}
+
+/* Slate 深炭：纸白字，柔黄高亮（retypeset 默认 dark 主题） */
+:root[data-retypeset-theme="slate"] {
+  --retypeset-primary: oklch(96% 0.005 260);
+  --retypeset-secondary: oklch(82% 0.008 260);
+  --retypeset-background: oklch(20% 0.005 260);
+  --retypeset-surface-tint: oklch(95% 0.005 260);
+  --retypeset-highlight: oklch(0.93 0.19 102 / 0.38);
+  --retypeset-accent: oklch(84% 0.17 84);
+}
+
+/* Sakura 樱粉：栗梅深字，胭脂红强调，樱花色高亮 */
+:root[data-retypeset-theme="sakura"] {
+  --retypeset-primary: oklch(24% 0.04 8);
+  --retypeset-secondary: oklch(34% 0.045 8);
+  --retypeset-background: oklch(96% 0.022 12);
+  --retypeset-surface-tint: oklch(24% 0.08 8);
+  --retypeset-highlight: oklch(0.82 0.18 6 / 0.5);
+  --retypeset-accent: oklch(50% 0.2 8);
+}
+
+/* Matcha 抹茶：松针深绿字，黄绿高亮 */
+:root[data-retypeset-theme="matcha"] {
+  --retypeset-primary: oklch(22% 0.04 150);
+  --retypeset-secondary: oklch(32% 0.05 150);
+  --retypeset-background: oklch(94% 0.028 140);
+  --retypeset-surface-tint: oklch(22% 0.06 150);
+  --retypeset-highlight: oklch(0.84 0.16 130 / 0.5);
+  --retypeset-accent: oklch(44% 0.16 145);
+}
+
+/* Ink 墨纸：宣纸黄底，墨黑字，朱砂红高亮（最高对比） */
+:root[data-retypeset-theme="ink"] {
+  --retypeset-primary: oklch(16% 0.01 60);
+  --retypeset-secondary: oklch(28% 0.012 60);
+  --retypeset-background: oklch(93% 0.022 80);
+  --retypeset-surface-tint: oklch(16% 0.01 60);
+  --retypeset-highlight: oklch(0.7 0.22 28 / 0.42);
+  --retypeset-accent: oklch(48% 0.21 28);
+}
+
+/* Ocean 海蓝：靛青深字，珊瑚高亮 */
+:root[data-retypeset-theme="ocean"] {
+  --retypeset-primary: oklch(22% 0.06 235);
+  --retypeset-secondary: oklch(32% 0.06 235);
+  --retypeset-background: oklch(95% 0.028 220);
+  --retypeset-surface-tint: oklch(22% 0.08 235);
+  --retypeset-highlight: oklch(0.86 0.15 198 / 0.55);
+  --retypeset-accent: oklch(50% 0.16 220);
+}
+
+/* Forest 深林：松松绿底，米黄字，柔嫩绿高亮 */
+:root[data-retypeset-theme="forest"] {
+  --retypeset-primary: oklch(94% 0.022 140);
+  --retypeset-secondary: oklch(80% 0.026 140);
+  --retypeset-background: oklch(22% 0.025 150);
+  --retypeset-surface-tint: oklch(95% 0.02 140);
+  --retypeset-highlight: oklch(0.84 0.16 130 / 0.38);
+  --retypeset-accent: oklch(84% 0.16 120);
+}
+
+/* Sand 沙黄：陶土棕字，赤土红高亮 */
+:root[data-retypeset-theme="sand"] {
+  --retypeset-primary: oklch(22% 0.04 70);
+  --retypeset-secondary: oklch(32% 0.045 70);
+  --retypeset-background: oklch(94% 0.05 85);
+  --retypeset-surface-tint: oklch(22% 0.06 70);
+  --retypeset-highlight: oklch(0.86 0.16 80 / 0.55);
+  --retypeset-accent: oklch(48% 0.18 50);
+}
+
+.retypeset-home {
+  background-color: var(--retypeset-background);
+  color: var(--retypeset-secondary);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  text-autospace: normal;
+  transition: background-color 280ms ease, color 280ms ease;
+}
+
+
+.retypeset-home ::selection {
+  background-color: var(--retypeset-highlight);
+  color: var(--retypeset-primary);
+}
+
+.retypeset-home a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.retypeset-home .retypeset-c-primary {
+  color: var(--retypeset-primary);
+}
+
+.retypeset-home .retypeset-c-secondary {
+  color: var(--retypeset-secondary);
+}
+
+.retypeset-home .retypeset-font-title {
+  font-family:
+    "Snell-Black",
+    "EarlySummer-Subset",
+    "EarlySummer",
+    ui-serif,
+    Georgia,
+    Cambria,
+    "Times New Roman",
+    Times,
+    serif;
+}
+
+.retypeset-home .retypeset-font-navbar {
+  font-family:
+    "STIX-Italic",
+    "EarlySummer-Subset",
+    "EarlySummer",
+    ui-serif,
+    Georgia,
+    Cambria,
+    "Times New Roman",
+    Times,
+    serif;
+}
+
+.retypeset-home .retypeset-font-time {
+  font-family:
+    "Snell-Bold",
+    ui-serif,
+    Georgia,
+    Cambria,
+    "Times New Roman",
+    Times,
+    serif;
+}
+
+.retypeset-home .retypeset-font-serif {
+  font-family:
+    "STIX",
+    "EarlySummer",
+    ui-serif,
+    Georgia,
+    Cambria,
+    "Times New Roman",
+    Times,
+    serif;
+}
+
+.retypeset-home .retypeset-highlight-static,
+.retypeset-home .retypeset-highlight-hover {
+  position: relative;
+  z-index: 0;
+  display: inline-block;
+}
+
+.retypeset-home .retypeset-highlight-static::after,
+.retypeset-home .retypeset-highlight-hover::after {
+  position: absolute;
+  bottom: 0.7em;
+  left: 0;
+  z-index: -1;
+  width: 100%;
+  height: 0.5em;
+  background-color: var(--retypeset-highlight);
+  content: "";
+}
+
+.retypeset-home .retypeset-footer-link::after {
+  bottom: 0.35em;
+}
+
+.retypeset-home .retypeset-highlight-static::after,
+.retypeset-home .retypeset-highlight-hover:hover::after {
+  transform: scaleX(1);
+  transform-origin: bottom left;
+}
+
+.retypeset-home .retypeset-highlight-hover::after {
+  transform: scaleX(0);
+  transform-origin: bottom right;
+  transition: transform 300ms ease-out;
+}
+
+.retypeset-home .retypeset-decorative-line {
+  width: 2.5rem;
+  height: 1px;
+  margin-bottom: 1.125rem;
+  background-color: color-mix(in oklab, var(--retypeset-secondary) 25%, transparent);
+}
+
+@media (min-width: 1024px) {
+  .retypeset-home .retypeset-decorative-line {
+    width: 2.75rem;
+    margin-bottom: 1.5rem;
+  }
+}
+
+.retypeset-home .retypeset-post-heading {
+  transition: color 180ms ease-out;
+}
+
+.retypeset-home .retypeset-post-heading:hover {
+  color: var(--retypeset-accent);
+}
+
+.retypeset-home .retypeset-status-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.45rem;
+  border: 1px dashed color-mix(in oklab, var(--retypeset-secondary) 35%, transparent);
+  border-radius: 2px 6px 6px 2px;
+  background-color: color-mix(in oklab, var(--retypeset-accent) 22%, transparent);
+  color: var(--retypeset-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.retypeset-home .retypeset-lock-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  color: var(--retypeset-secondary);
+  border-radius: 9999px;
+  transition: color 180ms ease-out;
+}
+
+.retypeset-home .retypeset-lock-tag:hover {
+  color: var(--retypeset-accent);
+}
+
+/* ── Retypeset 标签：纯文本 + hover/选中加粗 + 选中态荧光笔高亮 ── */
+
+.retypeset-home .retypeset-tag-pill {
+  display: inline-block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--retypeset-secondary);
+  font: inherit;
+  font-size: 1.05rem;
+  line-height: 2em;
+  cursor: pointer;
+  transition: color 200ms ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.retypeset-home .retypeset-tag-pill:hover,
+.retypeset-home .retypeset-tag-pill[aria-pressed="true"] {
+  color: var(--retypeset-primary);
+}
+
+.retypeset-home .retypeset-tag-pill-name {
+  position: relative;
+  z-index: 0;
+  display: inline-block;
+  transition: font-weight 200ms ease-out;
+}
+
+.retypeset-home .retypeset-tag-pill:hover .retypeset-tag-pill-name,
+.retypeset-home .retypeset-tag-pill:focus-visible .retypeset-tag-pill-name,
+.retypeset-home .retypeset-tag-pill[aria-pressed="true"] .retypeset-tag-pill-name {
+  font-weight: 700;
+}
+
+/* 选中态：荧光笔高亮，覆盖字符下半部
+   line-height 2em 时字符垂直居中（约 0.5em ~ 1.5em from bottom），
+   故色块 bottom 0.55em + height 0.45em → 覆盖字符 0.05~0.5em 段（下半部） */
+.retypeset-home .retypeset-tag-pill[aria-pressed="true"] .retypeset-tag-pill-name::after {
+  content: "";
+  position: absolute;
+  left: -0.12em;
+  right: -0.12em;
+  bottom: 0.55em;
+  height: 0.45em;
+  background-color: var(--retypeset-highlight);
+  z-index: -1;
+}
+
+.retypeset-home .retypeset-tag-pill:focus-visible {
+  outline: none;
+}
+
+/* ============================================================
+ * 兼容层：原蓝色像素风遗留的写死类，统一被主题变量接管
+ * 仅在 .retypeset-home 容器内生效，避免污染后台/全站
+ * ============================================================ */
+
+.retypeset-home .bg-\[\#0044cc\],
+.retypeset-home .bg-\[\#0044cc\]\/95,
+.retypeset-home .bg-\[\#0044cc\]\/90 {
+  background-color: var(--retypeset-background) !important;
+}
+
+.retypeset-home .bg-blue-950\/55 {
+  background-color: color-mix(in oklab, var(--retypeset-background) 65%, transparent) !important;
+}
+
+.retypeset-home .text-white {
+  color: var(--retypeset-primary) !important;
+}
+
+.retypeset-home .text-white\/25,
+.retypeset-home .text-white\/45,
+.retypeset-home .text-white\/50,
+.retypeset-home .text-white\/60,
+.retypeset-home .text-white\/65,
+.retypeset-home .text-white\/70,
+.retypeset-home .text-white\/75,
+.retypeset-home .text-white\/80,
+.retypeset-home .text-white\/85,
+.retypeset-home .text-white\/90,
+.retypeset-home .text-white\/95 {
+  color: var(--retypeset-secondary) !important;
+}
+
+.retypeset-home .border-white\/10,
+.retypeset-home .border-white\/25 {
+  border-color: color-mix(in oklab, var(--retypeset-secondary) 18%, transparent) !important;
+}
+
+.retypeset-home .bg-yellow-300,
+.retypeset-home .hover\:bg-yellow-300:hover {
+  background-color: var(--retypeset-accent) !important;
+}
+
+.retypeset-home .bg-yellow-300\/5 {
+  background-color: color-mix(in oklab, var(--retypeset-accent) 8%, transparent) !important;
+}
+
+.retypeset-home .bg-yellow-200 {
+  background-color: var(--retypeset-accent) !important;
+}
+
+/* text-blue-950 原本是反相按钮的"深字"，浅色主题下保持深字，深色主题下退化为背景色（亮） */
+.retypeset-home .text-blue-950,
+.retypeset-home .hover\:text-blue-950:hover {
+  color: var(--retypeset-primary) !important;
+}
+
+/* Tabs / 切换按钮的 active 高亮：用主题 highlight 作为背景，primary 作为文字 */
+.retypeset-home .data-\[state\=active\]\:bg-yellow-300[data-state="active"] {
+  background-color: var(--retypeset-highlight) !important;
+}
+
+.retypeset-home .data-\[state\=active\]\:text-blue-950[data-state="active"] {
+  color: var(--retypeset-primary) !important;
+}
+
+/* 按钮 hover 上的黄色衍生 */
+.retypeset-home .hover\:bg-yellow-300\/15:hover,
+.retypeset-home .hover\:bg-yellow-300\/20:hover,
+.retypeset-home .hover\:bg-yellow-300\/25:hover {
+  background-color: color-mix(in oklab, var(--retypeset-highlight) 75%, transparent) !important;
+}
+
+.retypeset-home .hover\:border-yellow-300\/50:hover,
+.retypeset-home .hover\:border-yellow-300\/40:hover {
+  border-color: color-mix(in oklab, var(--retypeset-accent) 55%, transparent) !important;
+}
+
+.retypeset-home .hover\:bg-white:hover {
+  background-color: var(--retypeset-primary) !important;
+}
+
+.retypeset-home .bg-white\/45,
+.retypeset-home .bg-white\/12,
+.retypeset-home .bg-white\/20,
+.retypeset-home .bg-white\/25 {
+  background-color: color-mix(in oklab, var(--retypeset-surface-tint) 14%, transparent) !important;
+}
+
+.retypeset-home .decoration-yellow-200\/35,
+.retypeset-home .decoration-yellow-300\/60,
+.retypeset-home .hover\:decoration-yellow-100\/70:hover,
+.retypeset-home .hover\:decoration-white\/80:hover {
+  text-decoration-color: color-mix(in oklab, var(--retypeset-accent) 60%, transparent) !important;
+}
+
+.retypeset-home .border-yellow-300\/60 {
+  border-color: color-mix(in oklab, var(--retypeset-accent) 65%, transparent) !important;
+}
+
+.retypeset-home .text-yellow-300,
+.retypeset-home .text-yellow-200,
+.retypeset-home .text-yellow-200\/80,
+.retypeset-home .text-yellow-100 {
+  color: var(--retypeset-accent) !important;
+}
+
+.retypeset-home .selection\:bg-yellow-300::selection {
+  background-color: var(--retypeset-highlight) !important;
+}
+
+.retypeset-home .selection\:text-blue-950::selection {
+  color: var(--retypeset-primary) !important;
+}
+
+.retypeset-home .bg-white,
+.retypeset-home .bg-white\/5,
+.retypeset-home .bg-white\/10,
+.retypeset-home .bg-white\/\[0\.08\] {
+  background-color: color-mix(in oklab, var(--retypeset-surface-tint) 8%, transparent) !important;
+}
+
+.retypeset-home .border-white\/15,
+.retypeset-home .border-white\/20 {
+  border-color: color-mix(in oklab, var(--retypeset-secondary) 22%, transparent) !important;
+}
+
+.retypeset-home .ring-yellow-300,
+.retypeset-home .ring-yellow-300\/40,
+.retypeset-home .ring-yellow-300\/70 {
+  --tw-ring-color: color-mix(in oklab, var(--retypeset-accent) 60%, transparent) !important;
+}
+
+.retypeset-home .ring-offset-\[\#0044cc\] {
+  --tw-ring-offset-color: var(--retypeset-background) !important;
+}
+
+.retypeset-home .hover\:border-yellow-300\/70:hover,
+.retypeset-home .data-\[active\=true\]\:border-yellow-300[data-active="true"] {
+  border-color: var(--retypeset-accent) !important;
+}
+
+.retypeset-home .hover\:text-yellow-300:hover,
+.retypeset-home .hover\:text-yellow-100:hover {
+  color: var(--retypeset-accent) !important;
+}
+
+.retypeset-home .text-slate-950 {
+  color: var(--retypeset-primary) !important;
+}
+
+/* 像素装饰背景网格：retypeset 风格不需要，隐藏 */
+.retypeset-home .blog-home-grid {
+  display: none !important;
+}
+
+/* 首页底部下划线类（blog-home-link）原色 #fde047 替换为主题 accent */
+.retypeset-home .blog-home-link::after {
+  background: var(--retypeset-accent) !important;
+}

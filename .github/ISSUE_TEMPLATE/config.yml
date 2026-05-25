@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 提问 / 讨论
+    url: https://github.com/LittleBunVerse/Dosphere-vercel/discussions
+    about: 使用相关问题、想法交流、最佳实践分享 — 请先来 Discussions
+  - name: 📖 文档
+    url: https://github.com/LittleBunVerse/Dosphere-vercel#readme
+    about: 部署、环境变量、本地开发说明
+  - name: 🔐 安全漏洞
+    url: https://github.com/LittleBunVerse/Dosphere-vercel/security/advisories/new
+    about: 请勿公开报告安全漏洞，使用私下报告通道

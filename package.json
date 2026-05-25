@@ -1,0 +1,23 @@
+{
+    "name": "petrichor",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "packageManager": "pnpm@10.28.1",
+    "workspaces": [
+        "apps/web"
+    ],
+    "scripts": {
+        "dev": "pnpm --filter @petrichor/web dev",
+        "build": "pnpm --filter @petrichor/web build",
+        "db:backfill-public-article-metadata": "pnpm --filter @petrichor/web db:backfill-public-article-metadata",
+        "db:sql": "pnpm --filter @petrichor/web db:sql",
+        "lint": "pnpm --filter @petrichor/web lint",
+        "test": "pnpm --filter @petrichor/web test",
+        "typecheck": "pnpm --filter @petrichor/web typecheck"
+    },
+    "engines": {
+        "node": ">=22.0.0",
+        "npm": ">=10.0.0"
+    }
+}
