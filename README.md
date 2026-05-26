@@ -47,6 +47,7 @@
 | **📊 仪表盘** | 写作数据统计、活跃度图、知识库分布 |
 | **🎨 主题与外观** | 浅色/深色模式、自定义网站标题/图标、Retypeset 主题博客首页 |
 | **🌐 公开站点** | 文章公开页、SEO 元数据、RSS、Atom、sitemap.xml |
+| **🛠️ Agent 集成** | API Key 管理、Skill 包（兼容 Claude Code / Codex）、调用审计日志、REST 能力层 |
 
 ---
 
@@ -267,6 +268,47 @@ openssl rand -hex 8
 
 > 在 <https://connect.linux.do> 注册一个 OAuth 应用即可获得 ID 和 Secret，回调地址填 `https://你的域名/api/auth/callback`。
 
+---
+
+## 🛠️ Agent 集成（Skill 包 / REST 能力层）
+
+Petrichor 内置了一套**面向外部 Agent**（Claude Code、Codex、Cursor、ChatGPT 桌面端等）的开放能力，让 AI 工具能直接读写你的知识库。
+
+### 能力一览
+
+| 子模块 | 入口 | 说明 |
+| --- | --- | --- |
+| **API Key 管理** | 仪表盘 → Agent 集成 → API Key 管理 | 生成 / 撤销外部 Agent 调用密钥。明文仅展示一次，服务端只存 `sha256` 哈希 |
+| **Skill 包** | 仪表盘 → Agent 集成 → Skill 包 | 下载 `petrichor-agent-skills.zip`，内含多个 `SKILL.md`，导入 Claude Code / Codex 即可使用；兼容旧单文件 `SKILL.md` |
+| **调用日志** | 仪表盘 → Agent 集成 → 调用日志 | 完整审计：来源 Agent、工具、IP、UA、入参、出参、状态码、耗时 |
+| **REST 能力层** | `/api/agent/**` | 所有外部接口统一鉴权 + 审计，可直接被任意 HTTP 客户端调用 |
+
+### Skill 包结构
+
+下载后的压缩包内置 4 个 Skill，覆盖典型 Agent 使用场景：
+
+| Skill | 用途 |
+| --- | --- |
+| `petrichor-setup` | 环境变量自检、接口发现（基于 `/api/agent/manifest`） |
+| `petrichor-articles` | 新建 / 更新 / 删除文章、创建文件夹 |
+| `petrichor-docs` | 知识库列表、目录树、文档搜索、文档查看 |
+| `petrichor-qa` | 基于知识库上下文的文档问答 |
+
+### 接入步骤
+
+1. **生成 API Key**：仪表盘 → **Agent 集成 → API Key 管理 → 新建**，按需勾选权限（`article:write` / `article:delete` / `doc:read` / `qa:read`），保存明文。
+2. **下载 Skill 包**：仪表盘 → **Agent 集成 → Skill 包 → 下载包**，得到 `petrichor-agent-skills.zip`。
+3. **导入 Agent 工具**：解压后将 Skill 目录放入 Claude Code / Codex 对应的 Skills 路径（参考各工具文档）。
+4. **配置环境变量**（在 Agent 工具侧）：
+   - `PETRICHOR_BASE_URL`：你的 Petrichor 站点根 URL，如 `https://你的项目.vercel.app`
+   - `PETRICHOR_API_KEY`：上一步生成的明文 Key
+5. **调用约定**：所有外部请求必须携带：
+   - `Authorization: Bearer <apiKey>`
+   - `X-Petrichor-Agent-Source: <agent 标识>`（缺失会被拒绝并写入审计日志）
+6. **审计**：每次调用都会自动写入「调用日志」，登录用户可在仪表盘内回看。
+
+> 公开接口清单：未带鉴权也能访问的 `GET /api/agent/manifest` 会列出全部可用接口、参数和所需权限，方便 Agent 自动发现能力。详细设计见 [`docs/agent-integration.md`](docs/agent-integration.md)。
+
 ### 🧪 完整模板
 
 参考 [`apps/web/.env.example`](apps/web/.env.example) 或直接复制：
@@ -346,17 +388,20 @@ pnpm lint          # ESLint
 ├── apps/
 │   └── web/                     # Next.js 全栈应用
 │       ├── app/                 # App Router 入口、API route、RSS/sitemap
+│       │   └── api/agent/       # 外部 Agent REST 能力层（manifest / skill / skill-pack 等）
 │       ├── src/
 │       │   ├── client-app.tsx   # 客户端 SPA 入口
-│       │   ├── features/pages/  # 业务页面（dashboard / blog / kb / ai / admin ...）
+│       │   ├── features/pages/  # 业务页面（dashboard / blog / kb / ai / agent / admin ...）
 │       │   ├── components/      # 通用组件 + shadcn/ui
 │       │   ├── lib/             # 前端工具与 API client
 │       │   ├── server/          # 服务端 handler / 业务逻辑 / Drizzle schema
+│       │   │   └── agent/       # Agent 接入逻辑：API Key、Skill 生成、审计
 │       │   └── config/          # 环境变量解析与服务端配置
 │       └── .env.example
 ├── docs/
 │   ├── petrichor-init.sql       # 完整初始化 SQL（与代码同步）
 │   ├── create-first-admin.sql   # 创建第一个超级管理员账号的 SQL 模板
+│   ├── agent-integration.md     # Agent 集成（Skill 包 / REST）设计说明
 │   ├── migrations/              # 历史增量迁移脚本
 │   └── assets/                  # 文档资源（logo 等）
 ├── AGENTS.md                    # 给 AI 协作者的项目级说明
@@ -396,7 +441,7 @@ pnpm test
 
 ## English
 
-**Petrichor** (repo codename *Dosphere*) is a self-hostable knowledge-base & blog platform powered by **Next.js 16 + Supabase + Vercel**, featuring a PlateJS rich-text editor, multi-level knowledge tree, AI writing assistant (continue / rewrite / translate / tone), AI weekly & monthly reviews, S3-compatible uploads, and Better Auth with optional LinuxDo OAuth.
+**Petrichor** (repo codename *Dosphere*) is a self-hostable knowledge-base & blog platform powered by **Next.js 16 + Supabase + Vercel**, featuring a PlateJS rich-text editor, multi-level knowledge tree, AI writing assistant (continue / rewrite / translate / tone), AI weekly & monthly reviews, S3-compatible uploads, Better Auth with optional LinuxDo OAuth, and an **Agent integration layer** (REST + downloadable Skill packs compatible with Claude Code / Codex) with full call auditing.
 
 ### Links
 
@@ -442,6 +487,18 @@ pnpm test
 | `PETRICHOR_LINUXDO_CLIENT_ID` / `PETRICHOR_LINUXDO_CLIENT_SECRET` / `PETRICHOR_LINUXDO_REDIRECT_URI` | LinuxDo OAuth (optional third-party login) |
 
 See the full breakdown in the [Chinese section above](#-环境变量速查表).
+
+### Agent integration
+
+Petrichor exposes a permissioned REST layer at `/api/agent/**` for external AI agents (Claude Code, Codex, Cursor, ChatGPT Desktop, …), together with a downloadable **Skill pack** bundling 4 ready-to-use Skills (`petrichor-setup`, `petrichor-articles`, `petrichor-docs`, `petrichor-qa`).
+
+1. **Generate an API key** in *Dashboard → Agent 集成 → API Key 管理* (plaintext shown once; only `sha256` is persisted).
+2. **Download the Skill pack** (`petrichor-agent-skills.zip`) and import it into your agent tool.
+3. **Set agent-side env vars**: `PETRICHOR_BASE_URL` (your deployment URL) and `PETRICHOR_API_KEY`.
+4. **Call convention**: every request must carry `Authorization: Bearer <key>` and `X-Petrichor-Agent-Source: <agent-id>` — missing the source header fails the call and is logged for audit.
+5. **Audit**: every call (source, tool, IP, UA, request, response, status, latency) is recorded in *Dashboard → Agent 集成 → 调用日志*.
+
+Public manifest endpoint (no auth) for capability discovery: `GET /api/agent/manifest`. Full design notes in [`docs/agent-integration.md`](docs/agent-integration.md).
 
 ### Acknowledgements
 

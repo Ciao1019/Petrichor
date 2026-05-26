@@ -37,6 +37,9 @@ const routeMap: Record<string, BreadcrumbItem[]> = {
   [`${dashboardRoutes.knowledge}/categories`]: [{ label: "笔记管理" }, { label: "知识库", href: dashboardRoutes.knowledge }, { label: "分类管理" }],
   [dashboardRoutes.aiConfig]: [{ label: "笔记管理" }, { label: "模型配置" }],
   [dashboardRoutes.qa]: [{ label: "笔记管理" }, { label: "文档问答" }],
+  [dashboardRoutes.agentKeys]: [{ label: "Agent 集成" }, { label: "API Key 管理" }],
+  [dashboardRoutes.agentLogs]: [{ label: "Agent 集成" }, { label: "调用日志" }],
+  [dashboardRoutes.agentSkill]: [{ label: "Agent 集成" }, { label: "Skill 包" }],
   [dashboardRoutes.adminUsers]: [{ label: "系统管理" }, { label: "用户管理" }],
   [dashboardRoutes.adminAbout]: [{ label: "系统管理" }, { label: "关于我配置" }],
 }

@@ -290,6 +290,77 @@ export const adminSiteAppearanceApi = {
   update: (data: SiteAppearanceUpdateRequest) => api.post<SiteAppearanceResponse>("/admin/appearance", data),
 }
 
+export type AgentApiKeyScope =
+  | "article:write"
+  | "article:delete"
+  | "doc:read"
+  | "qa:read"
+  | "share:write"
+  | "ai:write"
+
+export interface AgentApiKeyItem {
+  id: string
+  name: string
+  keyPrefix: string
+  scopes: AgentApiKeyScope[]
+  expiresAt?: string | null
+  lastUsedAt?: string | null
+  revokedAt?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export interface AgentApiKeyListResponse {
+  items: AgentApiKeyItem[]
+}
+
+export interface AgentApiKeyCreateRequest {
+  name: string
+  scopes?: AgentApiKeyScope[]
+  expiresAt?: string | null
+}
+
+export interface AgentApiKeyCreateResponse {
+  apiKey: string
+  item: AgentApiKeyItem
+}
+
+export interface AgentApiKeyRevokeResponse {
+  item: AgentApiKeyItem
+}
+
+export interface AgentCallLogItem {
+  id: string
+  apiKeyId: string
+  apiKeyPrefix: string
+  agentSource: string
+  agentTool?: string | null
+  method: string
+  path: string
+  ip?: string | null
+  userAgent?: string | null
+  statusCode: number
+  durationMs: number
+  errorMessage?: string | null
+  request: unknown
+  response: unknown
+  requestText?: string | null
+  responseText?: string | null
+  createdAt?: string | null
+}
+
+export interface AgentCallLogListResponse {
+  items: AgentCallLogItem[]
+}
+
+export const agentApi = {
+  listKeys: () => api.post<AgentApiKeyListResponse>("/agent/api-key/list", {}),
+  createKey: (data: AgentApiKeyCreateRequest) => api.post<AgentApiKeyCreateResponse>("/agent/api-key/create", data),
+  revokeKey: (id: string) => api.post<AgentApiKeyRevokeResponse>("/agent/api-key/revoke", { id }),
+  listCallLogs: (data?: { agentSource?: string; limit?: number }) =>
+    api.post<AgentCallLogListResponse>("/agent/call-log/list", data ?? {}),
+}
+
 export const knowledgeBaseApi = {
   list: (data: KnowledgeBaseListRequest) => api.post<TableDataInfo<KnowledgeBaseResponse>>("/kb/knowledge-base/list", data),
   create: (data: KnowledgeBaseCreateRequest) => api.post<KnowledgeBaseResponse>("/kb/knowledge-base/create", data),

@@ -11,6 +11,9 @@ export const dashboardRoutes = {
     aiConfig: `${DASHBOARD_ROOT}/ai/config`,
     aiReview: `${DASHBOARD_ROOT}/ai/review`,
     qa: `${DASHBOARD_ROOT}/qa`,
+    agentKeys: `${DASHBOARD_ROOT}/agent/keys`,
+    agentLogs: `${DASHBOARD_ROOT}/agent/logs`,
+    agentSkill: `${DASHBOARD_ROOT}/agent/skill`,
 } as const
 
 export function dashboardPath(path = "") {

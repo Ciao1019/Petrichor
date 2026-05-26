@@ -19,6 +19,9 @@ import { KnowledgeBaseArticleMindMapPage } from '@/features/pages/knowledge/Know
 import { KnowledgeBaseTreePage } from '@/features/pages/knowledge/KnowledgeBaseTreePage'
 import { AiModelConfigPage } from '@/features/pages/ai/AiModelConfigPage'
 import { AiReviewPage } from '@/features/pages/ai/AiReviewPage'
+import { AgentKeysPage } from '@/features/pages/agent/AgentKeysPage'
+import { AgentCallLogsPage } from '@/features/pages/agent/AgentCallLogsPage'
+import { AgentSkillPage } from '@/features/pages/agent/AgentSkillPage'
 import { BlogHomePage } from '@/features/pages/blog/BlogHomePage'
 import { TagsPage } from '@/features/pages/blog/TagsPage'
 import { AboutPage } from '@/features/pages/about/AboutPage'
@@ -116,6 +119,10 @@ function AppThemeScope({ initialAppearance }: ClientAppProps) {
               <Route path="admin/appearance" element={<SiteAppearanceConfigPage />} />
               <Route path="ai/config" element={<AiModelConfigPage />} />
               <Route path="ai/review" element={<AiReviewPage />} />
+              <Route path="agent" element={<AgentKeysPage />} />
+              <Route path="agent/keys" element={<AgentKeysPage />} />
+              <Route path="agent/logs" element={<AgentCallLogsPage />} />
+              <Route path="agent/skill" element={<AgentSkillPage />} />
             </Route>
           </Routes>
         </div>

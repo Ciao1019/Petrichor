@@ -1,8 +1,11 @@
 import * as React from "react"
 import {
   IconBook,
+  IconHistory,
+  IconKey,
   IconListDetails,
   IconMessageChatbot,
+  IconPackage,
   IconPalette,
   IconSettings,
   IconSparkles,
@@ -78,6 +81,30 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     ]
   }, [location.pathname])
 
+  const agentNav = React.useMemo(() => {
+    const pathname = location.pathname
+    return [
+      {
+        title: "API Key 管理",
+        url: dashboardRoutes.agentKeys,
+        icon: IconKey,
+        isActive: isDashboardSectionPath(pathname, "agent/keys"),
+      },
+      {
+        title: "调用日志",
+        url: dashboardRoutes.agentLogs,
+        icon: IconHistory,
+        isActive: isDashboardSectionPath(pathname, "agent/logs"),
+      },
+      {
+        title: "Skill 包",
+        url: dashboardRoutes.agentSkill,
+        icon: IconPackage,
+        isActive: isDashboardSectionPath(pathname, "agent/skill"),
+      },
+    ]
+  }, [location.pathname])
+
   const systemNav = React.useMemo(() => {
     if (user?.systemRole !== "SUPER_ADMIN") {
       return []
@@ -145,6 +172,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         {userLoaded ? (
           <>
             <NavContent groupLabel="笔记管理" items={noteNav} />
+            <NavContent groupLabel="Agent 集成" items={agentNav} />
             {systemNav.length > 0 ? <NavContent groupLabel="系统管理" items={systemNav} /> : null}
           </>
         ) : (

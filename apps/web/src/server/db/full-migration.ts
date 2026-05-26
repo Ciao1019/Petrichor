@@ -495,6 +495,54 @@ create table if not exists petrichor_kb_wiki_event_log (
 create index if not exists petrichor_kb_wiki_event_log_kb_idx
     on petrichor_kb_wiki_event_log(user_id, knowledge_base_id, created_at desc);
 
+create table if not exists petrichor_agent_api_key (
+    id bigint generated always as identity primary key,
+    user_id bigint not null references petrichor_user(id) on delete cascade,
+    name text not null,
+    key_hash text not null,
+    key_prefix text not null,
+    scopes_json text not null default '[]',
+    expires_at timestamptz,
+    last_used_at timestamptz,
+    revoked_at timestamptz,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create unique index if not exists ux_petrichor_agent_api_key_hash
+    on petrichor_agent_api_key(key_hash);
+
+create index if not exists idx_petrichor_agent_api_key_user
+    on petrichor_agent_api_key(user_id, revoked_at, created_at desc);
+
+create table if not exists petrichor_agent_call_log (
+    id bigint generated always as identity primary key,
+    user_id bigint not null references petrichor_user(id) on delete cascade,
+    api_key_id bigint not null references petrichor_agent_api_key(id) on delete cascade,
+    api_key_prefix text not null,
+    agent_source text not null,
+    agent_tool text,
+    method text not null,
+    path text not null,
+    ip text,
+    user_agent text,
+    request_json text,
+    response_json text,
+    status_code integer not null,
+    duration_ms integer not null,
+    error_message text,
+    created_at timestamptz not null default now()
+);
+
+create index if not exists idx_petrichor_agent_call_log_user_created
+    on petrichor_agent_call_log(user_id, created_at desc);
+
+create index if not exists idx_petrichor_agent_call_log_key_created
+    on petrichor_agent_call_log(api_key_id, created_at desc);
+
+create index if not exists idx_petrichor_agent_call_log_source_created
+    on petrichor_agent_call_log(user_id, agent_source, created_at desc);
+
 create table if not exists petrichor_site_about_profile (
     id integer primary key,
     display_name text not null default 'CiZai',
@@ -575,6 +623,29 @@ create index if not exists petrichor_ai_model_config_user_type_idx
 create unique index if not exists petrichor_ai_model_config_default_idx
     on petrichor_ai_model_config(user_id, config_type)
     where is_default = true;
+
+create table if not exists petrichor_ai_review (
+    id bigint generated always as identity primary key,
+    user_id bigint not null,
+    period text not null,
+    period_key text not null,
+    period_start timestamptz not null,
+    period_end timestamptz not null,
+    stats_json text not null,
+    narrative text not null,
+    model_config_id bigint,
+    regenerate_count integer not null default 0,
+    last_regenerated_at timestamptz,
+    generated_at timestamptz not null default now(),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create unique index if not exists ux_petrichor_ai_review_user_period
+    on petrichor_ai_review(user_id, period, period_key);
+
+create index if not exists idx_petrichor_ai_review_user_generated
+    on petrichor_ai_review(user_id, generated_at);
 `;
 
 export function buildInitialMigrationSql(): string {

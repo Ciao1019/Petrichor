@@ -377,6 +377,45 @@ export const knowledgeBaseWikiEventLogs = pgTable("petrichor_kb_wiki_event_log",
     index("idx_petrichor_kb_wiki_event_kb").on(table.userId, table.knowledgeBaseId, table.createdAt),
 ])
 
+export const agentApiKeys = pgTable("petrichor_agent_api_key", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    name: text("name").notNull(),
+    keyHash: text("key_hash").notNull(),
+    keyPrefix: text("key_prefix").notNull(),
+    scopesJson: text("scopes_json").notNull().default("[]"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    ...timestamps,
+}, (table) => [
+    uniqueIndex("ux_petrichor_agent_api_key_hash").on(table.keyHash),
+    index("idx_petrichor_agent_api_key_user").on(table.userId, table.revokedAt, table.createdAt),
+])
+
+export const agentCallLogs = pgTable("petrichor_agent_call_log", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    apiKeyId: bigint("api_key_id", { mode: "number" }).notNull(),
+    apiKeyPrefix: text("api_key_prefix").notNull(),
+    agentSource: text("agent_source").notNull(),
+    agentTool: text("agent_tool"),
+    method: text("method").notNull(),
+    path: text("path").notNull(),
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    requestJson: text("request_json"),
+    responseJson: text("response_json"),
+    statusCode: integer("status_code").notNull(),
+    durationMs: integer("duration_ms").notNull(),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+    index("idx_petrichor_agent_call_log_user_created").on(table.userId, table.createdAt),
+    index("idx_petrichor_agent_call_log_key_created").on(table.apiKeyId, table.createdAt),
+    index("idx_petrichor_agent_call_log_source_created").on(table.userId, table.agentSource, table.createdAt),
+])
+
 export const siteAboutProfiles = pgTable("petrichor_site_about_profile", {
     id: integer("id").primaryKey(),
     displayName: text("display_name").notNull().default("CiZai"),
@@ -449,6 +488,8 @@ export type KnowledgeBaseWikiPatchRecord = typeof knowledgeBaseWikiPatches.$infe
 export type KnowledgeBaseAgentThreadRecord = typeof knowledgeBaseAgentThreads.$inferSelect
 export type KnowledgeBaseAgentArtifactRecord = typeof knowledgeBaseAgentArtifacts.$inferSelect
 export type KnowledgeBaseArticleShareRecord = typeof knowledgeBaseArticleShares.$inferSelect
+export type AgentApiKeyRecord = typeof agentApiKeys.$inferSelect
+export type AgentCallLogRecord = typeof agentCallLogs.$inferSelect
 export type SiteAboutProfileRecord = typeof siteAboutProfiles.$inferSelect
 export type SiteAppearanceRecord = typeof siteAppearance.$inferSelect
 export type AiModelConfigRecord = typeof aiModelConfigs.$inferSelect
