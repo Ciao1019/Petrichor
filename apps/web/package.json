@@ -3,9 +3,18 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "packageManager": "pnpm@10.28.1",
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy -- --keep-vars",
+    "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "db:backfill-public-article-metadata": "tsx scripts/backfill-public-article-metadata.ts",
     "db:sql": "tsx scripts/print-initial-migration.ts",
     "lint": "eslint .",
@@ -28,6 +37,7 @@
     "@emoji-mart/data": "1.2.1",
     "@excalidraw/excalidraw": "^0.18.0",
     "@faker-js/faker": "^10.3.0",
+    "@opennextjs/cloudflare": "1.19.0",
     "@pierre/diffs": "^1.1.22",
     "@platejs/autoformat": "^52.0.11",
     "@platejs/basic-nodes": "^52.0.11",
@@ -174,6 +184,50 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.5",
+    "wrangler": "^4.95.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "DATABASE_URL": {
+        "description": "Supabase PostgreSQL 连接串。生产环境建议使用 Transaction Pooler（端口 6543）。"
+      },
+      "SESSION_SECRET": {
+        "description": "Better Auth 会话签名密钥，至少 32 个字符。可用 `openssl rand -base64 32` 生成。"
+      },
+      "PETRICHOR_ENCRYPT_KEY": {
+        "description": "AI 模型 API Key 加密密钥。可用 `openssl rand -base64 32` 生成，上线后不要随意更换。"
+      },
+      "PETRICHOR_ENCRYPT_SALT": {
+        "description": "加密盐值，16 位十六进制。可用 `openssl rand -hex 8` 生成，上线后不要随意更换。"
+      },
+      "S3_ENDPOINT": {
+        "description": "S3 兼容对象存储接入点，例如 Cloudflare R2、AWS S3、Bitiful 或 MinIO 的 endpoint。"
+      },
+      "S3_REGION": {
+        "description": "S3 区域名。Cloudflare R2 通常可填 `auto`。"
+      },
+      "S3_BUCKET": {
+        "description": "用于文章封面、附件、头像等上传文件的存储桶名称。"
+      },
+      "S3_ACCESS_KEY_ID": {
+        "description": "S3 兼容对象存储访问密钥 ID。"
+      },
+      "S3_SECRET_ACCESS_KEY": {
+        "description": "S3 兼容对象存储访问密钥 Secret。"
+      },
+      "NEXT_PUBLIC_APP_URL": {
+        "description": "公开站点完整 URL。首次部署可临时填 `http://localhost:3000`，部署完成后改为真实 workers.dev 或自定义域名并重新部署。"
+      },
+      "NEXT_PUBLIC_REGISTER_ENABLED": {
+        "description": "是否显示注册入口，默认 `false`。首次创建管理员时可临时设为 `true`。"
+      },
+      "PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE": {
+        "description": "开放注册时的新用户默认角色，只允许 `USER` 或 `SUPER_ADMIN`。首次创建管理员后请改回 `USER`。"
+      },
+      "PETRICHOR_SESSION_EXPIRE_SECONDS": {
+        "description": "登录态有效期（秒），默认 `172800`。"
+      }
+    }
   }
 }

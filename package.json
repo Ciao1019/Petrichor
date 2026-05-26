@@ -10,6 +10,8 @@
     "scripts": {
         "dev": "pnpm --filter @petrichor/web dev",
         "build": "pnpm --filter @petrichor/web build",
+        "preview:cloudflare": "pnpm --filter @petrichor/web preview",
+        "deploy:cloudflare": "pnpm --filter @petrichor/web deploy",
         "db:backfill-public-article-metadata": "pnpm --filter @petrichor/web db:backfill-public-article-metadata",
         "db:sql": "pnpm --filter @petrichor/web db:sql",
         "lint": "pnpm --filter @petrichor/web lint",

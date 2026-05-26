@@ -1,0 +1,33 @@
+# OpenNext / Cloudflare 本地预览环境
+NEXTJS_ENV=development
+
+# Supabase / PostgreSQL 数据库
+DATABASE_URL="postgres://postgres:[password]@[host]:5432/postgres"
+
+# Better Auth 会话
+SESSION_SECRET="replace-with-at-least-32-characters"
+PETRICHOR_SESSION_EXPIRE_SECONDS="172800"
+
+# AI 模型配置加密
+PETRICHOR_ENCRYPT_KEY="replace-with-stable-random-secret"
+PETRICHOR_ENCRYPT_SALT="replace-with-16-hex-chars"
+
+# S3 兼容对象存储
+S3_ENDPOINT="https://s3.example.com"
+S3_REGION="us-east-1"
+S3_ACCESS_KEY_ID="your-access-key-id"
+S3_SECRET_ACCESS_KEY="your-secret-access-key"
+S3_BUCKET="your-bucket"
+S3_UPLOAD_EXPIRE_SECONDS="900"
+S3_DOWNLOAD_EXPIRE_SECONDS="3600"
+S3_USE_SSL="true"
+
+# 前端与注册策略
+NEXT_PUBLIC_REGISTER_ENABLED="false"
+PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE="USER"
+NEXT_PUBLIC_APP_URL="http://localhost:3000"
+
+# 可选：LinuxDo OAuth
+PETRICHOR_LINUXDO_CLIENT_ID=""
+PETRICHOR_LINUXDO_CLIENT_SECRET=""
+PETRICHOR_LINUXDO_REDIRECT_URI=""

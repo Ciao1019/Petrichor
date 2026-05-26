@@ -1,8 +1,8 @@
 # @petrichor/web
 
-Next.js + TypeScript 全栈应用，目标运行环境为 **Vercel**，数据层使用 **Supabase PostgreSQL**。
+Next.js + TypeScript 全栈应用，目标运行环境为 **Vercel / Cloudflare Workers**，数据层使用 **Supabase PostgreSQL**。
 
-> 📖 完整的简介、功能特性、Vercel 一键部署、环境变量速查表请看仓库根目录的 [`README.md`](../../README.md)。
+> 📖 完整的简介、功能特性、Vercel / Cloudflare 一键部署、环境变量速查表请看仓库根目录的 [`README.md`](../../README.md)。
 
 ## 本地开发
 
@@ -16,6 +16,15 @@ pnpm dev
 ```bash
 pnpm --filter "@petrichor/web" dev
 ```
+
+## Cloudflare Workers 预览 / 部署
+
+```bash
+pnpm --filter "@petrichor/web" preview
+pnpm --filter "@petrichor/web" deploy
+```
+
+Cloudflare 路径使用 OpenNext 适配器，配置文件位于 `wrangler.jsonc` 与 `open-next.config.ts`。
 
 ## 环境变量
 

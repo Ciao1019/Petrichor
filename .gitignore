@@ -23,6 +23,10 @@ helloagents/wiki/modules/go-launcher.md
 # Node.js
 node_modules/
 .next/
+.open-next/
+.wrangler/
+.dev.vars*
+!.dev.vars.example
 .vite/
 dist/
 out/

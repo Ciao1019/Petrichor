@@ -4,20 +4,22 @@
 
 # Petrichor
 
-**一个开箱即用的全栈知识库与博客平台 · 基于 Next.js + Supabase + Vercel**
+**一个开箱即用的全栈知识库与博客平台 · 基于 Next.js + Supabase + Vercel / Cloudflare Workers**
 
-*An open-source full-stack knowledge base & blog platform built with Next.js, Supabase and Vercel.*
+*An open-source full-stack knowledge base & blog platform built with Next.js, Supabase and Vercel / Cloudflare Workers.*
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com)
 [![Vercel](https://img.shields.io/badge/Deploy-Vercel-black?logo=vercel)](https://vercel.com)
+[![Cloudflare](https://img.shields.io/badge/Deploy-Cloudflare-F38020?logo=cloudflare&logoColor=white)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2FLittleBunVerse%2FDosphere-vercel%2Ftree%2Fmain%2Fapps%2Fweb)
 
-[**🌐 产品官网**](https://petrichor.wl.do) ·
+[**🌐 产品介绍**](https://wl.do/tags) ·
 [**📖 在线 Demo（前台）**](https://wl.do)
 
 [**🚀 一键部署到 Vercel**](#-vercel-一键部署傻瓜式教程) ·
+[**☁️ 一键部署到 Cloudflare**](#cloudflare-deploy) ·
 [功能特性](#-功能特性) ·
 [环境变量](#-环境变量速查表) ·
 [本地开发](#-本地开发) ·
@@ -31,7 +33,7 @@
 
 **Petrichor**是一个个人/小团队场景下的现代化知识库与博客平台，集成了富文本编辑器、知识库管理、文章发布、AI 写作助手、AI 回顾周报/月报、对象存储上传等能力。
 
-整套系统目标运行环境为 **Vercel + Supabase**，零自建服务器即可上线，仅需配置好环境变量就能拥有一个完整可用的内容平台。
+整套系统支持 **Vercel / Cloudflare Workers + Supabase** 部署，零自建服务器即可上线，仅需配置好环境变量就能拥有一个完整可用的内容平台。
 
 ---
 
@@ -101,7 +103,7 @@ openssl rand -hex 8
 
 > Windows 用户：可在 <https://www.random.org/bytes/> 上分别生成对应长度的随机串，或用 PowerShell 的 `[Convert]::ToBase64String((1..32 | %{[byte](Get-Random -Min 0 -Max 256)}))`。
 
-把这 3 串结果先保存到记事本，待会儿填到 Vercel。
+把这 3 串结果先保存到记事本，待会儿填到部署平台。
 
 ### 第 4 步：点击下方按钮，一键部署
 
@@ -127,7 +129,7 @@ openssl rand -hex 8
 | `S3_BUCKET` | 第 2 步的桶名 |
 | `S3_ACCESS_KEY_ID` | 第 2 步的 Access Key ID |
 | `S3_SECRET_ACCESS_KEY` | 第 2 步的 Secret Access Key |
-| `NEXT_PUBLIC_APP_URL` | **先随便填 `http://localhost:3000`，部署完成后再来改成你的 Vercel 域名（如 `https://你的项目.vercel.app`）** |
+| `NEXT_PUBLIC_APP_URL` | **先随便填 `http://localhost:3000`，部署完成后再来改成你的真实域名（如 `https://你的项目.vercel.app`）** |
 
 填完点 **Deploy**，等待 2–4 分钟构建完成。
 
@@ -222,6 +224,98 @@ openssl rand -hex 8
 
 ---
 
+<a id="cloudflare-deploy"></a>
+
+## ☁️ Cloudflare 一键部署（Workers 教程）
+
+> Cloudflare 路径使用 **Workers + OpenNext Cloudflare adapter** 运行完整 Next.js 应用，不是静态 Pages 导出。
+> Cloudflare 官方一键按钮目前只支持 Workers 应用；本仓库按钮会直接指向 `apps/web` 子目录。
+
+### 第 1 步：准备数据库、对象存储和密钥
+
+先完成上方 Vercel 教程的：
+
+- **第 1 步**：准备 Supabase 数据库，复制 `DATABASE_URL`
+- **第 2 步**：准备 S3 兼容对象存储（可以直接用 Cloudflare R2）
+- **第 3 步**：生成 `SESSION_SECRET`、`PETRICHOR_ENCRYPT_KEY`、`PETRICHOR_ENCRYPT_SALT`
+
+### 第 2 步：点击下方按钮，一键部署到 Cloudflare
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2FLittleBunVerse%2FDosphere-vercel%2Ftree%2Fmain%2Fapps%2Fweb)
+
+按钮会自动：
+
+- ✅ 把 `apps/web` 作为 Cloudflare Workers 应用根目录克隆到你的 GitHub / GitLab
+- ✅ 使用 `wrangler.jsonc` 和 OpenNext 配置构建 Next.js 全栈应用
+- ✅ 创建 Workers Builds 部署流水线
+- ✅ 让你在部署表单中填写必填环境变量
+
+如果 Cloudflare 页面让你确认构建配置，按下面填写：
+
+- **Package manager**：`pnpm`
+- **Deploy command**：`pnpm run deploy`
+- **Build command**：优先留空；如果界面已自动填入 `pnpm run build` 也可以继续，只是会多跑一次 Next 构建
+- **Root directory**：按钮已指向 `apps/web`，通常不用再改
+
+### 第 3 步：填写环境变量
+
+把第 1 步收集到的值填入 Cloudflare 的 Variables / Secrets：
+
+| 字段 | 填什么 |
+| --- | --- |
+| `DATABASE_URL` | Supabase Transaction Pooler 连接串 |
+| `SESSION_SECRET` | `openssl rand -base64 32` 生成的 base64 |
+| `PETRICHOR_ENCRYPT_KEY` | `openssl rand -base64 32` 生成的 base64 |
+| `PETRICHOR_ENCRYPT_SALT` | `openssl rand -hex 8` 生成的 16 位 hex |
+| `S3_ENDPOINT` | S3 / R2 接入点。R2 可使用对应 bucket 的 S3 API endpoint |
+| `S3_REGION` | 区域名。Cloudflare R2 通常填 `auto` |
+| `S3_BUCKET` | 存储桶名 |
+| `S3_ACCESS_KEY_ID` | 对象存储 Access Key ID |
+| `S3_SECRET_ACCESS_KEY` | 对象存储 Secret Access Key |
+| `NEXT_PUBLIC_APP_URL` | **先填 `http://localhost:3000`，部署成功后再改成 `https://你的项目.你的账号.workers.dev` 或自定义域名** |
+
+### 第 4 步：初始化数据库表结构
+
+和 Vercel 路径一致，只需要执行一次：
+
+```bash
+pnpm --silent --filter @petrichor/web db:sql > petrichor-init.sql
+```
+
+然后把 `petrichor-init.sql` 放到 Supabase SQL Editor 执行。也可以直接复制 [`docs/petrichor-init.sql`](docs/petrichor-init.sql)。
+
+### 第 5 步：创建第一个超级管理员账号
+
+推荐继续使用“临时开放注册”的方式：
+
+1. 打开 Cloudflare → **Workers & Pages → 你的 Worker → Settings → Variables and Secrets**。
+2. 新增或修改：
+
+   | 变量 | 临时填 |
+   | --- | --- |
+   | `NEXT_PUBLIC_REGISTER_ENABLED` | `true` |
+   | `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE` | `SUPER_ADMIN` |
+
+3. 重新部署 Worker，打开 `https://你的项目.你的账号.workers.dev/login` 注册第一个账号。
+4. 注册成功后把两个变量改回：
+
+   | 变量 | 改回 |
+   | --- | --- |
+   | `NEXT_PUBLIC_REGISTER_ENABLED` | `false` |
+   | `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE` | `USER` |
+
+5. 再重新部署一次，关闭公开注册入口。
+
+### 第 6 步：回填 `NEXT_PUBLIC_APP_URL`
+
+1. 在 Cloudflare Worker 页面复制真实访问地址，例如 `https://petrichor.xxx.workers.dev`。
+2. 到 **Settings → Variables and Secrets** 把 `NEXT_PUBLIC_APP_URL` 改成这个地址（不要带斜杠结尾）。
+3. 重新部署 Worker。
+
+**完成！** 🎉 用管理员账号登录 Cloudflare Workers 版本即可。
+
+---
+
 ## 🔐 环境变量速查表
 
 ### ✅ 必填（缺一不可，否则启动失败）
@@ -251,7 +345,7 @@ openssl rand -hex 8
 
 | 变量 | 用于什么功能 |
 | --- | --- |
-| `NEXT_PUBLIC_APP_URL` | **公开站点完整 URL**（如 `https://yourdomain.com`）。用于：文章分享链接、RSS/Atom 链接生成、OAuth 回调地址 fallback、SEO `og:url`。部署完成后**务必回填**为真实域名 |
+| `NEXT_PUBLIC_APP_URL` | **公开站点完整 URL**（如 `https://yourdomain.com`、`https://你的项目.vercel.app`、`https://你的项目.你的账号.workers.dev`）。用于：文章分享链接、RSS/Atom 链接生成、OAuth 回调地址 fallback、SEO `og:url`。部署完成后**务必回填**为真实域名 |
 | `NEXT_PUBLIC_REGISTER_ENABLED` | 是否在登录页显示「注册」入口，`"true"` / `"false"`，默认 `"false"`（关闭注册，仅管理员手动添加用户） |
 | `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE` | 开放注册时新用户默认角色，只允许 `USER` 或 `SUPER_ADMIN`。**首次部署可临时设为 `SUPER_ADMIN`，注册首个账号后立刻改回 `USER`** |
 | `PETRICHOR_SESSION_EXPIRE_SECONDS` | 登录态有效期（秒），默认 `172800`（2 天） |
@@ -445,7 +539,7 @@ pnpm test
 
 ## English
 
-**Petrichor** (repo codename *Dosphere*) is a self-hostable knowledge-base & blog platform powered by **Next.js 16 + Supabase + Vercel**, featuring a PlateJS rich-text editor, multi-level knowledge tree, AI writing assistant (continue / rewrite / translate / tone), AI weekly & monthly reviews, S3-compatible uploads, Better Auth with optional LinuxDo OAuth, and an **Agent integration layer** (REST + downloadable Skill packs compatible with Claude Code / Codex) with full call auditing.
+**Petrichor** (repo codename *Dosphere*) is a self-hostable knowledge-base & blog platform powered by **Next.js 16 + Supabase + Vercel / Cloudflare Workers**, featuring a PlateJS rich-text editor, multi-level knowledge tree, AI writing assistant (continue / rewrite / translate / tone), AI weekly & monthly reviews, S3-compatible uploads, Better Auth with optional LinuxDo OAuth, and an **Agent integration layer** (REST + downloadable Skill packs compatible with Claude Code / Codex) with full call auditing.
 
 ### Links
 
@@ -455,6 +549,10 @@ pnpm test
 ### Quick deploy
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FLittleBunVerse%2FDosphere-vercel&project-name=petrichor&repository-name=petrichor&root-directory=apps%2Fweb&env=DATABASE_URL,SESSION_SECRET,PETRICHOR_ENCRYPT_KEY,PETRICHOR_ENCRYPT_SALT,S3_ENDPOINT,S3_REGION,S3_BUCKET,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY,NEXT_PUBLIC_APP_URL)
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2FLittleBunVerse%2FDosphere-vercel%2Ftree%2Fmain%2Fapps%2Fweb)
+
+The Cloudflare button deploys `apps/web` to **Cloudflare Workers** through OpenNext. If the setup page asks for build settings, use `pnpm` and `pnpm run deploy`; leave the build command empty when possible.
 
 1. **Provision Postgres** — create a free Supabase project, copy the **Transaction Pooler** connection string (port 6543) as `DATABASE_URL`.
 2. **Provision object storage** — any S3-compatible service (Bitiful / R2 / S3 / MinIO). Collect endpoint, region, bucket, access key, secret.
@@ -469,7 +567,7 @@ pnpm test
 6. **Create the first super-admin** — the init SQL does **not** seed any user. Two options:
    - **Recommended (no SQL):** temporarily set `NEXT_PUBLIC_REGISTER_ENABLED=true` and `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE=SUPER_ADMIN` on Vercel → redeploy → register from `/login` → revert both vars and redeploy.
    - **Via SQL:** generate a bcrypt hash locally (`cd apps/web && node -e "console.log(require('bcryptjs').hashSync('YourPwd', 10))"`) and run [`docs/create-first-admin.sql`](docs/create-first-admin.sql) in Supabase with your email + hash filled in.
-7. **Set `NEXT_PUBLIC_APP_URL`** to your deployed Vercel domain and redeploy.
+7. **Set `NEXT_PUBLIC_APP_URL`** to your deployed Vercel / Workers domain and redeploy.
 
 ### Required env
 
