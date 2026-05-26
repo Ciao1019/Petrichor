@@ -22,16 +22,19 @@
 
 ## 本项目落地
 
-当前实现采用“REST 能力层 + 多 Skill 文件夹包”：
+当前实现采用“REST 能力层 + 单 Skill 路由包”：
 
 - REST 能力层：`/api/agent/**`，统一使用 `Authorization: Bearer <apiKey>`。
 - 公开 manifest：`/api/agent/manifest`，让 Agent 不依赖猜测即可发现接口地址。
-- Skill 兼容层：`/api/agent/skill`，输出单文件 `SKILL.md`。
-- Skill 包：`/api/agent/skill-pack`，输出 `petrichor-agent-skills.zip`，内含多个 Skill：
-  - `petrichor-setup`：环境变量、自检、接口发现。
-  - `petrichor-articles`：新建文章、更新文章、删除文章、创建文件夹。
-  - `petrichor-docs`：知识库列表、目录树、文档搜索、文档查看。
-  - `petrichor-qa`：文档问答和引用结果使用。
+- Skill 兼容层：`/api/agent/skill`，输出单文件 `SKILL.md`（兼容旧入口）。
+- Skill 包：`/api/agent/skill-pack`，输出 `petrichor-agent-skills.zip`，内含一个顶层 `petrichor/` Skill，根目录 `SKILL.md` 按用户意图路由到子文档：
+  - `skills/setup.md`：环境变量、自检、接口发现。
+  - `skills/articles.md`：新建文章、更新文章、删除文章、创建文件夹、移动文章。
+  - `skills/docs.md`：知识库列表、目录树、文档搜索、文档查看。
+  - `skills/qa.md`：文档问答和引用结果使用。
+  - `skills/share.md`：文章分享创建/撤销/查询、密码与到期管理。
+  - `skills/ai.md`：AI 摘要、思维导图、知识图谱生成。
+  - `scripts/petrichor`、`scripts/petrichor-api.sh`、`references/endpoints.md` 全 skill 共用一份。
 - API Key：平台账号页生成，服务端只存 `sha256` 哈希，明文只返回一次。
 - 调用审计：所有外部 Agent API 调用都要求带
   `X-Petrichor-Agent-Source`，否则调用失败；服务端记录来源 Agent、具体工具、

@@ -44,13 +44,13 @@ export function buildAgentManifest(baseUrl: string) {
         },
         requiredHeaders: {
             "X-Petrichor-Agent-Source": "调用方标识，例如 claude-code、codex、openclaw、custom-agent",
-            "X-Petrichor-Agent-Tool": "可选，具体 Skill 或工具名，例如 petrichor-articles",
+            "X-Petrichor-Agent-Tool": "可选，具体子能力名，例如 petrichor-articles、petrichor-qa",
         },
         env: {
             PETRICHOR_BASE_URL: normalizeAgentBaseUrl(baseUrl),
             PETRICHOR_API_KEY: "ptc_live_xxx",
             PETRICHOR_AGENT_SOURCE: "codex",
-            PETRICHOR_AGENT_TOOL: "petrichor-setup",
+            PETRICHOR_AGENT_TOOL: "petrichor",
         },
         scopes: {
             "article:write": ["article.create", "article.update", "article.move", "folder.create"],
@@ -69,16 +69,17 @@ export function buildAgentSkillMarkdown(baseUrl: string) {
     const endpoints = buildAgentEndpointMap()
 
     return `---
-name: petrichor-agent
-description: Use this skill when an AI agent needs to call Petrichor external Agent API for knowledge bases, articles, document search, document viewing, or document question answering.
+name: petrichor
+description: Use this skill when an AI agent needs to call the Petrichor external Agent API for knowledge bases, articles, document search, document viewing, document question answering, article sharing, or AI summary / mindmap generation. Triggers include create / update / delete article, browse knowledge base, search docs, ask the knowledge base, share article, summarize article.
 ---
 
-# Petrichor Agent
+# Petrichor
 
-这是兼容旧入口的单文件 Skill。更推荐下载完整多 Skill 包：
+兼容旧入口的单文件 Skill。推荐改用完整 Skill 包，里面是一个 \`petrichor/\` 顶层 skill，
+内部按用户意图路由到 articles / docs / qa / share / ai / setup 子文档：
 
 \`\`\`bash
-curl -L "${normalizedBaseUrl}${endpoints.skillPack}" -o petrichor-agent-skills.zip
+curl -L "${normalizedBaseUrl}${endpoints.skillPack}" -o petrichor-skill.zip
 \`\`\`
 
 ## 环境变量
@@ -87,7 +88,7 @@ curl -L "${normalizedBaseUrl}${endpoints.skillPack}" -o petrichor-agent-skills.z
 export PETRICHOR_BASE_URL="${normalizedBaseUrl}"
 export PETRICHOR_API_KEY="ptc_live_xxx"
 export PETRICHOR_AGENT_SOURCE="codex"
-export PETRICHOR_AGENT_TOOL="petrichor-agent"
+export PETRICHOR_AGENT_TOOL="petrichor"
 \`\`\`
 
 ## 通用规则
@@ -108,7 +109,7 @@ curl -sS "$PETRICHOR_BASE_URL${endpoints.manifest}"
 curl -sS "$PETRICHOR_BASE_URL${endpoints.capabilities}" \\
   -H "Authorization: Bearer $PETRICHOR_API_KEY" \\
   -H "X-Petrichor-Agent-Source: $PETRICHOR_AGENT_SOURCE" \\
-  -H "X-Petrichor-Agent-Tool: \${PETRICHOR_AGENT_TOOL:-petrichor-agent}"
+  -H "X-Petrichor-Agent-Tool: \${PETRICHOR_AGENT_TOOL:-petrichor}"
 \`\`\`
 
 文章：
@@ -117,7 +118,7 @@ curl -sS "$PETRICHOR_BASE_URL${endpoints.capabilities}" \\
 curl -sS -X POST "$PETRICHOR_BASE_URL${endpoints.articleCreate}" \\
   -H "Authorization: Bearer $PETRICHOR_API_KEY" \\
   -H "X-Petrichor-Agent-Source: $PETRICHOR_AGENT_SOURCE" \\
-  -H "X-Petrichor-Agent-Tool: \${PETRICHOR_AGENT_TOOL:-petrichor-agent}" \\
+  -H "X-Petrichor-Agent-Tool: \${PETRICHOR_AGENT_TOOL:-petrichor}" \\
   -H "Content-Type: application/json" \\
   -d '{"knowledgeBaseId":"1","title":"标题","contentMd":"# 标题\\n\\n正文","tags":["agent"]}'
 \`\`\`
@@ -128,7 +129,7 @@ curl -sS -X POST "$PETRICHOR_BASE_URL${endpoints.articleCreate}" \\
 curl -sS -X POST "$PETRICHOR_BASE_URL${endpoints.documentQa}" \\
   -H "Authorization: Bearer $PETRICHOR_API_KEY" \\
   -H "X-Petrichor-Agent-Source: $PETRICHOR_AGENT_SOURCE" \\
-  -H "X-Petrichor-Agent-Tool: \${PETRICHOR_AGENT_TOOL:-petrichor-agent}" \\
+  -H "X-Petrichor-Agent-Tool: \${PETRICHOR_AGENT_TOOL:-petrichor}" \\
   -H "Content-Type: application/json" \\
   -d '{"question":"问题","knowledgeBaseId":"1","limit":6}'
 \`\`\`
@@ -138,44 +139,91 @@ curl -sS -X POST "$PETRICHOR_BASE_URL${endpoints.documentQa}" \\
 export function buildAgentSkillPackageFiles(baseUrl: string): AgentSkillPackageFile[] {
     const normalizedBaseUrl = normalizeAgentBaseUrl(baseUrl)
     const manifest = buildAgentManifest(normalizedBaseUrl)
-    const helper = buildApiHelperScript()
-    const commonReference = buildCommonEndpointReference()
-    const pythonCli = buildPetrichorPythonCli()
 
-    const skills: Array<{ id: string; markdown: string }> = [
-        { id: "petrichor-setup", markdown: buildSetupSkillMarkdown(normalizedBaseUrl) },
-        { id: "petrichor-articles", markdown: buildArticleSkillMarkdown() },
-        { id: "petrichor-docs", markdown: buildDocsSkillMarkdown() },
-        { id: "petrichor-qa", markdown: buildQaSkillMarkdown() },
-        { id: "petrichor-share", markdown: buildShareSkillMarkdown() },
-        { id: "petrichor-ai", markdown: buildAiSkillMarkdown() },
+    return [
+        { path: "petrichor/SKILL.md", content: buildRootSkillMarkdown(normalizedBaseUrl) },
+        { path: "petrichor/skills/setup.md", content: buildSetupSubSkillMarkdown(normalizedBaseUrl) },
+        { path: "petrichor/skills/articles.md", content: buildArticlesSubSkillMarkdown() },
+        { path: "petrichor/skills/docs.md", content: buildDocsSubSkillMarkdown() },
+        { path: "petrichor/skills/qa.md", content: buildQaSubSkillMarkdown() },
+        { path: "petrichor/skills/share.md", content: buildShareSubSkillMarkdown() },
+        { path: "petrichor/skills/ai.md", content: buildAiSubSkillMarkdown() },
+        { path: "petrichor/scripts/petrichor", content: buildPetrichorPythonCli() },
+        { path: "petrichor/scripts/petrichor-api.sh", content: buildApiHelperScript() },
+        { path: "petrichor/references/endpoints.md", content: buildCommonEndpointReference() },
+        { path: "petrichor/assets/manifest.json", content: JSON.stringify(manifest, null, 2) },
     ]
-
-    const files: AgentSkillPackageFile[] = []
-    for (const skill of skills) {
-        files.push({ path: `${skill.id}/SKILL.md`, content: skill.markdown })
-        files.push({ path: `${skill.id}/scripts/petrichor`, content: pythonCli })
-        files.push({ path: `${skill.id}/scripts/petrichor-api.sh`, content: helper })
-        files.push({ path: `${skill.id}/references/endpoints.md`, content: commonReference })
-    }
-    files.push({
-        path: "petrichor-setup/assets/manifest.json",
-        content: JSON.stringify(manifest, null, 2),
-    })
-    return files
 }
 
 export function buildAgentSkillPackageZip(baseUrl: string) {
     return createZip(buildAgentSkillPackageFiles(baseUrl))
 }
 
-function buildSetupSkillMarkdown(baseUrl: string) {
+function buildRootSkillMarkdown(baseUrl: string) {
     return `---
-name: petrichor-setup
-description: Use this skill when configuring or diagnosing Petrichor Agent API access, checking API key scopes, discovering endpoint URLs, or installing Petrichor skills for Claude Code, Codex, OpenClaw, or similar agent tools.
+name: petrichor
+description: Use this skill when an AI agent needs to call the Petrichor external Agent API. Covers knowledge base browsing, article CRUD, folder organization, full-text document search, document viewing, knowledge-base question answering, article share-link management, and AI summary / mindmap / knowledge-graph generation. Triggers include create / update / delete article, organize folders, browse knowledge base, search docs, ask the knowledge base, share article, set share password, summarize article, generate mindmap.
 ---
 
-# Petrichor Setup
+# Petrichor
+
+Petrichor 的外部 Agent 入口。整个 skill 只暴露一个 \`petrichor\`，根据用户意图按需读取对应子文档，不要一次性加载所有子文档。
+
+## 首次安装/排错
+
+\`\`\`bash
+chmod +x scripts/petrichor
+\`\`\`
+
+确保终端里有以下环境变量：
+
+\`\`\`bash
+export PETRICHOR_BASE_URL="${baseUrl}"
+export PETRICHOR_API_KEY="ptc_live_xxx"
+export PETRICHOR_AGENT_SOURCE="codex"        # 必填：调用方标识
+export PETRICHOR_AGENT_TOOL="petrichor"      # 可选：子能力名
+\`\`\`
+
+> 如果运行环境没有 Python 3.8+，回退到 \`scripts/petrichor-api.sh\`（curl 版本，功能等价）。
+
+## 路由（按用户意图选一个子文档读）
+
+| 用户意图 | 读取这个子文档 |
+| --- | --- |
+| 安装、自检、查 API Key 权限、发现接口 | \`Read skills/setup.md\` |
+| 新建 / 更新 / 删除文章、新建文件夹、移动文章 | \`Read skills/articles.md\` |
+| 浏览知识库、看目录树、列文章、搜索文档、查看正文 / Wiki | \`Read skills/docs.md\` |
+| 文档问答、跨库问答、引用知识库内容回答 | \`Read skills/qa.md\` |
+| 公开文章、设置分享密码 / 到期、撤销分享、查询分享状态 | \`Read skills/share.md\` |
+| AI 摘要、思维导图、知识图谱生成 | \`Read skills/ai.md\` |
+
+子文档默认按需加载；用户的请求涉及多个意图（例如先搜索再问答）时按顺序读多个子文档。
+
+读取子文档前，可以根据意图把 \`PETRICHOR_AGENT_TOOL\` 设成对应名字（\`petrichor-articles\`、\`petrichor-docs\`、\`petrichor-qa\`、\`petrichor-share\`、\`petrichor-ai\`、\`petrichor-setup\`），让审计日志能区分流量来源。
+
+## 通用规则（任何子文档都生效）
+
+- 不要把完整 API Key 写入文件、提交、日志或最终回复。
+- 所有受保护接口必须带 \`Authorization: Bearer $PETRICHOR_API_KEY\` 与 \`X-Petrichor-Agent-Source\`，否则会失败并写入审计日志。
+- 删除文章前必须向用户复述文章 ID 和标题，并获得明确确认。
+- 启用分享密码、设置到期时间、撤销分享前，先用 \`share info\` 复述当前状态。
+- 触发 AI 生成（summary、mindmap）前，先告诉用户会调用模型可能产生费用。
+- 不确定知识库或文章 ID 时，先查 \`scripts/petrichor capabilities\` 或 \`scripts/petrichor kb list\`，不要靠猜。
+
+## 接口手册
+
+详细字段、curl 示例都在 \`references/endpoints.md\`，按需读取。
+`
+}
+
+function buildSetupSubSkillMarkdown(baseUrl: string) {
+    return `# Petrichor — Setup（安装与自检）
+
+切到这个子能力时设置：
+
+\`\`\`bash
+export PETRICHOR_AGENT_TOOL="petrichor-setup"
+\`\`\`
 
 ## 安装 CLI
 
@@ -219,15 +267,10 @@ scripts/petrichor capabilities
 `
 }
 
-function buildArticleSkillMarkdown() {
-    return `---
-name: petrichor-articles
-description: Use this skill when creating, updating, organizing, or deleting Petrichor knowledge-base articles through the external Agent API. Triggers include new article, update article, create folder, move content into a knowledge base, or delete article requests.
----
+function buildArticlesSubSkillMarkdown() {
+    return `# Petrichor — Articles（文章/文件夹写操作）
 
-# Petrichor Articles
-
-执行前设置：
+切到这个子能力时设置：
 
 \`\`\`bash
 export PETRICHOR_AGENT_TOOL="petrichor-articles"
@@ -280,15 +323,10 @@ scripts/petrichor article move --article-id 123 --parent-root
 `
 }
 
-function buildDocsSkillMarkdown() {
-    return `---
-name: petrichor-docs
-description: Use this skill when searching, browsing, listing, or reading Petrichor knowledge bases, article trees, source articles, and Wiki pages through the external Agent API.
----
+function buildDocsSubSkillMarkdown() {
+    return `# Petrichor — Docs（文档读 / 搜 / 看）
 
-# Petrichor Docs
-
-执行前设置：
+切到这个子能力时设置：
 
 \`\`\`bash
 export PETRICHOR_AGENT_TOOL="petrichor-docs"
@@ -317,15 +355,10 @@ scripts/petrichor doc view --kb-id 1 --page-key index
 `
 }
 
-function buildQaSkillMarkdown() {
-    return `---
-name: petrichor-qa
-description: Use this skill when answering questions from Petrichor knowledge bases or documents through the external Agent API. Triggers include document QA, summarize from knowledge base, compare notes, cite source documents, or answer from Petrichor content.
----
+function buildQaSubSkillMarkdown() {
+    return `# Petrichor — QA（文档问答）
 
-# Petrichor QA
-
-执行前设置：
+切到这个子能力时设置：
 
 \`\`\`bash
 export PETRICHOR_AGENT_TOOL="petrichor-qa"
@@ -336,7 +369,7 @@ export PETRICHOR_AGENT_TOOL="petrichor-qa"
 1. 如果用户限定知识库，传 \`--kb-id\`。
 2. 如果用户没有限定知识库，省略 \`--kb-id\`，使用跨库问答。
 3. 回答时优先使用接口返回的 \`answer\` 和 \`citations\`。
-4. 如果返回"未找到足够依据"，不要编造；改用 \`petrichor-docs\` 搜索更多上下文。
+4. 如果返回"未找到足够依据"，不要编造；改用 docs 子能力（\`Read skills/docs.md\`）搜索更多上下文。
 
 ## 命令
 
@@ -349,15 +382,10 @@ scripts/petrichor doc ask --question "跨库的问题"
 `
 }
 
-function buildShareSkillMarkdown() {
-    return `---
-name: petrichor-share
-description: Use this skill when publishing, unpublishing, password-protecting, or setting expiry on Petrichor article share links through the external Agent API. Triggers include "share article", "make public", "set share password", "set share expiry", "revoke share", or "unpublish article".
----
+function buildShareSubSkillMarkdown() {
+    return `# Petrichor — Share（文章分享管理）
 
-# Petrichor Share
-
-执行前设置：
+切到这个子能力时设置：
 
 \`\`\`bash
 export PETRICHOR_AGENT_TOOL="petrichor-share"
@@ -391,15 +419,10 @@ scripts/petrichor share info --article-id 123
 `
 }
 
-function buildAiSkillMarkdown() {
-    return `---
-name: petrichor-ai
-description: Use this skill when triggering AI summary or mindmap generation for Petrichor articles through the external Agent API. Triggers include "summarize article", "generate summary", "generate mindmap", "generate knowledge graph", or "refresh AI summary".
----
+function buildAiSubSkillMarkdown() {
+    return `# Petrichor — AI（摘要 / 思维导图 / 知识图谱）
 
-# Petrichor AI
-
-执行前设置：
+切到这个子能力时设置：
 
 \`\`\`bash
 export PETRICHOR_AGENT_TOOL="petrichor-ai"
@@ -464,14 +487,14 @@ if [[ -n "$body" ]]; then
   curl -sS -X "$method" "$url" \\
     -H "Authorization: Bearer $PETRICHOR_API_KEY" \\
     -H "X-Petrichor-Agent-Source: $PETRICHOR_AGENT_SOURCE" \\
-    -H "X-Petrichor-Agent-Tool: \${PETRICHOR_AGENT_TOOL:-unknown}" \\
+    -H "X-Petrichor-Agent-Tool: \${PETRICHOR_AGENT_TOOL:-petrichor}" \\
     -H "Content-Type: application/json" \\
     -d "$body"
 else
   curl -sS -X "$method" "$url" \\
     -H "Authorization: Bearer $PETRICHOR_API_KEY" \\
     -H "X-Petrichor-Agent-Source: $PETRICHOR_AGENT_SOURCE" \\
-    -H "X-Petrichor-Agent-Tool: \${PETRICHOR_AGENT_TOOL:-unknown}" \\
+    -H "X-Petrichor-Agent-Tool: \${PETRICHOR_AGENT_TOOL:-petrichor}" \\
     -H "Content-Type: application/json"
 fi
 `
@@ -487,7 +510,7 @@ function buildCommonEndpointReference() {
 \`\`\`http
 Authorization: Bearer <PETRICHOR_API_KEY>
 X-Petrichor-Agent-Source: <claude-code|codex|openclaw|custom>
-X-Petrichor-Agent-Tool: <可选的 skill 或工具名>
+X-Petrichor-Agent-Tool: <可选的子能力名，如 petrichor-articles>
 \`\`\`
 
 缺少 \`X-Petrichor-Agent-Source\` 时，接口会失败并写入审计日志。
@@ -587,7 +610,7 @@ Environment variables (required unless noted):
   PETRICHOR_BASE_URL       e.g. https://petrichor.example.com
   PETRICHOR_API_KEY        Agent API Key generated in the Petrichor dashboard
   PETRICHOR_AGENT_SOURCE   caller identity (e.g. claude-code, codex, openclaw)
-  PETRICHOR_AGENT_TOOL     (optional) specific skill / tool name
+  PETRICHOR_AGENT_TOOL     (optional) specific sub-skill / tool name
 
 Run --help on any command to see usage:
   petrichor --help
@@ -610,7 +633,7 @@ EXIT_CONFIG = 3
 EXIT_HTTP = 4
 EXIT_NETWORK = 5
 
-DEFAULT_AGENT_TOOL = "petrichor-cli"
+DEFAULT_AGENT_TOOL = "petrichor"
 
 
 def _env(name: str, required: bool = True) -> Optional[str]:
