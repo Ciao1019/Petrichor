@@ -31,7 +31,7 @@
 
 ## 提 Issue
 
-在 [Issues](https://github.com/LittleBunVerse/Dosphere-vercel/issues) 中提交问题前：
+在 [Issues](https://github.com/LittleBunVerse/petrichor-vercel/issues) 中提交问题前：
 
 1. **先搜索** 是否已有相同 / 类似 Issue。
 2. 选择合适的模板：
@@ -56,7 +56,7 @@
 
 ```bash
 # 1. Fork 后克隆
-git clone https://github.com/<你的用户名>/Dosphere-vercel.git petrichor
+git clone https://github.com/<你的用户名>/petrichor-vercel.git petrichor
 cd petrichor
 
 # 2. 新建分支（不要在 main 上直接改）
