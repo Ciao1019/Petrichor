@@ -616,6 +616,20 @@ export interface ArticleShareInfoResponse {
   isRepost: boolean
   originalUrl?: string | null
   originalAuthorName?: string | null
+  pinOrder?: number | null
+  isPinned?: boolean
+  updatedAt?: string | null
+}
+
+export interface ArticleSharePinRequest {
+  articleId: string
+  pinOrder: number | null
+}
+
+export interface ArticleSharePinResponse {
+  articleId: string
+  pinOrder: number | null
+  isPinned: boolean
   updatedAt?: string | null
 }
 
@@ -623,6 +637,7 @@ export const knowledgeBaseArticleShareApi = {
   create: (data: ArticleShareCreateRequest) => api.post<ArticleShareCreateResponse>("/kb/article/share/create", data),
   revoke: (data: ArticleShareRevokeRequest) => api.post<ArticleShareRevokeResponse>("/kb/article/share/revoke", data),
   info: (data: ArticleShareInfoRequest) => api.post<ArticleShareInfoResponse>("/kb/article/share/info", data),
+  setPin: (data: ArticleSharePinRequest) => api.post<ArticleSharePinResponse>("/kb/article/share/pin", data),
 }
 
 export interface ArticleMindMapGenerateRequest {
@@ -1159,6 +1174,8 @@ export interface PublicArticleListItem {
   expiresAt?: string | null
   hasPassword: boolean
   isRepost: boolean
+  isPinned?: boolean
+  pinOrder?: number | null
 }
 
 export interface PublicArticleListResponse {
