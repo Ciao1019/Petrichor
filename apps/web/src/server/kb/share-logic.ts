@@ -12,6 +12,33 @@ export interface ShareArticleIdInput {
     articleId: number
 }
 
+export interface ArticleSharePinInput {
+    articleId: number
+    pinOrder: number | null
+}
+
+const maxPinOrder = 1_000_000
+
+export function validateArticleSharePinInput(raw: unknown): ArticleSharePinInput {
+    const value = raw && typeof raw === "object" ? raw as Record<string, unknown> : {}
+    const { articleId } = validateShareArticleIdInput(value)
+    if (value.pinOrder === undefined || value.pinOrder === null || value.pinOrder === "") {
+        return { articleId, pinOrder: null }
+    }
+    const text = String(value.pinOrder).trim()
+    if (!/^-?\d+$/.test(text)) {
+        throw badRequest("置顶排序值非法")
+    }
+    const pinOrder = Number(text)
+    if (!Number.isFinite(pinOrder)) {
+        throw badRequest("置顶排序值非法")
+    }
+    if (pinOrder < 0 || pinOrder > maxPinOrder) {
+        throw badRequest(`置顶排序值必须在 0 到 ${maxPinOrder} 之间`)
+    }
+    return { articleId, pinOrder }
+}
+
 export interface PublicShareDetailInput {
     shareCode: string
     accessPassword: string

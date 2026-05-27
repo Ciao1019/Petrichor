@@ -4,6 +4,7 @@ import { toast } from "sonner"
 import { knowledgeBaseArticleShareApi } from "@/lib/api"
 import {
   buildShareState,
+  DEFAULT_PIN_ORDER,
   isValidHttpUrl,
   OTP_LENGTH,
   resolveAxiosErrorMessage,
@@ -54,6 +55,7 @@ export function useArticleShareDialogState({ open, articleId }: UseArticleShareD
   const [loadingInfo, setLoadingInfo] = React.useState(false)
   const [submitting, setSubmitting] = React.useState(false)
   const [revoking, setRevoking] = React.useState(false)
+  const [pinSubmitting, setPinSubmitting] = React.useState(false)
 
   const [shareCode, setShareCode] = React.useState<string | null>(null)
   const [hasPassword, setHasPassword] = React.useState(false)
@@ -65,6 +67,8 @@ export function useArticleShareDialogState({ open, articleId }: UseArticleShareD
   const [isRepost, setIsRepost] = React.useState(false)
   const [originalUrl, setOriginalUrl] = React.useState("")
   const [originalAuthorName, setOriginalAuthorName] = React.useState("")
+  const [isPinned, setIsPinned] = React.useState(false)
+  const [pinOrder, setPinOrder] = React.useState<number>(DEFAULT_PIN_ORDER)
 
   const shareUrl = React.useMemo(() => {
     if (!shareCode) return ""
@@ -98,6 +102,8 @@ export function useArticleShareDialogState({ open, articleId }: UseArticleShareD
         setIsRepost(next.isRepost)
         setOriginalUrl(next.originalUrl)
         setOriginalAuthorName(next.originalAuthorName)
+        setIsPinned(next.isPinned)
+        setPinOrder(next.pinOrder ?? DEFAULT_PIN_ORDER)
       })
       .catch((e) => {
         if (canceled) return
@@ -223,6 +229,8 @@ export function useArticleShareDialogState({ open, articleId }: UseArticleShareD
       setIsRepost(false)
       setOriginalUrl("")
       setOriginalAuthorName("")
+      setIsPinned(false)
+      setPinOrder(DEFAULT_PIN_ORDER)
       toast("已撤销分享")
       return true
     } catch (e: unknown) {
@@ -232,6 +240,31 @@ export function useArticleShareDialogState({ open, articleId }: UseArticleShareD
       setRevoking(false)
     }
   }, [articleId])
+
+  const savePinSettings = React.useCallback(async () => {
+    if (!articleId) {
+      toast("缺少文章ID，无法置顶")
+      return false
+    }
+    if (!shareCode) {
+      toast("请先生成公开链接,再设置置顶")
+      return false
+    }
+    const nextPinOrder = isPinned ? Math.max(0, Math.floor(Number.isFinite(pinOrder) ? pinOrder : DEFAULT_PIN_ORDER)) : null
+    setPinSubmitting(true)
+    try {
+      const res = await knowledgeBaseArticleShareApi.setPin({ articleId, pinOrder: nextPinOrder })
+      setIsPinned(res.data.isPinned)
+      setPinOrder(res.data.pinOrder ?? DEFAULT_PIN_ORDER)
+      toast(res.data.isPinned ? "已置顶" : "已取消置顶")
+      return true
+    } catch (e: unknown) {
+      toast(resolveAxiosErrorMessage(e, "保存置顶设置失败"))
+      return false
+    } finally {
+      setPinSubmitting(false)
+    }
+  }, [articleId, shareCode, isPinned, pinOrder])
 
   const copyShareLink = React.useCallback(async () => {
     if (!shareUrl) return
@@ -243,6 +276,7 @@ export function useArticleShareDialogState({ open, articleId }: UseArticleShareD
     loadingInfo,
     submitting,
     revoking,
+    pinSubmitting,
     shareCode,
     hasPassword,
     enableExpire,
@@ -253,6 +287,8 @@ export function useArticleShareDialogState({ open, articleId }: UseArticleShareD
     isRepost,
     originalUrl,
     originalAuthorName,
+    isPinned,
+    pinOrder,
     shareUrl,
     expireEcho,
     setEnableExpire,
@@ -263,8 +299,11 @@ export function useArticleShareDialogState({ open, articleId }: UseArticleShareD
     setPassword,
     setOriginalUrl,
     setOriginalAuthorName,
+    setIsPinned,
+    setPinOrder,
     saveShareSettings,
     revokeShare,
     copyShareLink,
+    savePinSettings,
   }
 }

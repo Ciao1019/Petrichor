@@ -291,13 +291,17 @@ create table if not exists petrichor_kb_article_share (
 alter table petrichor_kb_article_share
     add column if not exists is_repost boolean not null default false,
     add column if not exists original_url text,
-    add column if not exists original_author_name text;
+    add column if not exists original_author_name text,
+    add column if not exists pin_order integer;
 
 create index if not exists petrichor_kb_article_share_user_id_idx
     on petrichor_kb_article_share(user_id);
 
 create index if not exists petrichor_kb_article_share_public_idx
     on petrichor_kb_article_share(enabled, revoked_at, article_id);
+
+create index if not exists petrichor_kb_article_share_pin_idx
+    on petrichor_kb_article_share(pin_order);
 
 create table if not exists petrichor_kb_wiki_page (
     id bigint generated always as identity primary key,
