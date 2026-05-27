@@ -11,7 +11,11 @@ export type ShareStateSnapshot = {
   isRepost: boolean
   originalUrl: string
   originalAuthorName: string
+  isPinned: boolean
+  pinOrder: number | null
 }
+
+export const DEFAULT_PIN_ORDER = 100
 
 export function parseApiDate(value?: string | null): Date | null {
   if (!value) return null
@@ -64,6 +68,8 @@ export function buildShareState(info: ArticleShareInfoResponse | ArticleShareCre
   const originalUrl = info.originalUrl?.trim() || ""
   const originalAuthorName = info.originalAuthorName?.trim() || ""
   const isRepost = Boolean(info.isRepost && originalUrl && originalAuthorName)
+  const pinOrder = "pinOrder" in info && typeof info.pinOrder === "number" ? info.pinOrder : null
+  const isPinned = pinOrder != null
 
   return {
     shareCode: enabled ? code : null,
@@ -74,5 +80,7 @@ export function buildShareState(info: ArticleShareInfoResponse | ArticleShareCre
     isRepost,
     originalUrl: isRepost ? originalUrl : "",
     originalAuthorName: isRepost ? originalAuthorName : "",
+    isPinned,
+    pinOrder,
   }
 }

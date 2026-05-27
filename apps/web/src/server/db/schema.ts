@@ -213,6 +213,7 @@ export const knowledgeBaseArticleShares = pgTable("petrichor_kb_article_share", 
     isRepost: boolean("is_repost").notNull().default(false),
     originalUrl: text("original_url"),
     originalAuthorName: text("original_author_name"),
+    pinOrder: integer("pin_order"),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     ...timestamps,
 }, (table) => [
@@ -220,6 +221,7 @@ export const knowledgeBaseArticleShares = pgTable("petrichor_kb_article_share", 
     uniqueIndex("ux_petrichor_kb_article_share_code").on(table.shareCode),
     index("idx_petrichor_kb_article_share_public").on(table.enabled, table.revokedAt, table.articleId),
     index("idx_petrichor_kb_article_share_user").on(table.userId),
+    index("idx_petrichor_kb_article_share_pin").on(table.pinOrder),
 ])
 
 export const knowledgeBaseWikiPages = pgTable("petrichor_kb_wiki_page", {

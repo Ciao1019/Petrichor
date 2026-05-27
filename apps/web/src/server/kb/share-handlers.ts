@@ -28,6 +28,7 @@ import {
     resolvePublicHomepageShareStatus,
     resolvePublicArticleToc,
     validateArticleSearchInput,
+    validateArticleSharePinInput,
     validatePublicArticleSearchInput,
     validatePublicShareDetailInput,
     validatePublicShareRepostAttributionInput,
@@ -226,6 +227,8 @@ export async function articleShareInfo(request: NextRequest) {
                 hasPassword: false,
                 expiresAt: null,
                 ...buildPublicShareRepostAttribution(null),
+                pinOrder: null,
+                isPinned: false,
                 updatedAt: null,
             })
         }
@@ -237,7 +240,46 @@ export async function articleShareInfo(request: NextRequest) {
             hasPassword: Boolean(share.passwordHash?.trim()),
             expiresAt: formatDateOrNull(share.expiresAt),
             ...buildPublicShareRepostAttribution(share),
+            pinOrder: share.pinOrder ?? null,
+            isPinned: share.pinOrder != null,
             updatedAt: formatDateOrNull(share.updatedAt),
+        })
+    })
+}
+
+export async function setArticleSharePin(request: NextRequest) {
+    return withUser(request, async (user) => {
+        const { articleId, pinOrder } = validateArticleSharePinInput(await readJson(request))
+        await requireOwner(user.id, articleId)
+        const db = getDb()
+        const [share] = await db
+            .select()
+            .from(knowledgeBaseArticleShares)
+            .where(eq(knowledgeBaseArticleShares.articleId, articleId))
+            .limit(1)
+
+        if (!share) {
+            throw notFound("文章尚未公开,无法置顶")
+        }
+        if (!share.enabled || share.revokedAt) {
+            throw badRequest("文章未处于公开状态,无法置顶")
+        }
+
+        const updatedAt = new Date()
+        const [updated] = await db
+            .update(knowledgeBaseArticleShares)
+            .set({ pinOrder, updatedAt })
+            .where(eq(knowledgeBaseArticleShares.id, share.id))
+            .returning()
+
+        invalidatePublicArticleListCache()
+        invalidatePublicArticleDetailCache(updated.shareCode)
+
+        return ok({
+            articleId: String(articleId),
+            pinOrder: updated.pinOrder ?? null,
+            isPinned: updated.pinOrder != null,
+            updatedAt: formatDateOrNull(updated.updatedAt),
         })
     })
 }
@@ -326,6 +368,7 @@ async function loadPublicArticleSearchResponse(input: { keyword: string; limit: 
             isRepost: knowledgeBaseArticleShares.isRepost,
             originalUrl: knowledgeBaseArticleShares.originalUrl,
             originalAuthorName: knowledgeBaseArticleShares.originalAuthorName,
+            pinOrder: knowledgeBaseArticleShares.pinOrder,
             enabled: knowledgeBaseArticleShares.enabled,
             revokedAt: knowledgeBaseArticleShares.revokedAt,
             score: sql<number>`(
@@ -347,7 +390,13 @@ async function loadPublicArticleSearchResponse(input: { keyword: string; limit: 
                 OR coalesce(${knowledgeBaseArticles.contentMd}, '') ILIKE ${likePattern}
             )`,
         ))
-        .orderBy(sql`score DESC`, desc(knowledgeBaseArticles.updatedAt), desc(knowledgeBaseArticleShares.id))
+        .orderBy(
+            sql`${knowledgeBaseArticleShares.pinOrder} IS NULL`,
+            desc(knowledgeBaseArticleShares.pinOrder),
+            sql`score DESC`,
+            desc(knowledgeBaseArticles.updatedAt),
+            desc(knowledgeBaseArticleShares.id),
+        )
         .limit(input.limit)
         .offset(input.offset)
 
@@ -381,6 +430,8 @@ async function loadPublicArticleSearchResponse(input: { keyword: string; limit: 
             expiresAt: formatDateOrNull(row.expiresAt),
             hasPassword: status.hasPassword,
             isRepost: buildPublicShareRepostAttribution(row).isRepost,
+            isPinned: row.pinOrder != null,
+            pinOrder: row.pinOrder ?? null,
             score: row.score,
         }]
     })
@@ -415,6 +466,7 @@ export async function loadPublicArticleListResponse() {
             isRepost: knowledgeBaseArticleShares.isRepost,
             originalUrl: knowledgeBaseArticleShares.originalUrl,
             originalAuthorName: knowledgeBaseArticleShares.originalAuthorName,
+            pinOrder: knowledgeBaseArticleShares.pinOrder,
             enabled: knowledgeBaseArticleShares.enabled,
             revokedAt: knowledgeBaseArticleShares.revokedAt,
         })
@@ -424,7 +476,12 @@ export async function loadPublicArticleListResponse() {
             eq(knowledgeBaseArticleShares.enabled, true),
             isNull(knowledgeBaseArticleShares.revokedAt),
         ))
-        .orderBy(desc(knowledgeBaseArticles.updatedAt), desc(knowledgeBaseArticleShares.id))
+        .orderBy(
+            sql`${knowledgeBaseArticleShares.pinOrder} IS NULL`,
+            desc(knowledgeBaseArticleShares.pinOrder),
+            desc(knowledgeBaseArticles.updatedAt),
+            desc(knowledgeBaseArticleShares.id),
+        )
 
     const articleIds = rows.map((row) => row.articleId)
     const [tagsByArticle, fallbackMetadataByArticle] = await Promise.all([
@@ -457,6 +514,8 @@ export async function loadPublicArticleListResponse() {
                 expiresAt: formatDateOrNull(row.expiresAt),
                 hasPassword: status.hasPassword,
                 isRepost: buildPublicShareRepostAttribution(row).isRepost,
+                isPinned: row.pinOrder != null,
+                pinOrder: row.pinOrder ?? null,
             }]
         }),
     }

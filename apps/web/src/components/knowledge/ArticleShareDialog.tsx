@@ -55,6 +55,7 @@ export function ArticleShareDialog({ open, onOpenChange, articleId }: ArticleSha
     loadingInfo,
     submitting,
     revoking,
+    pinSubmitting,
     shareCode,
     hasPassword,
     enableExpire,
@@ -65,6 +66,8 @@ export function ArticleShareDialog({ open, onOpenChange, articleId }: ArticleSha
     isRepost,
     originalUrl,
     originalAuthorName,
+    isPinned,
+    pinOrder,
     shareUrl,
     expireEcho,
     setEnableExpire,
@@ -75,9 +78,12 @@ export function ArticleShareDialog({ open, onOpenChange, articleId }: ArticleSha
     setPassword,
     setOriginalUrl,
     setOriginalAuthorName,
+    setIsPinned,
+    setPinOrder,
     saveShareSettings,
     revokeShare,
     copyShareLink,
+    savePinSettings,
   } = useArticleShareDialogState({ open, articleId })
 
   const footer = (
@@ -165,6 +171,50 @@ export function ArticleShareDialog({ open, onOpenChange, articleId }: ArticleSha
               </div>
             </div>
           ) : null}
+        </div>
+
+        <div className="space-y-3 rounded-md border p-3">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="share-pin-switch">在公开列表置顶</Label>
+            <Switch
+              id="share-pin-switch"
+              checked={isPinned}
+              disabled={!shareCode}
+              onCheckedChange={(value) => setIsPinned(Boolean(value))}
+            />
+          </div>
+          {!shareCode ? (
+            <div className="text-xs text-muted-foreground">请先生成公开链接,再设置置顶。</div>
+          ) : isPinned ? (
+            <div className="space-y-2">
+              <Label htmlFor="share-pin-order">排序值(越大越靠前)</Label>
+              <Input
+                id="share-pin-order"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={1000000}
+                value={Number.isFinite(pinOrder) ? pinOrder : 0}
+                onChange={(event) => {
+                  const next = Number(event.target.value)
+                  setPinOrder(Number.isFinite(next) ? next : 0)
+                }}
+              />
+            </div>
+          ) : null}
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!shareCode || pinSubmitting || loadingInfo}
+              onClick={() => {
+                void savePinSettings()
+              }}
+            >
+              {pinSubmitting ? "保存中..." : isPinned ? "保存置顶" : "保存并取消置顶"}
+            </Button>
+          </div>
         </div>
 
         <div className="space-y-3 rounded-md border p-3">

@@ -44,6 +44,7 @@ const articleIndexCopy = {
     retry: "重新加载",
     empty: "文章正在整理中。",
     repost: "转载",
+    pinnedSection: "置顶",
     expired: "已过期",
     passwordRequired: "需要访问密码",
     readArticleLabel: (title: string) => `阅读文章：${title}`,
@@ -53,25 +54,45 @@ const articleIndexCopy = {
 
 type ArticleIndexCopy = typeof articleIndexCopy
 
+const PINNED_GROUP_KEY = "__pinned__"
+
 function groupArticlesByYear(articles: readonly HomepageArticle[]): ArticleYearGroup[] {
-    const groups = new Map<string, HomepageArticle[]>()
-    const sortedArticles = [...articles].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    const pinned: HomepageArticle[] = []
+    const others: HomepageArticle[] = []
+    for (const article of articles) {
+        if (article.isPinned) {
+            pinned.push(article)
+        } else {
+            others.push(article)
+        }
+    }
+    pinned.sort((left, right) => {
+        const leftOrder = left.pinOrder ?? 0
+        const rightOrder = right.pinOrder ?? 0
+        if (leftOrder !== rightOrder) return rightOrder - leftOrder
+        return right.updatedAt.localeCompare(left.updatedAt)
+    })
+    others.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
 
-    for (const article of sortedArticles) {
+    const groups: ArticleYearGroup[] = []
+    if (pinned.length > 0) {
+        groups.push({ year: PINNED_GROUP_KEY, articles: pinned })
+    }
+
+    const yearMap = new Map<string, HomepageArticle[]>()
+    for (const article of others) {
         const year = article.updatedAt.slice(0, 4)
-        const group = groups.get(year)
-
+        const group = yearMap.get(year)
         if (group) {
             group.push(article)
         } else {
-            groups.set(year, [article])
+            yearMap.set(year, [article])
         }
     }
-
-    return Array.from(groups.entries()).map(([year, groupedArticles]) => ({
-        year,
-        articles: groupedArticles,
-    }))
+    for (const [year, groupedArticles] of yearMap) {
+        groups.push({ year, articles: groupedArticles })
+    }
+    return groups
 }
 
 function getArticleDatePart(value: string) {
@@ -185,13 +206,14 @@ function ArticleListItem({ article, copy }: { article: HomepageArticle; copy: Ar
 }
 
 function ArticleYearSection({ group, copy }: { group: ArticleYearGroup; copy: ArticleIndexCopy }) {
-    const headingId = `article-year-${group.year}`
+    const isPinnedGroup = group.year === PINNED_GROUP_KEY
+    const headingId = `article-year-${isPinnedGroup ? "pinned" : group.year}`
 
     return (
         <section aria-labelledby={headingId} className="mb-[1.875rem]">
             <div className="retypeset-decorative-line" aria-hidden="true" />
             <h2 id={headingId} className="sr-only">
-                {group.year}
+                {isPinnedGroup ? copy.pinnedSection : group.year}
             </h2>
             <ul>
                 {group.articles.map((article) => (
