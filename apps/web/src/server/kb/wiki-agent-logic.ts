@@ -3,6 +3,7 @@ import { and, asc, desc, eq, inArray, isNull, like, or } from "drizzle-orm"
 import { z } from "zod"
 import { callChatCompletion } from "@/server/ai/generation"
 import { getDb } from "@/server/db/client"
+import { normalizeS4ObjectKey, normalizeS4ObjectUrl } from "@/lib/s4-url"
 import {
     knowledgeBaseAgentArtifacts,
     knowledgeBaseAgentMessages,
@@ -30,6 +31,15 @@ type Db = ReturnType<typeof getDb>
 
 export type WikiPageKind = "index" | "source" | "concept" | "entity" | "comparison" | "answer" | "log"
 export type WikiPatchStatus = "PENDING" | "APPLIED" | "REJECTED"
+export type AgentImageReference = {
+    id: string
+    alt: string
+    src: string
+    objectKey: string | null
+    filename: string
+    sourceArticleId?: string
+    sourceArticleTitle?: string
+}
 
 export const idSchema = z.union([z.string(), z.number()]).transform((value, ctx) => {
     const raw = String(value).trim()
@@ -1040,6 +1050,13 @@ export async function searchWikiPagesForAgent(input: {
 
 export async function readWikiPageForAgent(userId: number, knowledgeBaseId: number, pageKey: string) {
     const detail = await loadWikiPageDetail(userId, knowledgeBaseId, pageKey)
+    const sourceArticleIds = detail.sourceRefs
+        .map((ref) => Number(ref.articleId))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    const media = mergeAgentImageReferences([
+        ...extractAgentImageReferences(detail.contentMd),
+        ...await loadArticleImageReferences(userId, knowledgeBaseId, sourceArticleIds),
+    ])
     return {
         knowledgeBaseId: String(knowledgeBaseId),
         pageKey: detail.pageKey,
@@ -1047,6 +1064,7 @@ export async function readWikiPageForAgent(userId: number, knowledgeBaseId: numb
         title: detail.title,
         kind: detail.kind,
         contentMd: detail.contentMd,
+        media,
         sourceRefs: detail.sourceRefs,
         links: detail.links,
     }
@@ -1069,8 +1087,145 @@ export async function readSourceArticleForAgent(userId: number, knowledgeBaseId:
         articleId: String(article.id),
         title: article.title,
         contentMd: article.contentMd,
+        media: extractAgentImageReferences(article.contentMd, {
+            sourceArticleId: String(article.id),
+            sourceArticleTitle: article.title,
+        }),
         updatedAt: formatDate(article.updatedAt),
     }
+}
+
+const MARKDOWN_IMAGE_PATTERN = /!\[([^\]\n]*)]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g
+const HTML_IMAGE_PATTERN = /<img\b[^>]*\bsrc=(["'])(.*?)\1[^>]*>/gi
+const RAW_STORAGE_IMAGE_PATTERN = /(?:s4key:)?\/?uploads\/\d+\/[^\s"'<>()[\]{}]+?\.(?:png|jpe?g|gif|webp|avif|svg|bmp)(?:[?#][^\s"'<>()[\]{}]*)?/gi
+const IMAGE_SOURCE_PATTERN = /\.(?:png|jpe?g|gif|webp|avif|svg|bmp)(?:[?#].*)?$/i
+
+export function extractAgentImageReferences(
+    markdown: string | null | undefined,
+    source?: { sourceArticleId?: string; sourceArticleTitle?: string },
+): AgentImageReference[] {
+    if (!markdown?.trim()) return []
+    const refs: AgentImageReference[] = []
+    const seen = new Set<string>()
+
+    function add(rawSrc: string | undefined, rawAlt: string | undefined) {
+        const normalized = normalizeAgentImageSource(rawSrc)
+        if (!normalized) return
+        const key = normalized.objectKey ?? normalized.src
+        if (seen.has(key)) return
+        seen.add(key)
+        refs.push({
+            id: `image-${refs.length + 1}`,
+            alt: normalizeImageAlt(rawAlt, normalized.filename),
+            src: normalized.src,
+            objectKey: normalized.objectKey,
+            filename: normalized.filename,
+            ...source,
+        })
+    }
+
+    for (const match of markdown.matchAll(MARKDOWN_IMAGE_PATTERN)) {
+        add(match[2], match[1])
+    }
+
+    for (const match of markdown.matchAll(HTML_IMAGE_PATTERN)) {
+        add(match[2], extractHtmlAlt(match[0]))
+    }
+
+    for (const match of markdown.matchAll(RAW_STORAGE_IMAGE_PATTERN)) {
+        add(match[0], undefined)
+    }
+
+    return refs.slice(0, 20)
+}
+
+async function loadArticleImageReferences(userId: number, knowledgeBaseId: number, articleIds: number[]) {
+    const uniqueArticleIds = Array.from(new Set(articleIds)).slice(0, 10)
+    if (uniqueArticleIds.length === 0) return []
+    const rows = await getDb()
+        .select({
+            id: knowledgeBaseArticles.id,
+            title: knowledgeBaseArticles.title,
+            contentMd: knowledgeBaseArticles.contentMd,
+        })
+        .from(knowledgeBaseArticles)
+        .where(and(
+            eq(knowledgeBaseArticles.userId, userId),
+            eq(knowledgeBaseArticles.knowledgeBaseId, knowledgeBaseId),
+            inArray(knowledgeBaseArticles.id, uniqueArticleIds),
+        ))
+
+    return rows.flatMap((article) => extractAgentImageReferences(article.contentMd, {
+        sourceArticleId: String(article.id),
+        sourceArticleTitle: article.title,
+    }))
+}
+
+function mergeAgentImageReferences(refs: AgentImageReference[]) {
+    const merged: AgentImageReference[] = []
+    const seen = new Set<string>()
+    for (const ref of refs) {
+        const key = ref.objectKey ?? ref.src
+        if (seen.has(key)) continue
+        seen.add(key)
+        merged.push({ ...ref, id: `image-${merged.length + 1}` })
+    }
+    return merged.slice(0, 20)
+}
+
+function normalizeAgentImageSource(rawSrc: string | undefined) {
+    const src = rawSrc?.trim().replace(/^<|>$/g, "")
+    if (!src) return null
+
+    const storageUrl = normalizeS4ObjectUrl(src)
+    if (storageUrl) {
+        const objectKey = normalizeS4ObjectKey(storageUrl)
+        if (!objectKey || !IMAGE_SOURCE_PATTERN.test(objectKey)) return null
+        return {
+            src: storageUrl,
+            objectKey,
+            filename: extractImageFilename(objectKey),
+        }
+    }
+
+    if (!isExternalImageSource(src)) return null
+    return {
+        src,
+        objectKey: null,
+        filename: extractImageFilename(src),
+    }
+}
+
+function isExternalImageSource(src: string) {
+    if (/^data:image\//i.test(src)) return true
+    if (!/^https?:\/\//i.test(src)) return false
+    try {
+        const url = new URL(src)
+        return IMAGE_SOURCE_PATTERN.test(url.pathname)
+    } catch {
+        return false
+    }
+}
+
+function extractImageFilename(src: string) {
+    const clean = src.split(/[?#]/)[0] ?? src
+    const part = clean.split("/").filter(Boolean).at(-1)
+    if (!part) return "image"
+    try {
+        return decodeURIComponent(part)
+    } catch {
+        return part
+    }
+}
+
+function normalizeImageAlt(rawAlt: string | undefined, filename: string) {
+    const alt = rawAlt?.trim()
+    return alt || filename || "图片"
+}
+
+function extractHtmlAlt(rawImgTag: string | undefined) {
+    const match = rawImgTag?.match(/\balt=(["'])(.*?)\1/i)
+    return match?.[2]
 }
 
 export async function proposeWikiPatchFromAgent(input: {

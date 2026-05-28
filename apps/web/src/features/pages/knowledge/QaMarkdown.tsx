@@ -2,9 +2,20 @@
 
 import * as React from "react"
 import { useMessagePartText } from "@assistant-ui/react"
-import { Markdown, ThemeProvider } from "@lobehub/ui"
+import { Markdown, ThemeProvider, type MarkdownProps } from "@lobehub/ui"
 
 import { useTheme } from "@/components/theme-provider"
+import {
+  SignedMarkdownImage,
+  storageMarkdownUrlTransform,
+} from "@/components/assistant-ui/signed-markdown-image"
+
+const QA_REACT_MARKDOWN_PROPS = {
+  urlTransform: storageMarkdownUrlTransform,
+}
+const QA_MARKDOWN_COMPONENTS: NonNullable<MarkdownProps["components"]> = {
+  img: SignedMarkdownImage,
+}
 
 /** 解析当前明暗：跟随 app 的 theme-provider（system 时再跟随系统）。 */
 function useIsDark() {
@@ -159,6 +170,8 @@ export function QaMarkdownText() {
       animated={animating}
       enableStream
       streamSmoothingPreset="silky"
+      components={QA_MARKDOWN_COMPONENTS}
+      reactMarkdownProps={QA_REACT_MARKDOWN_PROPS}
       // KB 回答用不到图片画廊预览；关掉它顺带消除 antd Image 的 rootClassName 弃用告警。
       enableImageGallery={false}
     >
