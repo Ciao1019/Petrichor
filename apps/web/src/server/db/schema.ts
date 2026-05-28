@@ -309,6 +309,9 @@ export const knowledgeBaseAgentThreads = pgTable("petrichor_kb_agent_thread", {
 }, (table) => [
     index("idx_petrichor_kb_agent_thread_kb").on(table.userId, table.knowledgeBaseId, table.updatedAt),
     index("idx_petrichor_kb_agent_thread_user").on(table.userId, table.updatedAt),
+    // 历史对话列表：user_id/scope 过滤 + updated_at/id 稳定倒序分页
+    index("petrichor_kb_agent_thread_user_history_idx").on(table.userId, table.updatedAt, table.id),
+    index("petrichor_kb_agent_thread_scope_history_idx").on(table.userId, table.knowledgeBaseId, table.updatedAt, table.id),
     // 首页问答趋势：user_id 过滤 + created_at 时间范围聚合
     index("petrichor_kb_agent_thread_user_created_idx").on(table.userId, table.createdAt),
 ])
@@ -325,6 +328,8 @@ export const knowledgeBaseAgentMessages = pgTable("petrichor_kb_agent_message", 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
     index("idx_petrichor_kb_agent_message_thread").on(table.threadId, table.createdAt),
+    // 历史对话详情：按 thread_id 拉取消息，并用 id 稳定同时间戳下的顺序
+    index("petrichor_kb_agent_message_thread_order_idx").on(table.threadId, table.createdAt, table.id),
 ])
 
 export const knowledgeBaseAgentRuns = pgTable("petrichor_kb_agent_run", {

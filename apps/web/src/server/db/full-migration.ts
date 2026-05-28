@@ -421,6 +421,14 @@ create index if not exists petrichor_kb_agent_thread_kb_idx
 create index if not exists petrichor_kb_agent_thread_user_idx
     on petrichor_kb_agent_thread(user_id, updated_at desc);
 
+-- 历史对话列表：全部范围按 user_id 过滤并按 updated_at/id 倒序分页
+create index if not exists petrichor_kb_agent_thread_user_history_idx
+    on petrichor_kb_agent_thread(user_id, updated_at desc, id desc);
+
+-- 历史对话列表：知识库/跨库范围按 user_id + knowledge_base_id 过滤并稳定分页
+create index if not exists petrichor_kb_agent_thread_scope_history_idx
+    on petrichor_kb_agent_thread(user_id, knowledge_base_id, updated_at desc, id desc);
+
 -- 首页问答趋势：按 user_id 过滤、created_at 时间范围聚合
 create index if not exists petrichor_kb_agent_thread_user_created_idx
     on petrichor_kb_agent_thread(user_id, created_at desc);
@@ -442,6 +450,10 @@ alter table petrichor_kb_agent_message
 
 create index if not exists petrichor_kb_agent_message_thread_idx
     on petrichor_kb_agent_message(thread_id, created_at);
+
+-- 历史对话详情：按 thread_id 拉取消息，并用 id 稳定同时间戳下的顺序
+create index if not exists petrichor_kb_agent_message_thread_order_idx
+    on petrichor_kb_agent_message(thread_id, created_at, id);
 
 create table if not exists petrichor_kb_agent_run (
     id bigint generated always as identity primary key,

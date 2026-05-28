@@ -1,5 +1,5 @@
 -- ============================================================
--- 性能索引补充（针对 知识库列表 / 知识库树 / 文章列表 / 文章详情 / 首页可视化）
+-- 性能索引补充（针对 知识库列表 / 知识库树 / 文章列表 / 文章详情 / 首页可视化 / 历史对话）
 -- 适用：已有数据的线上库（Supabase / Postgres）
 --
 -- 使用 CREATE INDEX CONCURRENTLY，建索引期间不阻塞表的读写。
@@ -28,8 +28,21 @@ create index concurrently if not exists petrichor_kb_article_user_created_idx
 create index concurrently if not exists petrichor_kb_agent_thread_user_created_idx
     on petrichor_kb_agent_thread (user_id, created_at desc);
 
+-- 6) 历史对话列表：where user_id order by updated_at desc, id desc
+create index concurrently if not exists petrichor_kb_agent_thread_user_history_idx
+    on petrichor_kb_agent_thread (user_id, updated_at desc, id desc);
+
+-- 7) 历史对话列表：where user_id + knowledge_base_id order by updated_at desc, id desc
+create index concurrently if not exists petrichor_kb_agent_thread_scope_history_idx
+    on petrichor_kb_agent_thread (user_id, knowledge_base_id, updated_at desc, id desc);
+
+-- 8) 历史对话详情：where thread_id order by created_at asc, id asc
+create index concurrently if not exists petrichor_kb_agent_message_thread_order_idx
+    on petrichor_kb_agent_message (thread_id, created_at asc, id asc);
+
 -- 建完可执行 ANALYZE 让规划器尽快更新统计信息：
 -- analyze petrichor_kb_knowledge_base;
 -- analyze petrichor_kb_node;
 -- analyze petrichor_kb_article;
 -- analyze petrichor_kb_agent_thread;
+-- analyze petrichor_kb_agent_message;

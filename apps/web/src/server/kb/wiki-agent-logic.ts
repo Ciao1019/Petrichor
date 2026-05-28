@@ -462,7 +462,7 @@ export async function listAgentThreads(userId: number, knowledgeBaseId: number) 
         .select()
         .from(knowledgeBaseAgentThreads)
         .where(and(eq(knowledgeBaseAgentThreads.userId, userId), eq(knowledgeBaseAgentThreads.knowledgeBaseId, knowledgeBaseId)))
-        .orderBy(desc(knowledgeBaseAgentThreads.updatedAt))
+        .orderBy(desc(knowledgeBaseAgentThreads.updatedAt), desc(knowledgeBaseAgentThreads.id))
         .limit(50)
 
     return rows.map((row) => toAgentThreadResponse(row))
@@ -532,7 +532,7 @@ export async function loadAgentThreadDetail(userId: number, threadId: number, ex
         .select()
         .from(knowledgeBaseAgentMessages)
         .where(eq(knowledgeBaseAgentMessages.threadId, thread.id))
-        .orderBy(asc(knowledgeBaseAgentMessages.createdAt))
+        .orderBy(asc(knowledgeBaseAgentMessages.createdAt), asc(knowledgeBaseAgentMessages.id))
         .limit(200)
 
     const kbName = thread.knowledgeBaseId == null
