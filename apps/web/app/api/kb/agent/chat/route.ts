@@ -24,7 +24,7 @@ import {
 } from "@/server/kb/wiki-agent-logic"
 import { getDb } from "@/server/db/client"
 
-export const maxDuration = 60
+export const maxDuration = 300
 
 const chatRequestSchema = z.object({
     knowledgeBaseId: idSchema.optional().nullable(),
