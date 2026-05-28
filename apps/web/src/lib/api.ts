@@ -1354,3 +1354,48 @@ export const uploadApi = {
   publicPresignGet: (objectKey: string) =>
     api.post<PresignGetResponse>("/public/upload/presign-get", { objectKey }),
 }
+
+// 仪表盘总览相关类型
+export interface DashboardHeatmapPoint {
+  date: string
+  count: number
+}
+
+export interface DashboardTrendPoint {
+  date: string
+  article: number
+  qa: number
+  agent: number
+  total: number
+}
+
+export interface DashboardDistributionItem {
+  label: string
+  count: number
+}
+
+export interface DashboardOverviewResponse {
+  kpis: {
+    articles: number
+    qaThreads: number
+    knowledgeBases: number
+    activity7d: number
+  }
+  heatmap: {
+    points: DashboardHeatmapPoint[]
+    start: string
+    end: string
+    total: number
+  }
+  trend: DashboardTrendPoint[]
+  distribution: {
+    knowledgeBases: DashboardDistributionItem[]
+    tags: DashboardDistributionItem[]
+  }
+  recentThreads: KnowledgeBaseAgentThreadResponse[]
+}
+
+export const dashboardApi = {
+  /** 加载仪表盘总览：KPI、活动热力图、趋势、分布与最近问答 */
+  overview: () => api.post<DashboardOverviewResponse>("/dashboard/overview", {}),
+}
