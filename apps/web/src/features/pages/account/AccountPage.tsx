@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { authApi, type UserProfileResponse } from "@/lib/api"
 import { PasswordFields } from "@/components/account/PasswordFields"
 import { validatePasswordStrength } from "@/components/account/password-utils"
+import { LoginSessionsSection } from "@/components/account/login-sessions-section"
 import { TwoFactorSection } from "@/components/account/two-factor-section"
 import ProfileEditingAlert from "@/components/shadcn-studio/alert/alert-26"
 import ProfileUpdateSuccessAlert from "@/components/shadcn-studio/alert/alert-27"
@@ -462,6 +463,8 @@ export function AccountPage() {
                 </div>
 
                 <TwoFactorSection profile={profile} onChanged={() => void fetchProfile()} />
+
+                <LoginSessionsSection twoFactorEnabled={Boolean(profile.twoFactorEnabled)} />
 
                 <Dialog open={editOpen} onOpenChange={handleEditOpenChange}>
                   <DialogContent showCloseButton={!savingProfile}>
