@@ -47,7 +47,7 @@ export function ContributionHeatmap({ points, total, start, end, loading }: Cont
   return (
     <Card className="@container/card">
       <CardHeader>
-        <CardTitle>文章热力图</CardTitle>
+        <CardTitle>创作足迹</CardTitle>
         <CardDescription>
           过去一年共发布 <span className="text-foreground font-medium tabular-nums">{total}</span> 篇文章
         </CardDescription>
