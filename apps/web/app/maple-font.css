@@ -1,0 +1,58 @@
+/* Maple Mono：全站主字体（自托管可变 woff2，纯拉丁，中文回退到系统字体）。 */
+/* 单文件覆盖全部字重（wght 100–800），保留连字（calt）与手写体斜体。 */
+@font-face {
+  font-family: "Maple Mono";
+  src: url("/fonts/MapleMono-Variable.woff2") format("woff2-variations");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Maple Mono";
+  src: url("/fonts/MapleMono-Italic-Variable.woff2") format("woff2-variations");
+  font-weight: 100 800;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* 全站启用 Maple 的连字效果（==、!=、=>、-> 等）。 */
+:root {
+  --font-maple:
+    "Maple Mono", ui-monospace, SFMono-Regular, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+}
+
+html {
+  font-feature-settings: "calt" 1;
+  font-variant-ligatures: contextual;
+}
+
+/*
+ * 全站手写斜体：英文 / 数字 / 符号统一使用 Maple Mono 的手写体斜体（cursive italic），
+ * 中文保持正体。
+ *
+ * 原理：Maple Mono 仅覆盖拉丁字符且自带真正的 italic 字形，而中文回退到系统字体
+ * （PingFang SC / Noto Sans CJK 等），这些字体没有 italic 字形。只要：
+ *   1. 全站声明 font-style: italic —— 拉丁字符命中 Maple 的真斜体（手写体）；
+ *   2. 关闭 font-synthesis 的 style 合成 —— 中文不会被浏览器“假斜”，维持正体。
+ * 浏览器逐字符按字体渲染，于是英文走手写斜体、中文走正体，混排自动分流。
+ */
+html {
+  font-style: italic;
+  /* 保留 weight / small-caps 合成，仅禁用 style（斜体）合成，避免中文被假斜。 */
+  font-synthesis: weight small-caps;
+  font-synthesis-style: none;
+}
+
+/* 复刻 Maple 展示图:代码块关键字使用手写体斜体（cursive italic）。 */
+/* 作用域为 .plate-code-block，编辑器与静态渲染共用,token 组与现有高亮配色一致。 */
+.plate-code-block .hljs-keyword,
+.plate-code-block .hljs-doctag,
+.plate-code-block .hljs-template-tag,
+.plate-code-block .hljs-template-variable,
+.plate-code-block .hljs-type,
+.plate-code-block .hljs-variable.language_ {
+  font-style: italic;
+}
+

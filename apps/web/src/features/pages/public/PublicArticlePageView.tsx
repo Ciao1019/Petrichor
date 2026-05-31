@@ -457,7 +457,7 @@ const CARD = {
   borderDark:  "rgba(22,22,21,0.28)",
   fontDisplay: "'Cormorant Garamond', Georgia, 'Times New Roman', serif",
   fontSans:    "'Manrope', system-ui, sans-serif",
-  fontMono:    "'JetBrains Mono', 'Courier New', monospace",
+  fontMono:    "'Maple Mono', 'JetBrains Mono', 'Courier New', monospace",
 } as const
 
 function ArticleCardPreview({
