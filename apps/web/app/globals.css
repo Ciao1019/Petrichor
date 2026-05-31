@@ -4,6 +4,7 @@
 @import "tw-animate-css";
 @import "../src/styles/plate-article.css";
 @import "../src/styles/public-article.css";
+@import "./maple-font.css";
 @import "./retypeset-fonts.css";
 @import "./retypeset-home.css";
 @import "tw-shimmer";
@@ -51,6 +52,17 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --color-brand: var(--brand);
   --color-highlight: var(--highlight);
+
+  /* Maple Mono 作为全站 sans / serif / mono 字体（中文回退系统字体）。 */
+  --font-sans:
+    "Maple Mono", ui-monospace, SFMono-Regular, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-serif:
+    "Maple Mono", ui-serif, "Songti SC", "Noto Serif CJK SC", Georgia, "Times New Roman",
+    serif;
+  --font-mono:
+    "Maple Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+    monospace;
 }
 
 :root {
@@ -186,6 +198,9 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-maple);
+    font-feature-settings: "calt" 1;
+    font-variant-ligatures: contextual;
   }
 
   html.retypeset-scrollbar-hidden,
