@@ -140,7 +140,7 @@ export function AgentKeysPage() {
         <CardHeader>
           <CardTitle className="text-base">已颁发的 API Key</CardTitle>
           <CardDescription>
-            外部调用必须带 <span className="font-mono">X-Petrichor-Agent-Source</span>，否则接口会失败并写入审计日志。
+            外部调用必须带 <span className="font-mono">Authorization: Bearer $PETRICHOR_API_KEY</span>，否则接口会失败并写入审计日志。
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">

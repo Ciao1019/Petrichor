@@ -333,8 +333,6 @@ export interface AgentCallLogItem {
   id: string
   apiKeyId: string
   apiKeyPrefix: string
-  agentSource: string
-  agentTool?: string | null
   method: string
   path: string
   ip?: string | null
@@ -357,7 +355,7 @@ export const agentApi = {
   listKeys: () => api.post<AgentApiKeyListResponse>("/agent/api-key/list", {}),
   createKey: (data: AgentApiKeyCreateRequest) => api.post<AgentApiKeyCreateResponse>("/agent/api-key/create", data),
   revokeKey: (id: string) => api.post<AgentApiKeyRevokeResponse>("/agent/api-key/revoke", { id }),
-  listCallLogs: (data?: { agentSource?: string; limit?: number }) =>
+  listCallLogs: (data?: { limit?: number }) =>
     api.post<AgentCallLogListResponse>("/agent/call-log/list", data ?? {}),
 }
 
@@ -1353,4 +1351,49 @@ export const uploadApi = {
   /** 公开版：获取预签名下载 URL，用于公开分享文章的附件（无需登录） */
   publicPresignGet: (objectKey: string) =>
     api.post<PresignGetResponse>("/public/upload/presign-get", { objectKey }),
+}
+
+// 仪表盘总览相关类型
+export interface DashboardHeatmapPoint {
+  date: string
+  count: number
+}
+
+export interface DashboardTrendPoint {
+  date: string
+  article: number
+  qa: number
+  agent: number
+  total: number
+}
+
+export interface DashboardDistributionItem {
+  label: string
+  count: number
+}
+
+export interface DashboardOverviewResponse {
+  kpis: {
+    articles: number
+    qaThreads: number
+    knowledgeBases: number
+    activity7d: number
+  }
+  heatmap: {
+    points: DashboardHeatmapPoint[]
+    start: string
+    end: string
+    total: number
+  }
+  trend: DashboardTrendPoint[]
+  distribution: {
+    knowledgeBases: DashboardDistributionItem[]
+    tags: DashboardDistributionItem[]
+  }
+  recentThreads: KnowledgeBaseAgentThreadResponse[]
+}
+
+export const dashboardApi = {
+  /** 加载仪表盘总览：KPI、活动热力图、趋势、分布与最近问答 */
+  overview: () => api.post<DashboardOverviewResponse>("/dashboard/overview", {}),
 }

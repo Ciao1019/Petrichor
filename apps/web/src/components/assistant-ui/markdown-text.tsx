@@ -13,12 +13,14 @@ import { type FC, memo, useState } from "react";
 import { CheckIcon, CopyIcon } from "lucide-react";
 
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
+import { SignedMarkdownImage, storageMarkdownUrlTransform } from "@/components/assistant-ui/signed-markdown-image";
 import { cn } from "@/lib/utils";
 
 const MarkdownTextImpl = () => {
   return (
     <MarkdownTextPrimitive
       remarkPlugins={[remarkGfm]}
+      urlTransform={storageMarkdownUrlTransform}
       className="aui-md"
       components={defaultComponents}
     />
@@ -144,6 +146,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
+  img: SignedMarkdownImage,
   blockquote: ({ className, ...props }) => (
     <blockquote
       className={cn(

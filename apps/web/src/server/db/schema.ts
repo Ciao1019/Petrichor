@@ -147,6 +147,8 @@ export const knowledgeBases = pgTable("petrichor_kb_knowledge_base", {
     ...timestamps,
 }, (table) => [
     index("idx_petrichor_kb_user_id").on(table.userId),
+    // 知识库列表：user_id 过滤 + updated_at 排序
+    index("petrichor_kb_knowledge_base_user_updated_idx").on(table.userId, table.updatedAt),
 ])
 
 export const knowledgeBaseNodes = pgTable("petrichor_kb_node", {
@@ -161,6 +163,8 @@ export const knowledgeBaseNodes = pgTable("petrichor_kb_node", {
 }, (table) => [
     index("idx_petrichor_kb_node_user_kb").on(table.userId, table.knowledgeBaseId),
     index("idx_petrichor_kb_node_parent").on(table.knowledgeBaseId, table.parentId, table.sortOrder),
+    // 知识库树加载：user_id + knowledge_base_id 过滤 + sort_order/id 排序
+    index("petrichor_kb_node_user_kb_order_idx").on(table.userId, table.knowledgeBaseId, table.sortOrder, table.id),
 ])
 
 export const knowledgeBaseArticles = pgTable("petrichor_kb_article", {
@@ -189,6 +193,8 @@ export const knowledgeBaseArticles = pgTable("petrichor_kb_article", {
 }, (table) => [
     index("idx_petrichor_kb_article_user_kb").on(table.userId, table.knowledgeBaseId),
     index("idx_petrichor_kb_article_public_updated").on(table.updatedAt, table.id),
+    // 首页文章热力图/趋势：user_id 过滤 + created_at 时间范围聚合
+    index("petrichor_kb_article_user_created_idx").on(table.userId, table.createdAt),
     uniqueIndex("ux_petrichor_kb_article_node_id").on(table.nodeId),
 ])
 
@@ -303,6 +309,11 @@ export const knowledgeBaseAgentThreads = pgTable("petrichor_kb_agent_thread", {
 }, (table) => [
     index("idx_petrichor_kb_agent_thread_kb").on(table.userId, table.knowledgeBaseId, table.updatedAt),
     index("idx_petrichor_kb_agent_thread_user").on(table.userId, table.updatedAt),
+    // 历史对话列表：user_id/scope 过滤 + updated_at/id 稳定倒序分页
+    index("petrichor_kb_agent_thread_user_history_idx").on(table.userId, table.updatedAt, table.id),
+    index("petrichor_kb_agent_thread_scope_history_idx").on(table.userId, table.knowledgeBaseId, table.updatedAt, table.id),
+    // 首页问答趋势：user_id 过滤 + created_at 时间范围聚合
+    index("petrichor_kb_agent_thread_user_created_idx").on(table.userId, table.createdAt),
 ])
 
 export const knowledgeBaseAgentMessages = pgTable("petrichor_kb_agent_message", {
@@ -317,6 +328,8 @@ export const knowledgeBaseAgentMessages = pgTable("petrichor_kb_agent_message", 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
     index("idx_petrichor_kb_agent_message_thread").on(table.threadId, table.createdAt),
+    // 历史对话详情：按 thread_id 拉取消息，并用 id 稳定同时间戳下的顺序
+    index("petrichor_kb_agent_message_thread_order_idx").on(table.threadId, table.createdAt, table.id),
 ])
 
 export const knowledgeBaseAgentRuns = pgTable("petrichor_kb_agent_run", {
@@ -400,8 +413,6 @@ export const agentCallLogs = pgTable("petrichor_agent_call_log", {
     userId: bigint("user_id", { mode: "number" }).notNull(),
     apiKeyId: bigint("api_key_id", { mode: "number" }).notNull(),
     apiKeyPrefix: text("api_key_prefix").notNull(),
-    agentSource: text("agent_source").notNull(),
-    agentTool: text("agent_tool"),
     method: text("method").notNull(),
     path: text("path").notNull(),
     ip: text("ip"),
@@ -415,7 +426,6 @@ export const agentCallLogs = pgTable("petrichor_agent_call_log", {
 }, (table) => [
     index("idx_petrichor_agent_call_log_user_created").on(table.userId, table.createdAt),
     index("idx_petrichor_agent_call_log_key_created").on(table.apiKeyId, table.createdAt),
-    index("idx_petrichor_agent_call_log_source_created").on(table.userId, table.agentSource, table.createdAt),
 ])
 
 export const siteAboutProfiles = pgTable("petrichor_site_about_profile", {
