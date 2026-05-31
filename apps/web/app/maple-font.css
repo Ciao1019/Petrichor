@@ -1,0 +1,29 @@
+/* Maple Mono：全站主字体（自托管可变 woff2，纯拉丁，中文回退到系统字体）。 */
+/* 单文件覆盖全部字重（wght 100–800），保留连字（calt）与手写体斜体。 */
+@font-face {
+  font-family: "Maple Mono";
+  src: url("/fonts/MapleMono-Variable.woff2") format("woff2-variations");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Maple Mono";
+  src: url("/fonts/MapleMono-Italic-Variable.woff2") format("woff2-variations");
+  font-weight: 100 800;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* 全站启用 Maple 的连字效果（==、!=、=>、-> 等）。 */
+:root {
+  --font-maple:
+    "Maple Mono", ui-monospace, SFMono-Regular, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+}
+
+html {
+  font-feature-settings: "calt" 1;
+  font-variant-ligatures: contextual;
+}
