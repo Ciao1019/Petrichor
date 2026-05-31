@@ -333,8 +333,6 @@ export interface AgentCallLogItem {
   id: string
   apiKeyId: string
   apiKeyPrefix: string
-  agentSource: string
-  agentTool?: string | null
   method: string
   path: string
   ip?: string | null
@@ -357,7 +355,7 @@ export const agentApi = {
   listKeys: () => api.post<AgentApiKeyListResponse>("/agent/api-key/list", {}),
   createKey: (data: AgentApiKeyCreateRequest) => api.post<AgentApiKeyCreateResponse>("/agent/api-key/create", data),
   revokeKey: (id: string) => api.post<AgentApiKeyRevokeResponse>("/agent/api-key/revoke", { id }),
-  listCallLogs: (data?: { agentSource?: string; limit?: number }) =>
+  listCallLogs: (data?: { limit?: number }) =>
     api.post<AgentCallLogListResponse>("/agent/call-log/list", data ?? {}),
 }
 

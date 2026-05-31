@@ -115,7 +115,6 @@ const agentKnowledgeBaseTreeSchema = z.object({
 })
 
 const agentCallLogListSchema = z.object({
-    agentSource: z.string().trim().max(80).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional().default(30),
 })
 
@@ -215,14 +214,11 @@ async function withAgent(request: NextRequest, handler: (context: AgentAuthConte
     const startedAt = Date.now()
     const requestText = await readRequestTextForLog(request)
     let context: AgentAuthContext | null = null
-    let attribution: AgentAttribution | null = null
 
     try {
         context = await authenticateAgentRequest(request)
-        attribution = resolveAgentAttribution(request)
         const response = await handler(context)
         await recordAgentCallLog({
-            attribution,
             context,
             durationMs: Date.now() - startedAt,
             request,
@@ -234,7 +230,6 @@ async function withAgent(request: NextRequest, handler: (context: AgentAuthConte
         const response = toErrorResponse(error, request.nextUrl.pathname)
         if (context) {
             await recordAgentCallLog({
-                attribution: attribution ?? resolveMissingAgentAttribution(request),
                 context,
                 durationMs: Date.now() - startedAt,
                 error,
@@ -309,15 +304,11 @@ export async function revokeAgentApiKey(request: NextRequest) {
 export async function listAgentCallLogs(request: NextRequest) {
     return withUser(request, async (user) => {
         const input = agentCallLogListSchema.parse(await readJson(request))
-        const filters = [eq(agentCallLogs.userId, user.id)]
-        if (input.agentSource) {
-            filters.push(eq(agentCallLogs.agentSource, input.agentSource))
-        }
 
         const rows = await getDb()
             .select()
             .from(agentCallLogs)
-            .where(and(...filters))
+            .where(eq(agentCallLogs.userId, user.id))
             .orderBy(desc(agentCallLogs.createdAt), desc(agentCallLogs.id))
             .limit(input.limit)
 
@@ -359,33 +350,6 @@ export async function agentCapabilities(request: NextRequest) {
     })
 }
 
-type AgentAttribution = {
-    source: string
-    tool: string | null
-}
-
-function resolveAgentAttribution(request: NextRequest): AgentAttribution {
-    const source = request.headers.get("x-petrichor-agent-source")?.trim() ?? ""
-    const tool = request.headers.get("x-petrichor-agent-tool")?.trim() || null
-    if (!source) {
-        throw badRequest("缺少 X-Petrichor-Agent-Source 请求头")
-    }
-    if (source.length > 80) {
-        throw badRequest("X-Petrichor-Agent-Source 不能超过 80 个字符")
-    }
-    if (tool && tool.length > 120) {
-        throw badRequest("X-Petrichor-Agent-Tool 不能超过 120 个字符")
-    }
-    return { source, tool }
-}
-
-function resolveMissingAgentAttribution(request: NextRequest): AgentAttribution {
-    return {
-        source: "missing-source",
-        tool: request.headers.get("x-petrichor-agent-tool")?.trim() || null,
-    }
-}
-
 async function readRequestTextForLog(request: NextRequest) {
     try {
         return clipLogText(await request.clone().text())
@@ -403,7 +367,6 @@ async function responseTextForLog(response: Response) {
 }
 
 async function recordAgentCallLog(input: {
-    attribution: AgentAttribution
     context: AgentAuthContext
     durationMs: number
     error?: unknown
@@ -418,8 +381,6 @@ async function recordAgentCallLog(input: {
                 userId: input.context.userId,
                 apiKeyId: input.context.apiKey.id,
                 apiKeyPrefix: input.context.apiKey.keyPrefix,
-                agentSource: input.attribution.source,
-                agentTool: input.attribution.tool,
                 method: input.request.method,
                 path: input.request.nextUrl.pathname,
                 ip: resolveClientIp(input.request),
@@ -457,8 +418,6 @@ function toAgentCallLogResponse(record: typeof agentCallLogs.$inferSelect) {
         id: String(record.id),
         apiKeyId: String(record.apiKeyId),
         apiKeyPrefix: record.apiKeyPrefix,
-        agentSource: record.agentSource,
-        agentTool: record.agentTool,
         method: record.method,
         path: record.path,
         ip: record.ip,

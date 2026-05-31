@@ -55,8 +55,6 @@ export function buildShellSnippet(apiKey: string) {
   return [
     `export PETRICHOR_BASE_URL="${getBaseUrl()}"`,
     `export PETRICHOR_API_KEY="${apiKey}"`,
-    `export PETRICHOR_AGENT_SOURCE="codex"`,
-    `export PETRICHOR_AGENT_TOOL="petrichor"`,
   ].join("\n")
 }
 
