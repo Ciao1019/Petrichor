@@ -42,15 +42,9 @@ export function buildAgentManifest(baseUrl: string) {
             env: "PETRICHOR_API_KEY",
             header: "Authorization: Bearer <apiKey>",
         },
-        requiredHeaders: {
-            "X-Petrichor-Agent-Source": "调用方标识，例如 claude-code、codex、openclaw、custom-agent",
-            "X-Petrichor-Agent-Tool": "可选，具体子能力名，例如 petrichor-articles、petrichor-qa",
-        },
         env: {
             PETRICHOR_BASE_URL: normalizeAgentBaseUrl(baseUrl),
             PETRICHOR_API_KEY: "ptc_live_xxx",
-            PETRICHOR_AGENT_SOURCE: "codex",
-            PETRICHOR_AGENT_TOOL: "petrichor",
         },
         scopes: {
             "article:write": ["article.create", "article.update", "article.move", "folder.create"],
@@ -87,8 +81,6 @@ curl -L "${normalizedBaseUrl}${endpoints.skillPack}" -o petrichor-skill.zip
 \`\`\`bash
 export PETRICHOR_BASE_URL="${normalizedBaseUrl}"
 export PETRICHOR_API_KEY="ptc_live_xxx"
-export PETRICHOR_AGENT_SOURCE="codex"
-export PETRICHOR_AGENT_TOOL="petrichor"
 \`\`\`
 
 ## 通用规则
@@ -96,7 +88,6 @@ export PETRICHOR_AGENT_TOOL="petrichor"
 - 推荐用 Skill 包内附带的 \`scripts/petrichor\` CLI（零依赖 Python 3.8+）代替裸 curl，错误信息更友好。
 - 不要输出完整 API Key。
 - 所有受保护接口带上 \`Authorization: Bearer $PETRICHOR_API_KEY\`。
-- 所有受保护接口必须带上 \`X-Petrichor-Agent-Source\`，否则调用失败并写入审计日志。
 - 删除文章前必须向用户复述文章 ID 和标题，并获得明确确认。
 - 启用分享密码、设置到期时间、撤销分享前，先用 \`share info\` 复述当前状态。
 - 触发 AI 生成（summary、mindmap）前，先告诉用户会调用模型可能产生费用。
@@ -107,9 +98,7 @@ export PETRICHOR_AGENT_TOOL="petrichor"
 \`\`\`bash
 curl -sS "$PETRICHOR_BASE_URL${endpoints.manifest}"
 curl -sS "$PETRICHOR_BASE_URL${endpoints.capabilities}" \\
-  -H "Authorization: Bearer $PETRICHOR_API_KEY" \\
-  -H "X-Petrichor-Agent-Source: $PETRICHOR_AGENT_SOURCE" \\
-  -H "X-Petrichor-Agent-Tool: \${PETRICHOR_AGENT_TOOL:-petrichor}"
+  -H "Authorization: Bearer $PETRICHOR_API_KEY"
 \`\`\`
 
 文章：
@@ -117,8 +106,6 @@ curl -sS "$PETRICHOR_BASE_URL${endpoints.capabilities}" \\
 \`\`\`bash
 curl -sS -X POST "$PETRICHOR_BASE_URL${endpoints.articleCreate}" \\
   -H "Authorization: Bearer $PETRICHOR_API_KEY" \\
-  -H "X-Petrichor-Agent-Source: $PETRICHOR_AGENT_SOURCE" \\
-  -H "X-Petrichor-Agent-Tool: \${PETRICHOR_AGENT_TOOL:-petrichor}" \\
   -H "Content-Type: application/json" \\
   -d '{"knowledgeBaseId":"1","title":"标题","contentMd":"# 标题\\n\\n正文","tags":["agent"]}'
 \`\`\`
@@ -128,8 +115,6 @@ curl -sS -X POST "$PETRICHOR_BASE_URL${endpoints.articleCreate}" \\
 \`\`\`bash
 curl -sS -X POST "$PETRICHOR_BASE_URL${endpoints.documentQa}" \\
   -H "Authorization: Bearer $PETRICHOR_API_KEY" \\
-  -H "X-Petrichor-Agent-Source: $PETRICHOR_AGENT_SOURCE" \\
-  -H "X-Petrichor-Agent-Tool: \${PETRICHOR_AGENT_TOOL:-petrichor}" \\
   -H "Content-Type: application/json" \\
   -d '{"question":"问题","knowledgeBaseId":"1","limit":6}'
 \`\`\`
@@ -180,8 +165,6 @@ chmod +x scripts/petrichor
 \`\`\`bash
 export PETRICHOR_BASE_URL="${baseUrl}"
 export PETRICHOR_API_KEY="ptc_live_xxx"
-export PETRICHOR_AGENT_SOURCE="codex"        # 必填：调用方标识
-export PETRICHOR_AGENT_TOOL="petrichor"      # 可选：子能力名
 \`\`\`
 
 > 如果运行环境没有 Python 3.8+，回退到 \`scripts/petrichor-api.sh\`（curl 版本，功能等价）。
@@ -199,12 +182,10 @@ export PETRICHOR_AGENT_TOOL="petrichor"      # 可选：子能力名
 
 子文档默认按需加载；用户的请求涉及多个意图（例如先搜索再问答）时按顺序读多个子文档。
 
-读取子文档前，可以根据意图把 \`PETRICHOR_AGENT_TOOL\` 设成对应名字（\`petrichor-articles\`、\`petrichor-docs\`、\`petrichor-qa\`、\`petrichor-share\`、\`petrichor-ai\`、\`petrichor-setup\`），让审计日志能区分流量来源。
-
 ## 通用规则（任何子文档都生效）
 
 - 不要把完整 API Key 写入文件、提交、日志或最终回复。
-- 所有受保护接口必须带 \`Authorization: Bearer $PETRICHOR_API_KEY\` 与 \`X-Petrichor-Agent-Source\`，否则会失败并写入审计日志。
+- 所有受保护接口必须带 \`Authorization: Bearer $PETRICHOR_API_KEY\`，否则会失败并写入审计日志。
 - 删除文章前必须向用户复述文章 ID 和标题，并获得明确确认。
 - 启用分享密码、设置到期时间、撤销分享前，先用 \`share info\` 复述当前状态。
 - 触发 AI 生成（summary、mindmap）前，先告诉用户会调用模型可能产生费用。
@@ -218,12 +199,6 @@ export PETRICHOR_AGENT_TOOL="petrichor"      # 可选：子能力名
 
 function buildSetupSubSkillMarkdown(baseUrl: string) {
     return `# Petrichor — Setup（安装与自检）
-
-切到这个子能力时设置：
-
-\`\`\`bash
-export PETRICHOR_AGENT_TOOL="petrichor-setup"
-\`\`\`
 
 ## 安装 CLI
 
@@ -242,12 +217,9 @@ chmod +x scripts/petrichor
 \`\`\`bash
 export PETRICHOR_BASE_URL="${baseUrl}"
 export PETRICHOR_API_KEY="ptc_live_xxx"
-export PETRICHOR_AGENT_SOURCE="codex"
-export PETRICHOR_AGENT_TOOL="petrichor-setup"
 \`\`\`
 
-不要把完整 API Key 写入文件、提交、日志或最终回复。必须设置 \`PETRICHOR_AGENT_SOURCE\`，
-例如 \`claude-code\`、\`codex\`、\`openclaw\` 或更具体的内部工具名。
+不要把完整 API Key 写入文件、提交、日志或最终回复。
 
 ## 自检
 
@@ -269,12 +241,6 @@ scripts/petrichor capabilities
 
 function buildArticlesSubSkillMarkdown() {
     return `# Petrichor — Articles（文章/文件夹写操作）
-
-切到这个子能力时设置：
-
-\`\`\`bash
-export PETRICHOR_AGENT_TOOL="petrichor-articles"
-\`\`\`
 
 ## 工作流
 
@@ -326,12 +292,6 @@ scripts/petrichor article move --article-id 123 --parent-root
 function buildDocsSubSkillMarkdown() {
     return `# Petrichor — Docs（文档读 / 搜 / 看）
 
-切到这个子能力时设置：
-
-\`\`\`bash
-export PETRICHOR_AGENT_TOOL="petrichor-docs"
-\`\`\`
-
 ## 工作流
 
 1. 先 \`scripts/petrichor kb list\` 找知识库。
@@ -358,12 +318,6 @@ scripts/petrichor doc view --kb-id 1 --page-key index
 function buildQaSubSkillMarkdown() {
     return `# Petrichor — QA（文档问答）
 
-切到这个子能力时设置：
-
-\`\`\`bash
-export PETRICHOR_AGENT_TOOL="petrichor-qa"
-\`\`\`
-
 ## 工作流
 
 1. 如果用户限定知识库，传 \`--kb-id\`。
@@ -384,12 +338,6 @@ scripts/petrichor doc ask --question "跨库的问题"
 
 function buildShareSubSkillMarkdown() {
     return `# Petrichor — Share（文章分享管理）
-
-切到这个子能力时设置：
-
-\`\`\`bash
-export PETRICHOR_AGENT_TOOL="petrichor-share"
-\`\`\`
 
 需要 \`share:write\` 权限。所有操作面向单篇文章，仅文章拥有者可执行。
 
@@ -421,12 +369,6 @@ scripts/petrichor share info --article-id 123
 
 function buildAiSubSkillMarkdown() {
     return `# Petrichor — AI（摘要 / 思维导图 / 知识图谱）
-
-切到这个子能力时设置：
-
-\`\`\`bash
-export PETRICHOR_AGENT_TOOL="petrichor-ai"
-\`\`\`
 
 需要 \`ai:write\` 权限。生成操作会调用用户配置的默认对话模型，可能产生费用。
 
@@ -470,11 +412,6 @@ if [[ -z "\${PETRICHOR_API_KEY:-}" ]]; then
   exit 2
 fi
 
-if [[ -z "\${PETRICHOR_AGENT_SOURCE:-}" ]]; then
-  echo "缺少 PETRICHOR_AGENT_SOURCE，外部 Agent 调用必须声明来源方" >&2
-  exit 2
-fi
-
 if [[ -z "$method" || -z "$path" ]]; then
   echo "用法: bash scripts/petrichor-api.sh METHOD /api/agent/path JSON_BODY" >&2
   exit 2
@@ -486,15 +423,11 @@ url="$base$path"
 if [[ -n "$body" ]]; then
   curl -sS -X "$method" "$url" \\
     -H "Authorization: Bearer $PETRICHOR_API_KEY" \\
-    -H "X-Petrichor-Agent-Source: $PETRICHOR_AGENT_SOURCE" \\
-    -H "X-Petrichor-Agent-Tool: \${PETRICHOR_AGENT_TOOL:-petrichor}" \\
     -H "Content-Type: application/json" \\
     -d "$body"
 else
   curl -sS -X "$method" "$url" \\
     -H "Authorization: Bearer $PETRICHOR_API_KEY" \\
-    -H "X-Petrichor-Agent-Source: $PETRICHOR_AGENT_SOURCE" \\
-    -H "X-Petrichor-Agent-Tool: \${PETRICHOR_AGENT_TOOL:-petrichor}" \\
     -H "Content-Type: application/json"
 fi
 `
@@ -509,11 +442,7 @@ function buildCommonEndpointReference() {
 
 \`\`\`http
 Authorization: Bearer <PETRICHOR_API_KEY>
-X-Petrichor-Agent-Source: <claude-code|codex|openclaw|custom>
-X-Petrichor-Agent-Tool: <可选的子能力名，如 petrichor-articles>
 \`\`\`
-
-缺少 \`X-Petrichor-Agent-Source\` 时，接口会失败并写入审计日志。
 
 ## 发现与自检
 
@@ -609,8 +538,6 @@ Requires Python 3.8+. Uses only the standard library (urllib, argparse, json).
 Environment variables (required unless noted):
   PETRICHOR_BASE_URL       e.g. https://petrichor.example.com
   PETRICHOR_API_KEY        Agent API Key generated in the Petrichor dashboard
-  PETRICHOR_AGENT_SOURCE   caller identity (e.g. claude-code, codex, openclaw)
-  PETRICHOR_AGENT_TOOL     (optional) specific sub-skill / tool name
 
 Run --help on any command to see usage:
   petrichor --help
@@ -632,8 +559,6 @@ EXIT_USAGE = 2
 EXIT_CONFIG = 3
 EXIT_HTTP = 4
 EXIT_NETWORK = 5
-
-DEFAULT_AGENT_TOOL = "petrichor"
 
 
 def _env(name: str, required: bool = True) -> Optional[str]:
@@ -657,8 +582,6 @@ def _request(
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     if require_auth:
         headers["Authorization"] = f"Bearer {_env('PETRICHOR_API_KEY')}"
-        headers["X-Petrichor-Agent-Source"] = _env("PETRICHOR_AGENT_SOURCE")
-        headers["X-Petrichor-Agent-Tool"] = os.environ.get("PETRICHOR_AGENT_TOOL", DEFAULT_AGENT_TOOL)
 
     data = None if body is None else json.dumps(body).encode("utf-8")
     req = urlrequest.Request(url, data=data, method=method, headers=headers)

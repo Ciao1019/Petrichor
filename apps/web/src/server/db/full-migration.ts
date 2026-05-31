@@ -206,6 +206,10 @@ create table if not exists petrichor_kb_knowledge_base (
 create index if not exists petrichor_kb_knowledge_base_user_id_idx
     on petrichor_kb_knowledge_base(user_id);
 
+-- 知识库列表按 user_id 过滤、updated_at 排序
+create index if not exists petrichor_kb_knowledge_base_user_updated_idx
+    on petrichor_kb_knowledge_base(user_id, updated_at desc);
+
 create table if not exists petrichor_kb_node (
     id bigint generated always as identity primary key,
     user_id bigint not null references petrichor_user(id) on delete cascade,
@@ -220,6 +224,10 @@ create table if not exists petrichor_kb_node (
 
 create index if not exists petrichor_kb_node_kb_parent_order_idx
     on petrichor_kb_node(knowledge_base_id, parent_id, sort_order);
+
+-- 知识库树加载：按 user_id + knowledge_base_id 过滤并按 sort_order/id 排序
+create index if not exists petrichor_kb_node_user_kb_order_idx
+    on petrichor_kb_node(user_id, knowledge_base_id, sort_order, id);
 
 create table if not exists petrichor_kb_article (
     id bigint generated always as identity primary key,
@@ -253,6 +261,14 @@ create index if not exists petrichor_kb_article_kb_updated_idx
 
 create index if not exists petrichor_kb_article_public_updated_idx
     on petrichor_kb_article(updated_at desc, id desc);
+
+-- 文章按 user_id + knowledge_base_id 过滤（列表、按库删除、内容分布统计）
+create index if not exists petrichor_kb_article_user_kb_idx
+    on petrichor_kb_article(user_id, knowledge_base_id);
+
+-- 首页文章热力图/趋势：按 user_id 过滤、created_at 时间范围聚合
+create index if not exists petrichor_kb_article_user_created_idx
+    on petrichor_kb_article(user_id, created_at desc);
 
 alter table petrichor_kb_article
     add column if not exists ai_summary text,
@@ -405,6 +421,18 @@ create index if not exists petrichor_kb_agent_thread_kb_idx
 create index if not exists petrichor_kb_agent_thread_user_idx
     on petrichor_kb_agent_thread(user_id, updated_at desc);
 
+-- 历史对话列表：全部范围按 user_id 过滤并按 updated_at/id 倒序分页
+create index if not exists petrichor_kb_agent_thread_user_history_idx
+    on petrichor_kb_agent_thread(user_id, updated_at desc, id desc);
+
+-- 历史对话列表：知识库/跨库范围按 user_id + knowledge_base_id 过滤并稳定分页
+create index if not exists petrichor_kb_agent_thread_scope_history_idx
+    on petrichor_kb_agent_thread(user_id, knowledge_base_id, updated_at desc, id desc);
+
+-- 首页问答趋势：按 user_id 过滤、created_at 时间范围聚合
+create index if not exists petrichor_kb_agent_thread_user_created_idx
+    on petrichor_kb_agent_thread(user_id, created_at desc);
+
 create table if not exists petrichor_kb_agent_message (
     id bigint generated always as identity primary key,
     thread_id bigint not null references petrichor_kb_agent_thread(id) on delete cascade,
@@ -422,6 +450,10 @@ alter table petrichor_kb_agent_message
 
 create index if not exists petrichor_kb_agent_message_thread_idx
     on petrichor_kb_agent_message(thread_id, created_at);
+
+-- 历史对话详情：按 thread_id 拉取消息，并用 id 稳定同时间戳下的顺序
+create index if not exists petrichor_kb_agent_message_thread_order_idx
+    on petrichor_kb_agent_message(thread_id, created_at, id);
 
 create table if not exists petrichor_kb_agent_run (
     id bigint generated always as identity primary key,
@@ -524,8 +556,6 @@ create table if not exists petrichor_agent_call_log (
     user_id bigint not null references petrichor_user(id) on delete cascade,
     api_key_id bigint not null references petrichor_agent_api_key(id) on delete cascade,
     api_key_prefix text not null,
-    agent_source text not null,
-    agent_tool text,
     method text not null,
     path text not null,
     ip text,
@@ -543,9 +573,6 @@ create index if not exists idx_petrichor_agent_call_log_user_created
 
 create index if not exists idx_petrichor_agent_call_log_key_created
     on petrichor_agent_call_log(api_key_id, created_at desc);
-
-create index if not exists idx_petrichor_agent_call_log_source_created
-    on petrichor_agent_call_log(user_id, agent_source, created_at desc);
 
 create table if not exists petrichor_site_about_profile (
     id integer primary key,

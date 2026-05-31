@@ -48,6 +48,7 @@ import { toast } from "sonner"
 
 import { ContextDisplay } from "@/components/assistant-ui/context-display"
 import { MarkdownText } from "@/components/assistant-ui/markdown-text"
+import { QaMarkdownScope, QaMarkdownText, QaPreparing } from "@/features/pages/knowledge/QaMarkdown"
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback"
 import { CitationList } from "@/components/tool-ui/citation"
 import { safeParseSerializableCitation } from "@/components/tool-ui/citation/schema"
@@ -1071,6 +1072,7 @@ function QaChatPanel({
       <ReadWikiToolUI />
       <ReadSourceToolUI />
       <SaveArtifactToolUI />
+      <QaMarkdownScope>
       <div className="h-full min-h-0">
         <GrokThread
           scopeName={scopeName}
@@ -1084,6 +1086,7 @@ function QaChatPanel({
           onComposerFocus={onComposerFocus}
         />
       </div>
+      </QaMarkdownScope>
     </AssistantRuntimeProvider>
   )
 }
@@ -1569,10 +1572,24 @@ function AssistantMessageBubble() {
   return (
     <div className="flex flex-col items-start">
       <div className="w-full max-w-none">
-        <div className="prose prose-sm wrap-break-word dark:prose-invert prose-li:my-1 prose-ol:my-1 prose-p:my-2 prose-ul:my-1 text-[#0d0d0d] dark:text-[#e5e5e5]">
+        <AuiIf
+          condition={(s) =>
+            s.thread.isRunning &&
+            // 本条助手消息还没有任何可见内容（首字 / 工具调用 / 推理）时显示
+            !s.message.parts.some(
+              (part) =>
+                (part.type === "text" && part.text.trim().length > 0) ||
+                part.type === "tool-call" ||
+                part.type === "reasoning",
+            )
+          }
+        >
+          <QaPreparing />
+        </AuiIf>
+        <div className="wrap-break-word">
           <MessagePrimitive.Parts>
             {({ part }) => {
-              if (part.type === "text") return <MarkdownText />
+              if (part.type === "text") return <QaMarkdownText />
               if (part.type === "tool-call") {
                 return (
                   <div className="not-prose my-3">
