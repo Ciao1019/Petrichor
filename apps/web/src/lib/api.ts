@@ -158,6 +158,31 @@ export const twoFactorApi = {
     api.post<TwoFactorGenerateBackupCodesResponse>("/auth/two-factor/generate-backup-codes", data),
 }
 
+// 登录会话（多地登录）管理相关类型
+export interface AuthSessionItem {
+  id: string
+  ip: string | null
+  userAgent: string | null
+  createdAt: string
+  lastActiveAt: string
+  expiresAt: string
+  current: boolean
+}
+
+export interface AuthSessionListResponse {
+  sessions: AuthSessionItem[]
+  currentSessionId: string | null
+  twoFactorEnabled: boolean
+}
+
+export const authSessionApi = {
+  list: () => api.get<AuthSessionListResponse>("/auth/sessions"),
+  revoke: (data: { sessionId: string; code: string }) =>
+    api.post<{ success: boolean }>("/auth/sessions/revoke", data),
+  revokeOthers: (data: { code: string }) =>
+    api.post<{ success: boolean; revokedCount: number }>("/auth/sessions/revoke-others", data),
+}
+
 // 知识库相关类型
 export interface KnowledgeBaseResponse {
   id: string
