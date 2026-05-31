@@ -556,8 +556,6 @@ create table if not exists petrichor_agent_call_log (
     user_id bigint not null references petrichor_user(id) on delete cascade,
     api_key_id bigint not null references petrichor_agent_api_key(id) on delete cascade,
     api_key_prefix text not null,
-    agent_source text not null,
-    agent_tool text,
     method text not null,
     path text not null,
     ip text,
@@ -575,9 +573,6 @@ create index if not exists idx_petrichor_agent_call_log_user_created
 
 create index if not exists idx_petrichor_agent_call_log_key_created
     on petrichor_agent_call_log(api_key_id, created_at desc);
-
-create index if not exists idx_petrichor_agent_call_log_source_created
-    on petrichor_agent_call_log(user_id, agent_source, created_at desc);
 
 create table if not exists petrichor_site_about_profile (
     id integer primary key,

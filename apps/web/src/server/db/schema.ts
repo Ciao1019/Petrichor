@@ -413,8 +413,6 @@ export const agentCallLogs = pgTable("petrichor_agent_call_log", {
     userId: bigint("user_id", { mode: "number" }).notNull(),
     apiKeyId: bigint("api_key_id", { mode: "number" }).notNull(),
     apiKeyPrefix: text("api_key_prefix").notNull(),
-    agentSource: text("agent_source").notNull(),
-    agentTool: text("agent_tool"),
     method: text("method").notNull(),
     path: text("path").notNull(),
     ip: text("ip"),
@@ -428,7 +426,6 @@ export const agentCallLogs = pgTable("petrichor_agent_call_log", {
 }, (table) => [
     index("idx_petrichor_agent_call_log_user_created").on(table.userId, table.createdAt),
     index("idx_petrichor_agent_call_log_key_created").on(table.apiKeyId, table.createdAt),
-    index("idx_petrichor_agent_call_log_source_created").on(table.userId, table.agentSource, table.createdAt),
 ])
 
 export const siteAboutProfiles = pgTable("petrichor_site_about_profile", {

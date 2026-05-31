@@ -11,7 +11,6 @@ import {
   Loader2,
   Network,
   RefreshCw,
-  Workflow,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -22,6 +21,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { CodeBlock, CodeBlockCode } from "@/components/ui/code-block"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination"
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -29,45 +35,13 @@ import { cn } from "@/lib/utils"
 
 import { formatDateTime, formatPayload, normalizeAxiosErrorMessage } from "./agent-shared"
 
-const SOURCE_BADGE_CLASSES = [
-  "bg-emerald-500/10 text-emerald-700 border-emerald-200 dark:text-emerald-400 dark:border-emerald-800",
-  "bg-indigo-500/10 text-indigo-700 border-indigo-200 dark:text-indigo-400 dark:border-indigo-800",
-  "bg-amber-500/10 text-amber-700 border-amber-200 dark:text-amber-400 dark:border-amber-800",
-  "bg-violet-500/10 text-violet-700 border-violet-200 dark:text-violet-400 dark:border-violet-800",
-  "bg-sky-500/10 text-sky-700 border-sky-200 dark:text-sky-400 dark:border-sky-800",
-  "bg-rose-500/10 text-rose-700 border-rose-200 dark:text-rose-400 dark:border-rose-800",
-  "bg-teal-500/10 text-teal-700 border-teal-200 dark:text-teal-400 dark:border-teal-800",
-] as const
-
-const KNOWN_SOURCE_INDEX: Record<string, number> = {
-  codex: 1,
-  "claude-code": 0,
-  claude: 0,
-  openclaw: 3,
-  cursor: 4,
-  "missing-source": 5,
-}
-
-function sourceBadgeClass(source: string) {
-  const normalized = source.toLowerCase()
-  const known = KNOWN_SOURCE_INDEX[normalized]
-  if (typeof known === "number") return SOURCE_BADGE_CLASSES[known]
-  const idx = Math.abs(hashString(normalized)) % SOURCE_BADGE_CLASSES.length
-  return SOURCE_BADGE_CLASSES[idx]
-}
-
-function hashString(input: string) {
-  let hash = 0
-  for (let i = 0; i < input.length; i++) {
-    hash = (hash * 31 + input.charCodeAt(i)) | 0
-  }
-  return hash
-}
+const PAGE_SIZE = 12
 
 export function AgentCallLogsPage() {
   const [logs, setLogs] = React.useState<AgentCallLogItem[]>([])
   const [logsLoading, setLogsLoading] = React.useState(false)
   const [keyword, setKeyword] = React.useState("")
+  const [page, setPage] = React.useState(1)
   const [activeLog, setActiveLog] = React.useState<AgentCallLogItem | null>(null)
 
   const fetchLogs = React.useCallback(async () => {
@@ -91,8 +65,6 @@ export function AgentCallLogsPage() {
     if (!k) return logs
     return logs.filter((log) => {
       return (
-        log.agentSource.toLowerCase().includes(k) ||
-        (log.agentTool ?? "").toLowerCase().includes(k) ||
         log.path.toLowerCase().includes(k) ||
         log.method.toLowerCase().includes(k) ||
         log.apiKeyPrefix.toLowerCase().includes(k) ||
@@ -100,6 +72,19 @@ export function AgentCallLogsPage() {
       )
     })
   }, [logs, keyword])
+
+  const pageCount = Math.max(1, Math.ceil(filteredLogs.length / PAGE_SIZE))
+  const currentPage = Math.min(page, pageCount)
+
+  // 过滤条件或数据变化时回到第一页
+  React.useEffect(() => {
+    setPage(1)
+  }, [keyword, logs])
+
+  const pagedLogs = React.useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE
+    return filteredLogs.slice(start, start + PAGE_SIZE)
+  }, [filteredLogs, currentPage])
 
   return (
     <div className="flex w-full flex-col gap-6 px-6 py-6 lg:px-10">
@@ -110,7 +95,7 @@ export function AgentCallLogsPage() {
             外部调用日志
           </h1>
           <p className="text-sm text-muted-foreground">
-            展示最近 100 条 Agent API 调用，包含调用来源、接口状态与耗时。点击「详情」查看完整入参/出参。
+            展示最近 100 条 Agent API 调用，包含接口、状态与耗时。点击「详情」查看完整入参/出参。
           </p>
         </div>
       </div>
@@ -125,7 +110,7 @@ export function AgentCallLogsPage() {
             <Input
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
-              placeholder="按来源 / 路径 / IP / Key 过滤"
+              placeholder="按路径 / 方法 / IP / Key 过滤"
               className="w-full sm:w-72"
             />
             <Button type="button" variant="outline" size="sm" onClick={() => void fetchLogs()} disabled={logsLoading}>
@@ -136,16 +121,15 @@ export function AgentCallLogsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="overflow-x-auto">
-            <Table>
+            <Table className="w-full table-fixed">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[170px]">时间</TableHead>
-                  <TableHead className="w-[180px]">来源</TableHead>
                   <TableHead>接口</TableHead>
-                  <TableHead className="w-[110px]">状态</TableHead>
-                  <TableHead className="w-[100px] text-right">耗时</TableHead>
-                  <TableHead className="w-[160px]">Key / IP</TableHead>
-                  <TableHead className="w-[80px] text-right">操作</TableHead>
+                  <TableHead className="w-[90px]">状态</TableHead>
+                  <TableHead className="w-[90px] text-right">耗时</TableHead>
+                  <TableHead className="w-[180px]">Key / IP</TableHead>
+                  <TableHead className="w-[64px] text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -153,7 +137,6 @@ export function AgentCallLogsPage() {
                   Array.from({ length: 6 }).map((_, index) => (
                     <TableRow key={`log-skeleton-${index}`} className="animate-pulse">
                       <TableCell><div className="h-4 w-28 rounded bg-muted" /></TableCell>
-                      <TableCell><div className="h-4 w-20 rounded bg-muted" /></TableCell>
                       <TableCell><div className="h-4 w-48 rounded bg-muted" /></TableCell>
                       <TableCell><div className="h-4 w-12 rounded bg-muted" /></TableCell>
                       <TableCell><div className="ml-auto h-4 w-14 rounded bg-muted" /></TableCell>
@@ -161,31 +144,22 @@ export function AgentCallLogsPage() {
                       <TableCell><div className="ml-auto h-8 w-8 rounded bg-muted" /></TableCell>
                     </TableRow>
                   ))
-                ) : filteredLogs.length > 0 ? (
-                  filteredLogs.map((log) => {
+                ) : pagedLogs.length > 0 ? (
+                  pagedLogs.map((log) => {
                     const isFailure = log.statusCode >= 400
                     return (
                       <TableRow key={log.id}>
                         <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                           {formatDateTime(log.createdAt)}
                         </TableCell>
-                        <TableCell className="space-y-1">
-                          <Badge
-                            variant="outline"
-                            className={cn("border font-normal", sourceBadgeClass(log.agentSource))}
-                          >
-                            {log.agentSource}
-                          </Badge>
-                          {log.agentTool ? (
-                            <div className="font-mono text-[11px] text-muted-foreground">{log.agentTool}</div>
-                          ) : null}
-                        </TableCell>
                         <TableCell className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="font-mono text-[11px]">
+                            <Badge variant="outline" className="shrink-0 font-mono text-[11px]">
                               {log.method}
                             </Badge>
-                            <span className="break-all font-mono text-xs">{log.path}</span>
+                            <span className="truncate font-mono text-xs" title={log.path}>
+                              {log.path}
+                            </span>
                           </div>
                           {log.errorMessage ? (
                             <div className="mt-1 truncate text-[11px] text-destructive" title={log.errorMessage}>
@@ -210,8 +184,12 @@ export function AgentCallLogsPage() {
                           <span className="font-mono text-xs">{log.durationMs}ms</span>
                         </TableCell>
                         <TableCell className="space-y-1">
-                          <div className="font-mono text-[11px] text-muted-foreground">{log.apiKeyPrefix}</div>
-                          <div className="font-mono text-[11px] text-muted-foreground">{log.ip || "-"}</div>
+                          <div className="truncate font-mono text-[11px] text-muted-foreground" title={log.apiKeyPrefix}>
+                            {log.apiKeyPrefix}
+                          </div>
+                          <div className="truncate font-mono text-[11px] text-muted-foreground" title={log.ip || "-"}>
+                            {log.ip || "-"}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">
                           <Button
@@ -229,7 +207,7 @@ export function AgentCallLogsPage() {
                   })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
                       暂无外部调用记录
                     </TableCell>
                   </TableRow>
@@ -237,6 +215,46 @@ export function AgentCallLogsPage() {
               </TableBody>
             </Table>
           </div>
+
+          {filteredLogs.length > 0 ? (
+            <div className="flex flex-col items-center justify-between gap-3 sm:flex-row">
+              <p className="text-xs text-muted-foreground">
+                第 {(currentPage - 1) * PAGE_SIZE + 1}–
+                {Math.min(currentPage * PAGE_SIZE, filteredLogs.length)} 条，共 {filteredLogs.length} 条
+              </p>
+              <Pagination className="mx-0 w-auto justify-end">
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      href="#"
+                      aria-disabled={currentPage <= 1}
+                      className={cn(currentPage <= 1 && "pointer-events-none opacity-50")}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        setPage((p) => Math.max(1, p - 1))
+                      }}
+                    />
+                  </PaginationItem>
+                  <PaginationItem>
+                    <span className="px-3 text-sm tabular-nums text-muted-foreground">
+                      {currentPage} / {pageCount}
+                    </span>
+                  </PaginationItem>
+                  <PaginationItem>
+                    <PaginationNext
+                      href="#"
+                      aria-disabled={currentPage >= pageCount}
+                      className={cn(currentPage >= pageCount && "pointer-events-none opacity-50")}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        setPage((p) => Math.min(pageCount, p + 1))
+                      }}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -266,21 +284,7 @@ function CallLogDetailDialog({
         {log ? (
           <div className="flex max-h-[85vh] flex-col">
             <div className="border-b bg-muted/30 px-6 py-5 pr-14">
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    "border font-normal",
-                    sourceBadgeClass(log.agentSource),
-                  )}
-                >
-                  {log.agentSource}
-                </Badge>
-                {log.agentTool ? (
-                  <span className="font-mono">{log.agentTool}</span>
-                ) : null}
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline" className="font-mono text-xs">
                   {log.method}
                 </Badge>
@@ -304,9 +308,8 @@ function CallLogDetailDialog({
             </div>
 
             <div className="flex-1 overflow-y-auto px-6 py-5">
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
                 <MetricTile icon={Clock} label="耗时" value={`${log.durationMs}ms`} />
-                <MetricTile icon={Workflow} label="来源" value={log.agentSource} />
                 <MetricTile icon={KeyRound} label="API Key" value={log.apiKeyPrefix} mono />
                 <MetricTile icon={Network} label="IP" value={log.ip || "-"} mono />
               </div>

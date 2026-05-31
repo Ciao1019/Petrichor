@@ -74,7 +74,7 @@ export function AgentSkillPage() {
               </button>
             </div>
             <div className="text-xs text-muted-foreground">
-              外部调用必须带 <span className="font-mono">X-Petrichor-Agent-Source</span> 请求头，否则接口会失败并写入审计日志。
+              外部调用必须带 <span className="font-mono">Authorization: Bearer $PETRICHOR_API_KEY</span> 请求头，否则接口会失败并写入审计日志。
             </div>
           </div>
 
