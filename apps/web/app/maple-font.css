@@ -27,3 +27,15 @@ html {
   font-feature-settings: "calt" 1;
   font-variant-ligatures: contextual;
 }
+
+/* 复刻 Maple 展示图:代码块关键字使用手写体斜体（cursive italic）。 */
+/* 作用域为 .plate-code-block，编辑器与静态渲染共用,token 组与现有高亮配色一致。 */
+.plate-code-block .hljs-keyword,
+.plate-code-block .hljs-doctag,
+.plate-code-block .hljs-template-tag,
+.plate-code-block .hljs-template-variable,
+.plate-code-block .hljs-type,
+.plate-code-block .hljs-variable.language_ {
+  font-style: italic;
+}
+
