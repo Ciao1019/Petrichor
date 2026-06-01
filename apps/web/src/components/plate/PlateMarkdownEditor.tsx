@@ -37,6 +37,7 @@ import { FloatingToolbarClassicButtons } from "@/components/ui/floating-toolbar-
 import { FixedToolbarButtons } from "@/components/ui/fixed-toolbar-classic-buttons"
 import { AiAssistantProvider } from "@/components/editor/ai-assistant/ai-assistant-context"
 import { AiAssistantDialog } from "@/components/editor/ai-assistant/AiAssistantDialog"
+import { EmbedCardDialog } from "@/components/editor/embed-card/embed-card-insert"
 import { Editor, EditorContainer } from "@/components/ui/editor"
 import { Toolbar } from "@/components/ui/toolbar"
 import { uploadFileToObjectStorage } from "@/lib/object-storage-upload"
@@ -174,6 +175,7 @@ export const PlateMarkdownEditor = React.forwardRef<PlateMarkdownEditorHandle, P
                     <FloatingToolbar>
                         <FloatingToolbarClassicButtons />
                     </FloatingToolbar>
+                    <EmbedCardDialog />
                 </AiAssistantProvider>
             </Plate>
         </DndProvider>

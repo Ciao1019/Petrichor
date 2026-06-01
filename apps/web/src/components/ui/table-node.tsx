@@ -549,6 +549,19 @@ export function TableCellElement({
       rowIndex,
     });
 
+  // Plate 的 `dangerouslyAllowAttributes: ['colspan', 'rowspan']` 会把反序列化
+  // 内容里 cell.attributes 上的小写 colspan/rowspan 注入到 props.attributes。
+  // 这两个键不是合法的 React DOM 属性（应为 colSpan/rowSpan），需剔除后再透传，
+  // 真正的跨行/跨列由下面显式的 colSpan/rowSpan 负责。
+  const {
+    colspan: _omitColspan,
+    rowspan: _omitRowspan,
+    ...cellAttributes
+  } = props.attributes as typeof props.attributes & {
+    colspan?: unknown;
+    rowspan?: unknown;
+  };
+
   return (
     <PlateElement
       {...props}
@@ -573,7 +586,7 @@ export function TableCellElement({
         } as React.CSSProperties
       }
       attributes={{
-        ...props.attributes,
+        ...cellAttributes,
         colSpan: api.table.getColSpan(element),
         rowSpan: api.table.getRowSpan(element),
       }}

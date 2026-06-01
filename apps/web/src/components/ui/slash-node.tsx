@@ -34,6 +34,11 @@ import {
   insertBlock,
   insertInlineElement,
 } from '@/components/editor/transforms';
+import {
+  EMBED_PROVIDER_CONFIG,
+  EMBED_PROVIDER_ORDER,
+  useEmbedCard,
+} from '@/components/editor/embed-card/embed-card-insert';
 import { useOptionalAiAssistant } from '@/components/editor/ai-assistant/ai-assistant-context';
 import { captureSelectionContext } from '@/components/editor/ai-assistant/selection';
 import {
@@ -231,11 +236,18 @@ const aiSlashItems: Array<{
   { action: 'tone', keywords: ['ai', 'tone', 'yuqi', '语气'], icon: <Wand2 /> },
 ];
 
+const embedSlashKeywords: Record<string, string[]> = {
+  github: ['github', 'repo', 'repository', 'git', '仓库'],
+  tweet: ['tweet', 'twitter', 'x', 'post', '推文'],
+  spotify: ['spotify', 'music', 'track', 'song', '音乐', '歌曲'],
+};
+
 export function SlashInputElement(
   props: PlateElementProps<TComboboxInputElement>
 ) {
   const { editor, element } = props;
   const assistant = useOptionalAiAssistant();
+  const embed = useEmbedCard();
 
   return (
     <PlateElement {...props} as="span">
@@ -267,6 +279,26 @@ export function SlashInputElement(
               ))}
             </InlineComboboxGroup>
           ) : null}
+
+          <InlineComboboxGroup>
+            <InlineComboboxGroupLabel>嵌入</InlineComboboxGroupLabel>
+            {EMBED_PROVIDER_ORDER.map((provider) => {
+              const config = EMBED_PROVIDER_CONFIG[provider];
+              return (
+                <InlineComboboxItem
+                  key={`embed-${provider}`}
+                  value={`embed-${provider}`}
+                  label={config.label}
+                  group="嵌入"
+                  keywords={embedSlashKeywords[provider]}
+                  onClick={() => embed.open(provider)}
+                >
+                  <div className="mr-2 text-muted-foreground">{config.icon}</div>
+                  {config.label}
+                </InlineComboboxItem>
+              );
+            })}
+          </InlineComboboxGroup>
 
           {groups.map(({ group, items }) => (
             <InlineComboboxGroup key={group}>

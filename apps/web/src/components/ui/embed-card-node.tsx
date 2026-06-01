@@ -14,6 +14,7 @@ import {
     getTweetId,
     normalizeGitHubRepo,
 } from "@/components/plate/plate-embed-directives"
+import { BlockGapInsert } from "@/components/editor/block-gap"
 import { cn } from "@/lib/utils"
 
 type GitHubRepoResponse = {
@@ -219,7 +220,8 @@ export function EmbedCardElement(props: PlateElementProps<TEmbedCardElement>) {
 
     return (
         <PlateElement className="py-2.5" {...props}>
-            <figure className="m-0 w-full cursor-default" contentEditable={false}>
+            <figure className="relative m-0 w-full cursor-default" contentEditable={false}>
+                <BlockGapInsert element={props.element} position="top" />
                 {provider === "tweet" ? (
                     <TweetEmbedCard url={url} />
                 ) : provider === "github" ? (
@@ -229,6 +231,7 @@ export function EmbedCardElement(props: PlateElementProps<TEmbedCardElement>) {
                 ) : (
                     <InvalidEmbedCard label="嵌入" />
                 )}
+                <BlockGapInsert element={props.element} position="bottom" />
             </figure>
             {props.children}
         </PlateElement>
