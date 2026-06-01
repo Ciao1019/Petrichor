@@ -16,6 +16,7 @@ import { useEditorReadOnly } from 'platejs/react';
 import { AiAssistantToolbarButton } from '@/components/editor/ai-assistant/ai-toolbar-button';
 import { AlignToolbarButton } from './align-toolbar-button';
 import { CommentToolbarButton } from './comment-toolbar-button';
+import { EmbedCardToolbarButton } from './embed-card-toolbar-button';
 import { EmojiToolbarButton } from './emoji-toolbar-button';
 import { FontColorToolbarButton } from './font-color-toolbar-button';
 import { RedoToolbarButton, UndoToolbarButton } from './history-toolbar-button';
@@ -115,6 +116,7 @@ export function FixedToolbarButtons() {
             <MediaToolbarButton nodeType={KEYS.video} />
             <MediaToolbarButton nodeType={KEYS.audio} />
             <MediaToolbarButton nodeType={KEYS.file} />
+            <EmbedCardToolbarButton />
           </ToolbarGroup>
 
           <ToolbarGroup>

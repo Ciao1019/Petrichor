@@ -53,6 +53,17 @@ export function TableCellElementStatic({
   const { minHeight, width } = api.table.getCellSize({ element });
   const borders = api.table.getCellBorders({ element });
 
+  // 见 TableCellElement：剔除 Plate 注入的小写 colspan/rowspan，避免 React 报
+  // “Invalid DOM property” 警告，跨行/跨列由下面显式的 colSpan/rowSpan 负责。
+  const {
+    colspan: _omitColspan,
+    rowspan: _omitRowspan,
+    ...cellAttributes
+  } = props.attributes as typeof props.attributes & {
+    colspan?: unknown;
+    rowspan?: unknown;
+  };
+
   return (
     <SlateElement
       {...props}
@@ -79,7 +90,7 @@ export function TableCellElementStatic({
         } as React.CSSProperties
       }
       attributes={{
-        ...props.attributes,
+        ...cellAttributes,
         colSpan: api.table.getColSpan(element),
         rowSpan: api.table.getRowSpan(element),
       }}
