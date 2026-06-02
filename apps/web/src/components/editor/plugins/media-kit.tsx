@@ -20,6 +20,8 @@ import { MediaPreviewDialog } from '@/components/ui/media-preview-dialog';
 import { MediaUploadToast } from '@/components/ui/media-upload-toast';
 import { VideoElement } from '@/components/ui/media-video-node';
 
+import { EDITOR_MEDIA_UPLOAD_CONFIG } from './media-upload-config';
+
 export const MediaKit = [
   ImagePlugin.configure({
     // 使用 PlaceholderPlugin 处理上传流程，禁用 ImagePlugin 内置直接插入
@@ -31,7 +33,10 @@ export const MediaKit = [
   AudioPlugin.withComponent(AudioElement),
   FilePlugin.withComponent(FileElement),
   PlaceholderPlugin.configure({
-    options: { disableEmptyPlaceholder: true },
+    options: {
+      disableEmptyPlaceholder: true,
+      uploadConfig: EDITOR_MEDIA_UPLOAD_CONFIG,
+    },
     render: { afterEditable: MediaUploadToast, node: PlaceholderElement },
   }),
   CaptionPlugin.configure({

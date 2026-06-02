@@ -3,6 +3,7 @@ import type { Components } from "react-markdown"
 
 import { cn } from "@/lib/utils"
 import { Checkbox } from "@/components/ui/checkbox"
+import { protectedImageProps } from "@/components/ui/protected-media"
 import { Separator } from "@/components/ui/separator"
 import {
   Table,
@@ -185,7 +186,7 @@ function applyTypographyComponents(components: Components) {
   components.hr = () => <Separator className="my-6" />
   components.img = (props) => {
     const { className, ...rest } = withoutNode(props)
-    return <img className={cn("my-6 max-w-full rounded-xl border", className)} {...rest} />
+    return <img {...rest} {...protectedImageProps} className={cn("my-6 max-w-full rounded-xl border", className)} />
   }
   components.pre = (props) => {
     const { className, ...rest } = withoutNode(props)
@@ -231,7 +232,7 @@ function applyDefaultComponents(components: Components) {
   components.hr = () => <Separator className="my-6" />
   components.img = (props) => {
     const { className, ...rest } = withoutNode(props)
-    return <img className={cn("my-6 max-w-full rounded-xl border shadow-sm", className)} {...rest} />
+    return <img {...rest} {...protectedImageProps} className={cn("my-6 max-w-full rounded-xl border shadow-sm", className)} />
   }
   components.pre = (props) => {
     const { className, ...rest } = withoutNode(props)

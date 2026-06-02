@@ -1,12 +1,8 @@
-import { useState, useEffect, useRef, type Ref } from "react"
-import { motion, AnimatePresence } from "motion/react"
-import { QRCodeSVG } from "qrcode.react"
+import { useState, useEffect, type Ref } from "react"
 import type { MindElixirData } from "mind-elixir"
-import { ChevronUp, GalleryHorizontalEnd, ImageIcon } from "lucide-react"
+import { ChevronUp } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PixelFlowerLayer, type PixelFlowerDecoration } from "@/features/pages/blog/PixelDecorations"
 import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
@@ -16,7 +12,6 @@ import {
   shouldRenderPublicArticleBody,
   shouldShowPublicArticleLoadingCard,
 } from "@/features/pages/public/public-article-render-state"
-import { useSignedUrl } from "@/hooks/use-signed-url"
 import type { TocItem } from "@/features/pages/public/public-article-utils"
 import { cn } from "@/lib/utils"
 
@@ -162,7 +157,6 @@ function PublicArticleLoadingCard() {
 function PublicArticleBody({ model }: { model: PublicArticlePageModel }) {
   const { articleRef, title, tags, createdAt, updatedAt, tab, onTabChange } = model
   const [mindmapMounted, setMindmapMounted] = useState(tab === "mindmap")
-  const [cardDialogOpen, setCardDialogOpen] = useState(false)
 
   const handleTabChange = (nextTab: PublicArticlePageModel["tab"]) => {
     if (nextTab === "mindmap") setMindmapMounted(true)
@@ -173,7 +167,6 @@ function PublicArticleBody({ model }: { model: PublicArticlePageModel }) {
     <article ref={articleRef} className="public-article public-article--retypeset">
       <PublicArticleRepostAttribution source={model.repostSource} />
       <PublicArticleTitleSection title={title} createdAt={createdAt} updatedAt={updatedAt} />
-      <PublicArticleActions onGenerateCard={() => setCardDialogOpen(true)} />
       <PublicArticleAiSummary summary={model.aiSummary} />
       <PublicArticleTabs tab={tab} onTabChange={handleTabChange} />
       <PublicArticleTabPanels
@@ -181,16 +174,6 @@ function PublicArticleBody({ model }: { model: PublicArticlePageModel }) {
         mindmapMounted={mindmapMounted || tab === "mindmap"}
       />
       <PublicArticleTagsFooter tags={tags} />
-      <ArticleCardDialog
-        open={cardDialogOpen}
-        onOpenChange={setCardDialogOpen}
-        title={title}
-        createdAt={createdAt ?? null}
-        aiSummary={model.aiSummary}
-        coverImageUrl={model.coverImageUrl}
-        shareUrl={model.shareUrl}
-        tags={model.tags ?? []}
-      />
     </article>
   )
 }
@@ -379,381 +362,6 @@ function PublicArticleTabPanels({
         </section>
       ) : null}
     </>
-  )
-}
-
-function PublicArticleActions({ onGenerateCard }: { onGenerateCard: () => void }) {
-  return (
-    <div className="mb-5 flex items-center gap-2">
-      <button
-        type="button"
-        onClick={onGenerateCard}
-        className={cn(
-          "flex items-center gap-1.5 rounded-md border border-white/20 bg-white/10 px-3 py-1.5",
-          "text-xs text-white/70 transition-colors hover:border-yellow-300/50 hover:bg-yellow-300/15 hover:text-yellow-300",
-        )}
-      >
-        <GalleryHorizontalEnd className="size-3.5" />
-        生成文章卡片
-      </button>
-    </div>
-  )
-}
-
-function ArticleCardDialog({
-  open,
-  onOpenChange,
-  title,
-  createdAt,
-  aiSummary,
-  coverImageUrl,
-  shareUrl,
-  tags,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  title: string
-  createdAt: string | null
-  aiSummary: string | null
-  coverImageUrl: string | null
-  shareUrl: string
-  tags: string[]
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        showCloseButton={false}
-        className="border-0 bg-transparent p-0 shadow-none sm:max-w-[480px]"
-      >
-        <DialogTitle className="sr-only">文章卡片</DialogTitle>
-        <ArticleCardPreview
-          title={title}
-          createdAt={createdAt}
-          aiSummary={aiSummary}
-          coverImageUrl={coverImageUrl}
-          shareUrl={shareUrl}
-          tags={tags}
-          onClose={() => onOpenChange(false)}
-        />
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-const TAG_COLORS = [
-  { bg: "#EAF0FF", fg: "#2d5be3", border: "#c5d5fa" },
-  { bg: "#FFF8E6", fg: "#a0620a", border: "#f5dfa0" },
-  { bg: "#EDFAF3", fg: "#1a7a4a", border: "#a8e6c5" },
-  { bg: "#FFF0F3", fg: "#c0314a", border: "#f5b8c4" },
-  { bg: "#F3EEFF", fg: "#6e38cc", border: "#d4bbf7" },
-] as const
-
-const CARD = {
-  paper:       "#F3F2EE",
-  paperShade:  "#E8E7E2",
-  ink:         "#161615",
-  inkLight:    "#5A5A58",
-  borderLight: "rgba(22,22,21,0.10)",
-  borderDark:  "rgba(22,22,21,0.28)",
-  fontDisplay: "'Cormorant Garamond', Georgia, 'Times New Roman', serif",
-  fontSans:    "'Manrope', system-ui, sans-serif",
-  fontMono:    "'Maple Mono', 'JetBrains Mono', 'Courier New', monospace",
-} as const
-
-function ArticleCardPreview({
-  title,
-  createdAt,
-  aiSummary,
-  coverImageUrl,
-  shareUrl,
-  tags,
-  onClose,
-}: {
-  title: string
-  createdAt: string | null
-  aiSummary: string | null
-  coverImageUrl: string | null
-  shareUrl: string
-  tags: string[]
-  onClose?: () => void
-}) {
-  const signedCoverImageUrl = useSignedUrl(coverImageUrl, true)
-  const resolvedCoverImageUrl = signedCoverImageUrl ?? coverImageUrl
-  const cardRef = useRef<HTMLDivElement>(null)
-  const [copying, setCopying] = useState(false)
-  const [copied, setCopied] = useState(false)
-
-  const handleCopy = async () => {
-    if (!cardRef.current || copying) return
-    setCopying(true)
-    try {
-      const { toPng } = await import("html-to-image")
-      const dataUrl = await toPng(cardRef.current, { pixelRatio: 2 })
-      const res = await fetch(dataUrl)
-      const blob = await res.blob()
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })])
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      // ignore
-    } finally {
-      setCopying(false)
-    }
-  }
-
-  return (
-    <div
-      aria-label="文章卡片预览"
-      style={{
-        width: 420,
-        background: CARD.paper,
-        borderRadius: 6,
-        overflow: "hidden",
-        boxShadow: "0 24px 48px rgba(0,0,0,0.22), 0 2px 8px rgba(0,0,0,0.12)",
-        fontFamily: CARD.fontSans,
-      }}
-    >
-      {/* 仅这个 div 会被截图，不含底部操作栏 */}
-      <div ref={cardRef}>
-      {/* ── 上方横图区域 ── */}
-      <div style={{ position: "relative", background: CARD.paperShade, borderBottom: `1px solid ${CARD.borderLight}`, overflow: "hidden" }}>
-        {resolvedCoverImageUrl ? (
-          <img
-            src={resolvedCoverImageUrl}
-            alt=""
-            style={{ display: "block", width: "100%", height: "auto", filter: "contrast(1.04) saturate(0.88)" }}
-          />
-        ) : (
-          // 无图：固定高度 + 点阵 + 占位图标
-          <div style={{ height: 160, position: "relative" }}>
-            <div style={{
-              position: "absolute", inset: 0,
-              backgroundImage: `radial-gradient(circle, rgba(22,22,21,0.09) 1px, transparent 1px)`,
-              backgroundSize: "14px 14px",
-            }} />
-            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <div style={{
-                width: 40, height: 40, borderRadius: "50%",
-                border: `1px solid ${CARD.borderDark}`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
-                <ImageIcon style={{ width: 16, height: 16, color: CARD.inkLight }} />
-              </div>
-            </div>
-            <div style={{ position: "absolute", inset: 10, border: `1px dashed ${CARD.borderLight}`, borderRadius: 3 }} />
-          </div>
-        )}
-      </div>
-
-      {/* ── 下方内容区 ── */}
-      <div style={{ padding: "16px 20px 18px" }}>
-        {/* 分割线 */}
-        <div style={{ height: 1, background: CARD.borderDark, marginBottom: 12 }} />
-
-        {/* 标题 */}
-        <h2 style={{
-          fontFamily: CARD.fontDisplay,
-          fontSize: 26,
-          fontWeight: 400,
-          lineHeight: 1.05,
-          letterSpacing: "-0.01em",
-          color: CARD.ink,
-          marginBottom: 12,
-          display: "-webkit-box",
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: "vertical",
-          overflow: "hidden",
-        }}>
-          {title || "文章标题"}
-        </h2>
-
-        {/* AI 总结 + 二维码 */}
-        <div style={{ display: "flex", gap: 14, alignItems: "flex-end" }}>
-          <p style={{
-            flex: 1,
-            fontFamily: CARD.fontSans,
-            fontSize: 10,
-            lineHeight: 1.75,
-            color: CARD.inkLight,
-            display: "-webkit-box",
-            WebkitLineClamp: 3,
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden",
-          }}>
-            {aiSummary?.trim() || "暂无 AI 总结"}
-          </p>
-          <ArticleCardQr url={shareUrl} />
-        </div>
-
-        {/* ── 标签行 ── */}
-        {tags.length > 0 ? (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
-            {tags.slice(0, 5).map((tag, i) => (
-              <span
-                key={tag}
-                style={{
-                  padding: "2px 8px",
-                  borderRadius: 999,
-                  fontSize: 9,
-                  fontFamily: CARD.fontSans,
-                  letterSpacing: "0.03em",
-                  background: TAG_COLORS[i % TAG_COLORS.length].bg,
-                  color: TAG_COLORS[i % TAG_COLORS.length].fg,
-                  border: `1px solid ${TAG_COLORS[i % TAG_COLORS.length].border}`,
-                }}
-              >
-                # {tag}
-              </span>
-            ))}
-          </div>
-        ) : null}
-
-      </div>{/* closes padding div */}
-      </div>{/* closes cardRef — 截图范围到此结束 */}
-
-      {/* ── 底部操作栏（截图范围外）── */}
-      <div style={{
-        padding: "12px 20px 16px",
-        borderTop: `1px solid ${CARD.borderLight}`,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-      }}>
-        <span style={{ fontFamily: CARD.fontMono, fontSize: 8, letterSpacing: "0.08em", textTransform: "uppercase", color: CARD.inkLight }}>
-          生成可分享的文章卡片图片
-        </span>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <CopyImageButton copying={copying} copied={copied} onClick={handleCopy} />
-          {onClose ? (
-            <motion.button
-              type="button"
-              onClick={onClose}
-              whileHover={{ scale: 1.08 }}
-              whileTap={{ scale: 0.92 }}
-              transition={{ type: "spring", stiffness: 500, damping: 30 }}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                width: 28, height: 28,
-                background: "linear-gradient(180deg,rgba(255,255,255,0.78),rgba(255,255,255,0.62))",
-                border: "1px solid rgba(0,0,0,0.06)",
-                boxShadow: "0 0 1px rgba(0,0,0,0.04),0 2px 8px rgba(0,0,0,0.04),inset 0 1px 0 rgba(255,255,255,0.8)",
-                backdropFilter: "blur(24px)",
-                borderRadius: 8,
-                cursor: "pointer",
-                color: "rgba(0,0,0,0.5)",
-                fontSize: 12,
-                outline: "none",
-              }}
-            >
-              ✕
-            </motion.button>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-const COPY_BTN_CSS = `
-.cib{
-  --bc-glass:linear-gradient(180deg,rgba(255,255,255,0.78),rgba(255,255,255,0.62));
-  --bc-border:rgba(0,0,0,0.06);
-  --bc-shadow:0 0 1px rgba(0,0,0,0.04),0 2px 8px rgba(0,0,0,0.04),inset 0 1px 0 rgba(255,255,255,0.8);
-  --bc-hi:rgba(0,0,0,0.88);
-  --bc-ok:#34C759
-}`
-
-function CopyImageButton({ copying, copied, onClick }: { copying: boolean; copied: boolean; onClick: () => void }) {
-  return (
-    <>
-      <style dangerouslySetInnerHTML={{ __html: COPY_BTN_CSS }} />
-      <motion.button
-        type="button"
-        className="cib"
-        onClick={onClick}
-        disabled={copying}
-        whileHover={{ scale: 1.04 }}
-        whileTap={{ scale: 0.96 }}
-        transition={{ type: "spring", stiffness: 500, damping: 30 }}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "6px 12px",
-          borderRadius: 10,
-          border: "1px solid var(--bc-border)",
-          background: "var(--bc-glass)",
-          boxShadow: "var(--bc-shadow)",
-          backdropFilter: "blur(24px)",
-          WebkitBackdropFilter: "blur(24px)",
-          color: copied ? "var(--bc-ok)" : "var(--bc-hi)",
-          fontSize: 12,
-          fontWeight: 500,
-          cursor: copying ? "wait" : "pointer",
-          outline: "none",
-          userSelect: "none",
-          transition: "color 0.2s",
-          opacity: copying ? 0.7 : 1,
-        }}
-      >
-        <AnimatePresence mode="wait" initial={false}>
-          {copied ? (
-            <motion.svg key="chk" width="13" height="13" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-              initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }}
-              transition={{ type: "spring", stiffness: 500, damping: 25 }}
-            >
-              <motion.path d="M5 13l4 4L19 7" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }}
-                transition={{ type: "spring", stiffness: 300, damping: 20, delay: 0.1 }} />
-            </motion.svg>
-          ) : (
-            <motion.svg key="cpy" width="13" height="13" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-              initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }}
-              transition={{ type: "spring", stiffness: 500, damping: 25 }}
-            >
-              <rect x="9" y="9" width="13" height="13" rx="2" />
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-            </motion.svg>
-          )}
-        </AnimatePresence>
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.span
-            key={copied ? "d" : copying ? "w" : "i"}
-            initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-            transition={{ type: "spring", stiffness: 500, damping: 30 }}
-          >
-            {copied ? "已复制" : copying ? "处理中..." : "复制图片"}
-          </motion.span>
-        </AnimatePresence>
-      </motion.button>
-    </>
-  )
-}
-
-function ArticleCardQr({ url }: { url: string }) {
-  return (
-    <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-      <div style={{
-        padding: 4,
-        background: "#fff",
-        border: `1px solid ${CARD.borderDark}`,
-        borderRadius: 3,
-        lineHeight: 0,
-      }}>
-        <QRCodeSVG
-          value={url || window.location.href}
-          size={54}
-          fgColor={CARD.ink}
-          bgColor="#ffffff"
-          level="M"
-          marginSize={0}
-        />
-      </div>
-      <span style={{ fontFamily: CARD.fontMono, fontSize: 8, letterSpacing: "0.08em", textTransform: "uppercase", color: CARD.inkLight }}>
-        扫码查看原文
-      </span>
-    </div>
   )
 }
 

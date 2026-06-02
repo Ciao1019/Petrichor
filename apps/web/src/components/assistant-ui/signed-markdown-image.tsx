@@ -6,6 +6,7 @@ import { defaultUrlTransform, type UrlTransform } from "react-markdown"
 import { useSignedUrl } from "@/hooks/use-signed-url"
 import { normalizeS4ObjectUrl } from "@/lib/s4-url"
 import { cn } from "@/lib/utils"
+import { protectedImageProps } from "@/components/ui/protected-media"
 
 const STORAGE_IMAGE_PATTERN = /^s4key:uploads\/\d+\/.+\.(png|jpe?g|gif|webp|avif|svg|bmp)(?:[?#].*)?$/i
 
@@ -57,6 +58,7 @@ export const SignedMarkdownImage: React.FC<SignedMarkdownImageProps> = ({
   return (
     <img
       {...props}
+      {...protectedImageProps}
       src={signedSrc ?? effectiveSrc}
       alt={alt ?? ""}
       loading={loading ?? "lazy"}
