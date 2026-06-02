@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Search } from "lucide-react"
+import { Github, Search } from "lucide-react"
 import { Link } from "react-router-dom"
 
 import { BlogSearchDialog, useBlogSearchHotkey } from "@/components/blog-search-dialog"
@@ -31,7 +31,10 @@ const retypesetSiteCopy = {
     navTags: "标签",
     navAbout: "关于",
     searchTrigger: "搜索文章",
+    githubTrigger: "GitHub 仓库",
 } as const
+
+const RETYPESET_SITE_GITHUB_HREF = "https://github.com/LittleBunVerse/Petrichor"
 
 const retypesetSiteNavItems: RetypesetSiteNavItem[] = [
     { section: "articles", href: "/#articles", label: retypesetSiteCopy.navPosts, internal: true },
@@ -148,6 +151,17 @@ export function RetypesetSiteNav({
                         <Search className="size-4" aria-hidden="true" />
                         <span className="sr-only">{retypesetSiteCopy.searchTrigger}</span>
                     </button>
+                    <a
+                        href={RETYPESET_SITE_GITHUB_HREF}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={retypesetSiteCopy.githubTrigger}
+                        title={retypesetSiteCopy.githubTrigger}
+                        className="retypeset-c-secondary inline-flex size-7 cursor-pointer items-center justify-center rounded-full"
+                    >
+                        <Github className="size-4" aria-hidden="true" />
+                        <span className="sr-only">{retypesetSiteCopy.githubTrigger}</span>
+                    </a>
                     <RetypesetThemeToggle />
                 </div>
             </nav>
