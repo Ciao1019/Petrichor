@@ -87,9 +87,10 @@ async function uploadToPresignedUrl(
     objectKey: string;
   }
 ) {
-  const arrayBuffer = await file.arrayBuffer();
   const target = describePresignedUrl(presignedUrl);
   const startedAt = Date.now();
+  // 避免大视频上传前额外复制为 ArrayBuffer，降低浏览器内存压力。
+  const uploadBody = file.slice(0, file.size, '');
 
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -98,7 +99,7 @@ async function uploadToPresignedUrl(
     xhr.open('PUT', presignedUrl, true);
 
     uploadLog('info', '开始 PUT 直传对象存储', {
-      byteLength: arrayBuffer.byteLength,
+      byteLength: file.size,
       file: describeUploadFile(file),
       objectKey: context.objectKey,
       target,
@@ -160,7 +161,7 @@ async function uploadToPresignedUrl(
       });
       reject(new Error('上传超时，请稍后重试'));
     };
-    xhr.send(arrayBuffer);
+    xhr.send(uploadBody);
   });
 }
 

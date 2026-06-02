@@ -8,6 +8,8 @@ import { SlateElement } from 'platejs/static';
 
 import { useSignedUrl } from '@/hooks/use-signed-url';
 
+import { protectedVideoProps } from './protected-media';
+
 export function VideoElementStatic(
   props: SlateElementProps<TVideoElement & TCaptionElement & TResizableProps>
 ) {
@@ -23,6 +25,7 @@ export function VideoElementStatic(
           style={{ width }}
         >
           <video
+            {...protectedVideoProps}
             className="w-full max-w-full rounded-sm object-cover px-0"
             src={signedUrl ?? url}
             controls

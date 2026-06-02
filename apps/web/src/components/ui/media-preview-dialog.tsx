@@ -7,10 +7,11 @@ import {
   useScaleInput,
 } from '@platejs/media/react';
 import { cva } from 'class-variance-authority';
-import { ArrowLeft, ArrowRight, Download, Minus, Plus, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Minus, Plus, X } from 'lucide-react';
 import { useEditorRef } from 'platejs/react';
 
 import { cn } from '@/lib/utils';
+import { protectedMediaContainerProps } from './protected-media';
 
 const buttonVariants = cva('rounded bg-[rgba(0,0,0,0.5)] px-1', {
   defaultVariants: {
@@ -52,8 +53,8 @@ export function MediaPreviewDialog() {
         'fixed top-0 left-0 z-50 h-screen w-screen select-none',
         !isOpen && 'hidden'
       )}
-      onContextMenu={(e) => e.stopPropagation()}
       {...maskLayerProps}
+      {...protectedMediaContainerProps}
     >
       <div className="absolute inset-0 size-full bg-black opacity-30" />
       <div className="absolute inset-0 size-full bg-black opacity-30" />
@@ -127,10 +128,6 @@ export function MediaPreviewDialog() {
                 <Plus className="size-4" />
               </button>
             </div>
-            {/* TODO: downLoad the image */}
-            <button className={cn(buttonVariants())} type="button">
-              <Download className="size-4" />
-            </button>
             <button
               {...closeProps}
               className={cn(buttonVariants())}

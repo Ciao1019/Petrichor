@@ -18,6 +18,7 @@ import {
   Resizable,
   ResizeHandle,
 } from './resize-handle';
+import { protectedImageProps } from './protected-media';
 
 export const ImageElement = withHOC(
   ResizableProvider,
@@ -53,6 +54,7 @@ export const ImageElement = withHOC(
               {useCustomImg ? (
                 // S4 对象：渲染签名 URL（防盗链）
                 <img
+                  {...protectedImageProps}
                   ref={handleRef as React.Ref<HTMLImageElement>}
                   className={cn(
                     'block w-full max-w-full cursor-pointer object-cover px-0',
@@ -66,6 +68,9 @@ export const ImageElement = withHOC(
               ) : (
                 // 普通 URL（外链/YouTube 等）：使用 Plate 原生 Image
                 <Image
+                  draggable={false}
+                  onContextMenu={(event) => event.preventDefault()}
+                  onDragStart={(event) => event.preventDefault()}
                   ref={handleRef}
                   className={cn(
                     'block w-full max-w-full cursor-pointer object-cover px-0',

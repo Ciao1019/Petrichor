@@ -1,5 +1,6 @@
 'use client';
 
+import * as React from 'react';
 import LiteYouTubeEmbed from 'react-lite-youtube-embed';
 import ReactPlayer from 'react-player';
 
@@ -21,6 +22,10 @@ import {
   Resizable,
   ResizeHandle,
 } from './resize-handle';
+import {
+  protectedMediaContainerProps,
+  protectedVideoProps,
+} from './protected-media';
 
 export const VideoElement = withHOC(
   ResizableProvider,
@@ -48,6 +53,16 @@ export const VideoElement = withHOC(
     // 防盗链：s4key: 视频需要实时签名 URL
     const signedUrl = useSignedUrl(isS4Key(unsafeUrl) ? unsafeUrl : undefined);
     const videoSrc = isS4Key(unsafeUrl) ? signedUrl : unsafeUrl;
+    const attachProtectedVideoRef = React.useCallback(
+      (node: HTMLVideoElement | null) => {
+        if (!node) return;
+        node.setAttribute('controlsList', protectedVideoProps.controlsList);
+        node.disablePictureInPicture = true;
+        node.disableRemotePlayback = true;
+        node.draggable = false;
+      },
+      []
+    );
 
     return (
       <PlateElement className="py-2.5" {...props}>
@@ -99,8 +114,10 @@ export const VideoElement = withHOC(
               )}
 
               {(isUpload || isS4Key(unsafeUrl)) && isEditorMounted && (
-                <div ref={handleRef}>
+                <div ref={handleRef} {...protectedMediaContainerProps}>
                   <ReactPlayer
+                    {...protectedVideoProps}
+                    ref={attachProtectedVideoRef}
                     height="100%"
                     src={videoSrc}
                     width="100%"
