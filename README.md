@@ -160,21 +160,21 @@ openssl rand -hex 8
 
 #### 方法 A：临时开放注册 → 注册 → 关闭注册（推荐）
 
-1. 在 Vercel → **Settings → Environment Variables** 新增两个变量（**所有环境**勾选 Production / Preview / Development）：
+> 🎯 **首位管理员会自动产生**：当数据库里还没有任何 `SUPER_ADMIN` 时，**第一个注册成功的账号会自动成为超级管理员**，无需再手动配置 `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE`。之后再注册的账号才按默认角色（`USER`）创建。
+
+1. 在 Vercel → **Settings → Environment Variables** 新增一个变量（**所有环境**勾选 Production / Preview / Development）：
 
    | 变量 | 临时填 |
    | --- | --- |
    | `NEXT_PUBLIC_REGISTER_ENABLED` | `true` |
-   | `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE` | `SUPER_ADMIN` |
 
 2. 进入 **Deployments → ⋯ → Redeploy** 让新环境变量生效（约 2 分钟）。
-3. 打开你的 Vercel 域名 `https://你的项目.vercel.app/login`，**点「注册」**，填邮箱和密码，提交。
-4. 注册成功后立即返回 Vercel → Environment Variables，把上面两个变量改回安全值：
+3. 打开你的 Vercel 域名 `https://你的项目.vercel.app/login`，**点「注册」**，填邮箱和密码，提交。系统里此时还没有管理员，这个账号会自动成为超级管理员。
+4. 注册成功后立即返回 Vercel → Environment Variables，把变量改回安全值：
 
    | 变量 | 改回 |
    | --- | --- |
    | `NEXT_PUBLIC_REGISTER_ENABLED` | `false` |
-   | `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE` | `USER` |
 
 5. 再点一次 **Redeploy**，登录页的「注册」入口就消失了，从此只有管理员能从后台手动加用户。
 
@@ -288,21 +288,21 @@ pnpm --silent --filter @petrichor/web db:sql > petrichor-init.sql
 
 推荐继续使用“临时开放注册”的方式：
 
+> 🎯 **首位管理员会自动产生**：数据库里还没有任何 `SUPER_ADMIN` 时，第一个注册成功的账号会自动成为超级管理员，无需手动配置 `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE`。
+
 1. 打开 Cloudflare → **Workers & Pages → 你的 Worker → Settings → Variables and Secrets**。
 2. 新增或修改：
 
    | 变量 | 临时填 |
    | --- | --- |
    | `NEXT_PUBLIC_REGISTER_ENABLED` | `true` |
-   | `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE` | `SUPER_ADMIN` |
 
-3. 重新部署 Worker，打开 `https://你的项目.你的账号.workers.dev/login` 注册第一个账号。
-4. 注册成功后把两个变量改回：
+3. 重新部署 Worker，打开 `https://你的项目.你的账号.workers.dev/login` 注册第一个账号（自动成为超级管理员）。
+4. 注册成功后把变量改回：
 
    | 变量 | 改回 |
    | --- | --- |
    | `NEXT_PUBLIC_REGISTER_ENABLED` | `false` |
-   | `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE` | `USER` |
 
 5. 再重新部署一次，关闭公开注册入口。
 
@@ -347,7 +347,7 @@ pnpm --silent --filter @petrichor/web db:sql > petrichor-init.sql
 | --- | --- |
 | `NEXT_PUBLIC_APP_URL` | **公开站点完整 URL**（如 `https://yourdomain.com`、`https://你的项目.vercel.app`、`https://你的项目.你的账号.workers.dev`）。用于：文章分享链接、RSS/Atom 链接生成、OAuth 回调地址 fallback、SEO `og:url`。部署完成后**务必回填**为真实域名 |
 | `NEXT_PUBLIC_REGISTER_ENABLED` | 是否在登录页显示「注册」入口，`"true"` / `"false"`，默认 `"false"`（关闭注册，仅管理员手动添加用户） |
-| `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE` | 开放注册时新用户默认角色，只允许 `USER` 或 `SUPER_ADMIN`。**首次部署可临时设为 `SUPER_ADMIN`，注册首个账号后立刻改回 `USER`** |
+| `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE` | 开放注册时新用户默认角色，只允许 `USER` 或 `SUPER_ADMIN`，默认 `USER`。**通常无需设置**：系统里还没有任何超级管理员时，第一个注册的账号会自动成为 `SUPER_ADMIN` |
 | `PETRICHOR_SESSION_EXPIRE_SECONDS` | 登录态有效期（秒），默认 `172800`（2 天） |
 
 ### 🔗 LinuxDo OAuth（可选第三方登录）
@@ -565,7 +565,7 @@ The Cloudflare button deploys `apps/web` to **Cloudflare Workers** through OpenN
 4. **Click the deploy button** above and fill the env form.
 5. **Initialize the database**: run `pnpm --silent --filter @petrichor/web db:sql` (or copy [`docs/petrichor-init.sql`](docs/petrichor-init.sql)) into Supabase SQL Editor.
 6. **Create the first super-admin** — the init SQL does **not** seed any user. Two options:
-   - **Recommended (no SQL):** temporarily set `NEXT_PUBLIC_REGISTER_ENABLED=true` and `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE=SUPER_ADMIN` on Vercel → redeploy → register from `/login` → revert both vars and redeploy.
+   - **Recommended (no SQL):** temporarily set `NEXT_PUBLIC_REGISTER_ENABLED=true` on Vercel → redeploy → register from `/login`. While no super-admin exists yet, the **first registered account automatically becomes `SUPER_ADMIN`** — no need to touch `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE`. Then revert the var and redeploy.
    - **Via SQL:** generate a bcrypt hash locally (`cd apps/web && node -e "console.log(require('bcryptjs').hashSync('YourPwd', 10))"`) and run [`docs/create-first-admin.sql`](docs/create-first-admin.sql) in Supabase with your email + hash filled in.
 7. **Set `NEXT_PUBLIC_APP_URL`** to your deployed Vercel / Workers domain and redeploy.
 
@@ -584,7 +584,7 @@ The Cloudflare button deploys `apps/web` to **Cloudflare Workers** through OpenN
 | Variable | Purpose |
 | --- | --- |
 | `NEXT_PUBLIC_REGISTER_ENABLED` | Show the "Sign up" entry on the login page (`true` / `false`) |
-| `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE` | Default role for self-registered users — `USER` or `SUPER_ADMIN` |
+| `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE` | Default role for self-registered users — `USER` or `SUPER_ADMIN` (default `USER`). Usually unnecessary: the first account registered while no super-admin exists is auto-promoted to `SUPER_ADMIN` |
 | `PETRICHOR_SESSION_EXPIRE_SECONDS` | Session lifetime in seconds (default `172800`) |
 | `PETRICHOR_LINUXDO_CLIENT_ID` / `PETRICHOR_LINUXDO_CLIENT_SECRET` / `PETRICHOR_LINUXDO_REDIRECT_URI` | LinuxDo OAuth (optional third-party login) |
 
