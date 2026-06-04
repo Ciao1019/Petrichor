@@ -1,3 +1,5 @@
+create extension if not exists pg_trgm;
+
 create table if not exists petrichor_user (
     id bigint generated always as identity primary key,
     auth_user_id text,
@@ -269,6 +271,7 @@ create index if not exists petrichor_kb_article_user_kb_idx
 create index if not exists petrichor_kb_article_user_created_idx
     on petrichor_kb_article(user_id, created_at desc);
 
+-- 公开文章搜索：中文内容使用 pg_trgm 子串匹配提升检索体验
 create index if not exists idx_petrichor_kb_article_title_trgm
     on petrichor_kb_article
     using gin (title gin_trgm_ops);
