@@ -487,6 +487,41 @@ export const aiReviews = pgTable("petrichor_ai_review", {
     index("idx_petrichor_ai_review_user_generated").on(table.userId, table.generatedAt),
 ])
 
+// 文档导入任务：PDF / Word 每页图片经多模态识别后合并为一篇文章
+export const knowledgeBaseImportJobs = pgTable("petrichor_kb_import_job", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    knowledgeBaseId: bigint("knowledge_base_id", { mode: "number" }).notNull(),
+    parentNodeId: bigint("parent_node_id", { mode: "number" }),
+    sourceType: text("source_type").notNull(),
+    fileName: text("file_name").notNull(),
+    title: text("title").notNull(),
+    totalPages: integer("total_pages").notNull().default(0),
+    processedPages: integer("processed_pages").notNull().default(0),
+    status: text("status").notNull().default("pending"),
+    modelConfigId: bigint("model_config_id", { mode: "number" }),
+    articleId: bigint("article_id", { mode: "number" }),
+    error: text("error"),
+    ...timestamps,
+}, (table) => [
+    index("idx_petrichor_kb_import_job_user").on(table.userId, table.createdAt),
+    index("idx_petrichor_kb_import_job_user_kb").on(table.userId, table.knowledgeBaseId),
+])
+
+export const knowledgeBaseImportJobPages = pgTable("petrichor_kb_import_job_page", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    jobId: bigint("job_id", { mode: "number" }).notNull(),
+    pageNo: integer("page_no").notNull(),
+    imageKey: text("image_key").notNull(),
+    status: text("status").notNull().default("pending"),
+    markdown: text("markdown"),
+    error: text("error"),
+    ...timestamps,
+}, (table) => [
+    uniqueIndex("ux_petrichor_kb_import_job_page_job_no").on(table.jobId, table.pageNo),
+    index("idx_petrichor_kb_import_job_page_job").on(table.jobId),
+])
+
 export type UserRecord = typeof users.$inferSelect
 export type BetterAuthUserRecord = typeof betterAuthUsers.$inferSelect
 export type BetterAuthAccountRecord = typeof betterAuthAccounts.$inferSelect
@@ -506,3 +541,5 @@ export type SiteAboutProfileRecord = typeof siteAboutProfiles.$inferSelect
 export type SiteAppearanceRecord = typeof siteAppearance.$inferSelect
 export type AiModelConfigRecord = typeof aiModelConfigs.$inferSelect
 export type AiReviewRecord = typeof aiReviews.$inferSelect
+export type KnowledgeBaseImportJobRecord = typeof knowledgeBaseImportJobs.$inferSelect
+export type KnowledgeBaseImportJobPageRecord = typeof knowledgeBaseImportJobPages.$inferSelect

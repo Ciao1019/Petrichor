@@ -32,6 +32,7 @@ const routeMap: Record<string, BreadcrumbItem[]> = {
   [dashboardRoutes.root]: [{ label: "系统看板" }],
   [dashboardRoutes.account]: [{ label: "个人中心" }, { label: "账号资料" }],
   [dashboardRoutes.knowledge]: [{ label: "笔记管理" }, { label: "知识库" }],
+  [dashboardRoutes.imports]: [{ label: "笔记管理" }, { label: "导入任务列表" }],
   [dashboardRoutes.notifications]: [{ label: "系统消息" }, { label: "消息中心" }],
   [`${dashboardRoutes.knowledge}/articles`]: [{ label: "笔记管理" }, { label: "知识库", href: dashboardRoutes.knowledge }, { label: "文章列表" }],
   [`${dashboardRoutes.knowledge}/categories`]: [{ label: "笔记管理" }, { label: "知识库", href: dashboardRoutes.knowledge }, { label: "分类管理" }],
@@ -63,6 +64,22 @@ function resolveBreadcrumbItems(pathname: string): BreadcrumbItem[] | undefined 
       { label: "笔记管理" },
       { label: "知识库", href: dashboardRoutes.knowledge },
       { label: "文章编辑" },
+    ]
+  }
+
+  if (new RegExp(`^${dashboardRoutes.imports}/[^/]+$`).test(pathname)) {
+    return [
+      { label: "笔记管理" },
+      { label: "导入任务列表", href: dashboardRoutes.imports },
+      { label: "任务详情" },
+    ]
+  }
+
+  if (new RegExp(`^${dashboardRoutes.knowledge}/[^/]+/imports$`).test(pathname)) {
+    return [
+      { label: "笔记管理" },
+      { label: "导入任务列表", href: dashboardRoutes.imports },
+      { label: "知识库任务" },
     ]
   }
 

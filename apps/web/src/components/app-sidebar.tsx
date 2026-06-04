@@ -1,6 +1,7 @@
 import * as React from "react"
 import {
   IconBook,
+  IconFileImport,
   IconHistory,
   IconKey,
   IconListDetails,
@@ -35,7 +36,14 @@ import { dashboardRoutes, isDashboardSectionPath } from "@/lib/dashboard-routes"
 import type { UserResponse } from "@/lib/api"
 
 function matchKnowledgeList(pathname: string) {
-  return pathname === dashboardRoutes.knowledge || isDashboardSectionPath(pathname, "knowledge")
+  return (
+    (pathname === dashboardRoutes.knowledge || isDashboardSectionPath(pathname, "knowledge")) &&
+    !matchImportJobs(pathname)
+  )
+}
+
+function matchImportJobs(pathname: string) {
+  return pathname === dashboardRoutes.imports || /^\/dashboard\/knowledge\/[^/]+\/imports$/.test(pathname)
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
@@ -50,13 +58,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         title: "知识库",
         url: dashboardRoutes.knowledge,
         icon: IconBook,
-        isActive: isDashboardSectionPath(pathname, "knowledge"),
+        isActive: isDashboardSectionPath(pathname, "knowledge") || matchImportJobs(pathname),
         items: [
           {
             title: "知识库列表",
             url: dashboardRoutes.knowledge,
             icon: IconListDetails,
             match: matchKnowledgeList,
+          },
+          {
+            title: "导入任务列表",
+            url: dashboardRoutes.imports,
+            icon: IconFileImport,
+            match: matchImportJobs,
           },
         ],
       },

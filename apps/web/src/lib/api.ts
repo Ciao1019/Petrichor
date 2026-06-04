@@ -923,7 +923,7 @@ export const knowledgeBaseQaApi = {
 }
 
 // AI 模型配置相关类型
-export type AiConfigType = "CHAT"
+export type AiConfigType = "CHAT" | "VISION"
 
 export type AiProtocol = "OPENAI" | "DEEPSEEK" | "OPENAI_COMPAT" | "SILICONFLOW" | "GEMINI"
 
@@ -1376,6 +1376,90 @@ export const uploadApi = {
   /** 公开版：获取预签名下载 URL，用于公开分享文章的附件（无需登录） */
   publicPresignGet: (objectKey: string) =>
     api.post<PresignGetResponse>("/public/upload/presign-get", { objectKey }),
+}
+
+// ===== 文档导入（PDF / Word → 多模态 → 文章） =====
+
+export type DocumentImportSourceType = "pdf" | "docx"
+
+export type DocumentImportJobStatus =
+  | "pending"
+  | "processing"
+  | "completed"
+  | "failed"
+  | "canceled"
+
+export type DocumentImportPageStatus = "pending" | "done" | "failed"
+
+export interface DocumentImportJobResponse {
+  id: string
+  knowledgeBaseId: string
+  knowledgeBaseName: string | null
+  parentNodeId: string | null
+  parentFolderName: string | null
+  sourceType: DocumentImportSourceType
+  fileName: string
+  title: string
+  totalPages: number
+  processedPages: number
+  donePages: number
+  failedPages: number
+  pendingPages: number
+  status: DocumentImportJobStatus
+  modelConfigId: string | null
+  articleId: string | null
+  error: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DocumentImportPageResponse {
+  pageNo: number
+  imageKey: string
+  status: DocumentImportPageStatus
+  markdown: string | null
+  error: string | null
+}
+
+export interface DocumentImportCreateRequest {
+  knowledgeBaseId: string
+  parentId?: string | null
+  sourceType: DocumentImportSourceType
+  fileName: string
+  title: string
+  modelConfigId?: string | null
+  concurrency?: number
+  pages: { pageNo: number; imageKey: string }[]
+}
+
+export interface DocumentImportConvertResponse {
+  page: DocumentImportPageResponse
+  processedPages: number
+  status: DocumentImportJobStatus
+}
+
+export const documentImportApi = {
+  createJob: (data: DocumentImportCreateRequest) =>
+    api.post<{ job: DocumentImportJobResponse }>("/kb/import/create", data),
+  convertPage: (data: { jobId: string; pageNo: number }) =>
+    api.post<DocumentImportConvertResponse>("/kb/import/page-convert", data),
+  retryPage: (data: { jobId: string; pageNo: number }) =>
+    api.post<DocumentImportConvertResponse>("/kb/import/retry-page", data),
+  retryFailedPages: (data: { jobId: string }) =>
+    api.post<{ retried: number; status: DocumentImportJobStatus }>("/kb/import/retry-failed", data),
+  finalize: (data: { jobId: string }) =>
+    api.post<{ articleId: string; nodeId: string | null }>("/kb/import/finalize", data),
+  cancel: (data: { jobId: string }) =>
+    api.post<{ id: string; status: DocumentImportJobStatus }>("/kb/import/cancel", data),
+  deleteMany: (data: { ids: string[] }) =>
+    api.post<{ deleted: string[] }>("/kb/import/delete", data),
+  list: (data: { knowledgeBaseId?: string; pageNum?: number; pageSize?: number }) =>
+    api.post<TableDataInfo<DocumentImportJobResponse>>("/kb/import/list", data),
+  detail: (data: { jobId: string }) =>
+    api.post<{ job: DocumentImportJobResponse; pages: DocumentImportPageResponse[] }>(
+      "/kb/import/detail",
+      data,
+    ),
 }
 
 // 仪表盘总览相关类型

@@ -21,13 +21,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { CodeBlock, CodeBlockCode } from "@/components/ui/code-block"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination"
+import { AppPagination } from "@/components/app-pagination"
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -217,43 +211,13 @@ export function AgentCallLogsPage() {
           </div>
 
           {filteredLogs.length > 0 ? (
-            <div className="flex flex-col items-center justify-between gap-3 sm:flex-row">
-              <p className="text-xs text-muted-foreground">
-                第 {(currentPage - 1) * PAGE_SIZE + 1}–
-                {Math.min(currentPage * PAGE_SIZE, filteredLogs.length)} 条，共 {filteredLogs.length} 条
-              </p>
-              <Pagination className="mx-0 w-auto justify-end">
-                <PaginationContent>
-                  <PaginationItem>
-                    <PaginationPrevious
-                      href="#"
-                      aria-disabled={currentPage <= 1}
-                      className={cn(currentPage <= 1 && "pointer-events-none opacity-50")}
-                      onClick={(e) => {
-                        e.preventDefault()
-                        setPage((p) => Math.max(1, p - 1))
-                      }}
-                    />
-                  </PaginationItem>
-                  <PaginationItem>
-                    <span className="px-3 text-sm tabular-nums text-muted-foreground">
-                      {currentPage} / {pageCount}
-                    </span>
-                  </PaginationItem>
-                  <PaginationItem>
-                    <PaginationNext
-                      href="#"
-                      aria-disabled={currentPage >= pageCount}
-                      className={cn(currentPage >= pageCount && "pointer-events-none opacity-50")}
-                      onClick={(e) => {
-                        e.preventDefault()
-                        setPage((p) => Math.min(pageCount, p + 1))
-                      }}
-                    />
-                  </PaginationItem>
-                </PaginationContent>
-              </Pagination>
-            </div>
+            <AppPagination
+              page={currentPage - 1}
+              totalPages={pageCount}
+              total={filteredLogs.length}
+              pageSize={PAGE_SIZE}
+              onChange={(nextPageIndex) => setPage(nextPageIndex + 1)}
+            />
           ) : null}
         </CardContent>
       </Card>

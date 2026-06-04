@@ -2,6 +2,7 @@ import type { ArticleDetailResponse } from "@/lib/api"
 
 export const MARKDOWN_IMPORT_MAX_FILE_BYTES = 2 * 1024 * 1024
 export const DOCX_IMPORT_MAX_FILE_BYTES = 25 * 1024 * 1024
+export const DOCUMENT_IMPORT_MAX_FILE_BYTES = 100 * 1024 * 1024
 
 export type ArticleEditorSnapshot = {
   title: string
@@ -49,6 +50,37 @@ export function isMarkdownFileName(fileName: string): boolean {
 
 export function isDocxFileName(fileName: string): boolean {
   return /\.docx$/i.test(fileName.trim())
+}
+
+export function isPdfFileName(fileName: string): boolean {
+  return /\.pdf$/i.test(fileName.trim())
+}
+
+export type DocumentImportKind = "pdf" | "docx"
+
+export function resolveDocumentImportKind(fileName: string): DocumentImportKind | null {
+  if (isPdfFileName(fileName)) return "pdf"
+  if (isDocxFileName(fileName)) return "docx"
+  return null
+}
+
+/** 校验「文档导入（多模态）」入口的文件（PDF / Word） */
+export function validateDocumentImportFile(file: { name: string; size: number }): string | null {
+  if (!resolveDocumentImportKind(file.name)) {
+    return "请选择 .pdf 或 .docx 格式的文档"
+  }
+  if (file.size > DOCUMENT_IMPORT_MAX_FILE_BYTES) {
+    return "文档过大，单个文件不能超过 100 MB"
+  }
+  if (file.size === 0) {
+    return "文档为空，无法导入"
+  }
+  return null
+}
+
+export function removeDocumentImportFileExtension(fileName: string): string {
+  const name = fileName.split(/[\\/]/).pop() || fileName
+  return name.replace(/\.(pdf|docx)$/i, "").trim()
 }
 
 export function validateMarkdownImportFile(file: { name: string; size: number }): string | null {

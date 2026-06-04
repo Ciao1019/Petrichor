@@ -95,14 +95,24 @@ function safeTrim(value: string) {
 }
 
 function configTypeLabel(configType: AiConfigType) {
-  return configType === "CHAT" ? "对话（Chat）" : configType
+  if (configType === "CHAT") return "对话（Chat）"
+  if (configType === "VISION") return "多模态（Vision）"
+  return configType
 }
+
+const CONFIG_TYPE_TABS: { value: AiConfigType; label: string }[] = [
+  { value: "CHAT", label: "对话（Chat）" },
+  { value: "VISION", label: "多模态（Vision）" },
+]
 
 function buildEditorDescription() {
   return "对话配置用于文章摘要、思维导图和知识图谱生成。"
 }
 
-function buildTypeSummary() {
+function buildTypeSummary(configType: AiConfigType) {
+  if (configType === "VISION") {
+    return "负责将 PDF / Word 每一页图片识别转写为文章内容。"
+  }
   return "负责文章摘要、思维导图和知识图谱等生成能力。"
 }
 
@@ -194,7 +204,7 @@ type EnabledFilter = "ALL" | "true" | "false"
 type ProtocolFilter = "ALL" | AiProtocol
 
 export function AiModelConfigPage() {
-  const activeType: AiConfigType = "CHAT"
+  const [activeType, setActiveType] = React.useState<AiConfigType>("CHAT")
 
   const [rows, setRows] = React.useState<AiModelConfigResponse[]>([])
   const [total, setTotal] = React.useState(0)
@@ -575,6 +585,18 @@ export function AiModelConfigPage() {
     setPageIndex(0)
   }, [])
 
+  const switchActiveType = React.useCallback((next: AiConfigType) => {
+    setActiveType((prev) => {
+      if (prev === next) return prev
+      setProtocolFilter("ALL")
+      setEnabledFilter("ALL")
+      setKeywordInput("")
+      setKeyword("")
+      setPageIndex(0)
+      return next
+    })
+  }, [])
+
   const applyKeyword = React.useCallback(() => {
     setKeyword(safeTrim(keywordInput))
     setPageIndex(0)
@@ -589,12 +611,30 @@ export function AiModelConfigPage() {
             模型配置
           </h1>
           <p className="text-sm text-muted-foreground">
-            {configTypeLabel(activeType)}：{buildTypeSummary()}
+            {configTypeLabel(activeType)}：{buildTypeSummary(activeType)}
           </p>
         </div>
         <Button onClick={openCreate} className="shrink-0">
           新建配置
         </Button>
+      </div>
+
+      <div className="inline-flex w-fit items-center gap-1 rounded-lg border bg-muted/40 p-1">
+        {CONFIG_TYPE_TABS.map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            onClick={() => switchActiveType(tab.value)}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+              activeType === tab.value
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
         <div>
@@ -883,7 +923,7 @@ export function AiModelConfigPage() {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1 sm:col-span-2">
                 <div className="text-sm text-muted-foreground">用途说明</div>
-                <div className="text-sm">{buildTypeSummary()}</div>
+                <div className="text-sm">{buildTypeSummary(activeType)}</div>
               </div>
               <div className="space-y-1">
                 <div className="text-sm text-muted-foreground">配置 ID</div>
@@ -1004,7 +1044,7 @@ export function AiModelConfigPage() {
       >
         <div className="space-y-4">
           <div className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
-            {buildTypeSummary()}
+            {buildTypeSummary(activeType)}
           </div>
 
           <div className="grid grid-cols-2 gap-3">

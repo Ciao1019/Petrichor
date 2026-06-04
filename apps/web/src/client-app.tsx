@@ -17,6 +17,8 @@ import { KnowledgeBaseArticleEditorPage } from '@/features/pages/knowledge/Knowl
 import { KnowledgeQaPage } from '@/features/pages/knowledge/KnowledgeQaPage'
 import { KnowledgeBaseArticleMindMapPage } from '@/features/pages/knowledge/KnowledgeBaseArticleMindMapPage'
 import { KnowledgeBaseTreePage } from '@/features/pages/knowledge/KnowledgeBaseTreePage'
+import { DocumentImportJobsPage } from '@/features/pages/knowledge/DocumentImportJobsPage'
+import { DocumentImportJobDetailPage } from '@/features/pages/knowledge/DocumentImportJobDetailPage'
 import { AiModelConfigPage } from '@/features/pages/ai/AiModelConfigPage'
 import { AiReviewPage } from '@/features/pages/ai/AiReviewPage'
 import { AgentKeysPage } from '@/features/pages/agent/AgentKeysPage'
@@ -111,6 +113,9 @@ function AppThemeScope({ initialAppearance }: ClientAppProps) {
               <Route path="notifications" element={<NotificationPage />} />
               <Route path="knowledge" element={<KnowledgeBasePage />} />
               <Route path="knowledge/:knowledgeBaseId" element={<KnowledgeBaseTreePage />} />
+              <Route path="knowledge/:knowledgeBaseId/imports" element={<DocumentImportJobsPage />} />
+              <Route path="imports" element={<DocumentImportJobsPage />} />
+              <Route path="imports/:jobId" element={<DocumentImportJobDetailPage />} />
               <Route path="qa" element={<KnowledgeQaPage />} />
               <Route path="knowledge/:knowledgeBaseId/articles/:articleId" element={<KnowledgeBaseArticleEditorPage />} />
               <Route path="knowledge/:knowledgeBaseId/articles/:articleId/mindmap" element={<KnowledgeBaseArticleMindMapPage />} />
