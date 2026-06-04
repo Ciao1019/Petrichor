@@ -5,6 +5,7 @@ export const dashboardRoutes = {
     account: `${DASHBOARD_ROOT}/account`,
     notifications: `${DASHBOARD_ROOT}/notifications`,
     knowledge: `${DASHBOARD_ROOT}/knowledge`,
+    imports: `${DASHBOARD_ROOT}/imports`,
     adminUsers: `${DASHBOARD_ROOT}/admin/users`,
     adminAbout: `${DASHBOARD_ROOT}/admin/about`,
     adminAppearance: `${DASHBOARD_ROOT}/admin/appearance`,
@@ -34,6 +35,14 @@ export function knowledgeBaseArticlePath(knowledgeBaseId: string, articleId: str
 
 export function knowledgeBaseArticleMindMapPath(knowledgeBaseId: string, articleId: string) {
     return `${knowledgeBaseArticlePath(knowledgeBaseId, articleId)}/mindmap`
+}
+
+export function knowledgeBaseImportsPath(knowledgeBaseId: string) {
+    return `${knowledgeBasePath(knowledgeBaseId)}/imports`
+}
+
+export function importJobDetailPath(jobId: string) {
+    return `${dashboardRoutes.imports}/${jobId}`
 }
 
 export function isDashboardSectionPath(pathname: string, sectionPath: string) {

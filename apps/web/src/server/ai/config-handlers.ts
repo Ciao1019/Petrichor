@@ -32,12 +32,11 @@ export async function listAiConfigs(request: NextRequest) {
         const raw = await readJson<Record<string, unknown>>(request)
         const pageNum = normalizePositiveInteger(raw.pageNum, 1)
         const pageSize = normalizePositiveInteger(raw.pageSize, 20)
-        const filters = [eq(aiModelConfigs.userId, user.id), eq(aiModelConfigs.configType, "CHAT")]
+        const filters = [eq(aiModelConfigs.userId, user.id)]
         const configType = parseConfigType(raw.configType)
         const protocol = parseProtocol(raw.protocol)
-        if (configType) {
-            filters.push(eq(aiModelConfigs.configType, configType))
-        }
+        // 未显式传入 configType 时，沿用历史默认行为只返回 CHAT 配置
+        filters.push(eq(aiModelConfigs.configType, configType ?? "CHAT"))
         if (protocol) {
             filters.push(eq(aiModelConfigs.protocol, protocol))
         }

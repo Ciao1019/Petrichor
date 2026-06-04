@@ -88,6 +88,7 @@ import {
   knowledgeBaseArticleMindMapPath,
   knowledgeBaseArticlePath,
 } from "@/lib/dashboard-routes"
+import { DocumentImportDialog } from "@/components/knowledge/DocumentImportDialog"
 import { cn } from "@/lib/utils"
 import { gsap } from "@/lib/gsap"
 
@@ -592,6 +593,7 @@ export function KnowledgeBaseTreePage() {
   const [createArticleImportStage, setCreateArticleImportStage] =
     React.useState<CreateArticleImportStage>("idle")
   const [createArticleDragActive, setCreateArticleDragActive] = React.useState(false)
+  const [importDialogOpen, setImportDialogOpen] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleteTarget, setDeleteTarget] = React.useState<DeleteTarget | null>(null)
   const [activeDragNodeId, setActiveDragNodeId] = React.useState<string | null>(null)
@@ -1600,6 +1602,13 @@ export function KnowledgeBaseTreePage() {
             新建文件夹
           </Button>
           <Button
+            variant="outline"
+            disabled={!knowledgeBaseId}
+            onClick={() => setImportDialogOpen(true)}
+          >
+            导入文档
+          </Button>
+          <Button
             disabled={!knowledgeBaseId || loading || saving}
             onClick={() => openCreateArticle(null)}
           >
@@ -2110,6 +2119,15 @@ export function KnowledgeBaseTreePage() {
           </>
         }
       />
+
+      {knowledgeBaseId ? (
+        <DocumentImportDialog
+          open={importDialogOpen}
+          onOpenChange={setImportDialogOpen}
+          knowledgeBaseId={knowledgeBaseId}
+          onViewJobs={() => navigate(dashboardRoutes.imports)}
+        />
+      ) : null}
     </div>
   )
 }
