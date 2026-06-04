@@ -33,6 +33,7 @@ const routeMap: Record<string, BreadcrumbItem[]> = {
   [dashboardRoutes.account]: [{ label: "个人中心" }, { label: "账号资料" }],
   [dashboardRoutes.knowledge]: [{ label: "笔记管理" }, { label: "知识库" }],
   [dashboardRoutes.imports]: [{ label: "笔记管理" }, { label: "导入任务列表" }],
+  [dashboardRoutes.wiki]: [{ label: "笔记管理" }, { label: "知识 Wiki" }],
   [dashboardRoutes.notifications]: [{ label: "系统消息" }, { label: "消息中心" }],
   [`${dashboardRoutes.knowledge}/articles`]: [{ label: "笔记管理" }, { label: "知识库", href: dashboardRoutes.knowledge }, { label: "文章列表" }],
   [`${dashboardRoutes.knowledge}/categories`]: [{ label: "笔记管理" }, { label: "知识库", href: dashboardRoutes.knowledge }, { label: "分类管理" }],
