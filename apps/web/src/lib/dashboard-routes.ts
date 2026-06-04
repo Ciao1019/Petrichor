@@ -6,6 +6,7 @@ export const dashboardRoutes = {
     notifications: `${DASHBOARD_ROOT}/notifications`,
     knowledge: `${DASHBOARD_ROOT}/knowledge`,
     imports: `${DASHBOARD_ROOT}/imports`,
+    wiki: `${DASHBOARD_ROOT}/wiki`,
     adminUsers: `${DASHBOARD_ROOT}/admin/users`,
     adminAbout: `${DASHBOARD_ROOT}/admin/about`,
     adminAppearance: `${DASHBOARD_ROOT}/admin/appearance`,
