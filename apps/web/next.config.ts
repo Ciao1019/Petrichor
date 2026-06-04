@@ -1,5 +1,4 @@
 import type { NextConfig } from "next"
-import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare"
 import fs from "node:fs"
 import path from "node:path"
 
@@ -17,7 +16,3 @@ const nextConfig: NextConfig = {
 }
 
 export default nextConfig
-
-if (process.env.NODE_ENV === "development") {
-    initOpenNextCloudflareForDev()
-}

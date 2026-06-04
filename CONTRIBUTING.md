@@ -91,7 +91,7 @@ git push origin feat/your-feature-name
 | Node.js | ≥ 22 |
 | pnpm | 10.x（推荐 `corepack enable && corepack prepare pnpm@10.28.1 --activate`） |
 | PostgreSQL | 16+（推荐直接用 Supabase 免费实例） |
-| S3 兼容存储 | Bitiful / R2 / S3 / MinIO 任选 |
+| S3 兼容存储 | Bitiful / S3 / MinIO 任选 |
 
 ### 启动
 
