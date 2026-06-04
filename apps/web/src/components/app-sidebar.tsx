@@ -68,7 +68,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             match: matchKnowledgeList,
           },
           {
-            title: "导入任务列表",
+            title: "导入任务",
             url: dashboardRoutes.imports,
             icon: IconFileImport,
             match: matchImportJobs,
@@ -76,22 +76,30 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         ],
       },
       {
-        title: "文档问答",
+        title: "智能应用",
         url: dashboardRoutes.qa,
-        icon: IconMessageChatbot,
-        isActive: isDashboardSectionPath(pathname, "qa"),
-      },
-      {
-        title: "知识 Wiki",
-        url: dashboardRoutes.wiki,
-        icon: IconBookmarks,
-        isActive: isDashboardSectionPath(pathname, "wiki"),
-      },
-      {
-        title: "AI 回顾",
-        url: dashboardRoutes.aiReview,
         icon: IconSparkles,
-        isActive: isDashboardSectionPath(pathname, "ai/review"),
+        isActive:
+          isDashboardSectionPath(pathname, "qa") ||
+          isDashboardSectionPath(pathname, "wiki") ||
+          isDashboardSectionPath(pathname, "ai/review"),
+        items: [
+          {
+            title: "文档问答",
+            url: dashboardRoutes.qa,
+            icon: IconMessageChatbot,
+          },
+          {
+            title: "知识 Wiki",
+            url: dashboardRoutes.wiki,
+            icon: IconBookmarks,
+          },
+          {
+            title: "AI 回顾",
+            url: dashboardRoutes.aiReview,
+            icon: IconHistory,
+          },
+        ],
       },
       {
         title: "模型配置",

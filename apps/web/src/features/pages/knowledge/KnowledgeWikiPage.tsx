@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { AppPagination } from "@/components/app-pagination"
 import { KbDialog } from "@/components/shadcn-studio/dialog/dialog-09"
 import {
   knowledgeBaseQaApi,
@@ -229,6 +230,18 @@ export function KnowledgeWikiPage() {
   const pages = dashboard?.pages ?? []
   const busy = ingesting || linting
 
+  const PAGE_SIZE = 10
+  const [pageIndex, setPageIndex] = React.useState(0)
+  const pageCount = Math.max(1, Math.ceil(pages.length / PAGE_SIZE))
+  // 切换知识库 / 刷新后把越界页码夹回有效范围
+  React.useEffect(() => {
+    setPageIndex((current) => Math.min(current, pageCount - 1))
+  }, [pageCount])
+  const visiblePages = React.useMemo(
+    () => pages.slice(pageIndex * PAGE_SIZE, pageIndex * PAGE_SIZE + PAGE_SIZE),
+    [pages, pageIndex],
+  )
+
   return (
     <div className="flex w-full flex-col gap-6 px-6 py-6 lg:px-10">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -378,7 +391,7 @@ export function KnowledgeWikiPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {pages.map((page) => (
+                  {visiblePages.map((page) => (
                     <TableRow key={page.id}>
                       <TableCell className="font-medium">{page.title}</TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground">{page.pageKey}</TableCell>
@@ -403,6 +416,17 @@ export function KnowledgeWikiPage() {
                 </TableBody>
               </Table>
             )}
+            {pages.length > PAGE_SIZE ? (
+              <div className="border-t px-4 py-3">
+                <AppPagination
+                  page={pageIndex}
+                  totalPages={pageCount}
+                  total={pages.length}
+                  pageSize={PAGE_SIZE}
+                  onChange={(nextPageIndex) => setPageIndex(nextPageIndex)}
+                />
+              </div>
+            ) : null}
           </section>
 
           {/* Lint 问题 */}
