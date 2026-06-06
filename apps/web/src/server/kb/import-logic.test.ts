@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest"
-import {
-    countProcessedPages,
-    deriveJobStatus,
-    mergePageMarkdown,
-    parseImportSourceType,
-    type ImportPageStatus,
-} from "./import-logic"
+import { parseImportSourceType, rewriteImageRefs } from "./import-logic"
 
 describe("document import logic", () => {
     it("解析受支持的来源类型", () => {
@@ -16,26 +10,21 @@ describe("document import logic", () => {
         expect(parseImportSourceType(undefined)).toBeNull()
     })
 
-    it("按页码顺序合并并跳过空白页", () => {
-        const merged = mergePageMarkdown([
-            { pageNo: 3, markdown: "# 第三页" },
-            { pageNo: 1, markdown: "# 第一页" },
-            { pageNo: 2, markdown: "   " },
-            { pageNo: 4, markdown: null },
+    it("把相对图片路径改写为转存后的地址", () => {
+        const markdown = "前言\n\n![](images/a.jpg)\n\n![图](images/b.png)"
+        const result = rewriteImageRefs(markdown, [
+            { ref: "images/a.jpg", url: "s4key:uploads/1/x.jpg" },
+            { ref: "images/b.png", url: "s4key:uploads/1/y.png" },
         ])
-        expect(merged).toBe("# 第一页\n\n# 第三页")
+        expect(result).toBe("前言\n\n![](s4key:uploads/1/x.jpg)\n\n![图](s4key:uploads/1/y.png)")
     })
 
-    it("根据页状态推导任务整体状态", () => {
-        const pending: ImportPageStatus[] = ["done", "pending", "failed"]
-        expect(deriveJobStatus(pending)).toBe("processing")
-        expect(deriveJobStatus(["done", "failed"])).toBe("failed")
-        expect(deriveJobStatus(["done", "done"])).toBe("completed")
-        expect(deriveJobStatus([])).toBe("pending")
-    })
-
-    it("统计已处理页数（done + failed 都算已处理）", () => {
-        expect(countProcessedPages(["done", "failed", "pending"])).toBe(2)
-        expect(countProcessedPages(["pending", "pending"])).toBe(0)
+    it("先替换较长的引用，避免短路径误伤", () => {
+        const markdown = "![](images/a.jpg) ![](images/a.jpg.thumb.jpg)"
+        const result = rewriteImageRefs(markdown, [
+            { ref: "images/a.jpg", url: "URL_A" },
+            { ref: "images/a.jpg.thumb.jpg", url: "URL_B" },
+        ])
+        expect(result).toBe("![](URL_A) ![](URL_B)")
     })
 })

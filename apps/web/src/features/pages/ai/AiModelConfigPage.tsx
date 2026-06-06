@@ -68,6 +68,8 @@ function protocolLabel(protocol: AiProtocol) {
       return "SiliconFlow"
     case "GEMINI":
       return "Gemini"
+    case "MINERU":
+      return "MinerU"
     default:
       return protocol
   }
@@ -85,6 +87,8 @@ function protocolBadgeClass(protocol: AiProtocol) {
       return "bg-violet-500/10 text-violet-700 border-violet-200 dark:text-violet-400 dark:border-violet-800"
     case "GEMINI":
       return "bg-sky-500/10 text-sky-700 border-sky-200 dark:text-sky-400 dark:border-sky-800"
+    case "MINERU":
+      return "bg-rose-500/10 text-rose-700 border-rose-200 dark:text-rose-400 dark:border-rose-800"
     default:
       return "bg-muted text-muted-foreground"
   }
@@ -96,13 +100,13 @@ function safeTrim(value: string) {
 
 function configTypeLabel(configType: AiConfigType) {
   if (configType === "CHAT") return "对话（Chat）"
-  if (configType === "VISION") return "多模态（Vision）"
+  if (configType === "DOC_PARSE") return "文档解析（MinerU）"
   return configType
 }
 
 const CONFIG_TYPE_TABS: { value: AiConfigType; label: string }[] = [
   { value: "CHAT", label: "对话（Chat）" },
-  { value: "VISION", label: "多模态（Vision）" },
+  { value: "DOC_PARSE", label: "文档解析（MinerU）" },
 ]
 
 function buildEditorDescription() {
@@ -110,8 +114,8 @@ function buildEditorDescription() {
 }
 
 function buildTypeSummary(configType: AiConfigType) {
-  if (configType === "VISION") {
-    return "负责将 PDF / Word 每一页图片识别转写为文章内容。"
+  if (configType === "DOC_PARSE") {
+    return "负责把 PDF / Word 文档交给 MinerU 解析为文章内容，只需填入服务 Token。"
   }
   return "负责文章摘要、思维导图和知识图谱等生成能力。"
 }
@@ -427,16 +431,18 @@ export function AiModelConfigPage() {
     const trimmedExtraJson = safeTrim(extraJson)
     const trimmedApiKey = safeTrim(apiKey)
 
+    const isDocParse = activeType === "DOC_PARSE"
+
     if (!trimmedName) {
       toast.error("配置名称不能为空")
       return
     }
-    if (!trimmedModel) {
+    if (!isDocParse && !trimmedModel) {
       toast.error("模型名称不能为空")
       return
     }
 
-    if (trimmedExtraJson) {
+    if (!isDocParse && trimmedExtraJson) {
       try {
         JSON.parse(trimmedExtraJson)
       } catch {
@@ -449,29 +455,43 @@ export function AiModelConfigPage() {
     setSaving(true)
     try {
       if (editorMode === "create") {
-        const req: AiModelConfigCreateRequest = {
-          configType: activeType,
-          protocol,
-          name: trimmedName,
-          model: trimmedModel,
-          baseUrl: trimmedBaseUrl ? trimmedBaseUrl : undefined,
-          apiKey: trimmedApiKey ? trimmedApiKey : undefined,
-          enabled,
-          isDefault: isDefaultOnCreate,
-          extraJson: trimmedExtraJson ? trimmedExtraJson : undefined,
-        }
+        const req: AiModelConfigCreateRequest = isDocParse
+          ? {
+            configType: "DOC_PARSE",
+            name: trimmedName,
+            apiKey: trimmedApiKey ? trimmedApiKey : undefined,
+            enabled,
+            isDefault: isDefaultOnCreate,
+          }
+          : {
+            configType: activeType,
+            protocol,
+            name: trimmedName,
+            model: trimmedModel,
+            baseUrl: trimmedBaseUrl ? trimmedBaseUrl : undefined,
+            apiKey: trimmedApiKey ? trimmedApiKey : undefined,
+            enabled,
+            isDefault: isDefaultOnCreate,
+            extraJson: trimmedExtraJson ? trimmedExtraJson : undefined,
+          }
         await aiModelConfigApi.create(req)
         toast.success("配置已创建")
       } else if (activeConfig) {
-        const req: AiModelConfigUpdateRequest = {
-          id: activeConfig.id,
-          protocol,
-          name: trimmedName,
-          model: trimmedModel,
-          baseUrl: safeTrim(baseUrl),
-          enabled,
-          extraJson: safeTrim(extraJson),
-        }
+        const req: AiModelConfigUpdateRequest = isDocParse
+          ? {
+            id: activeConfig.id,
+            name: trimmedName,
+            enabled,
+          }
+          : {
+            id: activeConfig.id,
+            protocol,
+            name: trimmedName,
+            model: trimmedModel,
+            baseUrl: safeTrim(baseUrl),
+            enabled,
+            extraJson: safeTrim(extraJson),
+          }
 
         if (apiKeyClear) {
           req.apiKey = ""
@@ -1047,69 +1067,86 @@ export function AiModelConfigPage() {
             {buildTypeSummary(activeType)}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>协议类型</Label>
-              <Select value={protocol} onValueChange={(v) => setProtocol(v as AiProtocol)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="请选择协议类型" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="OPENAI">OpenAI</SelectItem>
-                  <SelectItem value="DEEPSEEK">DeepSeek</SelectItem>
-                  <SelectItem value="OPENAI_COMPAT">OpenAI 兼容</SelectItem>
-                  <SelectItem value="SILICONFLOW">SiliconFlow</SelectItem>
-                  <SelectItem value="GEMINI">Gemini</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
+          {activeType === "DOC_PARSE" ? (
             <div className="space-y-2">
               <Label htmlFor="ai-config-name">配置名称</Label>
               <Input
                 id="ai-config-name"
                 value={name}
                 disabled={saving}
-                placeholder="例如：默认问答模型"
+                placeholder="例如：MinerU 文档解析"
                 onChange={(e) => setName(e.target.value)}
               />
             </div>
-          </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>协议类型</Label>
+                <Select value={protocol} onValueChange={(v) => setProtocol(v as AiProtocol)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="请选择协议类型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="OPENAI">OpenAI</SelectItem>
+                    <SelectItem value="DEEPSEEK">DeepSeek</SelectItem>
+                    <SelectItem value="OPENAI_COMPAT">OpenAI 兼容</SelectItem>
+                    <SelectItem value="SILICONFLOW">SiliconFlow</SelectItem>
+                    <SelectItem value="GEMINI">Gemini</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="ai-config-name">配置名称</Label>
+                <Input
+                  id="ai-config-name"
+                  value={name}
+                  disabled={saving}
+                  placeholder="例如：默认问答模型"
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
 
           <Separator />
 
           <div className="space-y-4">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">连接配置</p>
 
-            <div className="space-y-2">
-              <Label htmlFor="ai-config-model">模型名称</Label>
-              <Input
-                id="ai-config-model"
-                value={model}
-                disabled={saving}
-                placeholder={buildModelPlaceholder()}
-                onChange={(e) => setModel(e.target.value)}
-              />
-            </div>
+            {activeType !== "DOC_PARSE" ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="ai-config-model">模型名称</Label>
+                  <Input
+                    id="ai-config-model"
+                    value={model}
+                    disabled={saving}
+                    placeholder={buildModelPlaceholder()}
+                    onChange={(e) => setModel(e.target.value)}
+                  />
+                </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="ai-config-baseUrl">BaseUrl（可选）</Label>
-            <Input
-              id="ai-config-baseUrl"
-              value={baseUrl}
-              disabled={saving}
-              placeholder="例如：https://api.openai.com/v1"
-              onChange={(e) => setBaseUrl(e.target.value)}
-            />
-            {editorMode === "edit" ? (
-              <p className="text-xs text-muted-foreground">
-                清空后将走服务端默认值
-              </p>
+                <div className="space-y-2">
+                  <Label htmlFor="ai-config-baseUrl">BaseUrl（可选）</Label>
+                  <Input
+                    id="ai-config-baseUrl"
+                    value={baseUrl}
+                    disabled={saving}
+                    placeholder="例如：https://api.openai.com/v1"
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                  />
+                  {editorMode === "edit" ? (
+                    <p className="text-xs text-muted-foreground">
+                      清空后将走服务端默认值
+                    </p>
+                  ) : null}
+                </div>
+              </>
             ) : null}
-          </div>
 
           <div className="space-y-2">
-            <Label htmlFor="ai-config-apiKey">API Key（可选）</Label>
+            <Label htmlFor="ai-config-apiKey">{activeType === "DOC_PARSE" ? "MinerU Token" : "API Key（可选）"}</Label>
             <Input
               id="ai-config-apiKey"
               value={apiKey}
@@ -1118,13 +1155,17 @@ export function AiModelConfigPage() {
                 ? (activeConfig.apiKeyMasked || "已设置（留空表示不修改）")
                 : editorMode === "edit"
                   ? "留空表示不修改"
-                  : "例如：sk-******"}
+                  : activeType === "DOC_PARSE"
+                    ? "在 mineru.net 后台申请的 API Token"
+                    : "例如：sk-******"}
               onChange={(e) => setApiKey(e.target.value)}
             />
             {editorMode === "edit" ? (
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs text-muted-foreground">
-                  {activeConfig?.hasApiKey ? "当前已设置 API Key（不会回显明文）" : "当前未设置 API Key"}
+                  {activeConfig?.hasApiKey
+                    ? (activeType === "DOC_PARSE" ? "当前已设置 Token（不会回显明文）" : "当前已设置 API Key（不会回显明文）")
+                    : (activeType === "DOC_PARSE" ? "当前未设置 Token" : "当前未设置 API Key")}
                 </p>
                 <div className="flex items-center gap-2">
                   <Switch
@@ -1136,7 +1177,7 @@ export function AiModelConfigPage() {
                       }
                     }}
                     disabled={saving}
-                    aria-label="清空 API Key"
+                    aria-label="清空"
                   />
                   <span className="text-sm">清空</span>
                 </div>
@@ -1179,22 +1220,24 @@ export function AiModelConfigPage() {
             </div>
           ) : null}
 
-          <div className="space-y-2">
-            <Label htmlFor="ai-config-extra">扩展参数（JSON，可选）</Label>
-            <Textarea
-              id="ai-config-extra"
-              value={extraJson}
-              disabled={saving}
-              placeholder={buildExtraJsonPlaceholder()}
-              className="min-h-28 font-mono"
-              onChange={(e) => setExtraJson(e.target.value)}
-            />
-            {buildExtraJsonHint() ? (
-              <p className="text-xs text-muted-foreground">
-                {buildExtraJsonHint()}
-              </p>
-            ) : null}
-          </div>
+          {activeType !== "DOC_PARSE" ? (
+            <div className="space-y-2">
+              <Label htmlFor="ai-config-extra">扩展参数（JSON，可选）</Label>
+              <Textarea
+                id="ai-config-extra"
+                value={extraJson}
+                disabled={saving}
+                placeholder={buildExtraJsonPlaceholder()}
+                className="min-h-28 font-mono"
+                onChange={(e) => setExtraJson(e.target.value)}
+              />
+              {buildExtraJsonHint() ? (
+                <p className="text-xs text-muted-foreground">
+                  {buildExtraJsonHint()}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </KbDialog>
 
