@@ -29,14 +29,8 @@ export function formatDateTime(value?: string | null) {
 }
 
 export function resolveStatusMeta(job: DocumentImportJobResponse): { label: string; className: string } {
-  if (job.status === "completed" && !job.articleId) {
-    return { label: "待合并", className: "bg-sky-500/10 text-sky-600 dark:text-sky-400" }
-  }
   if (job.status === "completed" && job.articleId) {
     return { label: "已生成文章", className: STATUS_META.completed.className }
-  }
-  if (job.status === "failed" && job.failedPages > 0) {
-    return { ...STATUS_META.failed, label: "有失败页" }
   }
   return STATUS_META[job.status] ?? STATUS_META.pending
 }
@@ -57,5 +51,6 @@ export function resolveTargetText(job: DocumentImportJobResponse) {
 }
 
 export function resolveProgressPercent(job: DocumentImportJobResponse) {
-  return job.totalPages > 0 ? Math.round((job.donePages / job.totalPages) * 100) : 0
+  if (job.status === "completed") return 100
+  return job.totalPages > 0 ? Math.round((job.processedPages / job.totalPages) * 100) : 0
 }
