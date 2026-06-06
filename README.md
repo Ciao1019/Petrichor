@@ -433,7 +433,7 @@ pnpm test
 ## 🙏 致谢
 
 - 本项目的前台公开站点 UI 与排版设计借鉴自 [**astro-theme-retypeset**](https://github.com/radishzzz/astro-theme-retypeset) —— 一个优雅、克制、专注阅读的 Astro 博客主题。感谢作者 [@radishzzz](https://github.com/radishzzz) 在中文排版与视觉细节上的精心打磨，为本项目的公开页提供了重要灵感。
-
+感谢 [LinuxDo](https://linux.do/) 社区的支持。
 ---
 
 ## 📄 License
@@ -506,7 +506,7 @@ Public manifest endpoint (no auth) for capability discovery: `GET /api/agent/man
 ### Acknowledgements
 
 The public-facing site's UI and typography were inspired by [**astro-theme-retypeset**](https://github.com/radishzzz/astro-theme-retypeset) by [@radishzzz](https://github.com/radishzzz) — an elegant, reading-focused Astro blog theme with carefully crafted CJK typography.
-
+Thank you to the [LinuxDo](https://linux.do/) community for your support.
 ### License
 
 [Apache License 2.0](LICENSE)
