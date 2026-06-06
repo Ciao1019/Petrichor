@@ -487,7 +487,7 @@ export const aiReviews = pgTable("petrichor_ai_review", {
     index("idx_petrichor_ai_review_user_generated").on(table.userId, table.generatedAt),
 ])
 
-// 文档导入任务：PDF / Word 每页图片经多模态识别后合并为一篇文章
+// 文档导入任务：整份 PDF / Word 交给 MinerU 解析为 Markdown 后生成一篇文章
 export const knowledgeBaseImportJobs = pgTable("petrichor_kb_import_job", {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     userId: bigint("user_id", { mode: "number" }).notNull(),
@@ -496,30 +496,20 @@ export const knowledgeBaseImportJobs = pgTable("petrichor_kb_import_job", {
     sourceType: text("source_type").notNull(),
     fileName: text("file_name").notNull(),
     title: text("title").notNull(),
+    // 原始文件在对象存储中的 key，交给 MinerU 解析
+    sourceFileKey: text("source_file_key").notNull(),
+    // MinerU 解析任务 ID，用于轮询进度
+    mineruTaskId: text("mineru_task_id"),
+    // 进度：总页数 / 已解析页数（由 MinerU 返回）
     totalPages: integer("total_pages").notNull().default(0),
     processedPages: integer("processed_pages").notNull().default(0),
     status: text("status").notNull().default("pending"),
-    modelConfigId: bigint("model_config_id", { mode: "number" }),
     articleId: bigint("article_id", { mode: "number" }),
     error: text("error"),
     ...timestamps,
 }, (table) => [
     index("idx_petrichor_kb_import_job_user").on(table.userId, table.createdAt),
     index("idx_petrichor_kb_import_job_user_kb").on(table.userId, table.knowledgeBaseId),
-])
-
-export const knowledgeBaseImportJobPages = pgTable("petrichor_kb_import_job_page", {
-    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
-    jobId: bigint("job_id", { mode: "number" }).notNull(),
-    pageNo: integer("page_no").notNull(),
-    imageKey: text("image_key").notNull(),
-    status: text("status").notNull().default("pending"),
-    markdown: text("markdown"),
-    error: text("error"),
-    ...timestamps,
-}, (table) => [
-    uniqueIndex("ux_petrichor_kb_import_job_page_job_no").on(table.jobId, table.pageNo),
-    index("idx_petrichor_kb_import_job_page_job").on(table.jobId),
 ])
 
 export type UserRecord = typeof users.$inferSelect
@@ -542,4 +532,3 @@ export type SiteAppearanceRecord = typeof siteAppearance.$inferSelect
 export type AiModelConfigRecord = typeof aiModelConfigs.$inferSelect
 export type AiReviewRecord = typeof aiReviews.$inferSelect
 export type KnowledgeBaseImportJobRecord = typeof knowledgeBaseImportJobs.$inferSelect
-export type KnowledgeBaseImportJobPageRecord = typeof knowledgeBaseImportJobPages.$inferSelect
