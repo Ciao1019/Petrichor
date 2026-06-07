@@ -2,13 +2,8 @@ import { badRequest } from "@/server/http/response"
 import type { AiModelConfigRecord } from "@/server/db/schema"
 import { decryptText, encryptText } from "@/server/crypto/spring-text-encryptor"
 
-export type AiConfigType = "CHAT" | "DOC_PARSE"
-export type AiProtocol = "GEMINI" | "OPENAI" | "DEEPSEEK" | "OPENAI_COMPAT" | "SILICONFLOW" | "MINERU"
-
-/** MinerU 文档解析服务默认地址 */
-export const MINERU_DEFAULT_BASE_URL = "https://mineru.net"
-/** DOC_PARSE 配置不需要模型名，统一占位，便于复用 model 非空列 */
-export const DOC_PARSE_MODEL_PLACEHOLDER = "mineru"
+export type AiConfigType = "CHAT" | "VISION"
+export type AiProtocol = "GEMINI" | "OPENAI" | "DEEPSEEK" | "OPENAI_COMPAT" | "SILICONFLOW"
 
 const defaultEncryptKey = "Ek4EhsOIVMQZ2gMAuJXJzUPjCZOjyKIt"
 const defaultEncryptSalt = "57da7a247bba15d0"
@@ -28,42 +23,22 @@ export interface AiConfigCreateInput {
 export function validateAiConfigCreateInput(raw: unknown): AiConfigCreateInput {
     const value = raw && typeof raw === "object" ? raw as Record<string, unknown> : {}
     const configType = parseConfigType(value.configType)
+    const protocol = parseProtocol(value.protocol)
+    const name = String(value.name ?? "").trim()
+    const model = String(value.model ?? "").trim()
     const enabled = value.enabled == null ? true : Boolean(value.enabled)
     const apiKey = optionalString(value.apiKey)
-    const name = String(value.name ?? "").trim()
 
     if (!configType) {
         throw badRequest("配置类型不能为空")
     }
-    if (!name) {
-        throw badRequest("配置名称不能为空")
-    }
-
-    // 文档解析（DOC_PARSE）只需要服务 Token，协议固定为 MINERU，无需模型名
-    if (configType === "DOC_PARSE") {
-        if (enabled && !apiKey) {
-            throw badRequest("启用配置前必须填写 Token")
-        }
-        return {
-            configType,
-            protocol: "MINERU",
-            name,
-            baseUrl: applyDefaultBaseUrl("MINERU", optionalString(value.baseUrl)),
-            apiKey,
-            model: String(value.model ?? "").trim() || DOC_PARSE_MODEL_PLACEHOLDER,
-            enabled,
-            isDefault: Boolean(value.isDefault),
-            extraJson: optionalString(value.extraJson),
-        }
-    }
-
-    const protocol = parseProtocol(value.protocol)
-    const model = String(value.model ?? "").trim()
-
     if (!protocol) {
         throw badRequest("协议类型不能为空")
     }
     const baseUrl = applyDefaultBaseUrl(protocol, optionalString(value.baseUrl))
+    if (!name) {
+        throw badRequest("配置名称不能为空")
+    }
     if (!model) {
         throw badRequest("模型名称不能为空")
     }
@@ -98,7 +73,7 @@ export function validateAiConfigIdInput(raw: unknown) {
 
 export function parseConfigType(raw: unknown): AiConfigType | null {
     const value = String(raw ?? "").trim()
-    return value === "CHAT" || value === "DOC_PARSE" ? value : null
+    return value === "CHAT" || value === "VISION" ? value : null
 }
 
 export function parseProtocol(raw: unknown): AiProtocol | null {
@@ -108,7 +83,6 @@ export function parseProtocol(raw: unknown): AiProtocol | null {
         || value === "OPENAI_COMPAT"
         || value === "SILICONFLOW"
         || value === "GEMINI"
-        || value === "MINERU"
         ? value
         : null
 }
@@ -125,9 +99,6 @@ export function applyDefaultBaseUrl(protocol: AiProtocol, baseUrl: string | null
     }
     if (protocol === "SILICONFLOW") {
         return "https://api.siliconflow.cn/v1"
-    }
-    if (protocol === "MINERU") {
-        return MINERU_DEFAULT_BASE_URL
     }
     return null
 }
