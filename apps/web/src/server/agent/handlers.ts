@@ -38,8 +38,12 @@ import {
 import { isDescendantKnowledgeBaseNode, moveNodeIdIntoSiblingOrder } from "@/server/kb/node-move-logic"
 import {
     assertKnowledgeBaseOwner,
+    ingestKnowledgeBaseWiki,
     listUserKnowledgeBases,
+    listWikiPages,
+    loadWikiPageDetail,
     readWikiPageForAgent,
+    runWikiLint,
     searchWikiPagesAcrossKbs,
     searchWikiPagesForAgent,
 } from "@/server/kb/wiki-agent-logic"
@@ -174,6 +178,21 @@ const agentArticleMoveSchema = z.object({
     articleId: idSchema,
     parentId: optionalIdSchema.optional(),
     targetIndex: z.coerce.number().int().min(0).optional(),
+})
+
+const agentWikiKbSchema = z.object({
+    knowledgeBaseId: idSchema,
+})
+
+const agentWikiPageDetailSchema = z.object({
+    knowledgeBaseId: idSchema,
+    pageKey: z.string().trim().min(1).max(200),
+})
+
+const agentWikiIngestSchema = z.object({
+    knowledgeBaseId: idSchema,
+    articleIds: z.array(idSchema).max(500).optional(),
+    forceRebuild: z.boolean().optional().default(false),
 })
 
 type AgentDocumentHit = {
@@ -321,7 +340,7 @@ export async function agentCapabilities(request: NextRequest) {
         const baseUrl = getRequestBaseUrl(request)
         return ok({
             name: "Petrichor Agent API",
-            version: "2026-05-26",
+            version: "2026-06-08",
             baseUrl,
             keyPrefix: context.apiKey.keyPrefix,
             scopes: context.scopes,
@@ -343,6 +362,10 @@ export async function agentCapabilities(request: NextRequest) {
                 "document.search",
                 "document.view",
                 "document.qa",
+                "wiki.page.list",
+                "wiki.page.detail",
+                "wiki.lint",
+                "wiki.ingest",
             ],
             manifest: buildAgentManifest(baseUrl),
             knowledgeBases: await listUserKnowledgeBases(context.userId),
@@ -1249,6 +1272,46 @@ function toAgentShareResponse(share: KnowledgeBaseArticleShareRecord) {
         updatedAt: formatDate(share.updatedAt),
         ...buildPublicShareRepostAttribution(share),
     }
+}
+
+export async function agentWikiPageList(request: NextRequest) {
+    return withAgent(request, async (context) => {
+        requireAgentScope(context, "wiki:read")
+        const input = agentWikiKbSchema.parse(await readJson(request))
+        return ok({
+            knowledgeBaseId: String(input.knowledgeBaseId),
+            pages: await listWikiPages(context.userId, input.knowledgeBaseId),
+        })
+    })
+}
+
+export async function agentWikiPageDetail(request: NextRequest) {
+    return withAgent(request, async (context) => {
+        requireAgentScope(context, "wiki:read")
+        const input = agentWikiPageDetailSchema.parse(await readJson(request))
+        return ok(await loadWikiPageDetail(context.userId, input.knowledgeBaseId, input.pageKey))
+    })
+}
+
+export async function agentWikiLint(request: NextRequest) {
+    return withAgent(request, async (context) => {
+        requireAgentScope(context, "wiki:read")
+        const input = agentWikiKbSchema.parse(await readJson(request))
+        return ok(await runWikiLint(context.userId, input.knowledgeBaseId))
+    })
+}
+
+export async function agentWikiIngest(request: NextRequest) {
+    return withAgent(request, async (context) => {
+        requireAgentScope(context, "wiki:write")
+        const input = agentWikiIngestSchema.parse(await readJson(request))
+        return ok(await ingestKnowledgeBaseWiki({
+            userId: context.userId,
+            knowledgeBaseId: input.knowledgeBaseId,
+            articleIds: input.articleIds,
+            forceRebuild: input.forceRebuild,
+        }))
+    })
 }
 
 export async function agentSkill(request: NextRequest) {

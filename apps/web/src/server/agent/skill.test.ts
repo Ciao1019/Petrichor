@@ -32,6 +32,7 @@ describe("Agent Skill 文件", () => {
             "petrichor/skills/qa.md",
             "petrichor/skills/share.md",
             "petrichor/skills/ai.md",
+            "petrichor/skills/wiki.md",
             "petrichor/scripts/petrichor",
             "petrichor/scripts/petrichor-api.sh",
             "petrichor/references/endpoints.md",
@@ -60,6 +61,7 @@ describe("Agent Skill 文件", () => {
         expect(rootSkill).toContain("Read skills/qa.md")
         expect(rootSkill).toContain("Read skills/share.md")
         expect(rootSkill).toContain("Read skills/ai.md")
+        expect(rootSkill).toContain("Read skills/wiki.md")
 
         expect(files.find((file) => file.path === "petrichor/skills/articles.md")?.content)
             .toContain("petrichor article update")
@@ -75,6 +77,12 @@ describe("Agent Skill 文件", () => {
             .toContain("#!/usr/bin/env python3")
         expect(files.find((file) => file.path === "petrichor/references/endpoints.md")?.content)
             .toContain("/api/agent/article/list")
+        expect(files.find((file) => file.path === "petrichor/references/endpoints.md")?.content)
+            .toContain("/api/agent/wiki/ingest")
+        expect(files.find((file) => file.path === "petrichor/skills/wiki.md")?.content)
+            .toContain("petrichor wiki ingest")
+        expect(files.find((file) => file.path === "petrichor/scripts/petrichor")?.content)
+            .toContain("/api/agent/wiki/page/list")
     })
 
     it("输出 ZIP 文件", () => {
@@ -95,6 +103,10 @@ describe("Agent Skill 文件", () => {
         expect(manifest.endpoints.articleShareCreate).toBe("/api/agent/article/share/create")
         expect(manifest.endpoints.articleSummaryGenerate).toBe("/api/agent/article/summary/generate")
         expect(manifest.endpoints.skillPack).toBe("/api/agent/skill-pack")
+        expect(manifest.endpoints.wikiPageList).toBe("/api/agent/wiki/page/list")
+        expect(manifest.endpoints.wikiIngest).toBe("/api/agent/wiki/ingest")
+        expect(manifest.scopes["wiki:read"]).toEqual(["wiki.page.list", "wiki.page.detail", "wiki.lint"])
+        expect(manifest.scopes["wiki:write"]).toEqual(["wiki.ingest"])
         expect(manifest).not.toHaveProperty("requiredHeaders")
     })
 })

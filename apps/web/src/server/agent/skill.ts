@@ -27,6 +27,10 @@ export function buildAgentEndpointMap() {
         documentSearch: "/api/agent/document/search",
         documentView: "/api/agent/document/view",
         documentQa: "/api/agent/document/qa",
+        wikiPageList: "/api/agent/wiki/page/list",
+        wikiPageDetail: "/api/agent/wiki/page/detail",
+        wikiLint: "/api/agent/wiki/lint",
+        wikiIngest: "/api/agent/wiki/ingest",
         legacySkill: "/api/agent/skill",
         skillPack: "/api/agent/skill-pack",
     }
@@ -35,7 +39,7 @@ export function buildAgentEndpointMap() {
 export function buildAgentManifest(baseUrl: string) {
     return {
         name: "Petrichor Agent API",
-        version: "2026-05-26",
+        version: "2026-06-08",
         baseUrl: normalizeAgentBaseUrl(baseUrl),
         auth: {
             type: "bearer",
@@ -53,6 +57,8 @@ export function buildAgentManifest(baseUrl: string) {
             "qa:read": ["document.qa"],
             "share:write": ["article.share.create", "article.share.revoke", "article.share.info"],
             "ai:write": ["article.summary.generate", "article.mindmap.generate"],
+            "wiki:read": ["wiki.page.list", "wiki.page.detail", "wiki.lint"],
+            "wiki:write": ["wiki.ingest"],
         },
         endpoints: buildAgentEndpointMap(),
     }
@@ -70,7 +76,7 @@ description: Use this skill when an AI agent needs to call the Petrichor externa
 # Petrichor
 
 兼容旧入口的单文件 Skill。推荐改用完整 Skill 包，里面是一个 \`petrichor/\` 顶层 skill，
-内部按用户意图路由到 articles / docs / qa / share / ai / setup 子文档：
+内部按用户意图路由到 articles / docs / qa / share / ai / wiki / setup 子文档：
 
 \`\`\`bash
 curl -L "${normalizedBaseUrl}${endpoints.skillPack}" -o petrichor-skill.zip
@@ -133,6 +139,7 @@ export function buildAgentSkillPackageFiles(baseUrl: string): AgentSkillPackageF
         { path: "petrichor/skills/qa.md", content: buildQaSubSkillMarkdown() },
         { path: "petrichor/skills/share.md", content: buildShareSubSkillMarkdown() },
         { path: "petrichor/skills/ai.md", content: buildAiSubSkillMarkdown() },
+        { path: "petrichor/skills/wiki.md", content: buildWikiSubSkillMarkdown() },
         { path: "petrichor/scripts/petrichor", content: buildPetrichorPythonCli() },
         { path: "petrichor/scripts/petrichor-api.sh", content: buildApiHelperScript() },
         { path: "petrichor/references/endpoints.md", content: buildCommonEndpointReference() },
@@ -147,7 +154,7 @@ export function buildAgentSkillPackageZip(baseUrl: string) {
 function buildRootSkillMarkdown(baseUrl: string) {
     return `---
 name: petrichor
-description: Use this skill when an AI agent needs to call the Petrichor external Agent API. Covers knowledge base browsing, article CRUD, folder organization, full-text document search, document viewing, knowledge-base question answering, article share-link management, and AI summary / mindmap / knowledge-graph generation. Triggers include create / update / delete article, organize folders, browse knowledge base, search docs, ask the knowledge base, share article, set share password, summarize article, generate mindmap.
+description: Use this skill when an AI agent needs to call the Petrichor external Agent API. Covers knowledge base browsing, article CRUD, folder organization, full-text document search, document viewing, knowledge-base question answering, article share-link management, AI summary / mindmap / knowledge-graph generation, and knowledge Wiki browsing / ingest / lint. Triggers include create / update / delete article, organize folders, browse knowledge base, search docs, ask the knowledge base, share article, set share password, summarize article, generate mindmap, generate knowledge graph, browse wiki pages, rebuild wiki, lint wiki.
 ---
 
 # Petrichor
@@ -179,6 +186,7 @@ export PETRICHOR_API_KEY="ptc_live_xxx"
 | 文档问答、跨库问答、引用知识库内容回答 | \`Read skills/qa.md\` |
 | 公开文章、设置分享密码 / 到期、撤销分享、查询分享状态 | \`Read skills/share.md\` |
 | AI 摘要、思维导图、知识图谱生成 | \`Read skills/ai.md\` |
+| 浏览知识 Wiki 页面、重建 / ingest Wiki、Wiki 体检 lint | \`Read skills/wiki.md\` |
 
 子文档默认按需加载；用户的请求涉及多个意图（例如先搜索再问答）时按顺序读多个子文档。
 
@@ -394,6 +402,42 @@ scripts/petrichor mindmap generate --article-id 123 --mode KNOWLEDGE_GRAPH --for
 `
 }
 
+function buildWikiSubSkillMarkdown() {
+    return `# Petrichor — Wiki（知识 Wiki 浏览 / ingest / 体检）
+
+知识 Wiki 是在某个知识库的文章之上自动生成、互相链接的结构化页面（index / concept / entity / comparison / answer / source 等）。
+读操作需要 \`wiki:read\`；触发 ingest 重建需要 \`wiki:write\`。所有操作面向单个知识库，仅知识库拥有者可执行。
+
+## 工作流
+
+1. 不确定知识库 ID 时，先 \`scripts/petrichor kb list\`。
+2. 浏览 Wiki 页面清单：\`scripts/petrichor wiki page list --kb-id <ID>\`，拿到每页的 \`pageKey\`。
+3. 读取单页正文与出处：\`scripts/petrichor wiki page detail --kb-id <ID> --page-key <key>\`。
+4. 体检 Wiki（断链、缺页、待审批补丁等）：\`scripts/petrichor wiki lint --kb-id <ID>\`，先看问题再决定要不要重建。
+5. 重建 / 增量 ingest：\`scripts/petrichor wiki ingest --kb-id <ID>\`。
+   - 只想针对部分文章重建时加 \`--article-id\`（可重复）。
+   - 想忽略缓存整体重建时加 \`--force\`。
+6. ingest 会调用模型、可能产生费用，触发前先告诉用户。
+
+> 读取单篇 Wiki 页面正文也可以走 docs 子能力：\`scripts/petrichor doc view --kb-id <ID> --page-key <key>\`。
+> 知识图谱生成不在这里，走 AI 子能力：\`scripts/petrichor mindmap generate --article-id <ID> --mode KNOWLEDGE_GRAPH\`（\`Read skills/ai.md\`）。
+
+## 命令
+
+\`\`\`bash
+scripts/petrichor wiki page list --kb-id 1
+scripts/petrichor wiki page detail --kb-id 1 --page-key index
+scripts/petrichor wiki lint --kb-id 1
+
+scripts/petrichor wiki ingest --kb-id 1
+scripts/petrichor wiki ingest --kb-id 1 --article-id 12 --article-id 34
+scripts/petrichor wiki ingest --kb-id 1 --force
+\`\`\`
+
+详细字段见 \`references/endpoints.md\`。
+`
+}
+
 function buildApiHelperScript() {
     return `#!/usr/bin/env bash
 set -euo pipefail
@@ -525,6 +569,26 @@ Authorization: Bearer <PETRICHOR_API_KEY>
   - scope: \`qa:read\`
   - body: \`{"question":"问题","knowledgeBaseId":"1","limit":6}\`
   - 跨库问答时省略 \`knowledgeBaseId\`。
+
+## 知识 Wiki
+
+- \`POST /api/agent/wiki/page/list\`
+  - scope: \`wiki:read\`
+  - body: \`{"knowledgeBaseId":"1"}\`
+  - 返回该知识库的全部 Wiki 页面（含 \`pageKey\`、\`kind\`、\`title\` 等）。
+- \`POST /api/agent/wiki/page/detail\`
+  - scope: \`wiki:read\`
+  - body: \`{"knowledgeBaseId":"1","pageKey":"index"}\`
+  - 返回单页正文、出处引用和关联链接。
+- \`POST /api/agent/wiki/lint\`
+  - scope: \`wiki:read\`
+  - body: \`{"knowledgeBaseId":"1"}\`
+  - 返回 Wiki 体检结果（断链、缺页、待审批补丁等）。
+- \`POST /api/agent/wiki/ingest\`
+  - scope: \`wiki:write\`
+  - body: \`{"knowledgeBaseId":"1","articleIds":["12","34"],"forceRebuild":false}\`
+  - 省略 \`articleIds\` 时对整个知识库做增量 ingest；\`forceRebuild\` 为 \`true\` 时忽略缓存整体重建。
+  - 会调用模型，可能产生费用。
 `
 }
 
@@ -798,6 +862,26 @@ def cmd_mindmap_generate(args: argparse.Namespace) -> None:
     _print_json(_request("POST", "/api/agent/article/mindmap/generate", body))
 
 
+def cmd_wiki_page_list(args: argparse.Namespace) -> None:
+    _print_json(_request("POST", "/api/agent/wiki/page/list", {"knowledgeBaseId": _id(args.kb_id)}))
+
+
+def cmd_wiki_page_detail(args: argparse.Namespace) -> None:
+    body = {"knowledgeBaseId": _id(args.kb_id), "pageKey": args.page_key}
+    _print_json(_request("POST", "/api/agent/wiki/page/detail", body))
+
+
+def cmd_wiki_lint(args: argparse.Namespace) -> None:
+    _print_json(_request("POST", "/api/agent/wiki/lint", {"knowledgeBaseId": _id(args.kb_id)}))
+
+
+def cmd_wiki_ingest(args: argparse.Namespace) -> None:
+    body: Dict[str, Any] = {"knowledgeBaseId": _id(args.kb_id), "forceRebuild": bool(args.force)}
+    if args.article_id:
+        body["articleIds"] = [_id(value) for value in args.article_id]
+    _print_json(_request("POST", "/api/agent/wiki/ingest", body))
+
+
 # ---- argparse wiring ---------------------------------------------------------
 
 def _add_content_args(p: argparse.ArgumentParser) -> None:
@@ -894,6 +978,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--mode", choices=["MINDMAP", "KNOWLEDGE_GRAPH"], default="MINDMAP")
     p.add_argument("--force", action="store_true")
 
+    wiki = sub.add_parser("wiki", help="知识 Wiki 浏览 / ingest / 体检")
+    wiki_sub = wiki.add_subparsers(dest="wiki_cmd", required=True)
+    page = wiki_sub.add_parser("page", help="Wiki 页面")
+    page_sub = page.add_subparsers(dest="wiki_page_cmd", required=True)
+    p = page_sub.add_parser("list", help="列出某知识库的全部 Wiki 页面")
+    p.add_argument("--kb-id", type=int, required=True)
+    p = page_sub.add_parser("detail", help="查看单个 Wiki 页面正文与出处")
+    p.add_argument("--kb-id", type=int, required=True)
+    p.add_argument("--page-key", required=True)
+    p = wiki_sub.add_parser("lint", help="Wiki 体检（断链 / 缺页 / 待审批补丁）")
+    p.add_argument("--kb-id", type=int, required=True)
+    p = wiki_sub.add_parser("ingest", help="增量 / 强制重建知识库的 Wiki")
+    p.add_argument("--kb-id", type=int, required=True)
+    p.add_argument("--article-id", type=int, action="append", help="可重复，只重建这些文章；省略则整库增量")
+    p.add_argument("--force", action="store_true", help="忽略缓存整体重建")
+
     return parser
 
 
@@ -916,6 +1016,10 @@ COMMANDS = {
     ("share", "info"): cmd_share_info,
     ("summary", "generate"): cmd_summary_generate,
     ("mindmap", "generate"): cmd_mindmap_generate,
+    ("wiki", "page-list"): cmd_wiki_page_list,
+    ("wiki", "page-detail"): cmd_wiki_page_detail,
+    ("wiki", "lint"): cmd_wiki_lint,
+    ("wiki", "ingest"): cmd_wiki_ingest,
 }
 
 
@@ -930,8 +1034,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         "share": "share_cmd",
         "summary": "summary_cmd",
         "mindmap": "mindmap_cmd",
+        "wiki": "wiki_cmd",
     }.get(args.command)
     sub_value = getattr(args, sub_attr) if sub_attr else None
+    if args.command == "wiki" and sub_value == "page":
+        sub_value = f"page-{args.wiki_page_cmd}"
     handler = COMMANDS.get((args.command, sub_value))
     if handler is None:
         parser.error(f"unknown command: {args.command} {sub_value or ''}")
