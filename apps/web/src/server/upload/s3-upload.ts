@@ -27,7 +27,8 @@ export async function uploadS3ObjectBytes(input: {
     })
     const response = await fetch(url, {
         method: "PUT",
-        body: input.data,
+        // DOM fetch 的 BodyInit 不接受 Node Buffer，转成 Uint8Array（BufferSource）。
+        body: new Uint8Array(input.data),
         headers: { "Content-Type": input.contentType },
     })
     if (!response.ok) {
