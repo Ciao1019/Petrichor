@@ -923,9 +923,9 @@ export const knowledgeBaseQaApi = {
 }
 
 // AI 模型配置相关类型
-export type AiConfigType = "CHAT" | "DOC_PARSE"
+export type AiConfigType = "CHAT" | "VISION"
 
-export type AiProtocol = "OPENAI" | "DEEPSEEK" | "OPENAI_COMPAT" | "SILICONFLOW" | "GEMINI" | "MINERU"
+export type AiProtocol = "OPENAI" | "DEEPSEEK" | "OPENAI_COMPAT" | "SILICONFLOW" | "GEMINI"
 
 export interface AiModelConfigResponse {
   id: string
@@ -956,12 +956,11 @@ export interface AiModelConfigListRequest {
 
 export interface AiModelConfigCreateRequest {
   configType: AiConfigType
-  // DOC_PARSE 类型由服务端固定协议/模型，可省略
-  protocol?: AiProtocol
+  protocol: AiProtocol
   name: string
   baseUrl?: string
   apiKey?: string
-  model?: string
+  model: string
   enabled?: boolean
   isDefault?: boolean
   extraJson?: string
@@ -1390,6 +1389,8 @@ export type DocumentImportJobStatus =
   | "failed"
   | "canceled"
 
+export type DocumentImportPageStatus = "pending" | "done" | "failed"
+
 export interface DocumentImportJobResponse {
   id: string
   knowledgeBaseId: string
@@ -1401,11 +1402,23 @@ export interface DocumentImportJobResponse {
   title: string
   totalPages: number
   processedPages: number
+  donePages: number
+  failedPages: number
+  pendingPages: number
   status: DocumentImportJobStatus
+  modelConfigId: string | null
   articleId: string | null
   error: string | null
   createdAt: string
   updatedAt: string
+}
+
+export interface DocumentImportPageResponse {
+  pageNo: number
+  imageKey: string
+  status: DocumentImportPageStatus
+  markdown: string | null
+  error: string | null
 }
 
 export interface DocumentImportCreateRequest {
@@ -1414,15 +1427,28 @@ export interface DocumentImportCreateRequest {
   sourceType: DocumentImportSourceType
   fileName: string
   title: string
-  /** 上传到对象存储后的原始文件 key */
-  fileKey: string
+  modelConfigId?: string | null
+  concurrency?: number
+  pages: { pageNo: number; imageKey: string }[]
+}
+
+export interface DocumentImportConvertResponse {
+  page: DocumentImportPageResponse
+  processedPages: number
+  status: DocumentImportJobStatus
 }
 
 export const documentImportApi = {
   createJob: (data: DocumentImportCreateRequest) =>
     api.post<{ job: DocumentImportJobResponse }>("/kb/import/create", data),
-  retry: (data: { jobId: string }) =>
-    api.post<{ status: DocumentImportJobStatus }>("/kb/import/retry", data),
+  convertPage: (data: { jobId: string; pageNo: number }) =>
+    api.post<DocumentImportConvertResponse>("/kb/import/page-convert", data),
+  retryPage: (data: { jobId: string; pageNo: number }) =>
+    api.post<DocumentImportConvertResponse>("/kb/import/retry-page", data),
+  retryFailedPages: (data: { jobId: string }) =>
+    api.post<{ retried: number; status: DocumentImportJobStatus }>("/kb/import/retry-failed", data),
+  finalize: (data: { jobId: string }) =>
+    api.post<{ articleId: string; nodeId: string | null }>("/kb/import/finalize", data),
   cancel: (data: { jobId: string }) =>
     api.post<{ id: string; status: DocumentImportJobStatus }>("/kb/import/cancel", data),
   deleteMany: (data: { ids: string[] }) =>
@@ -1430,7 +1456,10 @@ export const documentImportApi = {
   list: (data: { knowledgeBaseId?: string; pageNum?: number; pageSize?: number }) =>
     api.post<TableDataInfo<DocumentImportJobResponse>>("/kb/import/list", data),
   detail: (data: { jobId: string }) =>
-    api.post<{ job: DocumentImportJobResponse }>("/kb/import/detail", data),
+    api.post<{ job: DocumentImportJobResponse; pages: DocumentImportPageResponse[] }>(
+      "/kb/import/detail",
+      data,
+    ),
 }
 
 // 仪表盘总览相关类型

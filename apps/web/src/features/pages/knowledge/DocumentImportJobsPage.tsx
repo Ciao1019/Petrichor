@@ -144,20 +144,21 @@ export function DocumentImportJobsPage() {
       enableSorting: false,
       cell: ({ row }) => {
         const job = row.original
-        const percent = resolveProgressPercent(job)
+        const unfinishedPages = Math.max(0, job.totalPages - job.donePages)
         return (
           <div className="w-40 max-w-full space-y-1">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>{percent}%</span>
-              {job.totalPages > 0 ? (
-                <span className="tabular-nums">{job.processedPages}/{job.totalPages} 页</span>
-              ) : null}
+              <span>{resolveProgressPercent(job)}%</span>
+              <span className="tabular-nums">{job.donePages}/{job.totalPages}</span>
             </div>
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
               <div
-                className={cn("h-full rounded-full", job.status === "failed" ? "bg-destructive" : "bg-primary")}
-                style={{ width: `${percent}%` }}
+                className={cn("h-full rounded-full", job.failedPages > 0 ? "bg-destructive" : "bg-primary")}
+                style={{ width: `${resolveProgressPercent(job)}%` }}
               />
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              未完成 {unfinishedPages} 页{job.failedPages > 0 ? ` · 失败 ${job.failedPages} 页` : ""}
             </div>
           </div>
         )
@@ -237,7 +238,7 @@ export function DocumentImportJobsPage() {
       <div className="flex items-center justify-between gap-4">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold">文档导入任务</h1>
-          <p className="text-sm text-muted-foreground">查看 PDF / Word 解析进度，解析完成后会自动生成文章。</p>
+          <p className="text-sm text-muted-foreground">查看 PDF / Word 导入进度，重试失败页或手动合并文章。</p>
         </div>
         <div className="flex items-center gap-2">
           {selectedIds.length > 0 ? (
@@ -361,7 +362,7 @@ export function DocumentImportJobsPage() {
         }
       >
         <p className="px-1 py-1 text-sm text-muted-foreground">
-          删除后导入任务记录将被移除；已经生成的文章不会被删除。
+          删除后任务及其页面识别记录将被移除；已经生成的文章不会被删除。
         </p>
       </KbDialog>
     </div>
