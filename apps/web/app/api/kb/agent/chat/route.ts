@@ -354,14 +354,14 @@ function buildKnowledgeAgentTools(context: {
             }),
         }),
         read_wiki_page: tool({
-            description: "读取一个具体 Wiki 页面。用于获得可引用、可回答的中间知识；若源文档含图片，会在 media 字段返回可直接渲染的图片引用。",
+            description: "读取一个具体 Wiki 页面。用于获得可引用、可回答的中间知识；若内容含图片/视频/音频/附件，会在 media 字段返回可直接渲染或下载的媒体引用（每项带 kind 类型）。",
             inputSchema: z.object({
                 pageKey: z.string().min(1),
             }),
             execute: async ({ pageKey }) => await readWikiPageForAgent(context.userId, context.knowledgeBaseId, pageKey),
         }),
         read_source_article: tool({
-            description: "当 Wiki 页面不足以回答、需要核验原文或查看图片时读取源文档；若原文含图片，会在 media 字段返回可直接渲染的图片引用。",
+            description: "当 Wiki 页面不足以回答、需要核验原文或查看图片时读取源文档；若内容含图片/视频/音频/附件，会在 media 字段返回可直接渲染或下载的媒体引用（每项带 kind 类型）。",
             inputSchema: z.object({
                 articleId: idSchema,
             }),
@@ -434,7 +434,7 @@ function buildAgentSystemPrompt() {
         "5. 发现值得沉淀的新结论时，调用 propose_wiki_patch 提交待审批补丁，不要声称已写入 Wiki。",
         "6. 对比、矩阵、清单类结果优先调用 show_data_table。",
         "7. 可复用的最终答案调用 save_answer_artifact 保存为产物。",
-        "8. 当用户明确要看图片、架构图、截图或图表时，必须查看 read_wiki_page / read_source_article 返回的 media 字段；若存在图片，直接在最终答案中输出 Markdown 图片：`![说明](src)`，src 使用 media.src 原值，不要只给对象路径或让用户点击引用卡片。",
+        "8. 当用户需要查看或下载文档里的图片、架构图、截图、图表、视频、音频或附件时，必须查看 read_wiki_page / read_source_article 返回的 media 字段，并按每项的 media.kind 在最终答案中直接输出对应标签（src 一律使用 media.src 原值，不要只给对象路径或只让用户点击引用卡片）：image 用 `![说明](src)`；video 用自闭合 `<video src=\"src\" />`；audio 用自闭合 `<audio src=\"src\" />`；file 用自闭合 `<file src=\"src\" name=\"文件名\" />`（name 用 media.filename）。务必使用自闭合写法，不要输出 `</video>`、`</audio>`、`</file>` 等闭合标签；这些媒体标签要独立成段，不要放进表格单元格里。",
         "9. 只使用中文回答。答案要直接、结构清晰、避免编造。",
     ].join("\n")
 }
@@ -449,7 +449,7 @@ function buildGlobalAgentSystemPrompt() {
         "4. 回答必须给出依据，调用 show_citations 渲染引用。每个引用的 href 必须填可跳转的文章详情页路径：`/dashboard/knowledge/<knowledgeBaseId>/articles/<articleId>`。articleId 从工具返回值的 articleId 字段获取；如果只有 pageKey 形如 `source-<id>`，可以解析出 articleId。title 写「页面标题」，domain 写「知识库名」。",
         "5. 涉及多步分析时调用 show_agent_plan / show_progress。结构化结果调用 show_data_table。",
         "6. 不要直接修改 Wiki；如果需要沉淀结论，请提示用户去具体知识库内提交补丁。",
-        "7. 当用户明确要看图片、架构图、截图或图表时，必须查看 read_wiki_page / read_source_article 返回的 media 字段；若存在图片，直接在最终答案中输出 Markdown 图片：`![说明](src)`，src 使用 media.src 原值，不要只给对象路径或让用户点击引用卡片。",
+        "7. 当用户需要查看或下载文档里的图片、架构图、截图、图表、视频、音频或附件时，必须查看 read_wiki_page / read_source_article 返回的 media 字段，并按每项的 media.kind 在最终答案中直接输出对应标签（src 一律使用 media.src 原值，不要只给对象路径或只让用户点击引用卡片）：image 用 `![说明](src)`；video 用自闭合 `<video src=\"src\" />`；audio 用自闭合 `<audio src=\"src\" />`；file 用自闭合 `<file src=\"src\" name=\"文件名\" />`（name 用 media.filename）。务必使用自闭合写法，不要输出 `</video>`、`</audio>`、`</file>` 等闭合标签；这些媒体标签要独立成段，不要放进表格单元格里。",
         "8. 只使用中文回答。答案要直接、结构清晰、避免编造；明确告诉用户答案来自哪个知识库。",
     ].join("\n")
 }
@@ -498,7 +498,7 @@ function buildGlobalAgentTools(context: {
             }),
         }),
         read_wiki_page: tool({
-            description: "读取指定知识库内的具体 Wiki 页面。需要传 knowledgeBaseId（数字字符串）和 pageKey；若源文档含图片，会在 media 字段返回可直接渲染的图片引用。",
+            description: "读取指定知识库内的具体 Wiki 页面。需要传 knowledgeBaseId（数字字符串）和 pageKey；若内容含图片/视频/音频/附件，会在 media 字段返回可直接渲染或下载的媒体引用（每项带 kind 类型）。",
             inputSchema: z.object({
                 knowledgeBaseId: idSchema,
                 pageKey: z.string().min(1),
@@ -506,7 +506,7 @@ function buildGlobalAgentTools(context: {
             execute: async ({ knowledgeBaseId, pageKey }) => await readWikiPageForAgent(context.userId, knowledgeBaseId, pageKey),
         }),
         read_source_article: tool({
-            description: "读取指定知识库内的源文档。仅在 Wiki 信息不足或需要查看图片时使用；若原文含图片，会在 media 字段返回可直接渲染的图片引用。",
+            description: "读取指定知识库内的源文档。仅在 Wiki 信息不足或需要查看图片时使用；若内容含图片/视频/音频/附件，会在 media 字段返回可直接渲染或下载的媒体引用（每项带 kind 类型）。",
             inputSchema: z.object({
                 knowledgeBaseId: idSchema,
                 articleId: idSchema,

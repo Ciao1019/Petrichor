@@ -9,17 +9,39 @@ import {
   useIsMarkdownCodeBlock,
 } from "@assistant-ui/react-markdown";
 import remarkGfm from "remark-gfm";
-import { type FC, memo, useState } from "react";
+import { remarkVideo } from "@lobehub/ui";
+import { type ComponentProps, type FC, memo, useState } from "react";
 import { CheckIcon, CopyIcon } from "lucide-react";
 
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { SignedMarkdownImage, storageMarkdownUrlTransform } from "@/components/assistant-ui/signed-markdown-image";
+import {
+  remarkStripDanglingMediaTags,
+  SignedMarkdownAudio,
+  SignedMarkdownFile,
+  SignedMarkdownVideo,
+} from "@/components/assistant-ui/signed-markdown-media";
 import { cn } from "@/lib/utils";
+
+// 把 <video>/<audio>/<file> 标签从原始 HTML 节点转成可渲染元素（无需 allowHtml）。
+const remarkPlugins: ComponentProps<typeof MarkdownTextPrimitive>["remarkPlugins"] = [
+  remarkGfm,
+  [remarkVideo, { videoTags: ["video", "audio", "file"] }],
+  remarkStripDanglingMediaTags,
+];
+
+// video/audio 是标准标签；file 为自定义标签（remarkVideo 透传 hName），
+// 用 spread 并入以绕过 Components 类型对未知标签 key 的排除。
+const mediaComponents = {
+  video: SignedMarkdownVideo,
+  audio: SignedMarkdownAudio,
+  file: SignedMarkdownFile,
+};
 
 const MarkdownTextImpl = () => {
   return (
     <MarkdownTextPrimitive
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={remarkPlugins}
       urlTransform={storageMarkdownUrlTransform}
       className="aui-md"
       components={defaultComponents}
@@ -147,6 +169,7 @@ const defaultComponents = memoizeMarkdownComponents({
     />
   ),
   img: SignedMarkdownImage,
+  ...mediaComponents,
   blockquote: ({ className, ...props }) => (
     <blockquote
       className={cn(

@@ -46,22 +46,13 @@ function resolveApiError(error: unknown) {
 
 function PixelAvatar() {
     return (
-        <svg
-            viewBox="0 0 32 32"
-            className="blog-pixel-art relative z-10 h-full w-full drop-shadow-[0_0_15px_rgba(255,255,255,0.22)]"
-            aria-hidden="true"
-            focusable="false"
-        >
-            <rect x="10" y="6" width="12" height="14" fill="#FFDBAC" />
-            <rect x="8" y="4" width="16" height="8" fill="#4B3621" />
-            <rect x="6" y="8" width="4" height="12" fill="#4B3621" />
-            <rect x="22" y="8" width="4" height="12" fill="#4B3621" />
-            <rect x="11" y="10" width="3" height="2" fill="#000000" />
-            <rect x="18" y="10" width="3" height="2" fill="#000000" />
-            <rect x="14" y="15" width="4" height="2" fill="#E2725B" />
-            <rect x="8" y="20" width="16" height="10" fill="#003399" />
-            <rect x="14" y="20" width="4" height="10" fill="#FFD700" />
-        </svg>
+        <img
+            src="/about-avatar.png"
+            alt="头像"
+            className="relative z-10 h-full w-full rounded-md object-cover drop-shadow-[0_0_15px_rgba(255,255,255,0.22)]"
+            loading="lazy"
+            decoding="async"
+        />
     )
 }
 
