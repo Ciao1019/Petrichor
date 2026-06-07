@@ -390,14 +390,7 @@ async function finalizeMineruJob(
 
     await db
         .update(knowledgeBaseImportJobs)
-        .set({
-            articleId: article.id,
-            status: "completed",
-            // 完成时把已解析页数补齐为总页数，避免出现「2/3 页 已完成」的不一致
-            processedPages: job.totalPages,
-            error: null,
-            updatedAt: new Date(),
-        })
+        .set({ articleId: article.id, status: "completed", error: null, updatedAt: new Date() })
         .where(eq(knowledgeBaseImportJobs.id, job.id))
 }
 
