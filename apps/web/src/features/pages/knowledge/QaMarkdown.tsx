@@ -2,19 +2,34 @@
 
 import * as React from "react"
 import { useMessagePartText } from "@assistant-ui/react"
-import { Markdown, ThemeProvider, type MarkdownProps } from "@lobehub/ui"
+import { Markdown, remarkVideo, ThemeProvider, type MarkdownProps } from "@lobehub/ui"
 
 import { useTheme } from "@/components/theme-provider"
 import {
   SignedMarkdownImage,
   storageMarkdownUrlTransform,
 } from "@/components/assistant-ui/signed-markdown-image"
+import {
+  remarkStripDanglingMediaTags,
+  SignedMarkdownAudio,
+  SignedMarkdownFile,
+  SignedMarkdownVideo,
+} from "@/components/assistant-ui/signed-markdown-media"
 
 const QA_REACT_MARKDOWN_PROPS = {
   urlTransform: storageMarkdownUrlTransform,
 }
+// LobeHub 默认已用 remarkVideo 处理 <video>；这里再补上 <audio>/<file>，
+// 把它们从原始 HTML 节点转成可渲染元素（无需开启 allowHtml）。
+const QA_REMARK_PLUGINS: NonNullable<MarkdownProps["remarkPlugins"]> = [
+  [remarkVideo, { videoTags: ["audio", "file"] }],
+  remarkStripDanglingMediaTags,
+]
 const QA_MARKDOWN_COMPONENTS: NonNullable<MarkdownProps["components"]> = {
   img: SignedMarkdownImage,
+  video: SignedMarkdownVideo,
+  audio: SignedMarkdownAudio,
+  file: SignedMarkdownFile,
 }
 
 /** 解析当前明暗：跟随 app 的 theme-provider（system 时再跟随系统）。 */
@@ -170,6 +185,7 @@ export function QaMarkdownText() {
       animated={animating}
       enableStream
       streamSmoothingPreset="silky"
+      remarkPlugins={QA_REMARK_PLUGINS}
       components={QA_MARKDOWN_COMPONENTS}
       reactMarkdownProps={QA_REACT_MARKDOWN_PROPS}
       // KB 回答用不到图片画廊预览；关掉它顺带消除 antd Image 的 rootClassName 弃用告警。

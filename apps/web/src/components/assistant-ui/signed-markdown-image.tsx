@@ -8,18 +8,15 @@ import { normalizeS4ObjectUrl } from "@/lib/s4-url"
 import { cn } from "@/lib/utils"
 import { protectedImageProps } from "@/components/ui/protected-media"
 
-const STORAGE_IMAGE_PATTERN = /^s4key:uploads\/\d+\/.+\.(png|jpe?g|gif|webp|avif|svg|bmp)(?:[?#].*)?$/i
-
 type SignedMarkdownImageProps = React.ImgHTMLAttributes<HTMLImageElement> & {
   node?: unknown
 }
 
 export const storageMarkdownUrlTransform: UrlTransform = (url, key) => {
-  if (key === "src") {
-    const normalized = normalizeS4ObjectUrl(url)
-    if (normalized && STORAGE_IMAGE_PATTERN.test(normalized)) {
-      return url
-    }
+  // 保留所有 s4key: 媒体（图片/视频/音频）的 src，交由各自组件实时签名；
+  // 否则 react-markdown 会把未知 scheme 的 s4key: 视为不安全而清空。
+  if (key === "src" && normalizeS4ObjectUrl(url)) {
+    return url
   }
   return defaultUrlTransform(url)
 }

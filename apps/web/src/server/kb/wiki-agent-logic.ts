@@ -31,8 +31,11 @@ type Db = ReturnType<typeof getDb>
 
 export type WikiPageKind = "index" | "source" | "concept" | "entity" | "comparison" | "answer" | "log"
 export type WikiPatchStatus = "PENDING" | "APPLIED" | "REJECTED"
+export type AgentMediaKind = "image" | "video" | "audio" | "file"
+
 export type AgentImageReference = {
     id: string
+    kind: AgentMediaKind
     alt: string
     src: string
     objectKey: string | null
@@ -1095,10 +1098,49 @@ export async function readSourceArticleForAgent(userId: number, knowledgeBaseId:
     }
 }
 
+// 各类媒体的扩展名归类——决定渲染层用 <img>/<video>/<audio>/<file> 中的哪一个。
+const MEDIA_EXTENSION_PATTERNS: Record<AgentMediaKind, RegExp> = {
+    image: /\.(?:png|jpe?g|gif|webp|avif|svg|bmp)(?:[?#].*)?$/i,
+    video: /\.(?:mp4|webm|ogv|mov|m4v|mkv)(?:[?#].*)?$/i,
+    audio: /\.(?:mp3|wav|m4a|aac|flac|ogg|oga)(?:[?#].*)?$/i,
+    file: /\.(?:pdf|docx?|pptx?|xlsx?|csv|txt|md|zip|rar|7z|json)(?:[?#].*)?$/i,
+}
+// image/video/audio 走扩展名识别；其余存储对象一律兜底为可下载附件（file）。
+const MEDIA_EXTENSION_ORDER: AgentMediaKind[] = ["image", "video", "audio", "file"]
+
 const MARKDOWN_IMAGE_PATTERN = /!\[([^\]\n]*)]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g
-const HTML_IMAGE_PATTERN = /<img\b[^>]*\bsrc=(["'])(.*?)\1[^>]*>/gi
-const RAW_STORAGE_IMAGE_PATTERN = /(?:s4key:)?\/?uploads\/\d+\/[^\s"'<>()[\]{}]+?\.(?:png|jpe?g|gif|webp|avif|svg|bmp)(?:[?#][^\s"'<>()[\]{}]*)?/gi
-const IMAGE_SOURCE_PATTERN = /\.(?:png|jpe?g|gif|webp|avif|svg|bmp)(?:[?#].*)?$/i
+// 普通 Markdown 链接（排除图片语法 ![]()），用于附件/视频下载链接。
+const MARKDOWN_LINK_PATTERN = /(?<!!)\[([^\]\n]*)]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g
+// 编辑器上传的图片/视频/附件以 <img>/<video>/<audio>/<file ... src="s4key:..."> 形式入库。
+const HTML_MEDIA_PATTERN = /<(?:img|video|audio|source|file)\b[^>]*\bsrc=(["'])(.*?)\1[^>]*>/gi
+const HTML_ANCHOR_PATTERN = /<a\b[^>]*\bhref=(["'])(.*?)\1[^>]*>/gi
+// 裸存储路径：uploads/<id>/<对象> + 任意扩展名（含 .icls 等自定义附件）。
+const RAW_STORAGE_MEDIA_PATTERN = /(?:s4key:)?\/?uploads\/\d+\/[^\s"'<>()[\]{}]+?\.[A-Za-z0-9]{1,12}(?:[?#][^\s"'<>()[\]{}]*)?/g
+
+/** 仅按扩展名识别 image/video/audio/file；无法识别返回 null。 */
+function classifyMediaExtension(path: string): AgentMediaKind | null {
+    for (const kind of MEDIA_EXTENSION_ORDER) {
+        if (MEDIA_EXTENSION_PATTERNS[kind].test(path)) return kind
+    }
+    return null
+}
+
+/** 按媒体类型分配稳定 id（image-1 / video-1 / file-1 …），同类内自增。 */
+function makeMediaIdAssigner() {
+    const counters: Record<AgentMediaKind, number> = { image: 0, video: 0, audio: 0, file: 0 }
+    return (kind: AgentMediaKind) => `${kind}-${(counters[kind] += 1)}`
+}
+
+/** 从 HTML 标签中按优先级取第一个非空属性值（如 <file name> 的真实文件名）。 */
+function extractHtmlAttr(rawTag: string | undefined, attrNames: string[]): string | undefined {
+    if (!rawTag) return undefined
+    for (const attr of attrNames) {
+        const match = rawTag.match(new RegExp(`\\b${attr}=(["'])(.*?)\\1`, "i"))
+        const value = match?.[2]?.trim()
+        if (value) return value
+    }
+    return undefined
+}
 
 export function extractAgentImageReferences(
     markdown: string | null | undefined,
@@ -1107,33 +1149,48 @@ export function extractAgentImageReferences(
     if (!markdown?.trim()) return []
     const refs: AgentImageReference[] = []
     const seen = new Set<string>()
+    const assignId = makeMediaIdAssigner()
 
-    function add(rawSrc: string | undefined, rawAlt: string | undefined) {
-        const normalized = normalizeAgentImageSource(rawSrc)
+    function add(rawSrc: string | undefined, opts?: { label?: string; filename?: string }) {
+        const normalized = normalizeAgentMediaSource(rawSrc)
         if (!normalized) return
         const key = normalized.objectKey ?? normalized.src
         if (seen.has(key)) return
         seen.add(key)
+        // 显式文件名（如 <file name="真实名.icls">）优先于从 UUID 对象键推断的名字。
+        const filename = opts?.filename?.trim() || normalized.filename
         refs.push({
-            id: `image-${refs.length + 1}`,
-            alt: normalizeImageAlt(rawAlt, normalized.filename),
+            id: assignId(normalized.kind),
+            kind: normalized.kind,
+            alt: normalizeMediaAlt(opts?.label, filename, normalized.kind),
             src: normalized.src,
             objectKey: normalized.objectKey,
-            filename: normalized.filename,
+            filename,
             ...source,
         })
     }
 
     for (const match of markdown.matchAll(MARKDOWN_IMAGE_PATTERN)) {
-        add(match[2], match[1])
+        add(match[2], { label: match[1] })
     }
 
-    for (const match of markdown.matchAll(HTML_IMAGE_PATTERN)) {
-        add(match[2], extractHtmlAlt(match[0]))
+    for (const match of markdown.matchAll(MARKDOWN_LINK_PATTERN)) {
+        add(match[2], { label: match[1] })
     }
 
-    for (const match of markdown.matchAll(RAW_STORAGE_IMAGE_PATTERN)) {
-        add(match[0], undefined)
+    for (const match of markdown.matchAll(HTML_MEDIA_PATTERN)) {
+        const name = extractHtmlAttr(match[0], ["name", "download", "title"])
+        const alt = extractHtmlAttr(match[0], ["alt"])
+        add(match[2], { label: name ?? alt, filename: name })
+    }
+
+    for (const match of markdown.matchAll(HTML_ANCHOR_PATTERN)) {
+        const name = extractHtmlAttr(match[0], ["download", "title"])
+        add(match[2], { label: name, filename: name })
+    }
+
+    for (const match of markdown.matchAll(RAW_STORAGE_MEDIA_PATTERN)) {
+        add(match[0])
     }
 
     return refs.slice(0, 20)
@@ -1164,53 +1221,59 @@ async function loadArticleImageReferences(userId: number, knowledgeBaseId: numbe
 function mergeAgentImageReferences(refs: AgentImageReference[]) {
     const merged: AgentImageReference[] = []
     const seen = new Set<string>()
+    const assignId = makeMediaIdAssigner()
     for (const ref of refs) {
         const key = ref.objectKey ?? ref.src
         if (seen.has(key)) continue
         seen.add(key)
-        merged.push({ ...ref, id: `image-${merged.length + 1}` })
+        merged.push({ ...ref, id: assignId(ref.kind) })
     }
     return merged.slice(0, 20)
 }
 
-function normalizeAgentImageSource(rawSrc: string | undefined) {
+function normalizeAgentMediaSource(rawSrc: string | undefined) {
     const src = rawSrc?.trim().replace(/^<|>$/g, "")
     if (!src) return null
 
     const storageUrl = normalizeS4ObjectUrl(src)
     if (storageUrl) {
         const objectKey = normalizeS4ObjectKey(storageUrl)
-        if (!objectKey || !IMAGE_SOURCE_PATTERN.test(objectKey)) return null
+        if (!objectKey) return null
+        // 存储对象一律可下载：识别不出 image/video/audio 的（如 .icls）兜底为 file。
+        const kind = classifyMediaExtension(objectKey) ?? "file"
         return {
             src: storageUrl,
             objectKey,
-            filename: extractImageFilename(objectKey),
+            filename: extractMediaFilename(objectKey),
+            kind,
         }
     }
 
-    if (!isExternalImageSource(src)) return null
+    const kind = classifyExternalMediaKind(src)
+    if (!kind) return null
     return {
         src,
         objectKey: null,
-        filename: extractImageFilename(src),
+        filename: extractMediaFilename(src),
+        kind,
     }
 }
 
-function isExternalImageSource(src: string) {
-    if (/^data:image\//i.test(src)) return true
-    if (!/^https?:\/\//i.test(src)) return false
+function classifyExternalMediaKind(src: string): AgentMediaKind | null {
+    if (/^data:image\//i.test(src)) return "image"
+    if (!/^https?:\/\//i.test(src)) return null
     try {
         const url = new URL(src)
-        return IMAGE_SOURCE_PATTERN.test(url.pathname)
+        return classifyMediaExtension(url.pathname)
     } catch {
-        return false
+        return null
     }
 }
 
-function extractImageFilename(src: string) {
+function extractMediaFilename(src: string) {
     const clean = src.split(/[?#]/)[0] ?? src
     const part = clean.split("/").filter(Boolean).at(-1)
-    if (!part) return "image"
+    if (!part) return "附件"
     try {
         return decodeURIComponent(part)
     } catch {
@@ -1218,14 +1281,16 @@ function extractImageFilename(src: string) {
     }
 }
 
-function normalizeImageAlt(rawAlt: string | undefined, filename: string) {
-    const alt = rawAlt?.trim()
-    return alt || filename || "图片"
+const MEDIA_KIND_FALLBACK_LABEL: Record<AgentMediaKind, string> = {
+    image: "图片",
+    video: "视频",
+    audio: "音频",
+    file: "附件",
 }
 
-function extractHtmlAlt(rawImgTag: string | undefined) {
-    const match = rawImgTag?.match(/\balt=(["'])(.*?)\1/i)
-    return match?.[2]
+function normalizeMediaAlt(rawAlt: string | undefined, filename: string, kind: AgentMediaKind) {
+    const alt = rawAlt?.trim()
+    return alt || filename || MEDIA_KIND_FALLBACK_LABEL[kind]
 }
 
 export async function proposeWikiPatchFromAgent(input: {
