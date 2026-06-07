@@ -700,11 +700,10 @@ create table if not exists petrichor_kb_import_job (
     source_type text not null,
     file_name text not null,
     title text not null,
-    source_file_key text not null,
-    mineru_task_id text,
     total_pages integer not null default 0,
     processed_pages integer not null default 0,
     status text not null default 'pending',
+    model_config_id bigint,
     article_id bigint references petrichor_kb_article(id) on delete set null,
     error text,
     created_at timestamptz not null default now(),
@@ -716,3 +715,19 @@ create index if not exists idx_petrichor_kb_import_job_user
 
 create index if not exists idx_petrichor_kb_import_job_user_kb
     on petrichor_kb_import_job(user_id, knowledge_base_id);
+
+create table if not exists petrichor_kb_import_job_page (
+    id bigint generated always as identity primary key,
+    job_id bigint not null references petrichor_kb_import_job(id) on delete cascade,
+    page_no integer not null,
+    image_key text not null,
+    status text not null default 'pending',
+    markdown text,
+    error text,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (job_id, page_no)
+);
+
+create index if not exists idx_petrichor_kb_import_job_page_job
+    on petrichor_kb_import_job_page(job_id);
