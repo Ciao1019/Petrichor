@@ -1,35 +1,47 @@
-import { and, count, desc, eq, inArray, isNull } from "drizzle-orm"
+import { and, asc, count, desc, eq, inArray, isNull } from "drizzle-orm"
 import { after, type NextRequest } from "next/server"
 import { z } from "zod"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { getDb } from "@/server/db/client"
 import {
     knowledgeBaseArticles,
+    knowledgeBaseImportJobPages,
     knowledgeBaseImportJobs,
     knowledgeBaseNodes,
     knowledgeBases,
+    type KnowledgeBaseImportJobPageRecord,
     type KnowledgeBaseImportJobRecord,
 } from "@/server/db/schema"
 import { badRequest, notFound, ok, readJson, tableData, toErrorResponse } from "@/server/http/response"
 import { resolvePagination } from "@/server/http/pagination"
 import { buildPublicArticleMetadata } from "@/server/kb/share-logic"
-import { parseImportSourceType, rewriteImageRefs } from "@/server/kb/import-logic"
 import {
-    fetchMineruResult,
-    queryMineruTask,
-    resolveMineruConfig,
-    submitMineruTask,
-} from "@/server/ai/mineru"
-import { presignS3DownloadUrl, putS3Object } from "@/server/upload/s3-object"
-import { buildS3ObjectKey } from "@/server/upload/s3-presign"
+    countProcessedPages,
+    deriveJobStatus,
+    mergePageMarkdown,
+    parseImportSourceType,
+    type ImportPageStatus,
+} from "@/server/kb/import-logic"
+import { callVisionCompletion, resolveVisionConfig } from "@/server/ai/vision"
+import { fetchS3ObjectAsDataUrl } from "@/server/upload/s3-fetch"
 
 type Db = ReturnType<typeof getDb>
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
 
+interface ImportJobPageStats {
+    donePages: number
+    failedPages: number
+    pendingPages: number
+}
+
 interface ImportJobResponseExtra {
     knowledgeBaseName?: string | null
     parentFolderName?: string | null
+    pageStats?: ImportJobPageStats
 }
+
+const DEFAULT_IMPORT_CONCURRENCY = 4
+const MAX_IMPORT_CONCURRENCY = 8
 
 const idSchema = z.union([z.string(), z.number()]).transform((value, ctx) => {
     const raw = String(value).trim()
@@ -53,7 +65,17 @@ const createJobSchema = z.object({
     sourceType: z.string(),
     fileName: z.string().trim().min(1).max(500),
     title: z.string().trim().min(1).max(200),
-    fileKey: z.string().trim().min(1),
+    modelConfigId: optionalIdSchema.optional(),
+    concurrency: z.coerce.number().int().positive().max(MAX_IMPORT_CONCURRENCY).optional(),
+    pages: z.array(z.object({
+        pageNo: z.coerce.number().int().positive(),
+        imageKey: z.string().trim().min(1),
+    })).min(1).max(2000),
+})
+
+const convertPageSchema = z.object({
+    jobId: idSchema,
+    pageNo: z.coerce.number().int().positive(),
 })
 
 const jobIdSchema = z.object({ jobId: idSchema })
@@ -132,27 +154,54 @@ async function loadJobOwned(db: Db, userId: number, jobId: number) {
     return job
 }
 
-function imageMimeFromExt(ext: string): string {
-    switch (ext.toLowerCase()) {
-        case ".png":
-            return "image/png"
-        case ".jpg":
-        case ".jpeg":
-            return "image/jpeg"
-        case ".gif":
-            return "image/gif"
-        case ".webp":
-            return "image/webp"
-        case ".bmp":
-            return "image/bmp"
-        case ".svg":
-            return "image/svg+xml"
-        default:
-            return "application/octet-stream"
+async function loadJobPages(db: Db, jobId: number) {
+    return db
+        .select()
+        .from(knowledgeBaseImportJobPages)
+        .where(eq(knowledgeBaseImportJobPages.jobId, jobId))
+        .orderBy(asc(knowledgeBaseImportJobPages.pageNo))
+}
+
+function emptyPageStats(totalPages: number): ImportJobPageStats {
+    return { donePages: 0, failedPages: 0, pendingPages: totalPages }
+}
+
+function buildPageStats(pages: Array<{ status: string }>): ImportJobPageStats {
+    return pages.reduce<ImportJobPageStats>((stats, page) => {
+        if (page.status === "done") {
+            stats.donePages += 1
+        } else if (page.status === "failed") {
+            stats.failedPages += 1
+        } else {
+            stats.pendingPages += 1
+        }
+        return stats
+    }, { donePages: 0, failedPages: 0, pendingPages: 0 })
+}
+
+function resolveImportConcurrency(value: number | undefined) {
+    if (!value || Number.isNaN(value)) {
+        return DEFAULT_IMPORT_CONCURRENCY
     }
+    return Math.max(1, Math.min(MAX_IMPORT_CONCURRENCY, value))
+}
+
+/** 固定并发度的后台任务池，避免一次性把所有页面同时丢给多模态模型。 */
+async function runImportPool<T>(items: T[], limit: number, worker: (item: T) => Promise<void>): Promise<void> {
+    let cursor = 0
+    const size = Math.max(1, Math.min(limit, items.length))
+    const runners = Array.from({ length: size }, async () => {
+        while (cursor < items.length) {
+            const current = items[cursor]
+            cursor += 1
+            await worker(current)
+        }
+    })
+    await Promise.all(runners)
 }
 
 function toJobResponse(job: KnowledgeBaseImportJobRecord, extra: ImportJobResponseExtra = {}) {
+    const pageStats = extra.pageStats ?? emptyPageStats(job.totalPages)
     return {
         id: String(job.id),
         knowledgeBaseId: String(job.knowledgeBaseId),
@@ -164,8 +213,11 @@ function toJobResponse(job: KnowledgeBaseImportJobRecord, extra: ImportJobRespon
         title: job.title,
         totalPages: job.totalPages,
         processedPages: job.processedPages,
-        // finalizing 是内部中间态，对前端统一呈现为 processing
-        status: job.status === "finalizing" ? "processing" : job.status,
+        donePages: pageStats.donePages,
+        failedPages: pageStats.failedPages,
+        pendingPages: pageStats.pendingPages,
+        status: job.status,
+        modelConfigId: job.modelConfigId == null ? null : String(job.modelConfigId),
         articleId: job.articleId == null ? null : String(job.articleId),
         error: job.error,
         createdAt: formatDate(job.createdAt),
@@ -173,8 +225,30 @@ function toJobResponse(job: KnowledgeBaseImportJobRecord, extra: ImportJobRespon
     }
 }
 
+function toPageResponse(page: KnowledgeBaseImportJobPageRecord) {
+    return {
+        pageNo: page.pageNo,
+        imageKey: page.imageKey,
+        status: page.status,
+        markdown: page.markdown,
+        error: page.error,
+    }
+}
+
 function formatDate(value: Date | string) {
     return value instanceof Date ? value.toISOString() : new Date(value).toISOString()
+}
+
+async function refreshJobProgress(db: Db, jobId: number) {
+    const pages = await loadJobPages(db, jobId)
+    const statuses = pages.map((page) => page.status as ImportPageStatus)
+    const processed = countProcessedPages(statuses)
+    const status = deriveJobStatus(statuses)
+    await db
+        .update(knowledgeBaseImportJobs)
+        .set({ processedPages: processed, status, updatedAt: new Date() })
+        .where(eq(knowledgeBaseImportJobs.id, jobId))
+    return { processed, status }
 }
 
 async function loadJobDecorations(db: Db, userId: number, jobs: KnowledgeBaseImportJobRecord[]) {
@@ -182,6 +256,7 @@ async function loadJobDecorations(db: Db, userId: number, jobs: KnowledgeBaseImp
         return new Map<number, ImportJobResponseExtra>()
     }
 
+    const jobIds = jobs.map((job) => job.id)
     const knowledgeBaseIds = [...new Set(jobs.map((job) => job.knowledgeBaseId))]
     const parentNodeIds = [...new Set(
         jobs
@@ -189,18 +264,44 @@ async function loadJobDecorations(db: Db, userId: number, jobs: KnowledgeBaseImp
             .filter((id): id is number => id != null),
     )]
 
-    const [kbRows, folderRows] = await Promise.all([
+    const [pages, kbRows, folderRows] = await Promise.all([
         db
-            .select({ id: knowledgeBases.id, name: knowledgeBases.name })
+            .select({
+                jobId: knowledgeBaseImportJobPages.jobId,
+                status: knowledgeBaseImportJobPages.status,
+            })
+            .from(knowledgeBaseImportJobPages)
+            .where(inArray(knowledgeBaseImportJobPages.jobId, jobIds)),
+        db
+            .select({
+                id: knowledgeBases.id,
+                name: knowledgeBases.name,
+            })
             .from(knowledgeBases)
             .where(and(eq(knowledgeBases.userId, userId), inArray(knowledgeBases.id, knowledgeBaseIds))),
         parentNodeIds.length > 0
             ? db
-                .select({ id: knowledgeBaseNodes.id, name: knowledgeBaseNodes.name })
+                .select({
+                    id: knowledgeBaseNodes.id,
+                    name: knowledgeBaseNodes.name,
+                })
                 .from(knowledgeBaseNodes)
                 .where(and(eq(knowledgeBaseNodes.userId, userId), inArray(knowledgeBaseNodes.id, parentNodeIds)))
             : Promise.resolve([]),
     ])
+
+    const statsByJob = new Map<number, ImportJobPageStats>()
+    for (const page of pages) {
+        const current = statsByJob.get(page.jobId) ?? { donePages: 0, failedPages: 0, pendingPages: 0 }
+        if (page.status === "done") {
+            current.donePages += 1
+        } else if (page.status === "failed") {
+            current.failedPages += 1
+        } else {
+            current.pendingPages += 1
+        }
+        statsByJob.set(page.jobId, current)
+    }
 
     const knowledgeBaseNames = new Map(kbRows.map((row) => [row.id, row.name]))
     const folderNames = new Map(folderRows.map((row) => [row.id, row.name]))
@@ -209,6 +310,7 @@ async function loadJobDecorations(db: Db, userId: number, jobs: KnowledgeBaseImp
         result.set(job.id, {
             knowledgeBaseName: knowledgeBaseNames.get(job.knowledgeBaseId) ?? null,
             parentFolderName: job.parentNodeId == null ? null : (folderNames.get(job.parentNodeId) ?? null),
+            pageStats: statsByJob.get(job.id) ?? emptyPageStats(job.totalPages),
         })
     }
     return result
@@ -224,8 +326,16 @@ export async function createImportJob(request: NextRequest) {
         const db = getDb()
         const knowledgeBase = await assertKnowledgeBaseOwner(db, user.id, input.knowledgeBaseId)
         const parentFolder = await assertFolderParent(db, user.id, input.knowledgeBaseId, input.parentId ?? null)
-        // 提前校验文档解析配置，避免建任务后才发现没有 Token
-        await resolveMineruConfig(user.id)
+
+        // 页码去重并排序，保证 (job_id, page_no) 唯一约束
+        const seen = new Set<number>()
+        const pages = input.pages
+            .filter((page) => {
+                if (seen.has(page.pageNo)) return false
+                seen.add(page.pageNo)
+                return true
+            })
+            .sort((a, b) => a.pageNo - b.pageNo)
 
         const [job] = await db
             .insert(knowledgeBaseImportJobs)
@@ -236,134 +346,115 @@ export async function createImportJob(request: NextRequest) {
                 sourceType,
                 fileName: input.fileName,
                 title: input.title,
-                sourceFileKey: input.fileKey,
-                status: "pending",
+                totalPages: pages.length,
+                processedPages: 0,
+                status: "processing",
+                modelConfigId: input.modelConfigId ?? null,
             })
             .returning()
 
-        scheduleImportJobProcessing(user, job.id)
+        await db.insert(knowledgeBaseImportJobPages).values(
+            pages.map((page) => ({
+                jobId: job.id,
+                pageNo: page.pageNo,
+                imageKey: page.imageKey,
+                status: "pending" as const,
+            })),
+        )
+
+        scheduleImportJobProcessing(user, job.id, resolveImportConcurrency(input.concurrency))
 
         return ok({
             job: toJobResponse(job, {
                 knowledgeBaseName: knowledgeBase.name,
                 parentFolderName: parentFolder?.name ?? null,
+                pageStats: emptyPageStats(pages.length),
             }),
         })
     })
 }
 
 /**
- * 解析任务状态机：可被后台任务和前端轮询（detail）共同驱动。
- * - 未提交：提交 MinerU 任务并记录 task_id。
- * - 已提交：查询进度；done 则生成文章，failed 则置失败。
- * 内部捕获异常并写入失败状态，调用方无需再处理。
+ * 手动重试时，改用用户「当前的默认多模态模型」重新识别，而不是任务创建时锁定的模型。
+ * 解析到默认配置后写回 job.modelConfigId，使后续重试与后台任务池都使用新模型。
  */
-async function advanceImportJob(user: User, jobId: number): Promise<void> {
-    const db = getDb()
-    let job: KnowledgeBaseImportJobRecord
-    try {
-        job = await loadJobOwned(db, user.id, jobId)
-    } catch {
-        return
-    }
-    if (job.articleId != null) {
-        return
-    }
-    if (job.status !== "pending" && job.status !== "processing") {
-        return
-    }
-
-    try {
-        const config = await resolveMineruConfig(user.id)
-
-        // 尚未提交解析任务
-        if (!job.mineruTaskId) {
-            const fileUrl = presignS3DownloadUrl(job.sourceFileKey)
-            const taskId = await submitMineruTask(config, fileUrl, { isOcr: job.sourceType === "pdf" })
-            await db
-                .update(knowledgeBaseImportJobs)
-                .set({ mineruTaskId: taskId, status: "processing", error: null, updatedAt: new Date() })
-                .where(eq(knowledgeBaseImportJobs.id, job.id))
-            return
-        }
-
-        const result = await queryMineruTask(config, job.mineruTaskId)
-
-        // 同步进度
-        if (result.totalPages != null || result.extractedPages != null) {
-            await db
-                .update(knowledgeBaseImportJobs)
-                .set({
-                    totalPages: result.totalPages ?? job.totalPages,
-                    processedPages: result.extractedPages ?? job.processedPages,
-                    updatedAt: new Date(),
-                })
-                .where(eq(knowledgeBaseImportJobs.id, job.id))
-        }
-
-        if (result.state === "failed") {
-            await db
-                .update(knowledgeBaseImportJobs)
-                .set({ status: "failed", error: result.errMsg ?? "MinerU 解析失败", updatedAt: new Date() })
-                .where(eq(knowledgeBaseImportJobs.id, job.id))
-            return
-        }
-
-        if (result.state === "done" && result.fullZipUrl) {
-            // 单飞抢占：仅当状态仍为当前值且未生成文章时，标记 finalizing 并由本次调用收尾
-            const [claimed] = await db
-                .update(knowledgeBaseImportJobs)
-                .set({ status: "finalizing", updatedAt: new Date() })
-                .where(and(
-                    eq(knowledgeBaseImportJobs.id, job.id),
-                    eq(knowledgeBaseImportJobs.status, job.status),
-                    isNull(knowledgeBaseImportJobs.articleId),
-                ))
-                .returning()
-            if (!claimed) {
-                return
-            }
-            try {
-                await finalizeMineruJob(db, user, claimed, result.fullZipUrl)
-            } catch (error) {
-                const message = error instanceof Error ? error.message : "生成文章失败"
-                await db
-                    .update(knowledgeBaseImportJobs)
-                    .set({ status: "failed", error: message.slice(0, 500), updatedAt: new Date() })
-                    .where(eq(knowledgeBaseImportJobs.id, job.id))
-            }
-        }
-    } catch (error) {
-        const message = error instanceof Error ? error.message : "文档解析失败"
-        await db
-            .update(knowledgeBaseImportJobs)
-            .set({ status: "failed", error: message.slice(0, 500), updatedAt: new Date() })
-            .where(eq(knowledgeBaseImportJobs.id, job.id))
-    }
-}
-
-/** 下载 MinerU 结果、转存图片、改写链接并生成文章。 */
-async function finalizeMineruJob(
+async function switchJobToDefaultVisionModel(
     db: Db,
     user: User,
     job: KnowledgeBaseImportJobRecord,
-    fullZipUrl: string,
-) {
+): Promise<KnowledgeBaseImportJobRecord> {
+    const defaultConfig = await resolveVisionConfig(user.id, null)
+    if (job.modelConfigId === defaultConfig.id) {
+        return job
+    }
+    await db
+        .update(knowledgeBaseImportJobs)
+        .set({ modelConfigId: defaultConfig.id, updatedAt: new Date() })
+        .where(eq(knowledgeBaseImportJobs.id, job.id))
+    return { ...job, modelConfigId: defaultConfig.id }
+}
+
+async function convertSinglePage(db: Db, user: User, job: KnowledgeBaseImportJobRecord, pageNo: number) {
+    const [page] = await db
+        .select()
+        .from(knowledgeBaseImportJobPages)
+        .where(and(eq(knowledgeBaseImportJobPages.jobId, job.id), eq(knowledgeBaseImportJobPages.pageNo, pageNo)))
+        .limit(1)
+    if (!page) {
+        throw notFound("导入任务页不存在")
+    }
+
+    try {
+        const imageDataUrl = await fetchS3ObjectAsDataUrl(page.imageKey)
+        const result = await callVisionCompletion({
+            userId: user.id,
+            configId: job.modelConfigId,
+            imageDataUrl,
+        })
+        await db
+            .update(knowledgeBaseImportJobPages)
+            .set({ status: "done", markdown: result.markdown, error: null, updatedAt: new Date() })
+            .where(eq(knowledgeBaseImportJobPages.id, page.id))
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "页面识别失败"
+        await db
+            .update(knowledgeBaseImportJobPages)
+            .set({ status: "failed", error: message.slice(0, 500), updatedAt: new Date() })
+            .where(eq(knowledgeBaseImportJobPages.id, page.id))
+    }
+
+    const progress = await refreshJobProgress(db, job.id)
+    const [updatedPage] = await db
+        .select()
+        .from(knowledgeBaseImportJobPages)
+        .where(eq(knowledgeBaseImportJobPages.id, page.id))
+        .limit(1)
+    return { page: toPageResponse(updatedPage), progress }
+}
+
+async function finalizeJobToArticle(db: Db, user: User, job: KnowledgeBaseImportJobRecord) {
+    if (job.status === "canceled") {
+        throw badRequest("任务已取消")
+    }
+    if (job.articleId != null) {
+        return { articleId: job.articleId, nodeId: null }
+    }
+
+    const pages = await loadJobPages(db, job.id)
+    if (pages.length === 0) {
+        throw badRequest("任务没有可合并的页面")
+    }
+    const pendingOrFailed = pages.filter((page) => page.status !== "done")
+    if (pendingOrFailed.length > 0) {
+        throw badRequest(`仍有 ${pendingOrFailed.length} 页未成功转换，请先重试失败页`)
+    }
+
     await assertKnowledgeBaseOwner(db, user.id, job.knowledgeBaseId)
     await assertFolderParent(db, user.id, job.knowledgeBaseId, job.parentNodeId)
 
-    const parsed = await fetchMineruResult(fullZipUrl)
-
-    // 把结果中的图片转存到本系统对象存储，并改写 Markdown 中的相对引用
-    const mapping: Array<{ ref: string; url: string }> = []
-    for (const image of parsed.images) {
-        const objectKey = buildS3ObjectKey({ filename: `mineru${image.ext}`, userId: user.id })
-        await putS3Object(objectKey, image.bytes, imageMimeFromExt(image.ext))
-        mapping.push({ ref: image.ref, url: `s4key:${objectKey}` })
-    }
-    const contentMd = rewriteImageRefs(parsed.markdown, mapping).trim()
-
+    const contentMd = mergePageMarkdown(pages.map((page) => ({ pageNo: page.pageNo, markdown: page.markdown })))
     const sortOrder = await nextSortOrder(db, user.id, job.knowledgeBaseId, job.parentNodeId)
+
     const [node] = await db
         .insert(knowledgeBaseNodes)
         .values({
@@ -392,40 +483,68 @@ async function finalizeMineruJob(
         .update(knowledgeBaseImportJobs)
         .set({ articleId: article.id, status: "completed", error: null, updatedAt: new Date() })
         .where(eq(knowledgeBaseImportJobs.id, job.id))
+
+    return { articleId: article.id, nodeId: node.id }
 }
 
-const BACKGROUND_POLL_INTERVAL_MS = 4000
-const BACKGROUND_MAX_DURATION_MS = 5 * 60 * 1000
-
-function sleep(ms: number) {
-    return new Promise<void>((resolve) => setTimeout(resolve, ms))
-}
-
-/**
- * 后台跟进解析任务直至结束：先提交任务，再按固定间隔轮询，
- * 直到生成文章或失败/取消，或超过最长跟进时长。
- * 即使该后台任务被环境提前回收，前端打开任务详情时也会继续推进（detail 内置兜底）。
- */
-async function runImportJobToCompletion(user: User, jobId: number) {
-    const start = Date.now()
-    await advanceImportJob(user, jobId)
-    while (Date.now() - start < BACKGROUND_MAX_DURATION_MS) {
-        let job: KnowledgeBaseImportJobRecord
-        try {
-            job = await loadJobOwned(getDb(), user.id, jobId)
-        } catch {
+async function processImportJobInBackground(user: User, jobId: number, concurrency: number) {
+    const db = getDb()
+    try {
+        let job = await loadJobOwned(db, user.id, jobId)
+        if (job.status === "canceled" || job.articleId != null) {
             return
         }
-        if (job.articleId != null || (job.status !== "pending" && job.status !== "processing")) {
+
+        await db
+            .update(knowledgeBaseImportJobs)
+            .set({ status: "processing", error: null, updatedAt: new Date() })
+            .where(eq(knowledgeBaseImportJobs.id, job.id))
+
+        const pages = await db
+            .select()
+            .from(knowledgeBaseImportJobPages)
+            .where(and(eq(knowledgeBaseImportJobPages.jobId, job.id), eq(knowledgeBaseImportJobPages.status, "pending")))
+            .orderBy(asc(knowledgeBaseImportJobPages.pageNo))
+
+        await runImportPool(pages, concurrency, async (page) => {
+            const latestJob = await loadJobOwned(db, user.id, jobId)
+            if (latestJob.status === "canceled" || latestJob.articleId != null) {
+                return
+            }
+            await convertSinglePage(db, user, latestJob, page.pageNo)
+        })
+
+        job = await loadJobOwned(db, user.id, jobId)
+        if (job.status === "canceled" || job.articleId != null) {
             return
         }
-        await sleep(BACKGROUND_POLL_INTERVAL_MS)
-        await advanceImportJob(user, jobId)
+
+        const latestPages = await loadJobPages(db, job.id)
+        const pageStats = buildPageStats(latestPages)
+        if (pageStats.failedPages > 0 || pageStats.pendingPages > 0) {
+            const error =
+                pageStats.failedPages > 0
+                    ? `有 ${pageStats.failedPages} 页转 Markdown 失败，请在导入任务详情中重试。`
+                    : null
+            await db
+                .update(knowledgeBaseImportJobs)
+                .set({ status: pageStats.failedPages > 0 ? "failed" : "processing", error, updatedAt: new Date() })
+                .where(eq(knowledgeBaseImportJobs.id, job.id))
+            return
+        }
+
+        await finalizeJobToArticle(db, user, job)
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "导入任务后台处理失败"
+        await db
+            .update(knowledgeBaseImportJobs)
+            .set({ status: "failed", error: message.slice(0, 500), updatedAt: new Date() })
+            .where(eq(knowledgeBaseImportJobs.id, jobId))
     }
 }
 
-function scheduleImportJobProcessing(user: User, jobId: number) {
-    const task = () => runImportJobToCompletion(user, jobId)
+function scheduleImportJobProcessing(user: User, jobId: number, concurrency: number) {
+    const task = () => processImportJobInBackground(user, jobId, concurrency)
     try {
         after(task)
     } catch {
@@ -435,21 +554,79 @@ function scheduleImportJobProcessing(user: User, jobId: number) {
     }
 }
 
-export async function retryImportJob(request: NextRequest) {
+export async function convertImportPage(request: NextRequest) {
+    return withUser(request, async (user) => {
+        const input = convertPageSchema.parse(await readJson(request))
+        const db = getDb()
+        const job = await loadJobOwned(db, user.id, input.jobId)
+        if (job.status === "canceled") {
+            throw badRequest("任务已取消")
+        }
+        const { page, progress } = await convertSinglePage(db, user, job, input.pageNo)
+        return ok({ page, processedPages: progress.processed, status: progress.status })
+    })
+}
+
+export async function retryImportPage(request: NextRequest) {
+    return withUser(request, async (user) => {
+        const input = convertPageSchema.parse(await readJson(request))
+        const db = getDb()
+        let job = await loadJobOwned(db, user.id, input.jobId)
+        if (job.status === "canceled") {
+            throw badRequest("任务已取消")
+        }
+        // 重试改用当前默认多模态模型
+        job = await switchJobToDefaultVisionModel(db, user, job)
+        await db
+            .update(knowledgeBaseImportJobPages)
+            .set({ status: "pending", error: null, updatedAt: new Date() })
+            .where(and(eq(knowledgeBaseImportJobPages.jobId, job.id), eq(knowledgeBaseImportJobPages.pageNo, input.pageNo)))
+        const { page, progress } = await convertSinglePage(db, user, job, input.pageNo)
+        return ok({ page, processedPages: progress.processed, status: progress.status })
+    })
+}
+
+export async function retryImportJobFailedPages(request: NextRequest) {
     return withUser(request, async (user) => {
         const input = jobIdSchema.parse(await readJson(request))
         const db = getDb()
         const job = await loadJobOwned(db, user.id, input.jobId)
-        if (job.articleId != null) {
-            throw badRequest("任务已生成文章，无需重试")
+        if (job.status === "canceled") {
+            throw badRequest("任务已取消")
         }
-        // 重置为待处理并清掉旧的 MinerU 任务，重新提交解析
+        const failedPages = await db
+            .select({ id: knowledgeBaseImportJobPages.id })
+            .from(knowledgeBaseImportJobPages)
+            .where(and(eq(knowledgeBaseImportJobPages.jobId, job.id), eq(knowledgeBaseImportJobPages.status, "failed")))
+        if (failedPages.length === 0) {
+            throw badRequest("没有需要重试的失败页")
+        }
+        // 重试改用当前默认多模态模型（写回 job 后，后台任务池会用新模型识别）
+        await switchJobToDefaultVisionModel(db, user, job)
+        // 把失败页重置为待处理，交给后台任务池重新识别，全部成功后会自动合并生成文章。
+        await db
+            .update(knowledgeBaseImportJobPages)
+            .set({ status: "pending", error: null, updatedAt: new Date() })
+            .where(and(eq(knowledgeBaseImportJobPages.jobId, job.id), eq(knowledgeBaseImportJobPages.status, "failed")))
         await db
             .update(knowledgeBaseImportJobs)
-            .set({ status: "pending", mineruTaskId: null, error: null, processedPages: 0, updatedAt: new Date() })
+            .set({ status: "processing", error: null, updatedAt: new Date() })
             .where(eq(knowledgeBaseImportJobs.id, job.id))
-        scheduleImportJobProcessing(user, job.id)
-        return ok({ status: "processing" as const })
+        scheduleImportJobProcessing(user, job.id, DEFAULT_IMPORT_CONCURRENCY)
+        return ok({ retried: failedPages.length, status: "processing" as const })
+    })
+}
+
+export async function finalizeImportJob(request: NextRequest) {
+    return withUser(request, async (user) => {
+        const input = jobIdSchema.parse(await readJson(request))
+        const db = getDb()
+        const job = await loadJobOwned(db, user.id, input.jobId)
+        const result = await finalizeJobToArticle(db, user, job)
+        return ok({
+            articleId: String(result.articleId),
+            nodeId: result.nodeId == null ? null : String(result.nodeId),
+        })
     })
 }
 
@@ -482,7 +659,8 @@ export async function deleteImportJobs(request: NextRequest) {
         if (ownedIds.length === 0) {
             return ok({ deleted: [] })
         }
-        // 已生成的文章保持不变，仅删除导入任务记录。
+        // 先删页面再删任务，避免依赖数据库是否配置了级联删除。已生成的文章保持不变。
+        await db.delete(knowledgeBaseImportJobPages).where(inArray(knowledgeBaseImportJobPages.jobId, ownedIds))
         await db.delete(knowledgeBaseImportJobs).where(inArray(knowledgeBaseImportJobs.id, ownedIds))
         return ok({ deleted: ownedIds.map((id) => String(id)) })
     })
@@ -515,13 +693,9 @@ export async function detailImportJob(request: NextRequest) {
     return withUser(request, async (user) => {
         const input = jobIdSchema.parse(await readJson(request))
         const db = getDb()
-        let job = await loadJobOwned(db, user.id, input.jobId)
-        // 进行中的任务：每次查看时顺带推进一步 MinerU 状态，避免依赖后台任务存活
-        if (job.status === "pending" || job.status === "processing") {
-            await advanceImportJob(user, job.id)
-            job = await loadJobOwned(db, user.id, input.jobId)
-        }
+        const job = await loadJobOwned(db, user.id, input.jobId)
+        const pages = await loadJobPages(db, job.id)
         const extras = await loadJobDecorations(db, user.id, [job])
-        return ok({ job: toJobResponse(job, extras.get(job.id)) })
+        return ok({ job: toJobResponse(job, extras.get(job.id)), pages: pages.map(toPageResponse) })
     })
 }

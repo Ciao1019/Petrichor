@@ -7,6 +7,7 @@ import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { AppPagination } from "@/components/app-pagination"
 import {
   dashboardRoutes,
   knowledgeBaseArticlePath,
@@ -14,6 +15,7 @@ import {
 import {
   documentImportApi,
   type DocumentImportJobResponse,
+  type DocumentImportPageResponse,
 } from "@/lib/api"
 import {
   StatusBadge,
@@ -28,6 +30,7 @@ export function DocumentImportJobDetailPage() {
   const navigate = useNavigate()
 
   const [job, setJob] = React.useState<DocumentImportJobResponse | null>(null)
+  const [pages, setPages] = React.useState<DocumentImportPageResponse[]>([])
   const [loading, setLoading] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
 
@@ -37,6 +40,7 @@ export function DocumentImportJobDetailPage() {
     try {
       const res = await documentImportApi.detail({ jobId })
       setJob(res.data.job)
+      setPages(res.data.pages || [])
     } catch (error) {
       toast.error(resolveApiErrorMessage(error, "加载任务详情失败"))
     } finally {
@@ -58,15 +62,29 @@ export function DocumentImportJobDetailPage() {
     return () => window.clearInterval(timer)
   }, [job, loadDetail])
 
-  const retryJob = React.useCallback(async () => {
+  const retryPage = React.useCallback(async (pageNo: number) => {
     if (!jobId) return
     setBusy(true)
     try {
-      await documentImportApi.retry({ jobId })
+      await documentImportApi.retryPage({ jobId, pageNo })
       await loadDetail(false)
-      toast.success("已重新开始解析")
+      toast.success(`第 ${pageNo} 页已重试`)
     } catch (error) {
       toast.error(resolveApiErrorMessage(error, "重试失败"))
+    } finally {
+      setBusy(false)
+    }
+  }, [jobId, loadDetail])
+
+  const retryFailedPages = React.useCallback(async () => {
+    if (!jobId) return
+    setBusy(true)
+    try {
+      const res = await documentImportApi.retryFailedPages({ jobId })
+      toast.success(`已重新开始识别 ${res.data.retried} 个失败页`)
+      await loadDetail(false)
+    } catch (error) {
+      toast.error(resolveApiErrorMessage(error, "重试失败页失败"))
     } finally {
       setBusy(false)
     }
@@ -86,13 +104,49 @@ export function DocumentImportJobDetailPage() {
     }
   }, [jobId, loadDetail])
 
+  const finalizeJob = React.useCallback(async () => {
+    if (!jobId || !job) return
+    setBusy(true)
+    try {
+      const res = await documentImportApi.finalize({ jobId })
+      toast.success("文章已生成")
+      navigate(knowledgeBaseArticlePath(job.knowledgeBaseId, res.data.articleId))
+    } catch (error) {
+      toast.error(resolveApiErrorMessage(error, "生成文章失败"))
+    } finally {
+      setBusy(false)
+    }
+  }, [jobId, job, navigate])
+
+  const pageSize = 10
+  const [pageIndex, setPageIndex] = React.useState(0)
+
+  const pageCount = Math.max(1, Math.ceil(pages.length / pageSize))
+  // 数据刷新后把越界的页码夹回有效范围
+  React.useEffect(() => {
+    setPageIndex((current) => Math.min(current, pageCount - 1))
+  }, [pageCount])
+  const visiblePages = React.useMemo(
+    () => pages.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize),
+    [pages, pageIndex, pageSize],
+  )
+
+  const unfinishedPages = job ? Math.max(0, job.totalPages - job.donePages) : 0
+  const canFinalize = Boolean(
+    job &&
+    !job.articleId &&
+    job.status !== "canceled" &&
+    job.totalPages > 0 &&
+    job.donePages === job.totalPages,
+  )
+
   return (
     <div className="flex w-full flex-col gap-6 px-6 py-6 lg:px-10">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="min-w-0 space-y-1">
           <h1 className="truncate text-2xl font-semibold">{job ? job.title : "任务详情"}</h1>
           <p className="truncate text-sm text-muted-foreground">
-            {job ? `${job.sourceType.toUpperCase()} · ${job.fileName}` : "查看解析进度或重试。"}
+            {job ? `${job.sourceType.toUpperCase()} · ${job.fileName}` : "查看导入进度，重试失败页或手动合并文章。"}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -130,17 +184,20 @@ export function DocumentImportJobDetailPage() {
               ) : null}
               {!job.articleId && job.status !== "canceled" ? (
                 <>
-                  {job.status === "failed" ? (
-                    <Button size="sm" variant="outline" disabled={busy} onClick={() => retryJob()}>
+                  {job.failedPages > 0 ? (
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => retryFailedPages()}>
                       <RefreshCw className={cn("mr-2 size-4", busy && "animate-spin")} />
-                      重试解析
+                      重试全部失败页（{job.failedPages}）
                     </Button>
                   ) : null}
-                  {job.status === "pending" || job.status === "processing" ? (
+                  {job.status !== "completed" ? (
                     <Button size="sm" variant="outline" disabled={busy} onClick={() => cancelJob()}>
                       取消任务
                     </Button>
                   ) : null}
+                  <Button size="sm" disabled={busy || !canFinalize} onClick={() => finalizeJob()}>
+                    合并生成文章
+                  </Button>
                 </>
               ) : null}
             </div>
@@ -148,17 +205,21 @@ export function DocumentImportJobDetailPage() {
 
           {job.error ? <p className="text-sm text-destructive">{job.error}</p> : null}
 
-          <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-lg border px-4 py-3">
               <div className="text-xs text-muted-foreground">目标位置</div>
               <div className="mt-1 truncate font-medium">{resolveTargetText(job)}</div>
             </div>
             <div className="rounded-lg border px-4 py-3">
-              <div className="text-xs text-muted-foreground">解析进度</div>
+              <div className="text-xs text-muted-foreground">页数进度</div>
               <div className="mt-1 font-medium">
-                {job.totalPages > 0
-                  ? `已解析 ${job.processedPages} / ${job.totalPages} 页`
-                  : `${resolveProgressPercent(job)}%`}
+                共 {job.totalPages} 页 · 已完成 {job.donePages} · 未完成 {unfinishedPages}
+              </div>
+            </div>
+            <div className="rounded-lg border px-4 py-3">
+              <div className="text-xs text-muted-foreground">失败页</div>
+              <div className={cn("mt-1 font-medium", job.failedPages > 0 && "text-destructive")}>
+                {job.failedPages} 页
               </div>
             </div>
             <div className="rounded-lg border px-4 py-3">
@@ -169,9 +230,53 @@ export function DocumentImportJobDetailPage() {
 
           <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
             <div
-              className={cn("h-full rounded-full", job.status === "failed" ? "bg-destructive" : "bg-primary")}
+              className={cn("h-full rounded-full", job.failedPages > 0 ? "bg-destructive" : "bg-primary")}
               style={{ width: `${resolveProgressPercent(job)}%` }}
             />
+          </div>
+
+          <div className="rounded-lg border">
+            <div className="border-b px-4 py-2 text-sm font-medium text-muted-foreground">
+              页面识别明细（{pages.length}）
+            </div>
+            <ul className="divide-y">
+              {visiblePages.map((page) => (
+                <li key={page.pageNo} className="flex flex-col gap-1 px-4 py-2.5 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2">
+                      <span className="tabular-nums text-muted-foreground">第 {page.pageNo} 页</span>
+                      <span
+                        className={cn(
+                          "text-xs",
+                          page.status === "done" && "text-emerald-600 dark:text-emerald-400",
+                          page.status === "failed" && "text-destructive",
+                          page.status === "pending" && "text-muted-foreground",
+                        )}
+                      >
+                        {page.status === "done" ? "已完成" : page.status === "failed" ? "失败" : "待处理"}
+                      </span>
+                    </span>
+                    {page.status === "failed" ? (
+                      <Button size="sm" variant="ghost" disabled={busy} onClick={() => retryPage(page.pageNo)}>
+                        重试
+                      </Button>
+                    ) : null}
+                  </div>
+                  {page.error ? <p className="text-xs text-destructive">{page.error}</p> : null}
+                </li>
+              ))}
+            </ul>
+            {pages.length > 0 ? (
+              <div className="border-t px-4 py-3">
+                <AppPagination
+                  page={pageIndex}
+                  totalPages={pageCount}
+                  total={pages.length}
+                  pageSize={pageSize}
+                  onChange={(nextPageIndex) => setPageIndex(nextPageIndex)}
+                />
+              </div>
+            ) : null}
           </div>
         </div>
       )}
