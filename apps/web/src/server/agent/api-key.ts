@@ -13,6 +13,8 @@ export const AGENT_API_KEY_SCOPES = [
     "qa:read",
     "share:write",
     "ai:write",
+    "wiki:read",
+    "wiki:write",
 ] as const
 
 export type AgentApiKeyScope = typeof AGENT_API_KEY_SCOPES[number]

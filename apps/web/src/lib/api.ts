@@ -322,6 +322,8 @@ export type AgentApiKeyScope =
   | "qa:read"
   | "share:write"
   | "ai:write"
+  | "wiki:read"
+  | "wiki:write"
 
 export interface AgentApiKeyItem {
   id: string

@@ -9,6 +9,8 @@ export const DEFAULT_AGENT_SCOPES: AgentApiKeyScope[] = [
   "qa:read",
   "share:write",
   "ai:write",
+  "wiki:read",
+  "wiki:write",
 ]
 
 export const scopeLabels: Record<AgentApiKeyScope, string> = {
@@ -18,6 +20,8 @@ export const scopeLabels: Record<AgentApiKeyScope, string> = {
   "qa:read": "文档问答",
   "share:write": "文章分享管理",
   "ai:write": "AI 摘要/思维导图",
+  "wiki:read": "知识 Wiki 浏览",
+  "wiki:write": "知识 Wiki 重建",
 }
 
 export function formatDateTime(value?: string | null) {
