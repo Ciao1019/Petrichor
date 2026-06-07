@@ -12,6 +12,8 @@ const nextConfig: NextConfig = {
     turbopack: {
         root: turbopackRoot,
     },
+    // sharp 是原生模块，交给运行时直接 require，不要打进 server bundle。
+    serverExternalPackages: ["sharp"],
     typedRoutes: false,
 }
 
