@@ -415,6 +415,9 @@ importers:
       remark-math:
         specifier: ^6.0.0
         version: 6.0.0
+      sharp:
+        specifier: ^0.34.5
+        version: 0.34.5
       shiki:
         specifier: ^3.22.0
         version: 3.23.0
@@ -10323,8 +10326,7 @@ snapshots:
     dependencies:
       react: 19.2.5
 
-  '@img/colour@1.1.0':
-    optional: true
+  '@img/colour@1.1.0': {}
 
   '@img/sharp-darwin-arm64@0.34.5':
     optionalDependencies:
@@ -18303,7 +18305,6 @@ snapshots:
       '@img/sharp-win32-arm64': 0.34.5
       '@img/sharp-win32-ia32': 0.34.5
       '@img/sharp-win32-x64': 0.34.5
-    optional: true
 
   shebang-command@2.0.0:
     dependencies:

@@ -23,7 +23,8 @@ import {
     type ImportPageStatus,
 } from "@/server/kb/import-logic"
 import { callVisionCompletion, resolveVisionConfig } from "@/server/ai/vision"
-import { fetchS3ObjectAsDataUrl } from "@/server/upload/s3-fetch"
+import { fetchS3ObjectBytes, toImageDataUrl } from "@/server/upload/s3-fetch"
+import { embedExtractedImages } from "@/server/kb/import-image-extract"
 
 type Db = ReturnType<typeof getDb>
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
@@ -405,15 +406,21 @@ async function convertSinglePage(db: Db, user: User, job: KnowledgeBaseImportJob
     }
 
     try {
-        const imageDataUrl = await fetchS3ObjectAsDataUrl(page.imageKey)
+        // 整页图字节既用于多模态识别，也用于按 bbox 裁剪页内嵌入图，避免重复下载。
+        const pageImage = await fetchS3ObjectBytes(page.imageKey)
         const result = await callVisionCompletion({
             userId: user.id,
             configId: job.modelConfigId,
-            imageDataUrl,
+            imageDataUrl: toImageDataUrl(pageImage),
+        })
+        const markdown = await embedExtractedImages({
+            userId: user.id,
+            markdown: result.markdown,
+            pageImage,
         })
         await db
             .update(knowledgeBaseImportJobPages)
-            .set({ status: "done", markdown: result.markdown, error: null, updatedAt: new Date() })
+            .set({ status: "done", markdown, error: null, updatedAt: new Date() })
             .where(eq(knowledgeBaseImportJobPages.id, page.id))
     } catch (error) {
         const message = error instanceof Error ? error.message : "页面识别失败"
