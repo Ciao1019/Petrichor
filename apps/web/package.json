@@ -154,6 +154,7 @@
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
+    "sharp": "^0.34.5",
     "shiki": "^3.22.0",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0",
