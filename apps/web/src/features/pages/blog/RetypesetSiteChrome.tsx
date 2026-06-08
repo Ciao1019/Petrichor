@@ -34,7 +34,7 @@ const retypesetSiteCopy = {
     githubTrigger: "GitHub 仓库",
 } as const
 
-const RETYPESET_SITE_GITHUB_HREF = "https://github.com/LittleBunVerse/Petrichor"
+const RETYPESET_SITE_GITHUB_HREF = "https://github.com/Ciao1019/Petrichor"
 
 const retypesetSiteNavItems: RetypesetSiteNavItem[] = [
     { section: "articles", href: "/#articles", label: retypesetSiteCopy.navPosts, internal: true },
@@ -196,7 +196,7 @@ export function RetypesetSiteFooter({ dockVisible }: { dockVisible: boolean }) {
                     Powered by{" "}
                     <a
                         className="retypeset-highlight-hover retypeset-footer-link py-[0.2rem] transition-colors"
-                        href="https://github.com/LittleBunVerse"
+                        href="https://github.com/Ciao1019"
                         target="_blank"
                         rel="noopener noreferrer"
                     >
