@@ -22,6 +22,7 @@ import {
     searchWikiPagesAcrossKbs,
     searchWikiPagesForAgent,
 } from "@/server/kb/wiki-agent-logic"
+import { readTreeNodeForAgent, retrieveTreeNodesForAgent } from "@/server/kb/wiki-tree"
 import { getDb } from "@/server/db/client"
 
 export const maxDuration = 300
@@ -340,8 +341,33 @@ function buildKnowledgeAgentTools(context: {
                     return await readWikiPageForAgent(context.userId, context.knowledgeBaseId, "index")
                 }),
         }),
+        search_document_tree: tool({
+            description: "推理式检索：在文档目录树（PageIndex 式层级结构）上按问题推理导航，返回最相关的章节节点（含面包屑路径、摘要、原文片段、所属 articleId 与 nodeKey）。回答细节性问题时优先用它，比关键词搜索更精准。",
+            inputSchema: z.object({
+                query: z.string().min(1),
+                limit: z.number().int().min(1).max(12).optional(),
+                articleId: idSchema.optional(),
+            }),
+            execute: async ({ query, limit, articleId }) => await retrieveTreeNodesForAgent({
+                userId: context.userId,
+                knowledgeBaseId: context.knowledgeBaseId,
+                query,
+                limit,
+                articleId: articleId ?? undefined,
+            }),
+        }),
+        read_tree_node: tool({
+            description: "读取目录树中某个章节节点的完整内容（含面包屑路径、子节点与媒体引用）。当 search_document_tree 返回的片段被截断、需要看全文时使用，传 nodeKey。",
+            inputSchema: z.object({
+                nodeKey: z.string().min(1),
+            }),
+            execute: async ({ nodeKey }) => {
+                const node = await readTreeNodeForAgent(context.userId, context.knowledgeBaseId, nodeKey)
+                return node ?? { error: "目录节点不存在", nodeKey }
+            },
+        }),
         search_wiki_pages: tool({
-            description: "按问题关键词搜索 Wiki 页面。优先搜索 Wiki，而不是直接搜索源文档。",
+            description: "按关键词搜索 Wiki 页面（整篇粒度的兜底检索）。需要章节级精准定位时优先用 search_document_tree。",
             inputSchema: z.object({
                 query: z.string().min(1),
                 limit: z.number().int().min(1).max(12).optional(),
@@ -425,10 +451,10 @@ function buildKnowledgeAgentTools(context: {
 
 function buildAgentSystemPrompt() {
     return [
-        "你是 Petrichor 的文档问答 Agent，负责基于 Wiki 编译层回答用户问题。",
+        "你是 Petrichor 的文档问答 Agent，负责基于 Wiki 编译层与文档目录树回答用户问题。",
         "核心规则：",
-        "1. 先读取 read_wiki_index，再按需 search_wiki_pages / read_wiki_page。",
-        "2. 只有 Wiki 信息不足、需要核验或引用原文时，才调用 read_source_article。",
+        "1. 先读取 read_wiki_index 了解全局；回答具体问题时优先用 search_document_tree 做推理式检索（在章节目录树上导航定位），片段不够再用 read_tree_node 读全文。search_wiki_pages / read_wiki_page 作为整篇粒度的兜底。",
+        "2. 只有目录树与 Wiki 都不足、需要核验或引用原文时，才调用 read_source_article。",
         "3. 回答必须给出依据；适合时调用 show_citations 渲染引用。引用 href 必须用文章详情页路径，格式为 `/dashboard/knowledge/<knowledgeBaseId>/articles/<articleId>`，title 写「页面标题」，domain 写「知识库名」。articleId 从 search/read 工具返回的 articleId 字段获取，或从 pageKey `source-<id>` 解析。",
         "4. 涉及多步分析时先调用 show_agent_plan，执行中可调用 show_progress。",
         "5. 发现值得沉淀的新结论时，调用 propose_wiki_patch 提交待审批补丁，不要声称已写入 Wiki。",
