@@ -25,6 +25,7 @@ export function buildAgentEndpointMap() {
         articleSummaryGenerate: "/api/agent/article/summary/generate",
         articleMindmapGenerate: "/api/agent/article/mindmap/generate",
         documentSearch: "/api/agent/document/search",
+        documentTree: "/api/agent/document/tree",
         documentView: "/api/agent/document/view",
         documentQa: "/api/agent/document/qa",
         wikiPageList: "/api/agent/wiki/page/list",
@@ -53,7 +54,7 @@ export function buildAgentManifest(baseUrl: string) {
         scopes: {
             "article:write": ["article.create", "article.update", "article.move", "folder.create"],
             "article:delete": ["article.delete"],
-            "doc:read": ["knowledge-base.list", "knowledge-base.tree", "article.list", "document.search", "document.view"],
+            "doc:read": ["knowledge-base.list", "knowledge-base.tree", "article.list", "document.search", "document.tree", "document.view"],
             "qa:read": ["document.qa"],
             "share:write": ["article.share.create", "article.share.revoke", "article.share.info"],
             "ai:write": ["article.summary.generate", "article.mindmap.generate"],
@@ -306,8 +307,9 @@ function buildDocsSubSkillMarkdown() {
 2. 需要目录结构时 \`scripts/petrichor kb tree --kb-id <ID>\`。
 3. 平铺列出某知识库的文章用 \`scripts/petrichor article list --kb-id <ID>\`，可加 \`--tag\` / \`--keyword\` / \`--parent-id\` / \`--direct\` 过滤。
 4. 搜索内容 \`scripts/petrichor doc search\`；跨库搜索时省略 \`--kb-id\`。
-5. 读取原文 \`scripts/petrichor doc view --article-id <ID>\`。
-6. 读取 Wiki 页面 \`scripts/petrichor doc view --kb-id <ID> --page-key <key>\`。
+5. 细节性问题优先用目录树推理检索 \`scripts/petrichor doc tree --query "问题" --kb-id <ID>\`，比关键词更精准；只想在某篇文档内检索时加 \`--article-id\`。
+6. 读取原文 \`scripts/petrichor doc view --article-id <ID>\`。
+7. 读取 Wiki 页面 \`scripts/petrichor doc view --kb-id <ID> --page-key <key>\`。
 
 ## 命令
 
@@ -315,6 +317,8 @@ function buildDocsSubSkillMarkdown() {
 scripts/petrichor article list --kb-id 1 --tag draft --keyword 周报 --limit 20
 scripts/petrichor article list --kb-id 1 --parent-id 5 --direct
 scripts/petrichor doc search --query "关键词" --kb-id 1 --limit 8
+scripts/petrichor doc tree --query "问题" --kb-id 1 --limit 6
+scripts/petrichor doc tree --query "问题" --kb-id 1 --article-id 123
 scripts/petrichor doc view --article-id 123
 scripts/petrichor doc view --kb-id 1 --page-key index
 \`\`\`
@@ -558,6 +562,11 @@ Authorization: Bearer <PETRICHOR_API_KEY>
   - scope: \`doc:read\`
   - body: \`{"query":"关键词","knowledgeBaseId":"1","limit":8}\`
   - 跨库搜索时省略 \`knowledgeBaseId\`。
+- \`POST /api/agent/document/tree\`
+  - scope: \`doc:read\`
+  - body: \`{"query":"问题","knowledgeBaseId":"1","limit":6,"articleId":"123"}\`
+  - PageIndex 式推理检索：在文档目录树上按问题推理导航，返回最相关的章节节点（含面包屑 \`path\`、\`summary\`、\`contentMd\` 片段、\`nodeKey\` 与 \`articleId\`）。
+  - \`knowledgeBaseId\` 必填；只想在某篇文档内检索时加 \`articleId\`。比关键词搜索更精准，适合细节性问题。
 - \`POST /api/agent/document/view\`
   - scope: \`doc:read\`
   - 读取文章：\`{"articleId":"123"}\`
@@ -821,6 +830,17 @@ def cmd_doc_search(args: argparse.Namespace) -> None:
     _print_json(_request("POST", "/api/agent/document/search", body))
 
 
+def cmd_doc_tree(args: argparse.Namespace) -> None:
+    body: Dict[str, Any] = {
+        "knowledgeBaseId": _id(args.kb_id),
+        "query": args.query,
+        "limit": args.limit,
+    }
+    if args.article_id is not None:
+        body["articleId"] = _id(args.article_id)
+    _print_json(_request("POST", "/api/agent/document/tree", body))
+
+
 def cmd_doc_ask(args: argparse.Namespace) -> None:
     body: Dict[str, Any] = {"question": args.question, "limit": args.limit}
     if args.kb_id is not None:
@@ -948,6 +968,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--query", required=True)
     p.add_argument("--kb-id", type=int, default=None)
     p.add_argument("--limit", type=int, default=8)
+    p = doc_sub.add_parser("tree", help="目录树推理检索（PageIndex 式，比关键词更精准）")
+    p.add_argument("--query", required=True)
+    p.add_argument("--kb-id", type=int, required=True)
+    p.add_argument("--article-id", type=int, default=None, help="只在某篇文档内检索；省略则检索整个知识库")
+    p.add_argument("--limit", type=int, default=6)
     p = doc_sub.add_parser("ask", help="文档问答")
     p.add_argument("--question", required=True)
     p.add_argument("--kb-id", type=int, default=None)
@@ -1010,6 +1035,7 @@ COMMANDS = {
     ("article", "move"): cmd_article_move,
     ("doc", "view"): cmd_doc_view,
     ("doc", "search"): cmd_doc_search,
+    ("doc", "tree"): cmd_doc_tree,
     ("doc", "ask"): cmd_doc_ask,
     ("share", "create"): cmd_share_create,
     ("share", "revoke"): cmd_share_revoke,

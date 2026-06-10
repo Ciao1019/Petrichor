@@ -35,7 +35,9 @@ import {
     wikiIngestInputSchema,
     wikiPageDetailInputSchema,
     wikiPatchDecisionInputSchema,
+    wikiTreeInputSchema,
 } from "./wiki-agent-logic"
+import { loadDocumentTreeOutline } from "@/server/kb/wiki-tree"
 
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
 
@@ -69,6 +71,17 @@ export async function wikiPageDetail(request: NextRequest) {
     return withUser(request, async (user) => {
         const input = wikiPageDetailInputSchema.parse(await readJson(request))
         return ok(await loadWikiPageDetail(user.id, input.knowledgeBaseId, input.pageKey))
+    })
+}
+
+export async function wikiTree(request: NextRequest) {
+    return withUser(request, async (user) => {
+        const input = wikiTreeInputSchema.parse(await readJson(request))
+        return ok({
+            knowledgeBaseId: String(input.knowledgeBaseId),
+            articleId: input.articleId == null ? null : String(input.articleId),
+            nodes: await loadDocumentTreeOutline(user.id, input.knowledgeBaseId, input.articleId),
+        })
     })
 }
 

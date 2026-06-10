@@ -276,6 +276,33 @@ export const knowledgeBaseWikiSourceRefs = pgTable("petrichor_kb_wiki_source_ref
     index("idx_petrichor_kb_wiki_source_article").on(table.articleId),
 ])
 
+// PageIndex 式的文档层级树：每篇源文档按 Markdown 标题拆成 TOC 节点，
+// 节点带 LLM 摘要 + 原文片段 + 锚点，供推理式检索（LLM 在目录上导航选节点）。
+export const knowledgeBaseWikiTreeNodes = pgTable("petrichor_kb_wiki_tree_node", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    knowledgeBaseId: bigint("knowledge_base_id", { mode: "number" }).notNull(),
+    pageId: bigint("page_id", { mode: "number" }).notNull(),
+    articleId: bigint("article_id", { mode: "number" }).notNull(),
+    nodeKey: text("node_key").notNull(),
+    parentKey: text("parent_key"),
+    depth: integer("depth").notNull().default(0),
+    position: integer("position").notNull().default(0),
+    title: text("title").notNull(),
+    summary: text("summary"),
+    contentMd: text("content_md").notNull().default(""),
+    startLine: integer("start_line"),
+    endLine: integer("end_line"),
+    tokenEstimate: integer("token_estimate").notNull().default(0),
+    contentHash: text("content_hash").notNull(),
+    ...timestamps,
+}, (table) => [
+    uniqueIndex("ux_petrichor_kb_wiki_tree_node_key").on(table.userId, table.knowledgeBaseId, table.nodeKey),
+    index("idx_petrichor_kb_wiki_tree_node_page").on(table.pageId),
+    index("idx_petrichor_kb_wiki_tree_node_article").on(table.articleId),
+    index("idx_petrichor_kb_wiki_tree_node_kb").on(table.userId, table.knowledgeBaseId, table.position),
+])
+
 export const knowledgeBaseWikiPatches = pgTable("petrichor_kb_wiki_patch", {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     userId: bigint("user_id", { mode: "number" }).notNull(),
@@ -531,6 +558,7 @@ export type KnowledgeBaseRecord = typeof knowledgeBases.$inferSelect
 export type KnowledgeBaseNodeRecord = typeof knowledgeBaseNodes.$inferSelect
 export type KnowledgeBaseArticleRecord = typeof knowledgeBaseArticles.$inferSelect
 export type KnowledgeBaseWikiPageRecord = typeof knowledgeBaseWikiPages.$inferSelect
+export type KnowledgeBaseWikiTreeNodeRecord = typeof knowledgeBaseWikiTreeNodes.$inferSelect
 export type KnowledgeBaseWikiPatchRecord = typeof knowledgeBaseWikiPatches.$inferSelect
 export type KnowledgeBaseAgentThreadRecord = typeof knowledgeBaseAgentThreads.$inferSelect
 export type KnowledgeBaseAgentArtifactRecord = typeof knowledgeBaseAgentArtifacts.$inferSelect
