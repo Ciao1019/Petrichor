@@ -47,6 +47,7 @@ import {
     searchWikiPagesAcrossKbs,
     searchWikiPagesForAgent,
 } from "@/server/kb/wiki-agent-logic"
+import { retrieveTreeNodesForAgent } from "@/server/kb/wiki-tree"
 import { invalidatePublicArticleDetailCache, invalidatePublicArticleListCache } from "@/server/public-content-cache"
 import { getServerConfig } from "@/config/server"
 import { deleteS3Objects, extractS4ObjectKeysFromArticleContent } from "@/server/upload/s3-delete"
@@ -134,6 +135,13 @@ const agentDocumentViewSchema = z.object({
     pageKey: z.string().trim().min(1).max(200).optional(),
 }).refine((value) => Boolean(value.articleId || (value.knowledgeBaseId && value.pageKey)), {
     message: "必须提供 articleId，或同时提供 knowledgeBaseId 与 pageKey",
+})
+
+const agentDocumentTreeSchema = z.object({
+    knowledgeBaseId: idSchema,
+    query: z.string().trim().min(1).max(200),
+    limit: z.coerce.number().int().min(1).max(12).optional().default(6),
+    articleId: idSchema.optional(),
 })
 
 const agentDocumentQaSchema = z.object({
@@ -360,6 +368,7 @@ export async function agentCapabilities(request: NextRequest) {
                 "article.summary.generate",
                 "article.mindmap.generate",
                 "document.search",
+                "document.tree",
                 "document.view",
                 "document.qa",
                 "wiki.page.list",
@@ -686,6 +695,21 @@ export async function agentSearchDocuments(request: NextRequest) {
             knowledgeBaseId: input.knowledgeBaseId ?? null,
             query: input.query,
             limit: input.limit,
+        })
+        return ok({ items })
+    })
+}
+
+export async function agentRetrieveDocumentTree(request: NextRequest) {
+    return withAgent(request, async (context) => {
+        requireAgentScope(context, "doc:read")
+        const input = agentDocumentTreeSchema.parse(await readJson(request))
+        const items = await retrieveTreeNodesForAgent({
+            userId: context.userId,
+            knowledgeBaseId: input.knowledgeBaseId,
+            query: input.query,
+            limit: input.limit,
+            articleId: input.articleId ?? undefined,
         })
         return ok({ items })
     })

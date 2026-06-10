@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { and, asc, desc, eq, inArray, isNull, like, or } from "drizzle-orm"
+import { and, asc, count, desc, eq, inArray, isNull, like, or } from "drizzle-orm"
 import { z } from "zod"
 import { callChatCompletion } from "@/server/ai/generation"
 import { getDb } from "@/server/db/client"
@@ -18,6 +18,7 @@ import {
     knowledgeBaseWikiPages,
     knowledgeBaseWikiPatches,
     knowledgeBaseWikiSourceRefs,
+    knowledgeBaseWikiTreeNodes,
     type KnowledgeBaseAgentArtifactRecord,
     type KnowledgeBaseAgentThreadRecord,
     type KnowledgeBaseArticleRecord,
@@ -69,6 +70,10 @@ export const wikiIngestInputSchema = knowledgeBaseIdInputSchema.extend({
 
 export const wikiPageDetailInputSchema = knowledgeBaseIdInputSchema.extend({
     pageKey: z.string().trim().min(1).max(200),
+})
+
+export const wikiTreeInputSchema = knowledgeBaseIdInputSchema.extend({
+    articleId: idSchema.optional(),
 })
 
 export const wikiPatchDecisionInputSchema = knowledgeBaseIdInputSchema.extend({
@@ -299,6 +304,13 @@ export async function loadWikiDashboard(userId: number, knowledgeBaseId: number)
     const patches = await listWikiPatches(userId, knowledgeBaseId, "PENDING")
     const lint = await runWikiLint(userId, knowledgeBaseId)
     const artifacts = await listAgentArtifacts(userId, knowledgeBaseId)
+    const [treeNodeRow] = await db
+        .select({ value: count() })
+        .from(knowledgeBaseWikiTreeNodes)
+        .where(and(
+            eq(knowledgeBaseWikiTreeNodes.userId, userId),
+            eq(knowledgeBaseWikiTreeNodes.knowledgeBaseId, knowledgeBaseId),
+        ))
 
     return {
         knowledgeBase: kb ? toKnowledgeBaseLite(kb) : null,
@@ -307,6 +319,7 @@ export async function loadWikiDashboard(userId: number, knowledgeBaseId: number)
         pendingPatches: patches,
         lint,
         artifacts,
+        treeNodeCount: treeNodeRow?.value ?? 0,
     }
 }
 
