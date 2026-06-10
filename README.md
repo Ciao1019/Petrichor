@@ -104,7 +104,7 @@ openssl rand -hex 8
 
 ### 第 4 步：点击下方按钮，一键部署
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FLittleBunVerse%2Fpetrichor-vercel&project-name=petrichor&repository-name=petrichor&root-directory=apps%2Fweb&env=DATABASE_URL,SESSION_SECRET,PETRICHOR_ENCRYPT_KEY,PETRICHOR_ENCRYPT_SALT,S3_ENDPOINT,S3_REGION,S3_BUCKET,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY,NEXT_PUBLIC_APP_URL&envDescription=%E5%A1%AB%E5%85%A5%E6%95%B0%E6%8D%AE%E5%BA%93%E3%80%81%E4%BC%9A%E8%AF%9D%E5%AF%86%E9%92%A5%E3%80%81%E5%8A%A0%E5%AF%86%E5%AF%86%E9%92%A5%E5%92%8C%E5%AF%B9%E8%B1%A1%E5%AD%98%E5%82%A8%E7%AD%89%E5%BF%85%E5%A1%AB%E7%8E%AF%E5%A2%83%E5%8F%98%E9%87%8F&envLink=https%3A%2F%2Fgithub.com%2FLittleBunVerse%2Fpetrichor-vercel%23-%E7%8E%AF%E5%A2%83%E5%8F%98%E9%87%8F%E9%80%9F%E6%9F%A5%E8%A1%A8)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%Ciao1019%2Fpetrichor-vercel&project-name=petrichor&repository-name=petrichor&root-directory=apps%2Fweb&env=DATABASE_URL,SESSION_SECRET,PETRICHOR_ENCRYPT_KEY,PETRICHOR_ENCRYPT_SALT,S3_ENDPOINT,S3_REGION,S3_BUCKET,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY,NEXT_PUBLIC_APP_URL&envDescription=%E5%A1%AB%E5%85%A5%E6%95%B0%E6%8D%AE%E5%BA%93%E3%80%81%E4%BC%9A%E8%AF%9D%E5%AF%86%E9%92%A5%E3%80%81%E5%8A%A0%E5%AF%86%E5%AF%86%E9%92%A5%E5%92%8C%E5%AF%B9%E8%B1%A1%E5%AD%98%E5%82%A8%E7%AD%89%E5%BF%85%E5%A1%AB%E7%8E%AF%E5%A2%83%E5%8F%98%E9%87%8F&envLink=https%3A%2F%2Fgithub.com%2FLittleBunVerse%2Fpetrichor-vercel%23-%E7%8E%AF%E5%A2%83%E5%8F%98%E9%87%8F%E9%80%9F%E6%9F%A5%E8%A1%A8)
 
 按钮会自动：
 
