@@ -116,6 +116,49 @@ export function validateMarkdownImportText(markdown: string): string | null {
   return null
 }
 
+/** 批量导入一次允许选择的最大文件数量 */
+export const BATCH_IMPORT_MAX_FILES = 50
+
+export interface ImportFileIdentity {
+  name: string
+  size: number
+  lastModified?: number
+}
+
+/** 用文件名 + 大小 + 修改时间组合出去重 key，避免同一文件被重复加入批量列表 */
+export function buildImportFileKey(file: ImportFileIdentity): string {
+  return `${file.name}::${file.size}::${file.lastModified ?? 0}`
+}
+
+export interface DedupeImportFilesResult<T> {
+  /** 去重后追加得到的完整列表（保留原有顺序，新文件追加在末尾） */
+  merged: T[]
+  /** 实际新增的文件 */
+  added: T[]
+  /** 因与已有文件重复而被忽略的数量 */
+  duplicateCount: number
+}
+
+/** 把新选择的文件合并进已有列表，按 {@link buildImportFileKey} 去重 */
+export function dedupeImportFiles<T extends ImportFileIdentity>(
+  existing: T[],
+  incoming: T[]
+): DedupeImportFilesResult<T> {
+  const seen = new Set(existing.map(buildImportFileKey))
+  const added: T[] = []
+  let duplicateCount = 0
+  for (const file of incoming) {
+    const key = buildImportFileKey(file)
+    if (seen.has(key)) {
+      duplicateCount += 1
+      continue
+    }
+    seen.add(key)
+    added.push(file)
+  }
+  return { merged: [...existing, ...added], added, duplicateCount }
+}
+
 export function removeMarkdownFileExtension(fileName: string): string {
   const name = fileName.split(/[\\/]/).pop() || fileName
   return name.replace(/\.(md|markdown)$/i, "").trim()
