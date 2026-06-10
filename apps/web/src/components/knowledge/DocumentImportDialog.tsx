@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { FileText, Loader2, UploadCloud, X } from "lucide-react"
+import { CheckCircle2, FileText, Loader2, RotateCcw, UploadCloud, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
@@ -17,6 +17,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
+  BATCH_IMPORT_MAX_FILES,
+  dedupeImportFiles,
   resolveDocumentImportKind,
   removeDocumentImportFileExtension,
   validateDocumentImportFile,
@@ -32,24 +34,43 @@ import {
   type KnowledgeBaseTreeNode,
 } from "@/lib/api"
 
-type ImportPhase =
-  | "idle"
+type ImportItemStatus =
+  | "pending"
   | "rendering"
   | "uploading"
   | "creating"
-  | "error"
+  | "done"
+  | "failed"
+
+interface ImportItem {
+  id: string
+  file: File
+  title: string
+  status: ImportItemStatus
+  pageDone: number
+  pageTotal: number
+  jobId?: string
+  error?: string
+}
 
 interface FlatFolderOption {
   id: string
   label: string
 }
 
-const PHASE_LABEL: Record<ImportPhase, string> = {
-  idle: "等待开始",
-  rendering: "正在把文档每一页渲染成图片…",
-  uploading: "正在上传页面图片…",
-  creating: "正在创建导入任务…",
-  error: "导入失败",
+const ITEM_STATUS_LABEL: Record<ImportItemStatus, string> = {
+  pending: "等待中",
+  rendering: "渲染页面中",
+  uploading: "上传页面中",
+  creating: "创建任务中",
+  done: "已创建",
+  failed: "失败",
+}
+
+let importItemSeq = 0
+function nextImportItemId(): string {
+  importItemSeq += 1
+  return `import-item-${Date.now()}-${importItemSeq}`
 }
 
 function resolveApiErrorMessage(error: unknown, fallback: string): string {
@@ -120,8 +141,7 @@ export function DocumentImportDialog({
   onJobCreated,
   onViewJobs,
 }: DocumentImportDialogProps) {
-  const [file, setFile] = React.useState<File | null>(null)
-  const [title, setTitle] = React.useState("")
+  const [items, setItems] = React.useState<ImportItem[]>([])
   const [parentId, setParentId] = React.useState<string | null>(defaultParentId)
   const [modelConfigId, setModelConfigId] = React.useState<string | null>(null)
   const [concurrency, setConcurrency] = React.useState(DEFAULT_CONCURRENCY)
@@ -130,28 +150,19 @@ export function DocumentImportDialog({
   const [models, setModels] = React.useState<AiModelConfigResponse[]>([])
   const [modelsLoading, setModelsLoading] = React.useState(false)
 
-  const [phase, setPhase] = React.useState<ImportPhase>("idle")
-  const [pageDone, setPageDone] = React.useState(0)
-  const [pageTotal, setPageTotal] = React.useState(0)
-  const [failedPages, setFailedPages] = React.useState<number[]>([])
-  const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
-  const [noticeJob, setNoticeJob] = React.useState<{ id: string; title: string } | null>(null)
+  const [running, setRunning] = React.useState(false)
+  const [notice, setNotice] = React.useState<{ created: number } | null>(null)
   const fileInputRef = React.useRef<HTMLInputElement | null>(null)
 
-  const busy =
-    phase === "rendering" ||
-    phase === "uploading" ||
-    phase === "creating"
+  const busy = running
+  const failedCount = items.filter((item) => item.status === "failed").length
+  const doneCount = items.filter((item) => item.status === "done").length
+  const pendingCount = items.filter((item) => item.status === "pending").length
 
   const resetState = React.useCallback(() => {
-    setFile(null)
-    setTitle("")
+    setItems([])
     setParentId(defaultParentId)
-    setPhase("idle")
-    setPageDone(0)
-    setPageTotal(0)
-    setFailedPages([])
-    setErrorMessage(null)
+    setRunning(false)
     if (fileInputRef.current) fileInputRef.current.value = ""
   }, [defaultParentId])
 
@@ -187,102 +198,177 @@ export function DocumentImportDialog({
     }
   }, [open, knowledgeBaseId, defaultParentId])
 
-  const handlePickFile = React.useCallback((picked: File | null) => {
-    if (!picked) return
-    const validationError = validateDocumentImportFile(picked)
-    if (validationError) {
-      toast.error(validationError)
-      return
-    }
-    setFile(picked)
-    setTitle((prev) => prev || removeDocumentImportFileExtension(picked.name))
-    setPhase("idle")
-    setErrorMessage(null)
-    setFailedPages([])
-    setPageDone(0)
-    setPageTotal(0)
+  const updateItem = React.useCallback((id: string, patch: Partial<ImportItem>) => {
+    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)))
   }, [])
 
-  const handleStart = React.useCallback(async () => {
-    if (!file) {
+  const handlePickFiles = React.useCallback((picked: File[]) => {
+    if (picked.length === 0) return
+
+    const valid: File[] = []
+    let invalidCount = 0
+    for (const file of picked) {
+      const validationError = validateDocumentImportFile(file)
+      if (validationError) {
+        invalidCount += 1
+        continue
+      }
+      valid.push(file)
+    }
+    if (invalidCount > 0) {
+      toast.error(`已忽略 ${invalidCount} 个不支持的文件（仅支持 .pdf / .docx，单个 ≤ 100MB）`)
+    }
+    if (valid.length === 0) return
+
+    setItems((prev) => {
+      const { added, duplicateCount } = dedupeImportFiles(
+        prev.map((item) => item.file),
+        valid
+      )
+      if (duplicateCount > 0) {
+        toast.info(`已忽略 ${duplicateCount} 个重复文件`)
+      }
+      if (added.length === 0) {
+        return prev
+      }
+      let accepted = added
+      if (prev.length + added.length > BATCH_IMPORT_MAX_FILES) {
+        const allowed = Math.max(0, BATCH_IMPORT_MAX_FILES - prev.length)
+        if (allowed < added.length) {
+          toast.error(`一次最多导入 ${BATCH_IMPORT_MAX_FILES} 个文件，已截断多余文件`)
+        }
+        accepted = added.slice(0, allowed)
+      }
+      if (accepted.length === 0) {
+        return prev
+      }
+      return [
+        ...prev,
+        ...accepted.map((file) => ({
+          id: nextImportItemId(),
+          file,
+          title: removeDocumentImportFileExtension(file.name),
+          status: "pending" as ImportItemStatus,
+          pageDone: 0,
+          pageTotal: 0,
+        })),
+      ]
+    })
+  }, [])
+
+  const removeItem = React.useCallback((id: string) => {
+    setItems((prev) => prev.filter((item) => item.id !== id))
+  }, [])
+
+  const processItem = React.useCallback(
+    async (item: ImportItem): Promise<boolean> => {
+      const kind = resolveDocumentImportKind(item.file.name)
+      if (!kind) {
+        updateItem(item.id, { status: "failed", error: "仅支持 .pdf 或 .docx 格式" })
+        return false
+      }
+      const trimmedTitle = item.title.trim() || removeDocumentImportFileExtension(item.file.name) || "未命名文档"
+
+      try {
+        updateItem(item.id, { status: "rendering", pageDone: 0, pageTotal: 0, error: undefined })
+        const rendered = await rasterizeDocument(item.file, kind, {
+          onProgress: (done, total) => {
+            updateItem(item.id, { pageDone: done, pageTotal: total })
+          },
+        })
+        if (rendered.length === 0) {
+          throw new Error("未能从文档中解析出任何页面")
+        }
+
+        updateItem(item.id, { status: "uploading", pageTotal: rendered.length, pageDone: 0 })
+        const pages: { pageNo: number; imageKey: string }[] = []
+        let uploaded = 0
+        await runPool(rendered, concurrency, async (page) => {
+          const imageKey = await uploadPageBlob(page.blob, page.pageNo)
+          pages.push({ pageNo: page.pageNo, imageKey })
+          uploaded += 1
+          updateItem(item.id, { pageDone: uploaded })
+        })
+        pages.sort((a, b) => a.pageNo - b.pageNo)
+
+        updateItem(item.id, { status: "creating" })
+        const createRes = await documentImportApi.createJob({
+          knowledgeBaseId,
+          parentId,
+          sourceType: kind as DocumentImportSourceType,
+          fileName: item.file.name,
+          title: trimmedTitle,
+          modelConfigId,
+          concurrency,
+          pages,
+        })
+        const jobId = createRes.data.job.id
+        updateItem(item.id, { status: "done", jobId, title: trimmedTitle, error: undefined })
+        onJobCreated?.(jobId)
+        return true
+      } catch (error) {
+        const message = resolveApiErrorMessage(error, "导入失败")
+        updateItem(item.id, { status: "failed", error: message })
+        return false
+      }
+    },
+    [concurrency, knowledgeBaseId, modelConfigId, onJobCreated, parentId, updateItem]
+  )
+
+  const runImport = React.useCallback(
+    async (targets: ImportItem[]) => {
+      if (targets.length === 0) return
+      if (!modelConfigId) {
+        toast.error("请先选择一个多模态模型（可在「模型配置 → 多模态」中新增）")
+        return
+      }
+
+      setRunning(true)
+      setItems((prev) =>
+        prev.map((item) =>
+          targets.some((target) => target.id === item.id)
+            ? { ...item, status: "pending", pageDone: 0, pageTotal: 0, error: undefined }
+            : item
+        )
+      )
+
+      let succeeded = 0
+      let failed = 0
+      // 文件之间串行处理，单个文件内部的页面按 concurrency 并行，避免一次性打满上传/识别
+      for (const target of targets) {
+        const okResult = await processItem(target)
+        if (okResult) succeeded += 1
+        else failed += 1
+      }
+
+      setRunning(false)
+
+      if (failed === 0) {
+        toast.success(`已创建 ${succeeded} 个导入任务`)
+        setNotice({ created: succeeded })
+        onOpenChange(false)
+        resetState()
+      } else {
+        toast.error(`成功 ${succeeded} 个，失败 ${failed} 个，可重试失败项`)
+      }
+    },
+    [modelConfigId, onOpenChange, processItem, resetState]
+  )
+
+  const handleStart = React.useCallback(() => {
+    const targets = items.filter((item) => item.status !== "done")
+    if (targets.length === 0) {
       toast.error("请先选择 PDF 或 Word 文档")
       return
     }
-    const kind = resolveDocumentImportKind(file.name)
-    if (!kind) {
-      toast.error("仅支持 .pdf 或 .docx 格式")
-      return
-    }
-    const trimmedTitle = title.trim()
-    if (!trimmedTitle) {
-      toast.error("请填写文章标题")
-      return
-    }
-    if (!modelConfigId) {
-      toast.error("请先选择一个多模态模型（可在「模型配置 → 多模态」中新增）")
-      return
-    }
+    void runImport(targets)
+  }, [items, runImport])
 
-    setErrorMessage(null)
-    setFailedPages([])
-    setPageDone(0)
-    setPageTotal(0)
-    onOpenChange(false)
-    toast.info("正在准备导入任务，创建成功后会在后台继续处理")
-    try {
-      // 1) 渲染每页为图片
-      setPhase("rendering")
-      const rendered = await rasterizeDocument(file, kind, {
-        onProgress: (done, total) => {
-          setPageDone(done)
-          setPageTotal(total)
-        },
-      })
-      if (rendered.length === 0) {
-        throw new Error("未能从文档中解析出任何页面")
-      }
-
-      // 2) 上传每页图片（并发）
-      setPhase("uploading")
-      setPageTotal(rendered.length)
-      setPageDone(0)
-      const pages: { pageNo: number; imageKey: string }[] = []
-      let uploaded = 0
-      await runPool(rendered, concurrency, async (page) => {
-        const imageKey = await uploadPageBlob(page.blob, page.pageNo)
-        pages.push({ pageNo: page.pageNo, imageKey })
-        uploaded += 1
-        setPageDone(uploaded)
-      })
-      pages.sort((a, b) => a.pageNo - b.pageNo)
-
-      // 3) 创建导入任务
-      setPhase("creating")
-      const createRes = await documentImportApi.createJob({
-        knowledgeBaseId,
-        parentId,
-        sourceType: kind as DocumentImportSourceType,
-        fileName: file.name,
-        title: trimmedTitle,
-        modelConfigId,
-        concurrency,
-        pages,
-      })
-      const jobId = createRes.data.job.id
-      setNoticeJob({ id: jobId, title: trimmedTitle })
-      toast.success("导入任务已创建")
-      onJobCreated?.(jobId)
-      resetState()
-    } catch (error) {
-      const message = resolveApiErrorMessage(error, "导入失败")
-      setErrorMessage(message)
-      setPhase("error")
-      onOpenChange(true)
-      toast.error(message)
-    }
-  }, [file, title, modelConfigId, knowledgeBaseId, parentId, concurrency, onJobCreated, onOpenChange, resetState])
-
-  const progressPercent = pageTotal > 0 ? Math.round((pageDone / pageTotal) * 100) : 0
+  const handleRetryFailed = React.useCallback(() => {
+    const targets = items.filter((item) => item.status === "failed")
+    if (targets.length === 0) return
+    void runImport(targets)
+  }, [items, runImport])
 
   return (
     <>
@@ -294,11 +380,17 @@ export function DocumentImportDialog({
         onOpenChange(next)
       }}
       title="导入文档（PDF / Word）"
-      description="把 PDF（含扫描件）或 Word 每一页交给多模态模型识别为文章内容。"
+      description="可一次选择多个文件批量导入，每个文档每一页交给多模态模型识别为文章内容。"
       disableClose={busy}
       contentClassName="sm:max-w-xl"
       footer={
         <div className="flex w-full items-center justify-end gap-2">
+          {failedCount > 0 && !busy ? (
+            <Button variant="outline" onClick={handleRetryFailed}>
+              <RotateCcw className="mr-2 size-4" />
+              重试失败（{failedCount}）
+            </Button>
+          ) : null}
           <Button
             variant="outline"
             disabled={busy}
@@ -309,9 +401,9 @@ export function DocumentImportDialog({
           >
             关闭
           </Button>
-          <Button onClick={handleStart} disabled={busy || !file}>
+          <Button onClick={handleStart} disabled={busy || pendingCount === 0}>
             {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-            {busy ? "准备中" : "开始导入"}
+            {busy ? "导入中…" : pendingCount > 0 ? `开始导入（${pendingCount}）` : "开始导入"}
           </Button>
         </div>
       }
@@ -322,28 +414,41 @@ export function DocumentImportDialog({
           <input
             ref={fileInputRef}
             type="file"
+            multiple
             accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             className="hidden"
-            onChange={(e) => handlePickFile(e.target.files?.[0] ?? null)}
+            onChange={(e) => {
+              handlePickFiles(Array.from(e.target.files ?? []))
+              e.currentTarget.value = ""
+            }}
           />
-          {file ? (
-            <div className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
-              <span className="flex items-center gap-2 truncate">
-                <FileText className="size-4 shrink-0 text-muted-foreground" />
-                <span className="truncate">{file.name}</span>
-              </span>
-              {!busy ? (
-                <button
-                  type="button"
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={() => {
-                    setFile(null)
-                    if (fileInputRef.current) fileInputRef.current.value = ""
-                  }}
-                >
-                  <X className="size-4" />
-                </button>
-              ) : null}
+
+          {items.length > 0 ? (
+            <div className="space-y-2">
+              <div className="flex flex-col gap-2 max-h-64 overflow-auto app-scrollbar pr-1">
+                {items.map((item) => (
+                  <ImportItemRow
+                    key={item.id}
+                    item={item}
+                    busy={busy}
+                    onTitleChange={(title) => updateItem(item.id, { title })}
+                    onRemove={() => removeItem(item.id)}
+                  />
+                ))}
+              </div>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => fileInputRef.current?.click()}
+                className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <UploadCloud className="size-4" />
+                继续添加文件
+              </button>
+              <p className="text-xs text-muted-foreground">
+                共 {items.length} 个文件{doneCount > 0 ? `，已创建 ${doneCount} 个` : ""}
+                {failedCount > 0 ? `，失败 ${failedCount} 个` : ""}。
+              </p>
             </div>
           ) : (
             <button
@@ -352,20 +457,9 @@ export function DocumentImportDialog({
               className="flex w-full flex-col items-center gap-2 rounded-md border border-dashed px-4 py-6 text-sm text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground"
             >
               <UploadCloud className="size-6" />
-              点击选择 PDF 或 Word 文档（≤ 100MB）
+              点击选择 PDF 或 Word 文档（可多选，单个 ≤ 100MB）
             </button>
           )}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="doc-import-title">文章标题</Label>
-          <Input
-            id="doc-import-title"
-            value={title}
-            disabled={busy}
-            placeholder="导入后生成的文章标题"
-            onChange={(e) => setTitle(e.target.value)}
-          />
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -439,51 +533,24 @@ export function DocumentImportDialog({
             </p>
           </div>
         </div>
-
-        {phase !== "idle" ? (
-          <div className="space-y-2 rounded-md border bg-muted/30 p-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className={cn(phase === "error" && "text-destructive")}>{PHASE_LABEL[phase]}</span>
-              {pageTotal > 0 && (phase === "rendering" || phase === "uploading") ? (
-                <span className="tabular-nums text-muted-foreground">
-                  {pageDone}/{pageTotal}
-                </span>
-              ) : null}
-            </div>
-            {phase === "uploading" || phase === "rendering" ? (
-              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-primary transition-all"
-                  style={{ width: `${phase === "rendering" && pageTotal === 0 ? 15 : progressPercent}%` }}
-                />
-              </div>
-            ) : null}
-            {failedPages.length > 0 ? (
-              <p className="text-xs text-destructive">
-                失败页码：{failedPages.join("、")}
-              </p>
-            ) : null}
-            {errorMessage ? <p className="text-xs text-destructive">{errorMessage}</p> : null}
-          </div>
-        ) : null}
       </div>
     </KbDialog>
     <KbDialog
-      open={noticeJob != null}
+      open={notice != null}
       onOpenChange={(next) => {
-        if (!next) setNoticeJob(null)
+        if (!next) setNotice(null)
       }}
       title="导入任务已创建"
       description="文档会在后台继续识别，全部页面成功后会自动创建文章。"
       contentClassName="sm:max-w-md"
       footer={
         <div className="flex w-full items-center justify-end gap-2">
-          <Button variant="outline" onClick={() => setNoticeJob(null)}>
+          <Button variant="outline" onClick={() => setNotice(null)}>
             知道了
           </Button>
           <Button
             onClick={() => {
-              setNoticeJob(null)
+              setNotice(null)
               onViewJobs?.()
             }}
           >
@@ -494,7 +561,7 @@ export function DocumentImportDialog({
     >
       <div className="space-y-2 px-1 py-1 text-sm text-muted-foreground">
         <p>
-          {noticeJob?.title ? `「${noticeJob.title}」已进入导入队列。` : "文档已进入导入队列。"}
+          {notice ? `已创建 ${notice.created} 个导入任务，正在后台排队识别。` : "文档已进入导入队列。"}
         </p>
         <p>
           进度、目标知识库、目标文件夹和失败页重试都可以在左侧菜单的「导入任务列表」中查看。
@@ -502,6 +569,85 @@ export function DocumentImportDialog({
       </div>
     </KbDialog>
     </>
+  )
+}
+
+function ImportItemRow({
+  item,
+  busy,
+  onTitleChange,
+  onRemove,
+}: {
+  item: ImportItem
+  busy: boolean
+  onTitleChange: (title: string) => void
+  onRemove: () => void
+}) {
+  const active = item.status === "rendering" || item.status === "uploading" || item.status === "creating"
+  const progressPercent =
+    item.pageTotal > 0 ? Math.round((item.pageDone / item.pageTotal) * 100) : item.status === "creating" ? 100 : 0
+
+  return (
+    <div className="rounded-md border px-3 py-2 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-2">
+          {item.status === "done" ? (
+            <CheckCircle2 className="size-4 shrink-0 text-emerald-500" />
+          ) : active ? (
+            <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+          ) : (
+            <FileText className="size-4 shrink-0 text-muted-foreground" />
+          )}
+          <span className="truncate">{item.file.name}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          <span
+            className={cn(
+              "text-xs",
+              item.status === "failed" ? "text-destructive" : "text-muted-foreground"
+            )}
+          >
+            {ITEM_STATUS_LABEL[item.status]}
+            {(item.status === "rendering" || item.status === "uploading") && item.pageTotal > 0
+              ? ` ${item.pageDone}/${item.pageTotal}`
+              : ""}
+          </span>
+          {!busy && item.status !== "done" ? (
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground"
+              aria-label={`移除 ${item.file.name}`}
+              onClick={onRemove}
+            >
+              <X className="size-4" />
+            </button>
+          ) : null}
+        </span>
+      </div>
+
+      {item.status !== "done" && item.status !== "failed" ? (
+        <Input
+          value={item.title}
+          disabled={busy}
+          placeholder="导入后生成的文章标题"
+          className="mt-2 h-8"
+          onChange={(e) => onTitleChange(e.target.value)}
+        />
+      ) : null}
+
+      {active ? (
+        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-all"
+            style={{ width: `${item.status === "rendering" && item.pageTotal === 0 ? 15 : progressPercent}%` }}
+          />
+        </div>
+      ) : null}
+
+      {item.status === "failed" && item.error ? (
+        <p className="mt-1.5 text-xs text-destructive">{item.error}</p>
+      ) : null}
+    </div>
   )
 }
 

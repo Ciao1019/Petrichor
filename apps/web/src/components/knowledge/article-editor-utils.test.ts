@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
 
 import {
-  DOCX_IMPORT_MAX_FILE_BYTES,
+  buildImportFileKey,
   buildMarkdownExportFileName,
+  dedupeImportFiles,
+  DOCX_IMPORT_MAX_FILE_BYTES,
   isDocxFileName,
   isMarkdownFileName,
   MARKDOWN_IMPORT_MAX_FILE_BYTES,
@@ -100,5 +102,34 @@ describe("article editor Markdown import/export utilities", () => {
   it("导出文件名使用文章标题并清理非法字符", () => {
     expect(buildMarkdownExportFileName('  知识库:导入/导出?.md  ')).toBe("知识库 导入 导出.md")
     expect(buildMarkdownExportFileName("   ")).toBe("未命名文章.md")
+  })
+})
+
+describe("批量导入文件去重工具", () => {
+  it("按文件名/大小/修改时间生成稳定 key", () => {
+    expect(buildImportFileKey({ name: "a.md", size: 12, lastModified: 100 })).toBe("a.md::12::100")
+    expect(buildImportFileKey({ name: "a.md", size: 12 })).toBe("a.md::12::0")
+  })
+
+  it("合并新选择的文件并忽略重复项", () => {
+    const existing = [{ name: "a.md", size: 1, lastModified: 1 }]
+    const incoming = [
+      { name: "a.md", size: 1, lastModified: 1 }, // 与已有重复
+      { name: "b.md", size: 2, lastModified: 2 },
+      { name: "b.md", size: 2, lastModified: 2 }, // 本批次内部重复
+      { name: "c.md", size: 3, lastModified: 3 },
+    ]
+    const result = dedupeImportFiles(existing, incoming)
+    expect(result.merged.map((f) => f.name)).toEqual(["a.md", "b.md", "c.md"])
+    expect(result.added.map((f) => f.name)).toEqual(["b.md", "c.md"])
+    expect(result.duplicateCount).toBe(2)
+  })
+
+  it("不修改传入的原数组", () => {
+    const existing = [{ name: "a.md", size: 1 }]
+    const incoming = [{ name: "b.md", size: 2 }]
+    dedupeImportFiles(existing, incoming)
+    expect(existing).toHaveLength(1)
+    expect(incoming).toHaveLength(1)
   })
 })

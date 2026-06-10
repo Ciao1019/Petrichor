@@ -1,5 +1,6 @@
 import {
   CalendarIcon,
+  CheckCircle2,
   FileText,
   FileUp,
   Folder,
@@ -70,6 +71,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import {
+  BATCH_IMPORT_MAX_FILES,
+  buildImportFileKey,
   MARKDOWN_IMPORT_MAX_FILE_BYTES,
   resolveMarkdownImportTitle,
   validateMarkdownImportFile,
@@ -103,6 +106,62 @@ const CREATE_ARTICLE_IMPORT_STAGE_META: Record<
   ready: { label: "Markdown 文件已读取，等待创建文章", progress: 60 },
   creating: { label: "正在创建文章…", progress: 90 },
   error: { label: "导入失败，请根据提示调整后重试", progress: 100 },
+}
+
+type ArticleBatchItemStatus = "ready" | "creating" | "done" | "failed"
+
+const ARTICLE_BATCH_STATUS_LABEL: Record<ArticleBatchItemStatus, string> = {
+  ready: "等待创建",
+  creating: "创建中",
+  done: "已创建",
+  failed: "失败",
+}
+
+interface ArticleBatchItem {
+  id: string
+  key: string
+  fileName: string
+  title: string
+  markdown: string
+  status: ArticleBatchItemStatus
+  error?: string
+  articleId?: string
+}
+
+let articleBatchItemSeq = 0
+function nextArticleBatchItemId(): string {
+  articleBatchItemSeq += 1
+  return `article-batch-${Date.now()}-${articleBatchItemSeq}`
+}
+
+/** 读取单个 Markdown 文件并解析为批量导入条目；失败时返回错误信息 */
+async function parseArticleBatchFile(
+  file: File
+): Promise<{ ok: true; item: ArticleBatchItem } | { ok: false; fileName: string; error: string }> {
+  const fileValidationError = validateMarkdownImportFile(file)
+  if (fileValidationError) {
+    return { ok: false, fileName: file.name, error: fileValidationError }
+  }
+  try {
+    const markdown = await file.text()
+    const markdownValidationError = validateMarkdownImportText(markdown)
+    if (markdownValidationError) {
+      return { ok: false, fileName: file.name, error: markdownValidationError }
+    }
+    return {
+      ok: true,
+      item: {
+        id: nextArticleBatchItemId(),
+        key: buildImportFileKey(file),
+        fileName: file.name,
+        title: resolveMarkdownImportTitle(markdown, file.name),
+        markdown,
+        status: "ready",
+      },
+    }
+  } catch {
+    return { ok: false, fileName: file.name, error: "读取 Markdown 文件失败，请重新选择文件" }
+  }
 }
 
 const NODE_DND_PREFIX = "kb-node:"
@@ -593,6 +652,9 @@ export function KnowledgeBaseTreePage() {
   const [createArticleImportStage, setCreateArticleImportStage] =
     React.useState<CreateArticleImportStage>("idle")
   const [createArticleDragActive, setCreateArticleDragActive] = React.useState(false)
+  const [createArticleBatchItems, setCreateArticleBatchItems] = React.useState<ArticleBatchItem[]>([])
+  const [createArticleBatchParsing, setCreateArticleBatchParsing] = React.useState(false)
+  const [createArticleBatchRunning, setCreateArticleBatchRunning] = React.useState(false)
   const [importDialogOpen, setImportDialogOpen] = React.useState(false)
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleteTarget, setDeleteTarget] = React.useState<DeleteTarget | null>(null)
@@ -614,10 +676,22 @@ export function KnowledgeBaseTreePage() {
   const currentPage = pageIndex + 1
   const totalPages = Math.max(1, Math.ceil(totalFolders / pageSize))
   const isSearching = debouncedKeyword.length > 0 || hasArticleCreatedDateFilter
+  const isCreateArticleBatch = createArticleBatchItems.length > 0
   const createArticleBusy =
     saving ||
     createArticleImportStage === "reading" ||
-    createArticleImportStage === "creating"
+    createArticleImportStage === "creating" ||
+    createArticleBatchParsing ||
+    createArticleBatchRunning
+  const createArticleBatchReadyCount = createArticleBatchItems.filter(
+    (item) => item.status === "ready"
+  ).length
+  const createArticleBatchDoneCount = createArticleBatchItems.filter(
+    (item) => item.status === "done"
+  ).length
+  const createArticleBatchFailedCount = createArticleBatchItems.filter(
+    (item) => item.status === "failed"
+  ).length
   const createArticleImportMeta = CREATE_ARTICLE_IMPORT_STAGE_META[createArticleImportStage]
   const createArticleTargetText = createArticleParentId
     ? `将在 ${createArticleParentName || "所选文件夹"} 下创建`
@@ -714,6 +788,9 @@ export function KnowledgeBaseTreePage() {
     setCreateArticleDialogError(null)
     setCreateArticleImportStage("idle")
     setCreateArticleDragActive(false)
+    setCreateArticleBatchItems([])
+    setCreateArticleBatchParsing(false)
+    setCreateArticleBatchRunning(false)
     setDeleteOpen(false)
     setDeleteTarget(null)
     setActiveDragNodeId(null)
@@ -1006,10 +1083,79 @@ export function KnowledgeBaseTreePage() {
     setCreateArticleDialogError(null)
     setCreateArticleImportStage("idle")
     setCreateArticleDragActive(false)
+    setCreateArticleBatchItems([])
     if (createArticleFileInputRef.current) {
       createArticleFileInputRef.current.value = ""
     }
   }, [])
+
+  const updateCreateArticleBatchItem = React.useCallback(
+    (id: string, patch: Partial<ArticleBatchItem>) => {
+      setCreateArticleBatchItems((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, ...patch } : item))
+      )
+    },
+    []
+  )
+
+  const removeCreateArticleBatchItem = React.useCallback((id: string) => {
+    setCreateArticleBatchItems((prev) => prev.filter((item) => item.id !== id))
+  }, [])
+
+  /** 把新选择的 Markdown 文件解析后追加进批量列表（按 key 去重、忽略非法文件） */
+  const appendCreateArticleBatchFiles = React.useCallback(
+    async (existingItems: ArticleBatchItem[], files: File[]) => {
+      // 批量条目只保留 key，这里按 key 去重已选过的文件
+      const seenKeys = new Set(existingItems.map((item) => item.key))
+      const incoming: File[] = []
+      let duplicate = 0
+      for (const file of files) {
+        const key = buildImportFileKey(file)
+        if (seenKeys.has(key)) {
+          duplicate += 1
+          continue
+        }
+        seenKeys.add(key)
+        incoming.push(file)
+      }
+      if (duplicate > 0) {
+        toast.info(`已忽略 ${duplicate} 个重复文件`)
+      }
+
+      const room = BATCH_IMPORT_MAX_FILES - existingItems.length
+      let accepted = incoming
+      if (incoming.length > room) {
+        toast.error(`一次最多导入 ${BATCH_IMPORT_MAX_FILES} 篇文章，已截断多余文件`)
+        accepted = incoming.slice(0, Math.max(0, room))
+      }
+      if (accepted.length === 0) {
+        return
+      }
+
+      setCreateArticleBatchParsing(true)
+      try {
+        const results = await Promise.all(accepted.map((file) => parseArticleBatchFile(file)))
+        const parsedItems: ArticleBatchItem[] = []
+        const failedNames: string[] = []
+        for (const result of results) {
+          if (result.ok) {
+            parsedItems.push(result.item)
+          } else {
+            failedNames.push(result.fileName)
+          }
+        }
+        if (failedNames.length > 0) {
+          toast.error(`已忽略 ${failedNames.length} 个无法导入的文件`)
+        }
+        if (parsedItems.length > 0) {
+          setCreateArticleBatchItems((prev) => [...prev, ...parsedItems])
+        }
+      } finally {
+        setCreateArticleBatchParsing(false)
+      }
+    },
+    []
+  )
 
   const readCreateArticleMarkdownFile = React.useCallback(async (file: File) => {
     setCreateArticleDialogError(null)
@@ -1050,6 +1196,34 @@ export function KnowledgeBaseTreePage() {
     }
   }, [])
 
+  /** 统一的「选择文件」入口：1 个文件走单篇编辑流程，多个文件走批量导入流程 */
+  const handleCreateArticlePickFiles = React.useCallback(
+    (files: File[]) => {
+      if (files.length === 0) return
+      setCreateArticleDialogError(null)
+
+      if (createArticleBatchItems.length > 0) {
+        void appendCreateArticleBatchFiles(createArticleBatchItems, files)
+        return
+      }
+
+      const total = (createArticleMarkdownFile ? 1 : 0) + files.length
+      if (total <= 1) {
+        void readCreateArticleMarkdownFile(files[0])
+        return
+      }
+
+      // 进入批量模式：把已选的单个文件（若有）和新文件一起解析
+      const combined = createArticleMarkdownFile ? [createArticleMarkdownFile, ...files] : files
+      setCreateArticleMarkdownFile(null)
+      setCreateArticleMarkdown("")
+      setCreateArticleFileError(null)
+      setCreateArticleImportStage("idle")
+      void appendCreateArticleBatchFiles([], combined)
+    },
+    [appendCreateArticleBatchFiles, createArticleBatchItems, createArticleMarkdownFile, readCreateArticleMarkdownFile]
+  )
+
   const openCreateArticle = React.useCallback((parent: { id: string; name: string } | null) => {
     setCreateArticleParentId(parent?.id ?? null)
     setCreateArticleParentName(parent?.name ?? null)
@@ -1060,6 +1234,9 @@ export function KnowledgeBaseTreePage() {
     setCreateArticleMarkdown("")
     setCreateArticleImportStage("idle")
     setCreateArticleDragActive(false)
+    setCreateArticleBatchItems([])
+    setCreateArticleBatchParsing(false)
+    setCreateArticleBatchRunning(false)
     setCreateArticleOpen(true)
   }, [])
 
@@ -1070,7 +1247,98 @@ export function KnowledgeBaseTreePage() {
     void loadCreateArticleFolderTree()
   }, [createArticleOpen, loadCreateArticleFolderTree])
 
+  const refreshTreeAfterCreateArticle = React.useCallback(async () => {
+    if (isSearching) {
+      await fetchTree()
+    } else if (createArticleParentId && treeContainsNode(roots, createArticleParentId)) {
+      setExpandedIds((prev) => {
+        const next = new Set(prev)
+        next.add(createArticleParentId)
+        return next
+      })
+      await loadChildren(createArticleParentId)
+    } else {
+      await fetchTree()
+    }
+  }, [createArticleParentId, fetchTree, isSearching, loadChildren, roots])
+
+  const submitCreateArticleBatch = React.useCallback(async () => {
+    if (!knowledgeBaseId) return
+    if (createArticleBatchRunning) return
+
+    const targets = createArticleBatchItems.filter(
+      (item) => item.status === "ready" || item.status === "failed"
+    )
+    const runnable = targets.filter((item) => {
+      const trimmed = item.title.trim()
+      if (!trimmed) {
+        updateCreateArticleBatchItem(item.id, { status: "failed", error: "文章标题不能为空" })
+        return false
+      }
+      if (trimmed.length > 200) {
+        updateCreateArticleBatchItem(item.id, { status: "failed", error: "文章标题不能超过 200 个字符" })
+        return false
+      }
+      return true
+    })
+    if (runnable.length === 0) {
+      setCreateArticleDialogError("没有可创建的文章，请检查文件标题")
+      return
+    }
+
+    setCreateArticleBatchRunning(true)
+    setCreateArticleDialogError(null)
+
+    let succeeded = 0
+    let failed = 0
+    for (const item of runnable) {
+      updateCreateArticleBatchItem(item.id, { status: "creating", error: undefined })
+      try {
+        const res = await knowledgeBaseArticleApi.create({
+          knowledgeBaseId,
+          parentId: createArticleParentId,
+          title: item.title.trim(),
+          contentMd: item.markdown,
+          tags: [],
+        })
+        updateCreateArticleBatchItem(item.id, { status: "done", articleId: res.data.articleId, error: undefined })
+        succeeded += 1
+      } catch (e: unknown) {
+        updateCreateArticleBatchItem(item.id, {
+          status: "failed",
+          error: resolveApiErrorMessage(e, "创建文章失败"),
+        })
+        failed += 1
+      }
+    }
+
+    setCreateArticleBatchRunning(false)
+
+    if (succeeded > 0) {
+      await refreshTreeAfterCreateArticle()
+    }
+
+    if (failed === 0) {
+      toast.success(`已创建 ${succeeded} 篇文章`)
+      setCreateArticleOpen(false)
+      setCreateArticleBatchItems([])
+    } else {
+      toast.error(`成功 ${succeeded} 篇，失败 ${failed} 篇，可重试失败项`)
+    }
+  }, [
+    createArticleBatchItems,
+    createArticleBatchRunning,
+    createArticleParentId,
+    knowledgeBaseId,
+    refreshTreeAfterCreateArticle,
+    updateCreateArticleBatchItem,
+  ])
+
   const submitCreateArticle = React.useCallback(async () => {
+    if (isCreateArticleBatch) {
+      await submitCreateArticleBatch()
+      return
+    }
     if (!knowledgeBaseId) return
     const title = createArticleTitle.trim()
     if (!title) {
@@ -1118,18 +1386,7 @@ export function KnowledgeBaseTreePage() {
       setCreateArticleDialogError(null)
       setCreateArticleImportStage("idle")
 
-      if (isSearching) {
-        await fetchTree()
-      } else if (createArticleParentId && treeContainsNode(roots, createArticleParentId)) {
-        setExpandedIds((prev) => {
-          const next = new Set(prev)
-          next.add(createArticleParentId)
-          return next
-        })
-        await loadChildren(createArticleParentId)
-      } else {
-        await fetchTree()
-      }
+      await refreshTreeAfterCreateArticle()
 
       navigate(knowledgeBaseArticlePath(knowledgeBaseId, res.data.articleId))
     } catch (e: unknown) {
@@ -1147,13 +1404,12 @@ export function KnowledgeBaseTreePage() {
     createArticleMarkdownFile,
     createArticleParentId,
     createArticleTitle,
-    fetchTree,
-    isSearching,
+    isCreateArticleBatch,
     knowledgeBaseId,
-    loadChildren,
     navigate,
-    roots,
+    refreshTreeAfterCreateArticle,
     saving,
+    submitCreateArticleBatch,
   ])
 
   const confirmDelete = React.useCallback(async () => {
@@ -1860,7 +2116,7 @@ export function KnowledgeBaseTreePage() {
           setCreateArticleOpen(open)
         }}
         disableClose={createArticleBusy}
-        title="新建文章"
+        title={isCreateArticleBatch ? "批量导入文章" : "新建文章"}
         description={createArticleTargetText}
         contentClassName="sm:max-w-2xl"
         footer={
@@ -1875,10 +2131,21 @@ export function KnowledgeBaseTreePage() {
             </Button>
             <Button
               type="button"
-              disabled={createArticleBusy || !createArticleTitle.trim()}
+              disabled={
+                createArticleBusy ||
+                (isCreateArticleBatch
+                  ? createArticleBatchReadyCount + createArticleBatchFailedCount === 0
+                  : !createArticleTitle.trim())
+              }
               onClick={submitCreateArticle}
             >
-              {createArticleBusy ? "创建中..." : "创建并编辑"}
+              {createArticleBusy
+                ? "创建中..."
+                : isCreateArticleBatch
+                  ? createArticleBatchFailedCount > 0 && createArticleBatchReadyCount === 0
+                    ? `重试失败（${createArticleBatchFailedCount}）`
+                    : `创建 ${createArticleBatchReadyCount + createArticleBatchFailedCount} 篇文章`
+                  : "创建并编辑"}
             </Button>
           </>
         }
@@ -1888,42 +2155,46 @@ export function KnowledgeBaseTreePage() {
             ref={createArticleFileInputRef}
             type="file"
             accept=".md,.markdown,text/markdown,text/x-markdown"
+            multiple
             className="hidden"
             onChange={(event) => {
-              const file = event.currentTarget.files?.[0]
+              const files = Array.from(event.currentTarget.files ?? [])
               event.currentTarget.value = ""
-              if (!file) return
-              void readCreateArticleMarkdownFile(file)
+              if (files.length === 0) return
+              handleCreateArticlePickFiles(files)
             }}
           />
 
-          <div className="space-y-2">
-            <Label htmlFor="article-title">标题</Label>
-            <Input
-              id="article-title"
-              value={createArticleTitle}
-              placeholder="例如：产品需求梳理"
-              disabled={createArticleBusy}
-              maxLength={200}
-              onChange={(e) => {
-                setCreateArticleDialogError(null)
-                setCreateArticleTitle(e.target.value)
-              }}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter") return
-                e.preventDefault()
-                void submitCreateArticle()
-              }}
-            />
-            {createArticleDialogError ? (
-              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {createArticleDialogError}
-              </div>
-            ) : null}
-          </div>
+          {isCreateArticleBatch ? null : (
+            <div className="space-y-2">
+              <Label htmlFor="article-title">标题</Label>
+              <Input
+                id="article-title"
+                value={createArticleTitle}
+                placeholder="例如：产品需求梳理"
+                disabled={createArticleBusy}
+                maxLength={200}
+                onChange={(e) => {
+                  setCreateArticleDialogError(null)
+                  setCreateArticleTitle(e.target.value)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return
+                  e.preventDefault()
+                  void submitCreateArticle()
+                }}
+              />
+            </div>
+          )}
+
+          {createArticleDialogError ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {createArticleDialogError}
+            </div>
+          ) : null}
 
           <div className="space-y-2">
-            <Label>Markdown 文件（可选）</Label>
+            <Label>{isCreateArticleBatch ? "Markdown 文件" : "Markdown 文件（可选）"}</Label>
             <button
               type="button"
               disabled={createArticleBusy}
@@ -1946,9 +2217,9 @@ export function KnowledgeBaseTreePage() {
                 event.preventDefault()
                 setCreateArticleDragActive(false)
                 if (createArticleBusy) return
-                const file = event.dataTransfer.files?.[0]
-                if (!file) return
-                void readCreateArticleMarkdownFile(file)
+                const files = Array.from(event.dataTransfer.files ?? [])
+                if (files.length === 0) return
+                handleCreateArticlePickFiles(files)
               }}
             >
               <span className="flex size-10 items-center justify-center rounded-md border bg-background text-muted-foreground">
@@ -1956,76 +2227,120 @@ export function KnowledgeBaseTreePage() {
               </span>
               <span className="max-w-full space-y-1">
                 <span className="block text-sm font-medium">
-                  拖拽 Markdown 文件到这里，或点击选择
+                  拖拽 Markdown 文件到这里，或点击选择（可多选批量导入）
                 </span>
                 <span className="block break-words text-xs text-muted-foreground">
-                  支持 .md / .markdown，单个文件不超过 {MARKDOWN_IMPORT_MAX_FILE_BYTES / 1024 / 1024} MB
+                  支持 .md / .markdown，单个文件不超过 {MARKDOWN_IMPORT_MAX_FILE_BYTES / 1024 / 1024} MB，
+                  一次最多 {BATCH_IMPORT_MAX_FILES} 个
                 </span>
               </span>
             </button>
 
-            {createArticleMarkdownFile ? (
-              <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2">
-                <div className="flex min-w-0 items-center gap-2">
-                  <FileText className="size-4 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium">
-                      {createArticleMarkdownFile.name}
+            {createArticleBatchParsing ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                正在读取 Markdown 文件…
+              </div>
+            ) : null}
+
+            {isCreateArticleBatch ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">
+                    共 {createArticleBatchItems.length} 个文件
+                    {createArticleBatchDoneCount > 0 ? `，已创建 ${createArticleBatchDoneCount} 篇` : ""}
+                    {createArticleBatchFailedCount > 0 ? `，失败 ${createArticleBatchFailedCount} 篇` : ""}
+                  </p>
+                  {!createArticleBusy ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => setCreateArticleBatchItems([])}
+                    >
+                      清空
+                    </Button>
+                  ) : null}
+                </div>
+                <div className="flex max-h-64 flex-col gap-2 overflow-auto app-scrollbar pr-1">
+                  {createArticleBatchItems.map((item) => (
+                    <ArticleBatchItemRow
+                      key={item.id}
+                      item={item}
+                      busy={createArticleBusy}
+                      onTitleChange={(title) => updateCreateArticleBatchItem(item.id, { title })}
+                      onRemove={() => removeCreateArticleBatchItem(item.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                {createArticleMarkdownFile ? (
+                  <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <FileText className="size-4 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">
+                          {createArticleMarkdownFile.name}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {(createArticleMarkdownFile.size / 1024).toFixed(1)} KB
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      {(createArticleMarkdownFile.size / 1024).toFixed(1)} KB
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 shrink-0"
+                      disabled={createArticleBusy}
+                      aria-label="移除 Markdown 文件"
+                      onClick={clearCreateArticleMarkdownFile}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
+                ) : null}
+
+                {createArticleImportStage !== "idle" ? (
+                  <div className="space-y-1.5">
+                    <div
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={createArticleImportMeta.progress}
+                      className={cn(
+                        "h-2 overflow-hidden rounded-full bg-muted",
+                        createArticleImportStage === "error" ? "bg-destructive/15" : ""
+                      )}
+                    >
+                      <ImportProgressFill
+                        progress={createArticleImportMeta.progress}
+                        error={createArticleImportStage === "error"}
+                      />
+                    </div>
+                    <div
+                      className={cn(
+                        "text-xs",
+                        createArticleImportStage === "error"
+                          ? "text-destructive"
+                          : "text-muted-foreground"
+                      )}
+                    >
+                      {createArticleImportMeta.label}
                     </div>
                   </div>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-8 shrink-0"
-                  disabled={createArticleBusy}
-                  aria-label="移除 Markdown 文件"
-                  onClick={clearCreateArticleMarkdownFile}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
-            ) : null}
+                ) : null}
 
-            {createArticleImportStage !== "idle" ? (
-              <div className="space-y-1.5">
-                <div
-                  role="progressbar"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={createArticleImportMeta.progress}
-                  className={cn(
-                    "h-2 overflow-hidden rounded-full bg-muted",
-                    createArticleImportStage === "error" ? "bg-destructive/15" : ""
-                  )}
-                >
-                  <ImportProgressFill
-                    progress={createArticleImportMeta.progress}
-                    error={createArticleImportStage === "error"}
-                  />
-                </div>
-                <div
-                  className={cn(
-                    "text-xs",
-                    createArticleImportStage === "error"
-                      ? "text-destructive"
-                      : "text-muted-foreground"
-                  )}
-                >
-                  {createArticleImportMeta.label}
-                </div>
-              </div>
-            ) : null}
-
-            {createArticleFileError ? (
-              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {createArticleFileError}
-              </div>
-            ) : null}
+                {createArticleFileError ? (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {createArticleFileError}
+                  </div>
+                ) : null}
+              </>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -2127,6 +2442,70 @@ export function KnowledgeBaseTreePage() {
           knowledgeBaseId={knowledgeBaseId}
           onViewJobs={() => navigate(dashboardRoutes.imports)}
         />
+      ) : null}
+    </div>
+  )
+}
+
+function ArticleBatchItemRow({
+  item,
+  busy,
+  onTitleChange,
+  onRemove,
+}: {
+  item: ArticleBatchItem
+  busy: boolean
+  onTitleChange: (title: string) => void
+  onRemove: () => void
+}) {
+  return (
+    <div className="rounded-md border px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-2">
+          {item.status === "done" ? (
+            <CheckCircle2 className="size-4 shrink-0 text-emerald-500" />
+          ) : item.status === "creating" ? (
+            <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+          ) : (
+            <FileText className="size-4 shrink-0 text-muted-foreground" />
+          )}
+          <span className="truncate text-sm">{item.fileName}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          <span
+            className={cn(
+              "text-xs",
+              item.status === "failed" ? "text-destructive" : "text-muted-foreground"
+            )}
+          >
+            {ARTICLE_BATCH_STATUS_LABEL[item.status]}
+          </span>
+          {!busy && item.status !== "done" ? (
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground"
+              aria-label={`移除 ${item.fileName}`}
+              onClick={onRemove}
+            >
+              <X className="size-4" />
+            </button>
+          ) : null}
+        </span>
+      </div>
+
+      {item.status !== "done" ? (
+        <Input
+          value={item.title}
+          disabled={busy}
+          placeholder="文章标题"
+          maxLength={200}
+          className="mt-2 h-8"
+          onChange={(e) => onTitleChange(e.target.value)}
+        />
+      ) : null}
+
+      {item.status === "failed" && item.error ? (
+        <p className="mt-1.5 text-xs text-destructive">{item.error}</p>
       ) : null}
     </div>
   )
