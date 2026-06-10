@@ -820,6 +820,23 @@ export interface KnowledgeBaseWikiDashboardResponse {
   pendingPatches: KnowledgeBaseWikiPatchResponse[]
   lint: KnowledgeBaseWikiLintResponse
   artifacts: KnowledgeBaseAgentArtifactResponse[]
+  treeNodeCount: number
+}
+
+export interface KnowledgeBaseWikiTreeNode {
+  nodeKey: string
+  articleId: string
+  parentKey: string | null
+  depth: number
+  title: string
+  summary?: string | null
+  tokenEstimate: number
+}
+
+export interface KnowledgeBaseWikiTreeResponse {
+  knowledgeBaseId: string
+  articleId: string | null
+  nodes: KnowledgeBaseWikiTreeNode[]
 }
 
 export interface KnowledgeBaseWikiIngestResponse {
@@ -836,6 +853,8 @@ export const knowledgeBaseWikiAgentApi = {
     api.post<{ knowledgeBaseId: string; pages: KnowledgeBaseWikiPageResponse[] }>("/kb/wiki/page/list", { knowledgeBaseId }),
   pageDetail: (knowledgeBaseId: string, pageKey: string) =>
     api.post<KnowledgeBaseWikiPageDetailResponse>("/kb/wiki/page/detail", { knowledgeBaseId, pageKey }),
+  tree: (knowledgeBaseId: string, articleId?: string) =>
+    api.post<KnowledgeBaseWikiTreeResponse>("/kb/wiki/tree", { knowledgeBaseId, articleId }),
   ingest: (data: { knowledgeBaseId: string; articleIds?: string[]; forceRebuild?: boolean }) =>
     api.post<KnowledgeBaseWikiIngestResponse>("/kb/wiki/ingest", data),
   patches: (knowledgeBaseId: string) =>

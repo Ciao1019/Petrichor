@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CheckCircle2, Eye, FileStack, GitPullRequestArrow, Loader2, RefreshCw, Sparkles, X } from "lucide-react"
+import { CheckCircle2, Eye, FileStack, GitPullRequestArrow, ListTree, Loader2, RefreshCw, Sparkles, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
@@ -26,6 +26,7 @@ import {
   type KnowledgeBaseWikiPageKind,
   type KnowledgeBaseWikiPageResponse,
   type KnowledgeBaseWikiPatchResponse,
+  type KnowledgeBaseWikiTreeNode,
 } from "@/lib/api"
 
 const KIND_LABEL: Record<KnowledgeBaseWikiPageKind, string> = {
@@ -88,6 +89,42 @@ function DiffView({ diff }: { diff: string }) {
   )
 }
 
+/** 从 `source-<id>` 形式的 pageKey 解析出文章 ID；非源文档页返回 null。 */
+function articleIdFromPageKey(pageKey: string): string | null {
+  const match = pageKey.match(/^source-(\d+)$/)
+  return match ? match[1] : null
+}
+
+/** PageIndex 式文档目录树：把扁平节点按 depth 缩进渲染成层级大纲。 */
+function WikiTreeOutline({ nodes }: { nodes: KnowledgeBaseWikiTreeNode[] }) {
+  if (nodes.length === 0) {
+    return <p className="text-xs text-muted-foreground">该文档暂无目录树节点，重新生成 Wiki 后会自动构建。</p>
+  }
+  return (
+    <ul className="app-scrollbar max-h-[32vh] space-y-0.5 overflow-auto rounded-md border bg-muted/20 p-2">
+      {nodes.map((node) => (
+        <li
+          key={node.nodeKey}
+          className="rounded px-2 py-1 hover:bg-accent/60"
+          style={{ paddingLeft: `${Math.min(node.depth, 6) * 14 + 8}px` }}
+        >
+          <div className="flex items-baseline gap-2">
+            <span className={cn("truncate text-sm", node.depth === 0 ? "font-semibold" : "font-medium")}>
+              {node.title}
+            </span>
+            {node.tokenEstimate > 0 ? (
+              <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">~{node.tokenEstimate} tok</span>
+            ) : null}
+          </div>
+          {node.summary ? (
+            <p className="truncate text-xs text-muted-foreground">{node.summary}</p>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function StatCard({ label, value, accent }: { label: string; value: React.ReactNode; accent?: boolean }) {
   return (
     <div className="rounded-lg border px-4 py-3">
@@ -111,6 +148,8 @@ export function KnowledgeWikiPage() {
   const [activePatch, setActivePatch] = React.useState<KnowledgeBaseWikiPatchResponse | null>(null)
   const [pageDetail, setPageDetail] = React.useState<KnowledgeBaseWikiPageDetailResponse | null>(null)
   const [pageDetailLoading, setPageDetailLoading] = React.useState(false)
+  const [treeNodes, setTreeNodes] = React.useState<KnowledgeBaseWikiTreeNode[]>([])
+  const [treeLoading, setTreeLoading] = React.useState(false)
 
   React.useEffect(() => {
     let cancelled = false
@@ -215,6 +254,9 @@ export function KnowledgeWikiPage() {
     if (!selectedKbId) return
     setPageDetailLoading(true)
     setPageDetail({ ...page, sourceRefs: [], links: [] })
+    const articleId = articleIdFromPageKey(page.pageKey)
+    setTreeNodes([])
+    setTreeLoading(articleId != null)
     try {
       const res = await knowledgeBaseWikiAgentApi.pageDetail(selectedKbId, page.pageKey)
       setPageDetail(res.data)
@@ -222,6 +264,17 @@ export function KnowledgeWikiPage() {
       toast.error(resolveApiErrorMessage(error, "加载页面详情失败"))
     } finally {
       setPageDetailLoading(false)
+    }
+    // 源文档页才有对应的目录树，按 articleId 拉取层级大纲。
+    if (articleId != null) {
+      try {
+        const treeRes = await knowledgeBaseWikiAgentApi.tree(selectedKbId, articleId)
+        setTreeNodes(treeRes.data.nodes)
+      } catch {
+        setTreeNodes([])
+      } finally {
+        setTreeLoading(false)
+      }
     }
   }, [selectedKbId])
 
@@ -290,8 +343,9 @@ export function KnowledgeWikiPage() {
         </div>
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <StatCard label="Wiki 页面" value={lint?.pageCount ?? pages.length} />
+            <StatCard label="目录树节点" value={dashboard?.treeNodeCount ?? 0} />
             <StatCard label="页面链接" value={lint?.linkCount ?? 0} />
             <StatCard label="来源引用" value={lint?.sourceRefCount ?? 0} />
             <StatCard label="Lint 得分" value={lint ? lint.score : "-"} />
@@ -512,6 +566,23 @@ export function KnowledgeWikiPage() {
             <pre className="app-scrollbar max-h-[40vh] overflow-auto whitespace-pre-wrap rounded-md border bg-muted/30 p-3 text-sm leading-relaxed">
               {pageDetail.contentMd}
             </pre>
+            {articleIdFromPageKey(pageDetail.pageKey) != null ? (
+              <div>
+                <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <ListTree className="size-3.5" />
+                  文档目录树
+                  {treeNodes.length > 0 ? <span className="tabular-nums">（{treeNodes.length}）</span> : null}
+                </div>
+                {treeLoading ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="size-3 animate-spin" />
+                    加载目录树…
+                  </div>
+                ) : (
+                  <WikiTreeOutline nodes={treeNodes} />
+                )}
+              </div>
+            ) : null}
             {pageDetailLoading ? (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="size-3 animate-spin" />
