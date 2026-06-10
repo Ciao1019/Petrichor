@@ -11,9 +11,16 @@ export function ThemeToggle({ className }: ThemeToggleProps) {
 
   return (
     <button
-      className={cn("relative size-5 cursor-pointer", className)}
+      className={cn(
+        "relative size-5 cursor-pointer rounded-full outline-none transition-transform",
+        "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "active:scale-90",
+        className,
+      )}
       onClick={() => setTheme(isDark ? 'light' : 'dark')}
       type="button"
+      aria-label={isDark ? '切换到浅色模式' : '切换到深色模式'}
+      title={isDark ? '切换到浅色模式' : '切换到深色模式'}
     >
       {/* 月亮 (深色模式) */}
       <span

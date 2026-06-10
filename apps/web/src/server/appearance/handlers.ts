@@ -75,6 +75,7 @@ export async function adminSiteAppearanceUpdate(request: NextRequest) {
                 dayStartHour: input.dayStartHour,
                 dayEndHour: input.dayEndHour,
                 allowManualOverride: input.allowManualOverride,
+                publicQaEnabled: input.publicQaEnabled,
                 updatedAt: now,
             })
             .onConflictDoUpdate({
@@ -85,6 +86,7 @@ export async function adminSiteAppearanceUpdate(request: NextRequest) {
                     dayStartHour: input.dayStartHour,
                     dayEndHour: input.dayEndHour,
                     allowManualOverride: input.allowManualOverride,
+                    publicQaEnabled: input.publicQaEnabled,
                     updatedAt: now,
                 },
             })

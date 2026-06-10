@@ -99,6 +99,7 @@ export function SiteAppearanceConfigPage() {
                 dayStartHour: config.dayStartHour,
                 dayEndHour: config.dayEndHour,
                 allowManualOverride: config.allowManualOverride,
+                publicQaEnabled: config.publicQaEnabled,
             })
             setConfig(res.data)
             toast.success("外观配置已保存")
@@ -252,6 +253,29 @@ export function SiteAppearanceConfigPage() {
                             checked={config.allowManualOverride}
                             onCheckedChange={(value) =>
                                 setConfig((prev) => ({ ...prev, allowManualOverride: value }))
+                            }
+                        />
+                    </div>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-base">前台问答</CardTitle>
+                    <CardDescription>
+                        开启后，未登录访客可在前台「问答」页面（/ask）就你公开分享的文章进行 AI 问答；每个访客每小时限 10 次提问。
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="flex items-center justify-between rounded-md border p-3">
+                        <div className="space-y-0.5">
+                            <Label className="text-sm font-medium">开启前台公开问答</Label>
+                            <p className="text-xs text-muted-foreground">关闭后 /ask 页面将提示功能已停用</p>
+                        </div>
+                        <Switch
+                            checked={config.publicQaEnabled}
+                            onCheckedChange={(value) =>
+                                setConfig((prev) => ({ ...prev, publicQaEnabled: value }))
                             }
                         />
                     </div>

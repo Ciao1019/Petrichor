@@ -479,3 +479,22 @@
 .retypeset-home .blog-home-link::after {
   background: var(--retypeset-accent) !important;
 }
+
+/* LobeHub Markdown 表格的"复制表格"按钮（.table-copy-button）默认是 antd
+   colorBgContainer 白底 + 描边，在 retypeset 主题（尤其浅粉 sakura）上像一块
+   突兀的白方块。这里让它融入主题：半透明 surface-tint 底 + 主题描边 + secondary
+   图标色，hover 略加深，与卡片的 bg-white/5 + border-white/10 风格保持一致。 */
+.retypeset-home .table-copy-button,
+.retypeset-home .table-copy-button svg {
+  color: var(--retypeset-secondary) !important;
+}
+
+.retypeset-home .table-copy-button {
+  background: color-mix(in oklab, var(--retypeset-surface-tint) 8%, transparent) !important;
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--retypeset-secondary) 18%, transparent) !important;
+}
+
+.retypeset-home .table-copy-button:hover {
+  background: color-mix(in oklab, var(--retypeset-surface-tint) 16%, transparent) !important;
+  color: var(--retypeset-primary) !important;
+}

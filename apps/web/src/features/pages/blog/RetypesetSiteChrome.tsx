@@ -7,7 +7,7 @@ import { Link } from "react-router-dom"
 import { BlogSearchDialog, useBlogSearchHotkey } from "@/components/blog-search-dialog"
 import { RetypesetThemeToggle } from "@/features/retypeset-theme/RetypesetThemeToggle"
 
-export type RetypesetSiteActiveSection = "articles" | "tags" | "about"
+export type RetypesetSiteActiveSection = "articles" | "tags" | "ask" | "about"
 type RetypesetSiteNavSection = RetypesetSiteActiveSection
 type RetypesetSiteNavItem = {
     section: RetypesetSiteNavSection
@@ -29,6 +29,7 @@ const retypesetSiteCopy = {
     navLabel: "站点导航",
     navPosts: "文章",
     navTags: "标签",
+    navAsk: "问答",
     navAbout: "关于",
     searchTrigger: "搜索文章",
     githubTrigger: "GitHub 仓库",
@@ -39,6 +40,7 @@ const RETYPESET_SITE_GITHUB_HREF = "https://github.com/Ciao1019/Petrichor"
 const retypesetSiteNavItems: RetypesetSiteNavItem[] = [
     { section: "articles", href: "/#articles", label: retypesetSiteCopy.navPosts, internal: true },
     { section: "tags", href: "/tags", label: retypesetSiteCopy.navTags, internal: true },
+    { section: "ask", href: "/ask", label: retypesetSiteCopy.navAsk, internal: true },
     { section: "about", href: "/about", label: retypesetSiteCopy.navAbout, internal: true },
 ] as const
 
