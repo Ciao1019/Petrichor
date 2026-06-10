@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { and, asc, desc, eq, inArray, isNull, like, or } from "drizzle-orm"
+import { and, asc, count, desc, eq, inArray, isNull, like, or } from "drizzle-orm"
 import { z } from "zod"
 import { callChatCompletion } from "@/server/ai/generation"
 import { getDb } from "@/server/db/client"
@@ -18,6 +18,7 @@ import {
     knowledgeBaseWikiPages,
     knowledgeBaseWikiPatches,
     knowledgeBaseWikiSourceRefs,
+    knowledgeBaseWikiTreeNodes,
     type KnowledgeBaseAgentArtifactRecord,
     type KnowledgeBaseAgentThreadRecord,
     type KnowledgeBaseArticleRecord,
@@ -26,6 +27,7 @@ import {
     type KnowledgeBaseWikiPatchRecord,
 } from "@/server/db/schema"
 import { badRequest, notFound } from "@/server/http/response"
+import { buildArticleTree } from "@/server/kb/wiki-tree"
 
 type Db = ReturnType<typeof getDb>
 
@@ -68,6 +70,10 @@ export const wikiIngestInputSchema = knowledgeBaseIdInputSchema.extend({
 
 export const wikiPageDetailInputSchema = knowledgeBaseIdInputSchema.extend({
     pageKey: z.string().trim().min(1).max(200),
+})
+
+export const wikiTreeInputSchema = knowledgeBaseIdInputSchema.extend({
+    articleId: idSchema.optional(),
 })
 
 export const wikiPatchDecisionInputSchema = knowledgeBaseIdInputSchema.extend({
@@ -298,6 +304,13 @@ export async function loadWikiDashboard(userId: number, knowledgeBaseId: number)
     const patches = await listWikiPatches(userId, knowledgeBaseId, "PENDING")
     const lint = await runWikiLint(userId, knowledgeBaseId)
     const artifacts = await listAgentArtifacts(userId, knowledgeBaseId)
+    const [treeNodeRow] = await db
+        .select({ value: count() })
+        .from(knowledgeBaseWikiTreeNodes)
+        .where(and(
+            eq(knowledgeBaseWikiTreeNodes.userId, userId),
+            eq(knowledgeBaseWikiTreeNodes.knowledgeBaseId, knowledgeBaseId),
+        ))
 
     return {
         knowledgeBase: kb ? toKnowledgeBaseLite(kb) : null,
@@ -306,6 +319,7 @@ export async function loadWikiDashboard(userId: number, knowledgeBaseId: number)
         pendingPatches: patches,
         lint,
         artifacts,
+        treeNodeCount: treeNodeRow?.value ?? 0,
     }
 }
 
@@ -328,39 +342,52 @@ export async function ingestKnowledgeBaseWiki(input: {
         const sourceHash = stableHash(`${article.title}\n${article.contentMd}`)
         const pageKey = buildArticleSourcePageKey(article.id)
         const existing = await loadWikiPage(db, input.userId, input.knowledgeBaseId, pageKey)
+        let page: KnowledgeBaseWikiPageRecord
         if (existing && getFrontmatterSourceHash(existing) === sourceHash && !input.forceRebuild) {
-            pages.push(existing)
-            continue
+            page = existing
+        } else {
+            const draft = await generateArticleWikiDraft({
+                userId: input.userId,
+                knowledgeBaseName: kb.name,
+                article,
+            }).catch((error: unknown) => {
+                warnings.push(error instanceof Error ? error.message : "模型编译失败，已使用本地摘要策略")
+                return buildFallbackArticleWikiDraft(article)
+            })
+            const contentMd = renderArticleWikiPage(article, draft)
+            page = await upsertWikiPage(db, {
+                userId: input.userId,
+                knowledgeBaseId: input.knowledgeBaseId,
+                pageKey,
+                title: article.title,
+                kind: "source",
+                contentMd,
+                summary: draft.summary,
+                frontmatter: {
+                    articleId: String(article.id),
+                    sourceTitle: article.title,
+                    sourceUpdatedAt: formatDate(article.updatedAt),
+                    sourceHash,
+                    entities: draft.entities,
+                    questions: draft.questions,
+                },
+                sourceRefs: [{ articleId: article.id, anchor: null, note: "源文档" }],
+            })
         }
+        pages.push(page)
 
-        const draft = await generateArticleWikiDraft({
-            userId: input.userId,
-            knowledgeBaseName: kb.name,
-            article,
-        }).catch((error: unknown) => {
-            warnings.push(error instanceof Error ? error.message : "模型编译失败，已使用本地摘要策略")
-            return buildFallbackArticleWikiDraft(article)
-        })
-        const contentMd = renderArticleWikiPage(article, draft)
-        const page = await upsertWikiPage(db, {
+        // PageIndex 式目录树：把源文档拆成层级节点供推理式检索。内部按结构指纹缓存，结构未变会跳过。
+        await buildArticleTree({
+            db,
             userId: input.userId,
             knowledgeBaseId: input.knowledgeBaseId,
-            pageKey,
-            title: article.title,
-            kind: "source",
-            contentMd,
-            summary: draft.summary,
-            frontmatter: {
-                articleId: String(article.id),
-                sourceTitle: article.title,
-                sourceUpdatedAt: formatDate(article.updatedAt),
-                sourceHash,
-                entities: draft.entities,
-                questions: draft.questions,
-            },
-            sourceRefs: [{ articleId: article.id, anchor: null, note: "源文档" }],
+            knowledgeBaseName: kb.name,
+            pageId: page.id,
+            article,
+            forceRebuild: input.forceRebuild,
+        }).catch((error: unknown) => {
+            warnings.push(error instanceof Error ? `目录树构建失败：${error.message}` : "目录树构建失败")
         })
-        pages.push(page)
     }
 
     const indexPage = await rebuildWikiIndex(db, input.userId, input.knowledgeBaseId, kb.name)

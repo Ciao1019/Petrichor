@@ -30,6 +30,7 @@ import {
   Globe2,
   Library,
   ListChecks,
+  ListTree,
   Loader2,
   MessageSquarePlus,
   Mic,
@@ -60,6 +61,7 @@ import { ProgressTracker } from "@/components/tool-ui/progress-tracker"
 import { safeParseSerializableProgressTracker } from "@/components/tool-ui/progress-tracker/schema"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Tooltip,
@@ -267,6 +269,58 @@ const SearchWikiToolUI = makeAssistantToolUI({
               ) : null}
             </div>
           ))}
+        </div>
+      </ToolStatusCard>
+    )
+  },
+})
+
+const SearchTreeToolUI = makeAssistantToolUI({
+  toolName: "search_document_tree",
+  render: ({ result, status }) => {
+    const rows = Array.isArray(result) ? result.map(asRecord).filter(isPresent) : []
+    if (rows.length === 0) {
+      return <ToolStatusCard title="推理式检索" status={status} icon={<ListTree className="size-4" />} />
+    }
+    return (
+      <ToolStatusCard title="推理式检索" status={status} icon={<ListTree className="size-4" />} collapsible defaultOpen={false}>
+        <div className="space-y-1.5">
+          {rows.slice(0, 8).map((row, index) => {
+            const path = typeof row.path === "string" ? row.path : ""
+            const title = String(row.title ?? row.nodeKey ?? "章节")
+            const summary = typeof row.summary === "string" ? row.summary : ""
+            const reason = typeof row.reason === "string" ? row.reason : ""
+            return (
+              <div key={String(row.nodeKey ?? index)} className="rounded-md border bg-background px-3 py-2">
+                {path ? <p className="truncate text-[10px] text-muted-foreground">{path}</p> : null}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-sm font-medium">{title}</span>
+                  {typeof row.depth === "number" ? (
+                    <Badge variant="outline" className="shrink-0 text-[10px]">L{row.depth}</Badge>
+                  ) : null}
+                </div>
+                {summary ? <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{summary}</p> : null}
+                {reason ? <p className="mt-1 line-clamp-1 text-[11px] text-primary/80">命中理由：{reason}</p> : null}
+              </div>
+            )
+          })}
+        </div>
+      </ToolStatusCard>
+    )
+  },
+})
+
+const ReadTreeNodeToolUI = makeAssistantToolUI({
+  toolName: "read_tree_node",
+  render: ({ result, status }) => {
+    const payload = asRecord(result)
+    const title = typeof payload?.title === "string" ? payload.title : "目录节点"
+    const path = typeof payload?.path === "string" ? payload.path : ""
+    return (
+      <ToolStatusCard title="读取目录节点" status={status} icon={<FileText className="size-4" />}>
+        <div className="min-w-0">
+          {path ? <p className="truncate text-[10px] text-muted-foreground">{path}</p> : null}
+          <span className="line-clamp-2 text-sm font-medium">{title}</span>
         </div>
       </ToolStatusCard>
     )
@@ -1069,6 +1123,8 @@ function QaChatPanel({
       <ListKbToolUI />
       <SearchAcrossToolUI />
       <SearchWikiToolUI />
+      <SearchTreeToolUI />
+      <ReadTreeNodeToolUI />
       <ReadWikiToolUI />
       <ReadSourceToolUI />
       <SaveArtifactToolUI />
@@ -1960,22 +2016,45 @@ function ToolStatusCard({
   status,
   icon,
   children,
+  collapsible = false,
+  defaultOpen = true,
 }: {
   title: string
   status?: ToolCallMessagePartStatus
   icon?: React.ReactNode
   children?: React.ReactNode
+  collapsible?: boolean
+  defaultOpen?: boolean
 }) {
   const running = status?.type === "running"
   const incomplete = status?.type === "incomplete"
+  const iconEl = (
+    <span className="text-muted-foreground">
+      {running ? <Loader2 className="size-4 animate-spin" /> : incomplete ? <CircleAlert className="size-4" /> : icon ?? <CheckCircle2 className="size-4" />}
+    </span>
+  )
+  const badge = <Badge variant="outline" className="ml-auto text-[10px]">{toolStatusLabel(status)}</Badge>
+
+  if (collapsible && children) {
+    return (
+      <Collapsible defaultOpen={defaultOpen} className="rounded-xl border bg-background/60 p-3 shadow-sm backdrop-blur-sm">
+        <CollapsibleTrigger className="group/tsc flex w-full items-center gap-2 text-sm font-medium">
+          {iconEl}
+          <span>{title}</span>
+          {badge}
+          <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[state=closed]/tsc:-rotate-90" />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="mt-3 data-[state=closed]:hidden">{children}</CollapsibleContent>
+      </Collapsible>
+    )
+  }
+
   return (
     <div className="rounded-xl border bg-background/60 p-3 shadow-sm backdrop-blur-sm">
       <div className="flex items-center gap-2 text-sm font-medium">
-        <span className="text-muted-foreground">
-          {running ? <Loader2 className="size-4 animate-spin" /> : incomplete ? <CircleAlert className="size-4" /> : icon ?? <CheckCircle2 className="size-4" />}
-        </span>
+        {iconEl}
         <span>{title}</span>
-        <Badge variant="outline" className="ml-auto text-[10px]">{toolStatusLabel(status)}</Badge>
+        {badge}
       </div>
       {children ? <div className="mt-3">{children}</div> : null}
     </div>
