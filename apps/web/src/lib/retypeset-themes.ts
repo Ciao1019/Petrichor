@@ -143,6 +143,8 @@ export interface RetypesetAppearanceConfig {
     dayEndHour: number
     /** 是否允许访客手动切换并记忆 */
     allowManualOverride: boolean
+    /** 是否开启前台公开问答（/ask 页面） */
+    publicQaEnabled: boolean
 }
 
 export type RetypesetAppearanceInput = Partial<Record<keyof RetypesetAppearanceConfig, unknown>>
@@ -153,6 +155,7 @@ export const DEFAULT_RETYPESET_APPEARANCE: RetypesetAppearanceConfig = {
     dayStartHour: 6,
     dayEndHour: 18,
     allowManualOverride: true,
+    publicQaEnabled: true,
 }
 
 export function pickThemeByHour(
@@ -194,7 +197,11 @@ export function normalizeAppearance(
         typeof source.allowManualOverride === "boolean"
             ? source.allowManualOverride
             : DEFAULT_RETYPESET_APPEARANCE.allowManualOverride
-    return { dayTheme, nightTheme, dayStartHour, dayEndHour, allowManualOverride }
+    const publicQaEnabled =
+        typeof source.publicQaEnabled === "boolean"
+            ? source.publicQaEnabled
+            : DEFAULT_RETYPESET_APPEARANCE.publicQaEnabled
+    return { dayTheme, nightTheme, dayStartHour, dayEndHour, allowManualOverride, publicQaEnabled }
 }
 
 function clampHour(value: unknown, fallback: number): number {

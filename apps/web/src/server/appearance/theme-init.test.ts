@@ -39,6 +39,7 @@ describe("Retypeset 首屏主题初始化脚本", () => {
         dayStartHour: 6,
         dayEndHour: 18,
         allowManualOverride: true,
+        publicQaEnabled: true,
     }
 
     it("服务端兜底主题按数据库配置和服务端时间计算", () => {

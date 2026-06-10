@@ -473,8 +473,20 @@ export const siteAppearance = pgTable("petrichor_site_appearance", {
     dayStartHour: integer("day_start_hour").notNull().default(6),
     dayEndHour: integer("day_end_hour").notNull().default(18),
     allowManualOverride: boolean("allow_manual_override").notNull().default(true),
+    publicQaEnabled: boolean("public_qa_enabled").notNull().default(true),
     ...timestamps,
 })
+
+// 前台公开问答限流：固定窗口（按小时）计数桶，bucket_key 形如 visitor:<id>:<yyyyMMddHH> 或 ip:<ip>:<yyyyMMddHH>
+export const publicQaRateLimits = pgTable("petrichor_public_qa_rate_limit", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    bucketKey: text("bucket_key").notNull(),
+    count: integer("count").notNull().default(0),
+    windowStartedAt: timestamp("window_started_at", { withTimezone: true }).notNull().defaultNow(),
+    ...timestamps,
+}, (table) => [
+    uniqueIndex("ux_petrichor_public_qa_rate_limit_bucket").on(table.bucketKey),
+])
 
 export const aiModelConfigs = pgTable("petrichor_ai_model_config", {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
@@ -567,6 +579,7 @@ export type AgentApiKeyRecord = typeof agentApiKeys.$inferSelect
 export type AgentCallLogRecord = typeof agentCallLogs.$inferSelect
 export type SiteAboutProfileRecord = typeof siteAboutProfiles.$inferSelect
 export type SiteAppearanceRecord = typeof siteAppearance.$inferSelect
+export type PublicQaRateLimitRecord = typeof publicQaRateLimits.$inferSelect
 export type AiModelConfigRecord = typeof aiModelConfigs.$inferSelect
 export type AiReviewRecord = typeof aiReviews.$inferSelect
 export type KnowledgeBaseImportJobRecord = typeof knowledgeBaseImportJobs.$inferSelect

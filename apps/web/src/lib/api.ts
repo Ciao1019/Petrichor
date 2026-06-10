@@ -294,6 +294,7 @@ export interface SiteAppearanceResponse {
   dayStartHour: number
   dayEndHour: number
   allowManualOverride: boolean
+  publicQaEnabled: boolean
   createdAt?: string | null
   updatedAt?: string | null
 }
@@ -304,6 +305,7 @@ export interface SiteAppearanceUpdateRequest {
   dayStartHour: number
   dayEndHour: number
   allowManualOverride: boolean
+  publicQaEnabled: boolean
 }
 
 export const publicSiteAppearanceApi = {

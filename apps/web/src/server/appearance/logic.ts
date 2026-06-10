@@ -30,6 +30,7 @@ export function buildSiteAppearanceResponse(record?: SiteAppearanceRecord | null
         dayStartHour: clampHour(record.dayStartHour, DEFAULT_RETYPESET_APPEARANCE.dayStartHour),
         dayEndHour: clampHour(record.dayEndHour, DEFAULT_RETYPESET_APPEARANCE.dayEndHour),
         allowManualOverride: Boolean(record.allowManualOverride),
+        publicQaEnabled: record.publicQaEnabled ?? DEFAULT_RETYPESET_APPEARANCE.publicQaEnabled,
         createdAt: formatDate(record.createdAt),
         updatedAt: formatDate(record.updatedAt),
     }
@@ -45,12 +46,16 @@ export function validateSiteAppearanceInput(raw: unknown): RetypesetAppearanceCo
         typeof value.allowManualOverride === "boolean"
             ? value.allowManualOverride
             : DEFAULT_RETYPESET_APPEARANCE.allowManualOverride
+    const publicQaEnabled =
+        typeof value.publicQaEnabled === "boolean"
+            ? value.publicQaEnabled
+            : DEFAULT_RETYPESET_APPEARANCE.publicQaEnabled
 
     if (dayStartHour === dayEndHour) {
         throw badRequest("白天开始时间不能与结束时间相同")
     }
 
-    return { dayTheme, nightTheme, dayStartHour, dayEndHour, allowManualOverride }
+    return { dayTheme, nightTheme, dayStartHour, dayEndHour, allowManualOverride, publicQaEnabled }
 }
 
 function normalizeThemeId(raw: unknown, label: string): RetypesetThemeId {

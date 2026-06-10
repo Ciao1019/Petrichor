@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { LogIn } from "lucide-react"
+import { Link } from "react-router-dom"
 
 import { SiteLogo } from "@/components/site-logo"
 import { Button } from "@/components/ui/button"
@@ -157,7 +158,7 @@ export function LoginForm({
               />
             </Field>
             <Field>
-              <Button type="submit" variant="outline" disabled={loading}>
+              <Button type="submit" disabled={loading}>
                 {loading ? "验证中..." : "验证并登录"}
               </Button>
             </Field>
@@ -196,15 +197,15 @@ export function LoginForm({
       <form onSubmit={handleSubmit}>
         <FieldGroup>
           <div className="flex flex-col items-center gap-2 text-center">
-            <a
-              href="#"
+            <Link
+              to="/"
               className="flex flex-col items-center gap-2 font-medium"
             >
               <div className="flex size-8 items-center justify-center rounded-md">
                 <SiteLogo className="size-8 rounded-md" size={32} />
               </div>
-              <span className="sr-only">Petrichor</span>
-            </a>
+              <span className="sr-only">返回首页 · Petrichor</span>
+            </Link>
             <h1 className="text-xl font-bold">
               {currentMode === "login" ? "欢迎登录" : "创建账号"}
             </h1>
@@ -257,7 +258,7 @@ export function LoginForm({
             />
           </Field>
           <Field>
-            <Button type="submit" variant="outline" disabled={loading || linuxDoLoading}>
+            <Button type="submit" disabled={loading || linuxDoLoading}>
               {loading
                 ? (currentMode === "login" ? "登录中..." : "注册中...")
                 : (currentMode === "login" ? "登录" : "注册")}
@@ -279,8 +280,8 @@ export function LoginForm({
         </FieldGroup>
       </form>
       <FieldDescription className="px-6 text-center">
-        点击继续即表示您同意我们的 <a href="#">服务条款</a> 和{" "}
-        <a href="#">隐私政策</a>。
+        点击继续即表示您同意我们的<span className="text-foreground font-medium">服务条款</span>和
+        <span className="text-foreground font-medium">隐私政策</span>。
       </FieldDescription>
     </div>
   )

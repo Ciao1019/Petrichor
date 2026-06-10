@@ -32,8 +32,12 @@ const QA_MARKDOWN_COMPONENTS: NonNullable<MarkdownProps["components"]> = {
   file: SignedMarkdownFile,
 }
 
-/** 解析当前明暗：跟随 app 的 theme-provider（system 时再跟随系统）。 */
+// 允许调用方（如前台 /ask 蓝底页面）强制明暗，覆盖 app 主题判断。
+const QaForcedDarkContext = React.createContext<boolean | null>(null)
+
+/** 解析当前明暗：优先用强制模式，否则跟随 app 的 theme-provider（system 时再跟随系统）。 */
 function useIsDark() {
+  const forced = React.useContext(QaForcedDarkContext)
   const { theme } = useTheme()
   const [systemDark, setSystemDark] = React.useState(false)
   React.useEffect(() => {
@@ -44,6 +48,7 @@ function useIsDark() {
     mq.addEventListener("change", update)
     return () => mq.removeEventListener("change", update)
   }, [theme])
+  if (forced != null) return forced
   return theme === "dark" || (theme === "system" && systemDark)
 }
 
@@ -51,7 +56,23 @@ function useIsDark() {
  * 仅作用于问答区的 LobeHub 主题作用域。
  * enableGlobalStyle={false}：禁止 antd 全局样式注入，避免影响 app 其它地方。
  */
-export function QaMarkdownScope({ children }: { children: React.ReactNode }) {
+export function QaMarkdownScope({
+  children,
+  mode,
+}: {
+  children: React.ReactNode
+  /** 强制明暗，不传则跟随 app 主题。前台 /ask 蓝底页面传 "dark" 让正文为浅色。 */
+  mode?: "light" | "dark"
+}) {
+  const forced = mode == null ? null : mode === "dark"
+  return (
+    <QaForcedDarkContext.Provider value={forced}>
+      <QaMarkdownThemeShell>{children}</QaMarkdownThemeShell>
+    </QaForcedDarkContext.Provider>
+  )
+}
+
+function QaMarkdownThemeShell({ children }: { children: React.ReactNode }) {
   const isDark = useIsDark()
   return (
     <ThemeProvider

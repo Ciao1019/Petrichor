@@ -28,6 +28,7 @@ import { AgentSkillPage } from '@/features/pages/agent/AgentSkillPage'
 import { BlogHomePage } from '@/features/pages/blog/BlogHomePage'
 import { TagsPage } from '@/features/pages/blog/TagsPage'
 import { AboutPage } from '@/features/pages/about/AboutPage'
+import { PublicQaPage } from '@/features/pages/ask/PublicQaPage'
 import { AccountPage } from '@/features/pages/account/AccountPage'
 import { DashboardMetricsPage } from '@/features/pages/dashboard/DashboardMetricsPage'
 import { PublicArticlePage } from '@/features/pages/public/PublicArticlePage'
@@ -104,6 +105,7 @@ function AppThemeScope({ initialAppearance }: ClientAppProps) {
           <Routes>
             <Route path="/" element={<BlogHomePage />} />
             <Route path="/tags" element={<TagsPage />} />
+            <Route path="/ask" element={<PublicQaPage />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/auth/callback" element={<AuthCallback />} />

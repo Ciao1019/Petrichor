@@ -18,6 +18,7 @@ describe("Retypeset 主题配置", () => {
             dayStartHour: 0,
             dayEndHour: 24,
             allowManualOverride: true,
+            publicQaEnabled: true,
         })
     })
 
