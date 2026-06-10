@@ -189,6 +189,21 @@ export function KnowledgeWikiPage() {
     if (selectedKbId) void loadDashboard(selectedKbId)
   }, [selectedKbId, loadDashboard])
 
+  // 页面重新可见 / 窗口重新获得焦点时刷新仪表盘，
+  // 确保在问答页或其它标签页提交的补丁无需手动重载就能出现。
+  React.useEffect(() => {
+    if (!selectedKbId) return
+    const refresh = () => {
+      if (document.visibilityState === "visible") void loadDashboard(selectedKbId)
+    }
+    document.addEventListener("visibilitychange", refresh)
+    window.addEventListener("focus", refresh)
+    return () => {
+      document.removeEventListener("visibilitychange", refresh)
+      window.removeEventListener("focus", refresh)
+    }
+  }, [selectedKbId, loadDashboard])
+
   const runIngest = React.useCallback(async () => {
     if (!selectedKbId) return
     setIngesting(true)
