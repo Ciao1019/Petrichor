@@ -1,13 +1,14 @@
 /*
  * Retypeset 前台样式。
- * 前台固定使用 Sakura 樱粉变量，并在 .retypeset-home 容器内接管
- * 原蓝色像素风遗留的写死颜色类。
+ * 背景使用 Sn0w 的暖纸色（#f8f4ec），accent / highlight 仍为 sakura 玫红系；
+ * 并在 .retypeset-home 容器内接管原蓝色像素风遗留的写死颜色类。
  */
 
 :root {
   --retypeset-primary: oklch(24% 0.04 8);
   --retypeset-secondary: oklch(34% 0.045 8);
-  --retypeset-background: oklch(96% 0.022 12);
+  /* 暖纸底色，对齐 Sn0w 的 --color-paper（#f8f4ec）。 */
+  --retypeset-background: #f8f4ec;
   --retypeset-surface-tint: oklch(24% 0.08 8);
   --retypeset-highlight: oklch(0.82 0.18 6 / 0.5);
   --retypeset-accent: oklch(50% 0.2 8);

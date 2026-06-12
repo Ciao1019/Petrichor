@@ -9,6 +9,7 @@ import { cachePublicContent, invalidatePublicAboutProfileCache } from "@/server/
 import {
     ABOUT_PROFILE_ID,
     buildAboutProfileResponse,
+    serializeAccents,
     serializeProfileList,
     validateAboutProfileInput,
 } from "./logic"
@@ -78,6 +79,10 @@ export async function adminAboutProfileUpdate(request: NextRequest) {
                 expertiseJson: serializeProfileList(input.expertise),
                 toolkitJson: serializeProfileList(input.toolkit),
                 quote: input.quote,
+                accentsJson: serializeAccents(input.accents),
+                contactText: input.contactText,
+                contactLabel: input.contactLabel,
+                contactHref: input.contactHref,
                 updatedAt: now,
             })
             .onConflictDoUpdate({
@@ -89,6 +94,10 @@ export async function adminAboutProfileUpdate(request: NextRequest) {
                     expertiseJson: serializeProfileList(input.expertise),
                     toolkitJson: serializeProfileList(input.toolkit),
                     quote: input.quote,
+                    accentsJson: serializeAccents(input.accents),
+                    contactText: input.contactText,
+                    contactLabel: input.contactLabel,
+                    contactHref: input.contactHref,
                     updatedAt: now,
                 },
             })
