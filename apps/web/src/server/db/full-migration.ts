@@ -654,9 +654,23 @@ create table if not exists petrichor_site_about_profile (
     expertise_json text not null default '["Frontend Architecture","AI 应用开发","Knowledge Systems","Creative Coding"]',
     toolkit_json text not null default '["TypeScript","React","Next.js","AI","PostgreSQL","Minecraft"]',
     quote text not null default 'Code is just another medium for painting dreams.',
+    accents_json text not null default $about_accents$[{"phrase":"CiZai","style":"red","note":"yep, that's me"},{"phrase":"程序员","style":"green","note":"just a dev"},{"phrase":"金山办公","style":"blue","note":"where I work"},{"phrase":"Coding / AI","style":"green","note":"my playground"},{"phrase":"Minecraft","style":"blue","note":"★ my comfort game"}]$about_accents$,
+    contact_text text not null default '想聊点什么？随时',
+    contact_label text not null default 'message me',
+    contact_href text not null default 'mailto:zang@linux.do',
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
+
+-- 为已存在的旧表幂等补列（首次发布注记/联系方式功能时升级用）。
+alter table petrichor_site_about_profile
+    add column if not exists accents_json text not null default $about_accents$[{"phrase":"CiZai","style":"red","note":"yep, that's me"},{"phrase":"程序员","style":"green","note":"just a dev"},{"phrase":"金山办公","style":"blue","note":"where I work"},{"phrase":"Coding / AI","style":"green","note":"my playground"},{"phrase":"Minecraft","style":"blue","note":"★ my comfort game"}]$about_accents$;
+alter table petrichor_site_about_profile
+    add column if not exists contact_text text not null default '想聊点什么？随时';
+alter table petrichor_site_about_profile
+    add column if not exists contact_label text not null default 'message me';
+alter table petrichor_site_about_profile
+    add column if not exists contact_href text not null default 'mailto:zang@linux.do';
 
 insert into petrichor_site_about_profile (
     id,

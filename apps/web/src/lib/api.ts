@@ -259,6 +259,15 @@ export const adminUserApi = {
   delete: (data: AdminUserDeleteRequest) => api.post<void>("/admin/user/delete", data),
 }
 
+// 正文注记样式：red/orange/green/teal/blue/purple/pink 为手绘波浪下划线，yellow 为荧光笔高亮。
+export type AboutAccentStyle = "red" | "orange" | "green" | "teal" | "blue" | "purple" | "pink" | "yellow"
+
+export interface AboutAccent {
+  phrase: string
+  style: AboutAccentStyle
+  note?: string
+}
+
 export interface AboutProfileResponse {
   displayName: string
   roleTitle: string
@@ -266,6 +275,10 @@ export interface AboutProfileResponse {
   expertise: string[]
   toolkit: string[]
   quote: string
+  accents: AboutAccent[]
+  contactText: string
+  contactLabel: string
+  contactHref: string
   createdAt?: string | null
   updatedAt?: string | null
 }
@@ -277,6 +290,10 @@ export interface AboutProfileUpdateRequest {
   expertise: string[]
   toolkit: string[]
   quote: string
+  accents: AboutAccent[]
+  contactText: string
+  contactLabel: string
+  contactHref: string
 }
 
 export const publicAboutProfileApi = {

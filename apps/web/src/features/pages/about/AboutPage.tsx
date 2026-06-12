@@ -4,7 +4,9 @@ import * as React from "react"
 
 import { PixelFlower, PixelFlowerLayer, type PixelFlowerDecoration } from "@/features/pages/blog/PixelDecorations"
 import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
-import { publicAboutProfileApi, type AboutProfileResponse } from "@/lib/api"
+import { publicAboutProfileApi, type AboutAccent, type AboutProfileResponse } from "@/lib/api"
+
+import { BlueNote, HandUnderline, MarkerHighlight } from "./DeskAccents"
 
 const fallbackProfile: AboutProfileResponse = {
     displayName: "CiZai",
@@ -13,6 +15,45 @@ const fallbackProfile: AboutProfileResponse = {
     expertise: ["Frontend Architecture", "AI 应用开发", "Knowledge Systems", "Creative Coding"],
     toolkit: ["TypeScript", "React", "Next.js", "AI", "PostgreSQL", "Minecraft"],
     quote: "Code is just another medium for painting dreams.",
+    accents: [
+        { phrase: "CiZai", style: "red", note: "yep, that's me" },
+        { phrase: "程序员", style: "green", note: "just a dev" },
+        { phrase: "金山办公", style: "blue", note: "where I work" },
+        { phrase: "Coding / AI", style: "green", note: "my playground" },
+        { phrase: "Minecraft", style: "blue", note: "★ my comfort game" },
+    ],
+    contactText: "想聊点什么？随时",
+    contactLabel: "message me",
+    contactHref: "mailto:zang@linux.do",
+}
+
+/* 用「关于我」配置里的注记表，把一段正文切成「普通片段 + 被包裹的点缀片段」：
+   style 为 red/green/blue 时画手绘波浪下划线，yellow 时画荧光笔高亮，note 非空则
+   附悬停浮出的手写小气泡。先按短语长度降序，确保较长短语优先匹配，避免被子串截断。
+   注记内容全部来自后台「关于我配置」，正文里没出现的短语会被安静跳过。 */
+function decorateIntro(text: string, accents: AboutAccent[]): React.ReactNode[] {
+    if (accents.length === 0) return [text]
+    const phrases = accents
+        .map((accent) => accent.phrase)
+        .sort((a, b) => b.length - a.length)
+        .map((phrase) => phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    const pattern = new RegExp(`(${phrases.join("|")})`)
+    return text.split(pattern).map((part, index) => {
+        const accent = accents.find((item) => item.phrase === part)
+        if (!accent) return <React.Fragment key={index}>{part}</React.Fragment>
+        if (accent.style === "yellow") {
+            return (
+                <MarkerHighlight key={index} note={accent.note}>
+                    {part}
+                </MarkerHighlight>
+            )
+        }
+        return (
+            <HandUnderline key={index} color={accent.style} note={accent.note}>
+                {part}
+            </HandUnderline>
+        )
+    })
 }
 
 const aboutBackgroundFlowers: PixelFlowerDecoration[] = [
@@ -184,7 +225,7 @@ export function AboutPage() {
                                     <AboutStoryLoadingSkeleton />
                                 ) : (
                                     introParagraphs.map((paragraph) => (
-                                        <p key={paragraph}>{paragraph}</p>
+                                        <p key={paragraph}>{decorateIntro(paragraph, profile.accents ?? [])}</p>
                                     ))
                                 )}
                             </div>
@@ -224,14 +265,28 @@ export function AboutPage() {
                             </section>
                         </div>
 
-                        <div className="mt-4 flex flex-col items-start justify-between gap-6 rounded-lg border border-dashed border-white/20 bg-white/5 p-6">
-                            <p className="break-words text-sm italic text-white/70">"{profile.quote}"</p>
-                            <a
-                                href="mailto:zang@linux.do"
-                                className="bg-[var(--retypeset-highlight)] px-8 py-3 text-sm font-bold uppercase text-blue-950 transition-colors hover:bg-[color-mix(in_oklab,var(--retypeset-highlight)_72%,var(--retypeset-primary)_12%)]"
-                            >
-                                Let's Chat
-                            </a>
+                        <div className="mt-4 max-w-xl">
+                            <BlueNote>
+                                <span className="block break-words italic">"{profile.quote}"</span>
+                                {(() => {
+                                    const hasLink = Boolean(profile.contactLabel && profile.contactHref)
+                                    if (!profile.contactText && !hasLink) return null
+                                    return (
+                                        <span className="mt-2.5 block not-italic">
+                                            {profile.contactText}
+                                            {profile.contactText && hasLink ? " " : ""}
+                                            {hasLink ? (
+                                                <a
+                                                    href={profile.contactHref}
+                                                    className="font-semibold underline underline-offset-2"
+                                                >
+                                                    {profile.contactLabel}
+                                                </a>
+                                            ) : null}
+                                        </span>
+                                    )
+                                })()}
+                            </BlueNote>
                         </div>
                     </div>
                 </div>

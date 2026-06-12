@@ -484,6 +484,12 @@ export const siteAboutProfiles = pgTable("petrichor_site_about_profile", {
     expertiseJson: text("expertise_json").notNull().default("[\"Frontend Architecture\",\"AI 应用开发\",\"Knowledge Systems\",\"Creative Coding\"]"),
     toolkitJson: text("toolkit_json").notNull().default("[\"TypeScript\",\"React\",\"Next.js\",\"AI\",\"PostgreSQL\",\"Minecraft\"]"),
     quote: text("quote").notNull().default("Code is just another medium for painting dreams."),
+    // 正文逐句注记（下划线/高亮 + 悬停气泡）：JSON 数组 [{phrase,style,note?}]，style ∈ red|green|blue|yellow
+    accentsJson: text("accents_json").notNull().default('[{"phrase":"CiZai","style":"red","note":"yep, that\'s me"},{"phrase":"程序员","style":"green","note":"just a dev"},{"phrase":"金山办公","style":"blue","note":"where I work"},{"phrase":"Coding / AI","style":"green","note":"my playground"},{"phrase":"Minecraft","style":"blue","note":"★ my comfort game"}]'),
+    // 蓝色便签里的联系方式：引导语 + 链接文字 + 链接地址（三者均可留空以隐藏）
+    contactText: text("contact_text").notNull().default("想聊点什么？随时"),
+    contactLabel: text("contact_label").notNull().default("message me"),
+    contactHref: text("contact_href").notNull().default("mailto:zang@linux.do"),
     ...timestamps,
 })
 

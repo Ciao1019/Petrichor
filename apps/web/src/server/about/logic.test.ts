@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
     DEFAULT_ABOUT_PROFILE,
     buildAboutProfileResponse,
+    parseAccentsJson,
     parseProfileListJson,
     serializeProfileList,
     validateAboutProfileInput,
@@ -39,7 +40,56 @@ describe("about profile logic", () => {
             expertise: ["AI", "Coding"],
             toolkit: ["TypeScript", "React"],
             quote: "Code is paint.",
+            accents: [],
+            contactText: "",
+            contactLabel: "",
+            contactHref: "",
         })
+    })
+
+    it("校验并归一化正文注记与联系方式", () => {
+        expect(validateAboutProfileInput({
+            displayName: "n",
+            roleTitle: "r",
+            intro: "i",
+            expertise: ["AI"],
+            toolkit: ["TS"],
+            quote: "q",
+            accents: [
+                { phrase: "  CiZai  ", style: "red", note: "  hey  " },
+                { phrase: "CiZai", style: "blue" }, // 重复短语丢弃
+                { phrase: "x", style: "rainbow" }, // 非法 style 回退 red
+                { phrase: "  ", style: "green" }, // 空短语丢弃
+                { phrase: "y", style: "yellow", note: "" }, // 空气泡省略 note
+            ],
+            contactText: "  想聊点什么？  ",
+            contactLabel: " message me ",
+            contactHref: " mailto:a@b.com ",
+        })).toEqual({
+            displayName: "n",
+            roleTitle: "r",
+            intro: "i",
+            expertise: ["AI"],
+            toolkit: ["TS"],
+            quote: "q",
+            accents: [
+                { phrase: "CiZai", style: "red", note: "hey" },
+                { phrase: "x", style: "red" },
+                { phrase: "y", style: "yellow" },
+            ],
+            contactText: "想聊点什么？",
+            contactLabel: "message me",
+            contactHref: "mailto:a@b.com",
+        })
+    })
+
+    it("解析 accents JSON 容错并尊重用户清空", () => {
+        expect(
+            parseAccentsJson('[{"phrase":"A","style":"blue","note":"n"},{"phrase":"A"}]', DEFAULT_ABOUT_PROFILE.accents),
+        ).toEqual([{ phrase: "A", style: "blue", note: "n" }])
+        expect(parseAccentsJson("[]", DEFAULT_ABOUT_PROFILE.accents)).toEqual([])
+        expect(parseAccentsJson("", DEFAULT_ABOUT_PROFILE.accents)).toEqual([...DEFAULT_ABOUT_PROFILE.accents])
+        expect(parseAccentsJson("{bad", DEFAULT_ABOUT_PROFILE.accents)).toEqual([...DEFAULT_ABOUT_PROFILE.accents])
     })
 
     it("拒绝空值和超长列表", () => {
