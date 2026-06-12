@@ -1,12 +1,13 @@
 import * as React from "react"
 import { createPortal } from "react-dom"
-import { AlertCircle, ChevronUp, FileDown, FileUp, Hash, Plus, RefreshCw, Save, Share2, Sparkles, X } from "lucide-react"
+import { AlertCircle, ChevronUp, FileDown, FileUp, Flame, Hash, Plus, RefreshCw, Save, Share2, Sparkles, X } from "lucide-react"
 import { toast } from "sonner"
 import { useParams } from "react-router-dom"
 
 import { resolveAxiosErrorMessage } from "@/components/knowledge/article-share-utils"
 import { PlateMarkdownEditor, type PlateMarkdownEditorHandle } from "@/components/plate/PlateMarkdownEditor"
 import { ArticleShareDialog } from "@/components/knowledge/ArticleShareDialog"
+import { BurnLinkDialog } from "@/components/knowledge/BurnLinkDialog"
 import {
   buildArticleSnapshotKey,
   buildMarkdownExportFileName,
@@ -281,6 +282,7 @@ export function KnowledgeBaseArticleEditorPage() {
   const [importingArticleFile, setImportingArticleFile] = React.useState(false)
   const [refreshingPublicCache, setRefreshingPublicCache] = React.useState(false)
   const [shareDialogOpen, setShareDialogOpen] = React.useState(false)
+  const [burnDialogOpen, setBurnDialogOpen] = React.useState(false)
   const [recoverableDraft, setRecoverableDraft] = React.useState<ArticleDraftRecord | null>(null)
   const [activeHeadingId, setActiveHeadingId] = React.useState("")
   // null = not yet measured; renders TOC only after we have the correct values
@@ -1201,6 +1203,17 @@ export function KnowledgeBaseArticleEditorPage() {
               <span className="text-sm hidden sm:inline">公开分享</span>
             </Button>
           ) : null}
+          {isOwner ? (
+            <Button
+              variant="ghost" size="sm"
+              className="h-8 gap-1.5 text-muted-foreground hover:text-foreground px-2.5"
+              disabled={!articleId}
+              onClick={() => setBurnDialogOpen(true)}
+            >
+              <Flame className="size-3.5" />
+              <span className="text-sm hidden sm:inline">阅后即焚</span>
+            </Button>
+          ) : null}
           {!readOnly ? (
             <Button
               variant="ghost" size="sm"
@@ -1340,6 +1353,12 @@ export function KnowledgeBaseArticleEditorPage() {
       <ArticleShareDialog
         open={shareDialogOpen}
         onOpenChange={setShareDialogOpen}
+        articleId={articleId}
+      />
+
+      <BurnLinkDialog
+        open={burnDialogOpen}
+        onOpenChange={setBurnDialogOpen}
         articleId={articleId}
       />
 

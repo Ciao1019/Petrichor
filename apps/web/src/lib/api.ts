@@ -657,6 +657,41 @@ export const knowledgeBaseArticleShareApi = {
   setPin: (data: ArticleSharePinRequest) => api.post<ArticleSharePinResponse>("/kb/article/share/pin", data),
 }
 
+// 阅后即焚链接：与永久分享完全独立的一次性 / N 次访问通道。
+export type BurnLinkStatus = "ACTIVE" | "BURNED" | "REVOKED"
+
+export interface BurnLinkRecordResponse {
+  id: string
+  articleId: string
+  linkCode: string
+  maxViews: number
+  viewCount: number
+  hasPassword: boolean
+  expiresAt?: string | null
+  status: BurnLinkStatus
+  burnedAt?: string | null
+  revokedAt?: string | null
+  createdAt: string
+}
+
+export interface BurnLinkCreateRequest {
+  articleId: string
+  maxViews?: number | null
+  passwordEnabled?: boolean | null
+  accessPassword?: string | null
+  expiresAt?: string | null
+}
+
+export interface BurnLinkListResponse {
+  items: BurnLinkRecordResponse[]
+}
+
+export const knowledgeBaseArticleBurnLinkApi = {
+  create: (data: BurnLinkCreateRequest) => api.post<BurnLinkRecordResponse>("/kb/burn-link/create", data),
+  list: (data: { articleId: string }) => api.post<BurnLinkListResponse>("/kb/burn-link/list", data),
+  revoke: (data: { id: string }) => api.post<BurnLinkRecordResponse>("/kb/burn-link/revoke", data),
+}
+
 export interface ArticleMindMapGenerateRequest {
   articleId: string
   forceRebuild?: boolean
@@ -1354,6 +1389,40 @@ export const publicArticleShareApi = {
   },
   invalidateClientCache: invalidatePublicArticleClientCache,
   resetClientCacheForTests: invalidatePublicArticleClientCache,
+}
+
+// ===== 阅后即焚公开访问（不缓存、不预取，焚毁靠用户显式确认触发）=====
+
+export type PublicBurnState = "ACTIVE" | "BURNED" | "REVOKED" | "EXPIRED" | "NOT_FOUND"
+
+export interface PublicBurnMetaResponse {
+  state: PublicBurnState
+  requiresPassword: boolean
+  remainingViews?: number
+  coverImageUrl?: string | null
+}
+
+export interface PublicBurnConsumeResponse extends PublicSharedArticleDetailResponse {
+  burn: {
+    viewCount: number
+    maxViews: number
+    burned: boolean
+  }
+}
+
+export const publicBurnApi = {
+  // GET 仅返回状态/是否需要密码，绝不返回正文，禁用一切缓存。
+  meta: (code: string) =>
+    api.get<PublicBurnMetaResponse>("/public/burn/meta", {
+      params: { code },
+      headers: { "Cache-Control": "no-cache" },
+    }),
+  // POST 显式消费一次阅读：命中返回正文，达上限即焚。
+  consume: (code: string, accessPassword?: string | null) =>
+    api.post<PublicBurnConsumeResponse>("/public/burn/consume", {
+      code,
+      ...(accessPassword?.trim() ? { accessPassword: accessPassword.trim() } : {}),
+    }),
 }
 
 export default api

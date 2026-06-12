@@ -334,6 +334,26 @@ create index if not exists petrichor_kb_article_share_public_idx
 create index if not exists petrichor_kb_article_share_pin_idx
     on petrichor_kb_article_share(pin_order);
 
+create table if not exists petrichor_kb_article_burn_link (
+    id bigint generated always as identity primary key,
+    user_id bigint not null references petrichor_user(id) on delete cascade,
+    article_id bigint not null references petrichor_kb_article(id) on delete cascade,
+    link_code text not null,
+    max_views integer not null default 1,
+    view_count integer not null default 0,
+    password_hash text,
+    expires_at timestamptz,
+    status text not null default 'ACTIVE',
+    burned_at timestamptz,
+    revoked_at timestamptz,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (link_code)
+);
+
+create index if not exists petrichor_kb_burn_link_article_idx
+    on petrichor_kb_article_burn_link(user_id, article_id, created_at);
+
 create table if not exists petrichor_kb_wiki_page (
     id bigint generated always as identity primary key,
     user_id bigint not null references petrichor_user(id) on delete cascade,

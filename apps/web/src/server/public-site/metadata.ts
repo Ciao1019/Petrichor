@@ -158,6 +158,15 @@ export function resolvePublicRouteMetadata(
     if (firstSegment === "dashboard" || firstSegment === "login" || firstSegment === "auth") {
         return buildDashboardMetadata(pathname)
     }
+    if (firstSegment === "b" && secondSegment) {
+        // 阅后即焚链接：私密、一次性，绝不索引、也不泄露文章标题。
+        return buildPublicMetadata({
+            title: "私密链接",
+            description: "这是一个阅后即焚的私密访问链接。",
+            pathname,
+            index: false,
+        })
+    }
 
     return buildPublicMetadata({
         title: "页面未找到",

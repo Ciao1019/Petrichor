@@ -50,7 +50,7 @@ export type PublicArticleRepostSource = {
   originalAuthorName: string
 }
 
-const articleDetailBackgroundFlowers: PixelFlowerDecoration[] = [
+export const articleDetailBackgroundFlowers: PixelFlowerDecoration[] = [
   {
     className: "left-[5%] top-[9%] size-10 opacity-30 sm:size-12",
     tone: "red",

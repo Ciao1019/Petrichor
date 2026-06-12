@@ -32,6 +32,7 @@ import { PublicQaPage } from '@/features/pages/ask/PublicQaPage'
 import { AccountPage } from '@/features/pages/account/AccountPage'
 import { DashboardMetricsPage } from '@/features/pages/dashboard/DashboardMetricsPage'
 import { PublicArticlePage } from '@/features/pages/public/PublicArticlePage'
+import { BurnReadPage } from '@/features/pages/public/burn/BurnReadPage'
 import { UserManagementPage } from '@/features/pages/admin/UserManagementPage'
 import { AboutProfileConfigPage } from '@/features/pages/admin/AboutProfileConfigPage'
 import { NotificationPage } from '@/features/pages/notification/NotificationPage'
@@ -103,6 +104,7 @@ function AppThemeScope() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/p/:shareCode" element={<PublicArticlePage />} />
+            <Route path="/b/:code" element={<BurnReadPage />} />
             <Route path="/dashboard" element={<DashboardLayout />}>
               <Route index element={<DashboardMetricsPage />} />
               <Route path="account" element={<AccountPage />} />
