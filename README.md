@@ -33,8 +33,7 @@
 
 <img src="apps/web/public/wechat-group-qr.png" alt="微信交流群二维码" width="220" />
 
-扫码加入微信交流群，一起交流使用与开发问题<br/>
-*（群二维码定期更新，如已失效欢迎提 issue 提醒更换）*
+扫码添加作者微信（Cizai_），交流使用与开发问题，并拉你进交流群
 
 </div>
 
