@@ -21,11 +21,8 @@ import { ToolFallback } from "@/components/assistant-ui/tool-fallback"
 import { PixelFlowerLayer, type PixelFlowerDecoration } from "@/features/pages/blog/PixelDecorations"
 import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import { QaMarkdownScope, QaMarkdownText, QaPreparing } from "@/features/pages/knowledge/QaMarkdown"
-import { useRetypesetTheme } from "@/features/retypeset-theme/RetypesetThemeContext"
 import { SignedUrlPublicAccessProvider } from "@/hooks/use-signed-url"
 import { publicSiteAppearanceApi } from "@/lib/api"
-import { RETYPESET_THEMES } from "@/lib/retypeset-themes"
-import { cn } from "@/lib/utils"
 import { PublicQaToolUIs } from "./public-qa-tool-ui"
 
 const VISITOR_ID_STORAGE_KEY = "petrichor.public-qa.visitor-id"
@@ -156,9 +153,6 @@ function CenteredHint({
 
 function PublicQaChat() {
   const visitorId = React.useMemo(() => ensureVisitorId(), [])
-  // 跟随当前 retypeset 主题的明暗（粉色/纸张=浅，slate/forest=深），让正文与卡片配色匹配站点主题。
-  const { activeTheme } = useRetypesetTheme()
-  const isDark = RETYPESET_THEMES[activeTheme].tone === "dark"
 
   const transport = React.useMemo(
     () =>
@@ -197,9 +191,8 @@ function PublicQaChat() {
       {/* publicAccess：未登录访客的媒体走免鉴权的公开预签名接口，否则图片会卡在「加载中」 */}
       <SignedUrlPublicAccessProvider publicAccess>
         <PublicQaToolUIs />
-        {/* 工具卡片等 shadcn 组件与正文跟随 retypeset 主题明暗，避免浅底浅字/深底深字 */}
-        <div className={cn("flex h-full min-h-0 flex-col", isDark && "dark")}>
-          <QaMarkdownScope mode={isDark ? "dark" : "light"}>
+        <div className="flex h-full min-h-0 flex-col">
+          <QaMarkdownScope mode="light">
             <PublicQaThread />
           </QaMarkdownScope>
         </div>

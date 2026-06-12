@@ -664,11 +664,6 @@ insert into petrichor_site_about_profile (
 
 create table if not exists petrichor_site_appearance (
     id integer primary key,
-    day_theme text not null default 'paper',
-    night_theme text not null default 'slate',
-    day_start_hour integer not null default 6,
-    day_end_hour integer not null default 18,
-    allow_manual_override boolean not null default true,
     public_qa_enabled boolean not null default true,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
@@ -677,8 +672,8 @@ create table if not exists petrichor_site_appearance (
 alter table petrichor_site_appearance
     add column if not exists public_qa_enabled boolean not null default true;
 
-insert into petrichor_site_appearance (id, day_theme, night_theme, day_start_hour, day_end_hour, allow_manual_override)
-values (1, 'paper', 'slate', 6, 18, true)
+insert into petrichor_site_appearance (id, public_qa_enabled)
+values (1, true)
 on conflict (id) do nothing;
 
 create table if not exists petrichor_public_qa_rate_limit (

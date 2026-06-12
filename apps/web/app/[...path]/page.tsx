@@ -1,5 +1,4 @@
 import type { Metadata } from "next"
-import { loadPublicSiteAppearanceForFirstPaint } from "@/server/appearance/public-loader"
 import { loadPublicSiteArticles } from "@/server/public-site/articles"
 import { resolvePublicRouteMetadata } from "@/server/public-site/metadata"
 import { SpaEntry } from "../spa-entry"
@@ -22,7 +21,6 @@ export async function generateMetadata({ params }: CatchAllPageProps): Promise<M
     return resolvePublicRouteMetadata(pathSegments, articles)
 }
 
-export default async function CatchAllPage() {
-    const initialAppearance = await loadPublicSiteAppearanceForFirstPaint()
-    return <SpaEntry initialAppearance={initialAppearance} />
+export default function CatchAllPage() {
+    return <SpaEntry />
 }

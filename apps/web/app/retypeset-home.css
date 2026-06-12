@@ -1,97 +1,16 @@
 /*
- * Retypeset 前台主题样式。
- * 主题色完全由 :root[data-retypeset-theme] 的 CSS 变量驱动，
- * 同时在 .retypeset-home 容器内接管原蓝色像素风遗留的写死颜色类。
+ * Retypeset 前台样式。
+ * 前台固定使用 Sakura 樱粉变量，并在 .retypeset-home 容器内接管
+ * 原蓝色像素风遗留的写死颜色类。
  */
 
 :root {
-  /* 主题 fallback：与 paper 主题一致，避免 SSR 阶段无属性时露出原色 */
-  --retypeset-primary: oklch(22% 0.012 80);
-  --retypeset-secondary: oklch(32% 0.014 80);
-  --retypeset-background: oklch(96% 0.012 85);
-  --retypeset-surface-tint: oklch(18% 0.012 80);
-  --retypeset-highlight: oklch(0.93 0.19 102 / 0.55);
-  --retypeset-accent: oklch(46% 0.18 30);
-}
-
-/* Paper 米白：暖灰墨字，黄色荧光笔（最贴近 retypeset 默认 light 主题） */
-:root[data-retypeset-theme="paper"] {
-  --retypeset-primary: oklch(22% 0.012 80);
-  --retypeset-secondary: oklch(32% 0.014 80);
-  --retypeset-background: oklch(96% 0.012 85);
-  --retypeset-surface-tint: oklch(18% 0.012 80);
-  --retypeset-highlight: oklch(0.93 0.19 102 / 0.55);
-  --retypeset-accent: oklch(46% 0.18 30);
-}
-
-/* Slate 深炭：纸白字，柔黄高亮（retypeset 默认 dark 主题） */
-:root[data-retypeset-theme="slate"] {
-  --retypeset-primary: oklch(96% 0.005 260);
-  --retypeset-secondary: oklch(82% 0.008 260);
-  --retypeset-background: oklch(20% 0.005 260);
-  --retypeset-surface-tint: oklch(95% 0.005 260);
-  --retypeset-highlight: oklch(0.93 0.19 102 / 0.38);
-  --retypeset-accent: oklch(84% 0.17 84);
-}
-
-/* Sakura 樱粉：栗梅深字，胭脂红强调，樱花色高亮 */
-:root[data-retypeset-theme="sakura"] {
   --retypeset-primary: oklch(24% 0.04 8);
   --retypeset-secondary: oklch(34% 0.045 8);
   --retypeset-background: oklch(96% 0.022 12);
   --retypeset-surface-tint: oklch(24% 0.08 8);
   --retypeset-highlight: oklch(0.82 0.18 6 / 0.5);
   --retypeset-accent: oklch(50% 0.2 8);
-}
-
-/* Matcha 抹茶：松针深绿字，黄绿高亮 */
-:root[data-retypeset-theme="matcha"] {
-  --retypeset-primary: oklch(22% 0.04 150);
-  --retypeset-secondary: oklch(32% 0.05 150);
-  --retypeset-background: oklch(94% 0.028 140);
-  --retypeset-surface-tint: oklch(22% 0.06 150);
-  --retypeset-highlight: oklch(0.84 0.16 130 / 0.5);
-  --retypeset-accent: oklch(44% 0.16 145);
-}
-
-/* Ink 墨纸：宣纸黄底，墨黑字，朱砂红高亮（最高对比） */
-:root[data-retypeset-theme="ink"] {
-  --retypeset-primary: oklch(16% 0.01 60);
-  --retypeset-secondary: oklch(28% 0.012 60);
-  --retypeset-background: oklch(93% 0.022 80);
-  --retypeset-surface-tint: oklch(16% 0.01 60);
-  --retypeset-highlight: oklch(0.7 0.22 28 / 0.42);
-  --retypeset-accent: oklch(48% 0.21 28);
-}
-
-/* Ocean 海蓝：靛青深字，珊瑚高亮 */
-:root[data-retypeset-theme="ocean"] {
-  --retypeset-primary: oklch(22% 0.06 235);
-  --retypeset-secondary: oklch(32% 0.06 235);
-  --retypeset-background: oklch(95% 0.028 220);
-  --retypeset-surface-tint: oklch(22% 0.08 235);
-  --retypeset-highlight: oklch(0.86 0.15 198 / 0.55);
-  --retypeset-accent: oklch(50% 0.16 220);
-}
-
-/* Forest 深林：松松绿底，米黄字，柔嫩绿高亮 */
-:root[data-retypeset-theme="forest"] {
-  --retypeset-primary: oklch(94% 0.022 140);
-  --retypeset-secondary: oklch(80% 0.026 140);
-  --retypeset-background: oklch(22% 0.025 150);
-  --retypeset-surface-tint: oklch(95% 0.02 140);
-  --retypeset-highlight: oklch(0.84 0.16 130 / 0.38);
-  --retypeset-accent: oklch(84% 0.16 120);
-}
-
-/* Sand 沙黄：陶土棕字，赤土红高亮 */
-:root[data-retypeset-theme="sand"] {
-  --retypeset-primary: oklch(22% 0.04 70);
-  --retypeset-secondary: oklch(32% 0.045 70);
-  --retypeset-background: oklch(94% 0.05 85);
-  --retypeset-surface-tint: oklch(22% 0.06 70);
-  --retypeset-highlight: oklch(0.86 0.16 80 / 0.55);
-  --retypeset-accent: oklch(48% 0.18 50);
 }
 
 .retypeset-home {
