@@ -70,22 +70,12 @@ export async function adminSiteAppearanceUpdate(request: NextRequest) {
             .insert(siteAppearance)
             .values({
                 id: SITE_APPEARANCE_ID,
-                dayTheme: input.dayTheme,
-                nightTheme: input.nightTheme,
-                dayStartHour: input.dayStartHour,
-                dayEndHour: input.dayEndHour,
-                allowManualOverride: input.allowManualOverride,
                 publicQaEnabled: input.publicQaEnabled,
                 updatedAt: now,
             })
             .onConflictDoUpdate({
                 target: siteAppearance.id,
                 set: {
-                    dayTheme: input.dayTheme,
-                    nightTheme: input.nightTheme,
-                    dayStartHour: input.dayStartHour,
-                    dayEndHour: input.dayEndHour,
-                    allowManualOverride: input.allowManualOverride,
                     publicQaEnabled: input.publicQaEnabled,
                     updatedAt: now,
                 },

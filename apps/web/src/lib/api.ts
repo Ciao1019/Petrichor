@@ -289,22 +289,12 @@ export const adminAboutProfileApi = {
 }
 
 export interface SiteAppearanceResponse {
-  dayTheme: string
-  nightTheme: string
-  dayStartHour: number
-  dayEndHour: number
-  allowManualOverride: boolean
   publicQaEnabled: boolean
   createdAt?: string | null
   updatedAt?: string | null
 }
 
 export interface SiteAppearanceUpdateRequest {
-  dayTheme: string
-  nightTheme: string
-  dayStartHour: number
-  dayEndHour: number
-  allowManualOverride: boolean
   publicQaEnabled: boolean
 }
 

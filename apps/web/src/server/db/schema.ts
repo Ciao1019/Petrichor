@@ -468,11 +468,6 @@ export const siteAboutProfiles = pgTable("petrichor_site_about_profile", {
 
 export const siteAppearance = pgTable("petrichor_site_appearance", {
     id: integer("id").primaryKey(),
-    dayTheme: text("day_theme").notNull().default("paper"),
-    nightTheme: text("night_theme").notNull().default("slate"),
-    dayStartHour: integer("day_start_hour").notNull().default(6),
-    dayEndHour: integer("day_end_hour").notNull().default(18),
-    allowManualOverride: boolean("allow_manual_override").notNull().default(true),
     publicQaEnabled: boolean("public_qa_enabled").notNull().default(true),
     ...timestamps,
 })

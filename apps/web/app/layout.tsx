@@ -1,9 +1,5 @@
 import type { Metadata } from "next"
-import { loadPublicSiteAppearanceForFirstPaint } from "@/server/appearance/public-loader"
-import {
-    buildRetypesetThemeInitScript,
-    resolveServerRetypesetTheme,
-} from "@/server/appearance/theme-init"
+import { FIXED_RETYPESET_THEME_ID } from "@/lib/retypeset-themes"
 import { getPublicBaseUrl, toAbsolutePublicUrl } from "@/server/public-site/site-url"
 import "./globals.css"
 
@@ -48,15 +44,8 @@ export default async function RootLayout({
 }: Readonly<{
     children: React.ReactNode
 }>) {
-    const appearance = await loadPublicSiteAppearanceForFirstPaint()
     return (
-        <html lang="zh-CN" suppressHydrationWarning data-retypeset-theme={resolveServerRetypesetTheme(appearance)}>
-            <head>
-                <script
-                    id="retypeset-theme-init"
-                    dangerouslySetInnerHTML={{ __html: buildRetypesetThemeInitScript(appearance) }}
-                />
-            </head>
+        <html lang="zh-CN" suppressHydrationWarning data-retypeset-theme={FIXED_RETYPESET_THEME_ID}>
             <body>
                 {children}
             </body>

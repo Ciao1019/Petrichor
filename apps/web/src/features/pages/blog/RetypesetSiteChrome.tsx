@@ -5,7 +5,6 @@ import { Github, Search } from "lucide-react"
 import { Link } from "react-router-dom"
 
 import { BlogSearchDialog, useBlogSearchHotkey } from "@/components/blog-search-dialog"
-import { RetypesetThemeToggle } from "@/features/retypeset-theme/RetypesetThemeToggle"
 
 export type RetypesetSiteActiveSection = "articles" | "tags" | "ask" | "about"
 type RetypesetSiteNavSection = RetypesetSiteActiveSection
@@ -164,7 +163,6 @@ export function RetypesetSiteNav({
                         <Github className="size-4" aria-hidden="true" />
                         <span className="sr-only">{retypesetSiteCopy.githubTrigger}</span>
                     </a>
-                    <RetypesetThemeToggle />
                 </div>
             </nav>
             <BlogSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />

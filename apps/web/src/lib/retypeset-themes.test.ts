@@ -1,48 +1,27 @@
 import { describe, expect, it } from "vitest"
 import {
+    FIXED_RETYPESET_THEME,
+    FIXED_RETYPESET_THEME_ID,
     normalizeAppearance,
-    resolveRetypesetActiveTheme,
 } from "./retypeset-themes"
 
 describe("Retypeset 主题配置", () => {
-    it("规范化非法外观配置时回退默认值", () => {
+    it("固定使用 Sakura 樱粉主题", () => {
+        expect(FIXED_RETYPESET_THEME_ID).toBe("sakura")
+        expect(FIXED_RETYPESET_THEME.tone).toBe("light")
+    })
+
+    it("规范化外观配置时只保留前台问答开关", () => {
         expect(normalizeAppearance({
-            dayTheme: "unknown",
-            nightTheme: "forest",
-            dayStartHour: -2,
-            dayEndHour: 99,
-            allowManualOverride: "yes",
+            publicQaEnabled: false,
         })).toEqual({
-            dayTheme: "paper",
-            nightTheme: "forest",
-            dayStartHour: 0,
-            dayEndHour: 24,
-            allowManualOverride: true,
+            publicQaEnabled: false,
+        })
+    })
+
+    it("缺省前台问答开关时回退默认开启", () => {
+        expect(normalizeAppearance({ publicQaEnabled: "yes" })).toEqual({
             publicQaEnabled: true,
         })
-    })
-
-    it("允许手动覆盖时优先使用有效覆盖主题", () => {
-        const appearance = normalizeAppearance({
-            dayTheme: "matcha",
-            nightTheme: "forest",
-            dayStartHour: 6,
-            dayEndHour: 18,
-            allowManualOverride: true,
-        })
-
-        expect(resolveRetypesetActiveTheme(appearance, 9, "ocean")).toBe("ocean")
-    })
-
-    it("关闭手动覆盖时按时间选择数据库配置的主题", () => {
-        const appearance = normalizeAppearance({
-            dayTheme: "matcha",
-            nightTheme: "forest",
-            dayStartHour: 6,
-            dayEndHour: 18,
-            allowManualOverride: false,
-        })
-
-        expect(resolveRetypesetActiveTheme(appearance, 21, "ocean")).toBe("forest")
     })
 })

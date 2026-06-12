@@ -37,13 +37,7 @@ import { AboutProfileConfigPage } from '@/features/pages/admin/AboutProfileConfi
 import { NotificationPage } from '@/features/pages/notification/NotificationPage'
 import { dashboardRoutes } from '@/lib/dashboard-routes'
 import { isPublicLightThemePath } from '@/lib/public-theme-routes'
-import type { RetypesetAppearanceConfig } from '@/lib/retypeset-themes'
-import { RetypesetThemeProvider } from '@/features/retypeset-theme/RetypesetThemeContext'
 import { SiteAppearanceConfigPage } from '@/features/pages/admin/SiteAppearanceConfigPage'
-
-export type ClientAppProps = {
-  initialAppearance?: RetypesetAppearanceConfig
-}
 
 function LoginPage() {
   const navigate = useNavigate()
@@ -92,13 +86,12 @@ function DashboardLayout() {
   )
 }
 
-function AppThemeScope({ initialAppearance }: ClientAppProps) {
+function AppThemeScope() {
   const location = useLocation()
   const forcedTheme = isPublicLightThemePath(location.pathname) ? 'light' : undefined
 
   return (
     <ThemeProvider defaultTheme="system" forcedTheme={forcedTheme}>
-      <RetypesetThemeProvider initialAppearance={initialAppearance}>
       <TooltipProvider>
         <Toaster />
         <div style={{ position: 'relative', minHeight: '100vh' }}>
@@ -136,15 +129,14 @@ function AppThemeScope({ initialAppearance }: ClientAppProps) {
           </Routes>
         </div>
       </TooltipProvider>
-      </RetypesetThemeProvider>
     </ThemeProvider>
   )
 }
 
-function App({ initialAppearance }: ClientAppProps) {
+function App() {
   return (
     <BrowserRouter>
-      <AppThemeScope initialAppearance={initialAppearance} />
+      <AppThemeScope />
     </BrowserRouter>
   )
 }
