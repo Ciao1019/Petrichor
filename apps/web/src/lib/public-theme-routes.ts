@@ -10,5 +10,7 @@ function normalizePathname(pathname: string) {
 
 export function isPublicLightThemePath(pathname: string) {
   const normalizedPathname = normalizePathname(pathname)
-  return PUBLIC_LIGHT_THEME_PATHS.has(normalizedPathname) || normalizedPathname.startsWith("/p/")
+  return PUBLIC_LIGHT_THEME_PATHS.has(normalizedPathname)
+    || normalizedPathname.startsWith("/p/")
+    || normalizedPathname.startsWith("/b/")
 }

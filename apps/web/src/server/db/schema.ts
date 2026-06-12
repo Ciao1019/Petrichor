@@ -230,6 +230,27 @@ export const knowledgeBaseArticleShares = pgTable("petrichor_kb_article_share", 
     index("idx_petrichor_kb_article_share_pin").on(table.pinOrder),
 ])
 
+// 阅后即焚链接：与永久分享（petrichor_kb_article_share）完全独立的一次性 / N 次访问通道。
+// 不进公开首页/搜索/RSS，也不会被公开问答索引（问答只扫永久分享表）。
+export const knowledgeBaseArticleBurnLinks = pgTable("petrichor_kb_article_burn_link", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    articleId: bigint("article_id", { mode: "number" }).notNull(),
+    linkCode: text("link_code").notNull(),
+    maxViews: integer("max_views").notNull().default(1),
+    viewCount: integer("view_count").notNull().default(0),
+    passwordHash: text("password_hash"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    // ACTIVE（可访问） | BURNED（达上限自动焚毁） | REVOKED（站长手动撤销）
+    status: text("status").notNull().default("ACTIVE"),
+    burnedAt: timestamp("burned_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    ...timestamps,
+}, (table) => [
+    uniqueIndex("ux_petrichor_kb_burn_link_code").on(table.linkCode),
+    index("idx_petrichor_kb_burn_link_article").on(table.userId, table.articleId, table.createdAt),
+])
+
 export const knowledgeBaseWikiPages = pgTable("petrichor_kb_wiki_page", {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     userId: bigint("user_id", { mode: "number" }).notNull(),
@@ -570,6 +591,7 @@ export type KnowledgeBaseWikiPatchRecord = typeof knowledgeBaseWikiPatches.$infe
 export type KnowledgeBaseAgentThreadRecord = typeof knowledgeBaseAgentThreads.$inferSelect
 export type KnowledgeBaseAgentArtifactRecord = typeof knowledgeBaseAgentArtifacts.$inferSelect
 export type KnowledgeBaseArticleShareRecord = typeof knowledgeBaseArticleShares.$inferSelect
+export type KnowledgeBaseArticleBurnLinkRecord = typeof knowledgeBaseArticleBurnLinks.$inferSelect
 export type AgentApiKeyRecord = typeof agentApiKeys.$inferSelect
 export type AgentCallLogRecord = typeof agentCallLogs.$inferSelect
 export type SiteAboutProfileRecord = typeof siteAboutProfiles.$inferSelect

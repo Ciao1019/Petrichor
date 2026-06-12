@@ -179,6 +179,22 @@
     scrollbar-color: color-mix(in oklab, var(--muted-foreground) 18%, transparent) transparent;
   }
 
+  /*
+   * Tailwind v4 起，可点击元素的默认光标从 pointer 改为 default。
+   * 这里全局恢复为小手，覆盖项目里所有按钮 / 可点击控件（禁用态除外）。
+   */
+  button:not(:disabled):not([aria-disabled="true"]),
+  [role="button"]:not(:disabled):not([aria-disabled="true"]),
+  [role="tab"]:not(:disabled):not([aria-disabled="true"]),
+  [role="menuitem"]:not([aria-disabled="true"]),
+  [role="option"]:not([aria-disabled="true"]),
+  [role="switch"]:not(:disabled):not([aria-disabled="true"]),
+  label[for],
+  summary,
+  select:not(:disabled) {
+    cursor: pointer;
+  }
+
   /* 全局滚动条：WebKit / Blink (Chrome, Safari, Edge) */
   *::-webkit-scrollbar {
     width: 5px;
