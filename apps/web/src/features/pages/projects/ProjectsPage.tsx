@@ -8,43 +8,6 @@ import { publicProjectShowcaseApi, type ProjectItem, type ProjectShowcaseRespons
 
 import { DateTag, HandStamp, LinkDoodle } from "../about/DeskAccents"
 
-const fallbackShowcase: ProjectShowcaseResponse = {
-    heading: "开源项目",
-    intro: "",
-    items: [
-        {
-            name: "Ech0 — self-hosted microblog",
-            year: "2025",
-            stack: ["Go", "Vue"],
-            stamp: "popular",
-            stampColor: "red",
-            blurb: "An open-source, self-hosted space for publishing and sharing your thoughts — your own little corner of the web.",
-            repoUrl: "https://github.com/lin-snow/Ech0",
-            siteUrl: "https://ech0.app",
-        },
-        {
-            name: "Dox — todos in terminal",
-            year: "2026",
-            stack: ["Go", "TypeScript"],
-            stamp: "new",
-            stampColor: "blue",
-            blurb: "More than a todo list: a terminal-first task manager. TUI by default, CLI for scripts — projects, an inbox, markdown notes, full-text search and multi-user invites, all from one container and a single SQLite file.",
-            repoUrl: "https://github.com/lin-snow/dox",
-            siteUrl: "",
-        },
-        {
-            name: "Kemate — a Vercel-like PaaS",
-            year: "2026",
-            stack: ["Go"],
-            stamp: "WIP",
-            stampColor: "green",
-            blurb: "A platform-as-a-service taking aim at the likes of Vercel, built on a microservice architecture.",
-            repoUrl: "",
-            siteUrl: "",
-        },
-    ],
-}
-
 const projectsBackgroundFlowers: PixelFlowerDecoration[] = [
     {
         className: "left-[5%] top-[12%] size-12 opacity-40",
@@ -168,13 +131,35 @@ function ProjectRow({
     )
 }
 
+function ProjectListSkeleton() {
+    const widths = ["w-1/2", "w-2/3", "w-2/5"]
+    return (
+        <ul className="mt-6" aria-hidden="true">
+            {widths.map((width, index) => (
+                <li
+                    key={index}
+                    className="border-t py-3 first:border-t-0"
+                    style={{ borderColor: "var(--desk-sheet-hair)" }}
+                >
+                    <div className="flex items-center justify-between gap-4">
+                        <div className={`h-4 ${width} animate-pulse rounded`} style={{ background: "var(--desk-sheet-hair)" }} />
+                        <div className="h-4 w-10 animate-pulse rounded" style={{ background: "var(--desk-sheet-hair)" }} />
+                    </div>
+                </li>
+            ))}
+        </ul>
+    )
+}
+
 export function ProjectsPage() {
-    const [showcase, setShowcase] = React.useState<ProjectShowcaseResponse>(fallbackShowcase)
+    const [showcase, setShowcase] = React.useState<ProjectShowcaseResponse | null>(null)
+    const [loading, setLoading] = React.useState(true)
     const [error, setError] = React.useState<string | null>(null)
     const [openName, setOpenName] = React.useState<string | null>(null)
     const [parallax, setParallax] = React.useState({ x: 0, y: 0 })
 
     const fetchShowcase = React.useCallback(async (isCanceled: () => boolean = () => false) => {
+        setLoading(true)
         setError(null)
         try {
             const res = await publicProjectShowcaseApi.detail()
@@ -182,8 +167,10 @@ export function ProjectsPage() {
             setShowcase(res.data)
         } catch (e: unknown) {
             if (isCanceled()) return
-            setShowcase(fallbackShowcase)
             setError(resolveApiError(e))
+        } finally {
+            if (isCanceled()) return
+            setLoading(false)
         }
     }, [])
 
@@ -230,19 +217,17 @@ export function ProjectsPage() {
                     style={{ background: "var(--desk-sheet)", color: "var(--desk-sheet-ink)" }}
                 >
                     <h1 className="text-2xl font-bold tracking-tight sm:text-3xl" style={{ color: "var(--desk-sheet-ink)" }}>
-                        {showcase.heading}
+                        {showcase?.heading ?? "开源项目"}
                     </h1>
-                    {showcase.intro ? (
+                    {showcase?.intro ? (
                         <p className="mt-2 max-w-prose text-[0.85rem] leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>
                             {showcase.intro}
                         </p>
                     ) : null}
 
-                    {showcase.items.length === 0 ? (
-                        <p className="mt-8 font-mono text-sm" style={{ color: "var(--desk-sheet-muted)" }}>
-                            还没有项目，去后台「开源项目」里添加吧。
-                        </p>
-                    ) : (
+                    {loading && !showcase ? (
+                        <ProjectListSkeleton />
+                    ) : showcase && showcase.items.length > 0 ? (
                         <ul className="mt-6">
                             {showcase.items.map((item, index) => (
                                 <ProjectRow
@@ -259,7 +244,11 @@ export function ProjectsPage() {
                                 />
                             ))}
                         </ul>
-                    )}
+                    ) : showcase ? (
+                        <p className="mt-8 font-mono text-sm" style={{ color: "var(--desk-sheet-muted)" }}>
+                            还没有项目，去后台「开源项目」里添加吧。
+                        </p>
+                    ) : null}
 
                     {error ? (
                         <div
