@@ -710,6 +710,19 @@ insert into petrichor_site_appearance (id, public_qa_enabled)
 values (1, true)
 on conflict (id) do nothing;
 
+create table if not exists petrichor_site_project_showcase (
+    id integer primary key,
+    heading text not null default '开源项目',
+    intro text not null default '',
+    items_json text not null default $proj_items$[{"name":"Ech0 — self-hosted microblog","year":"2025","stack":["Go","Vue"],"stamp":"popular","stampColor":"red","blurb":"An open-source, self-hosted space for publishing and sharing your thoughts — your own little corner of the web.","repoUrl":"https://github.com/lin-snow/Ech0","siteUrl":"https://ech0.app"},{"name":"Dox — todos in terminal","year":"2026","stack":["Go","TypeScript"],"stamp":"new","stampColor":"blue","blurb":"More than a todo list: a terminal-first task manager. TUI by default, CLI for scripts — projects, an inbox, markdown notes, full-text search and multi-user invites, all from one container and a single SQLite file.","repoUrl":"https://github.com/lin-snow/dox"},{"name":"Kemate — a Vercel-like PaaS","year":"2026","stack":["Go"],"stamp":"WIP","stampColor":"green","blurb":"A platform-as-a-service taking aim at the likes of Vercel, built on a microservice architecture."}]$proj_items$,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+insert into petrichor_site_project_showcase (id)
+values (1)
+on conflict (id) do nothing;
+
 create table if not exists petrichor_public_qa_rate_limit (
     id bigint generated always as identity primary key,
     bucket_key text not null,

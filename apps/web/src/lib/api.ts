@@ -305,6 +305,43 @@ export const adminAboutProfileApi = {
   update: (data: AboutProfileUpdateRequest) => api.post<AboutProfileResponse>("/admin/about/profile", data),
 }
 
+// 开源项目展示页：手绘马克笔圈词的墨色，与正文注记同色板。
+export type ProjectStampColor = "red" | "orange" | "green" | "teal" | "blue" | "purple" | "pink"
+
+export interface ProjectItem {
+  name: string
+  year: string
+  stack: string[]
+  stamp: string
+  stampColor: ProjectStampColor
+  blurb: string
+  repoUrl: string
+  siteUrl: string
+}
+
+export interface ProjectShowcaseResponse {
+  heading: string
+  intro: string
+  items: ProjectItem[]
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export interface ProjectShowcaseUpdateRequest {
+  heading: string
+  intro: string
+  items: ProjectItem[]
+}
+
+export const publicProjectShowcaseApi = {
+  detail: () => api.get<ProjectShowcaseResponse>("/public/projects"),
+}
+
+export const adminProjectShowcaseApi = {
+  detail: () => api.get<ProjectShowcaseResponse>("/admin/projects"),
+  update: (data: ProjectShowcaseUpdateRequest) => api.post<ProjectShowcaseResponse>("/admin/projects", data),
+}
+
 export interface SiteAppearanceResponse {
   publicQaEnabled: boolean
   createdAt?: string | null

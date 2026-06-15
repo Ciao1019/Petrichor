@@ -28,6 +28,7 @@ import { AgentSkillPage } from '@/features/pages/agent/AgentSkillPage'
 import { BlogHomePage } from '@/features/pages/blog/BlogHomePage'
 import { TagsPage } from '@/features/pages/blog/TagsPage'
 import { AboutPage } from '@/features/pages/about/AboutPage'
+import { ProjectsPage } from '@/features/pages/projects/ProjectsPage'
 import { PublicQaPage } from '@/features/pages/ask/PublicQaPage'
 import { AccountPage } from '@/features/pages/account/AccountPage'
 import { DashboardMetricsPage } from '@/features/pages/dashboard/DashboardMetricsPage'
@@ -35,6 +36,7 @@ import { PublicArticlePage } from '@/features/pages/public/PublicArticlePage'
 import { BurnReadPage } from '@/features/pages/public/burn/BurnReadPage'
 import { UserManagementPage } from '@/features/pages/admin/UserManagementPage'
 import { AboutProfileConfigPage } from '@/features/pages/admin/AboutProfileConfigPage'
+import { ProjectsConfigPage } from '@/features/pages/admin/ProjectsConfigPage'
 import { NotificationPage } from '@/features/pages/notification/NotificationPage'
 import { dashboardRoutes } from '@/lib/dashboard-routes'
 import { isPublicLightThemePath } from '@/lib/public-theme-routes'
@@ -101,6 +103,7 @@ function AppThemeScope() {
             <Route path="/tags" element={<TagsPage />} />
             <Route path="/ask" element={<PublicQaPage />} />
             <Route path="/about" element={<AboutPage />} />
+            <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/p/:shareCode" element={<PublicArticlePage />} />
@@ -120,6 +123,7 @@ function AppThemeScope() {
               <Route path="knowledge/:knowledgeBaseId/articles/:articleId/mindmap" element={<KnowledgeBaseArticleMindMapPage />} />
               <Route path="admin/users" element={<UserManagementPage />} />
               <Route path="admin/about" element={<AboutProfileConfigPage />} />
+              <Route path="admin/projects" element={<ProjectsConfigPage />} />
               <Route path="admin/appearance" element={<SiteAppearanceConfigPage />} />
               <Route path="ai/config" element={<AiModelConfigPage />} />
               <Route path="ai/review" element={<AiReviewPage />} />

@@ -4,6 +4,7 @@ export const PUBLIC_CONTENT_CACHE_TAGS = {
     articleDetail: "public:article:detail",
     articleList: "public:article:list",
     aboutProfile: "public:about:profile",
+    projectShowcase: "public:project:showcase",
     siteAppearance: "public:site:appearance",
 } as const
 
@@ -11,6 +12,7 @@ export const PUBLIC_CONTENT_CACHE_TTL_SECONDS = {
     articleDetail: 300,
     articleList: 60,
     aboutProfile: 300,
+    projectShowcase: 300,
     siteAppearance: 300,
 } as const
 
@@ -20,6 +22,7 @@ const publicContentCacheKeyParts: Record<PublicContentCacheKey, string[]> = {
     articleDetail: ["public-content", "article-detail"],
     articleList: ["public-content", "article-list"],
     aboutProfile: ["public-content", "about-profile"],
+    projectShowcase: ["public-content", "project-showcase"],
     siteAppearance: ["public-content", "site-appearance"],
 }
 
@@ -51,6 +54,10 @@ export function invalidatePublicArticleDetailCache(shareCode?: string | null) {
 
 export function invalidatePublicAboutProfileCache() {
     revalidateTag(PUBLIC_CONTENT_CACHE_TAGS.aboutProfile, "max")
+}
+
+export function invalidatePublicProjectShowcaseCache() {
+    revalidateTag(PUBLIC_CONTENT_CACHE_TAGS.projectShowcase, "max")
 }
 
 export function invalidatePublicSiteAppearanceCache() {

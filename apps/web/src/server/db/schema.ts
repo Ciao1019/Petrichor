@@ -499,6 +499,16 @@ export const siteAppearance = pgTable("petrichor_site_appearance", {
     ...timestamps,
 })
 
+// 开源项目展示页（单例）：手写桌面风的项目清单，移植自 Sn0w 首页 projects 区。
+// itemsJson 为 JSON 数组 [{name,year,stack[],stamp?,stampColor?,blurb?,repoUrl?,siteUrl?}]。
+export const siteProjectShowcase = pgTable("petrichor_site_project_showcase", {
+    id: integer("id").primaryKey(),
+    heading: text("heading").notNull().default("开源项目"),
+    intro: text("intro").notNull().default(""),
+    itemsJson: text("items_json").notNull().default('[{"name":"Ech0 — self-hosted microblog","year":"2025","stack":["Go","Vue"],"stamp":"popular","stampColor":"red","blurb":"An open-source, self-hosted space for publishing and sharing your thoughts — your own little corner of the web.","repoUrl":"https://github.com/lin-snow/Ech0","siteUrl":"https://ech0.app"},{"name":"Dox — todos in terminal","year":"2026","stack":["Go","TypeScript"],"stamp":"new","stampColor":"blue","blurb":"More than a todo list: a terminal-first task manager. TUI by default, CLI for scripts — projects, an inbox, markdown notes, full-text search and multi-user invites, all from one container and a single SQLite file.","repoUrl":"https://github.com/lin-snow/dox"},{"name":"Kemate — a Vercel-like PaaS","year":"2026","stack":["Go"],"stamp":"WIP","stampColor":"green","blurb":"A platform-as-a-service taking aim at the likes of Vercel, built on a microservice architecture."}]'),
+    ...timestamps,
+})
+
 // 前台公开问答限流：固定窗口（按小时）计数桶，bucket_key 形如 visitor:<id>:<yyyyMMddHH> 或 ip:<ip>:<yyyyMMddHH>
 export const publicQaRateLimits = pgTable("petrichor_public_qa_rate_limit", {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
@@ -602,6 +612,7 @@ export type AgentApiKeyRecord = typeof agentApiKeys.$inferSelect
 export type AgentCallLogRecord = typeof agentCallLogs.$inferSelect
 export type SiteAboutProfileRecord = typeof siteAboutProfiles.$inferSelect
 export type SiteAppearanceRecord = typeof siteAppearance.$inferSelect
+export type SiteProjectShowcaseRecord = typeof siteProjectShowcase.$inferSelect
 export type PublicQaRateLimitRecord = typeof publicQaRateLimits.$inferSelect
 export type AiModelConfigRecord = typeof aiModelConfigs.$inferSelect
 export type AiReviewRecord = typeof aiReviews.$inferSelect

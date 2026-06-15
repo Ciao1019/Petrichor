@@ -9,6 +9,7 @@ export const dashboardRoutes = {
     wiki: `${DASHBOARD_ROOT}/wiki`,
     adminUsers: `${DASHBOARD_ROOT}/admin/users`,
     adminAbout: `${DASHBOARD_ROOT}/admin/about`,
+    adminProjects: `${DASHBOARD_ROOT}/admin/projects`,
     adminAppearance: `${DASHBOARD_ROOT}/admin/appearance`,
     aiConfig: `${DASHBOARD_ROOT}/ai/config`,
     aiReview: `${DASHBOARD_ROOT}/ai/review`,

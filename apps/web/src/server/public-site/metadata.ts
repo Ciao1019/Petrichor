@@ -93,6 +93,14 @@ export function buildStaticPublicPageMetadata(pathname: string): Metadata {
         })
     }
 
+    if (pathname === "/projects") {
+        return buildPublicMetadata({
+            title: "开源项目",
+            description: "CiZai 做过、参与过的一些开源项目。",
+            pathname,
+        })
+    }
+
     return buildPublicMetadata({
         title: siteName,
         description: defaultDescription,
@@ -150,6 +158,9 @@ export function resolvePublicRouteMetadata(
     }
     if (firstSegment === "ask" && pathSegments.length === 1) {
         return buildStaticPublicPageMetadata("/ask")
+    }
+    if (firstSegment === "projects" && pathSegments.length === 1) {
+        return buildStaticPublicPageMetadata("/projects")
     }
     if (firstSegment === "p" && secondSegment) {
         const article = articles.find((item) => item.shareCode === secondSegment) ?? null

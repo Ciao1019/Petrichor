@@ -1,4 +1,4 @@
-const PUBLIC_LIGHT_THEME_PATHS = new Set(["/", "/about", "/tags", "/ask"])
+const PUBLIC_LIGHT_THEME_PATHS = new Set(["/", "/about", "/tags", "/ask", "/projects"])
 
 function normalizePathname(pathname: string) {
   if (pathname.length > 1 && pathname.endsWith("/")) {
