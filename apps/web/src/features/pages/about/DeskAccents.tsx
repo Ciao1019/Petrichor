@@ -121,6 +121,64 @@ export function MarkerHighlight({ children, note }: { children: ReactNode; note?
     )
 }
 
+/* 手撕黄色便签——年份标签。圆角不规则、轻微倾斜，像别在行尾的小纸条；行 hover 时
+   微微浮起并转正（父元素需带 `group` 类）。 */
+export function DateTag({ children, tilt }: { children: string; tilt: string }) {
+    return (
+        <span
+            className={`${tilt} desk-sticky-note inline-block shrink-0 px-2 py-[3px] font-mono text-[0.68rem] leading-none tabular-nums transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:rotate-0`}
+            style={{ borderRadius: "9px 6px 8px 6px / 6px 8px 6px 9px" }}
+        >
+            {children}
+        </span>
+    )
+}
+
+/* 手绘马克笔圈词——一圈歪歪扭扭、略微askew 的椭圆描在某个词外，像 sticky 上随手圈的
+   "popular / new / WIP"。以传入的马克笔色上墨，文字用手写体。 */
+export function HandStamp({ children, color }: { children: string; color: MarkerColor }) {
+    return (
+        <span
+            className="relative inline-flex -rotate-[8deg] items-center justify-center px-3 py-1 text-[0.95rem] leading-none"
+            style={{ color: MARKER[color], fontFamily: '"Caveat", ui-sans-serif, cursive' }}
+        >
+            <svg
+                viewBox="0 0 100 44"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 size-full overflow-visible"
+            >
+                <path
+                    d="M15,9 C42,2 72,4 90,12 C100,18 96,31 83,37 C57,45 25,44 10,34 C1,28 4,15 17,8"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                    vectorEffect="non-scaling-stroke"
+                />
+            </svg>
+            <span className="relative">{children}</span>
+        </span>
+    )
+}
+
+/* 链接右上角悬停时画进来的手绘小箭头——"这会跳去某处"的小花字。继承链接 currentColor，
+   绝对定位故不挤动布局；父链接需带 `group/link` 类。 */
+export function LinkDoodle() {
+    return (
+        <svg
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+            className="pointer-events-none absolute left-full top-[0.1em] ml-[3px] size-3 -translate-x-1 -rotate-3 overflow-visible opacity-0 transition-all duration-200 group-hover/link:translate-x-0 group-hover/link:opacity-100"
+        >
+            <g fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3,12.6 C7,9 10,6 12.7,3.1" />
+                <path d="M6.6,2.9 C9.4,2.7 12.4,2.9 12.9,3.2 C13.2,4.2 13.2,7 13,9.4" />
+            </g>
+        </svg>
+    )
+}
+
 /* 邮票齿边——贴着便签内缩几像素的一圈细密虚线描边，dash 间距在任意尺寸下保持一致
    （非缩放描边），并以 currentColor 上墨。 */
 function DashedFrame() {

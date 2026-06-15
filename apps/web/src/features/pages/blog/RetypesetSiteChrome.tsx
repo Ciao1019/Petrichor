@@ -1,12 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { Github, Search } from "lucide-react"
+import { Github, MessageCircleQuestion, Search } from "lucide-react"
 import { Link } from "react-router-dom"
 
 import { BlogSearchDialog, useBlogSearchHotkey } from "@/components/blog-search-dialog"
 
-export type RetypesetSiteActiveSection = "articles" | "tags" | "ask" | "about"
+export type RetypesetSiteActiveSection = "articles" | "tags" | "ask" | "projects" | "about"
 type RetypesetSiteNavSection = RetypesetSiteActiveSection
 type RetypesetSiteNavItem = {
     section: RetypesetSiteNavSection
@@ -29,6 +29,7 @@ const retypesetSiteCopy = {
     navPosts: "文章",
     navTags: "标签",
     navAsk: "问答",
+    navProjects: "项目",
     navAbout: "关于",
     searchTrigger: "搜索文章",
     githubTrigger: "GitHub 仓库",
@@ -39,7 +40,7 @@ const RETYPESET_SITE_GITHUB_HREF = "https://github.com/Ciao1019/Petrichor"
 const retypesetSiteNavItems: RetypesetSiteNavItem[] = [
     { section: "articles", href: "/#articles", label: retypesetSiteCopy.navPosts, internal: true },
     { section: "tags", href: "/tags", label: retypesetSiteCopy.navTags, internal: true },
-    { section: "ask", href: "/ask", label: retypesetSiteCopy.navAsk, internal: true },
+    { section: "projects", href: "/projects", label: retypesetSiteCopy.navProjects, internal: true },
     { section: "about", href: "/about", label: retypesetSiteCopy.navAbout, internal: true },
 ] as const
 
@@ -152,6 +153,16 @@ export function RetypesetSiteNav({
                         <Search className="size-4" aria-hidden="true" />
                         <span className="sr-only">{retypesetSiteCopy.searchTrigger}</span>
                     </button>
+                    <Link
+                        to="/ask"
+                        aria-label={retypesetSiteCopy.navAsk}
+                        aria-current={activeSection === "ask" ? "page" : undefined}
+                        title={retypesetSiteCopy.navAsk}
+                        className={`${activeSection === "ask" ? "retypeset-c-primary" : "retypeset-c-secondary"} inline-flex size-7 cursor-pointer items-center justify-center rounded-full transition-colors`}
+                    >
+                        <MessageCircleQuestion className="size-4" aria-hidden="true" />
+                        <span className="sr-only">{retypesetSiteCopy.navAsk}</span>
+                    </Link>
                     <a
                         href={RETYPESET_SITE_GITHUB_HREF}
                         target="_blank"

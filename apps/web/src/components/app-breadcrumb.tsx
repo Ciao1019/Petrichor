@@ -44,6 +44,7 @@ const routeMap: Record<string, BreadcrumbItem[]> = {
   [dashboardRoutes.agentSkill]: [{ label: "Agent 集成" }, { label: "Skill 包" }],
   [dashboardRoutes.adminUsers]: [{ label: "系统管理" }, { label: "用户管理" }],
   [dashboardRoutes.adminAbout]: [{ label: "系统管理" }, { label: "关于我配置" }],
+  [dashboardRoutes.adminProjects]: [{ label: "系统管理" }, { label: "开源项目" }],
 }
 
 function resolveBreadcrumbItems(pathname: string): BreadcrumbItem[] | undefined {

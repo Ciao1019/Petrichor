@@ -152,6 +152,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         isActive: isDashboardSectionPath(location.pathname, "admin/about"),
       },
       {
+        title: "开源项目",
+        url: dashboardRoutes.adminProjects,
+        icon: IconPackage,
+        isActive: isDashboardSectionPath(location.pathname, "admin/projects"),
+      },
+      {
         title: "外观设置",
         url: dashboardRoutes.adminAppearance,
         icon: IconPalette,

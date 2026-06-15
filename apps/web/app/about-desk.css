@@ -29,6 +29,13 @@
   /* 注记气泡的"纸"底色（比页面背景再暖一点，拉开层次）+ 阴影/印章墨 */
   --desk-paper: #faf6ee;
   --desk-stamp: #7a6f3e;
+
+  /* 开源项目「纸面」清单（移植自 Sn0w projects 区，沿用其暖纸/墨色阶） */
+  --desk-sheet: #f8f4ec;
+  --desk-sheet-ink: #26221c;
+  --desk-sheet-soft: #6f685c;
+  --desk-sheet-muted: #8a8170;
+  --desk-sheet-hair: #e2dccd;
 }
 
 /* 波浪下划线自描边动画：dash 远长于路径，靠 dashoffset 由隐到显地"画"出来 */
@@ -52,6 +59,36 @@
   color: var(--desk-note-ink);
 }
 
+/* ——— 开源项目清单（Sn0w projects 区原语） ——— */
+
+/* 黄色手撕便签：年份标签 */
+.desk-sticky-note {
+  background: var(--desk-sticky);
+  color: var(--desk-sticky-ink);
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 6px 14px -8px rgba(91, 80, 20, 0.45);
+}
+
+/* 上下细线夹住的「打字便条」：项目描述，不是卡片（无底色、无阴影） */
+.desk-framed-note {
+  border-top: 1px solid color-mix(in srgb, var(--desk-sheet-soft) 42%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--desk-sheet-soft) 42%, transparent);
+}
+
+/* 点击展开的折叠面板：0fr→1fr 网格行高动画到内容自然高度，内层裁剪 */
+.desk-fold {
+  display: grid;
+  grid-template-rows: 0fr;
+}
+.desk-fold.open {
+  grid-template-rows: 1fr;
+}
+.desk-fold > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   /* 首次随内容载入时把线"画"进来（略带延迟，等段落淡入后再起笔）。 */
   .desk-scribble {
@@ -61,5 +98,21 @@
   /* 悬停时快速重描一遍（组件通过 React key 重挂载触发）。 */
   .desk-retrace {
     animation: desk-scribble 0.5s ease-out;
+  }
+
+  /* 折叠面板缓动展开，内容随之淡入下沉就位（而非点开瞬间整段画好）。 */
+  .desk-fold {
+    transition: grid-template-rows 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .desk-fold > * {
+    opacity: 0;
+    transform: translateY(-4px);
+    transition:
+      opacity 0.25s ease,
+      transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .desk-fold.open > * {
+    opacity: 1;
+    transform: none;
   }
 }
