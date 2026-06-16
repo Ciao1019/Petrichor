@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import {
   adminProjectShowcaseApi,
+  publicProjectShowcaseApi,
   type ProjectItem,
   type ProjectShowcaseResponse,
   type ProjectStampColor,
@@ -140,6 +141,7 @@ export function ProjectsConfigPage() {
     try {
       const res = await adminProjectShowcaseApi.update({ heading, intro, items: payloadItems })
       applyShowcase(res.data)
+      publicProjectShowcaseApi.invalidateClientCache()
       toast.success("开源项目配置已保存")
     } catch (e: unknown) {
       toast.error(resolveApiError(e, "保存开源项目配置失败"))
