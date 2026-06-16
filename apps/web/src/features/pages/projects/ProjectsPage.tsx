@@ -152,13 +152,22 @@ function ProjectListSkeleton() {
 }
 
 export function ProjectsPage() {
-    const [showcase, setShowcase] = React.useState<ProjectShowcaseResponse | null>(null)
-    const [loading, setLoading] = React.useState(true)
+    const cachedShowcase = publicProjectShowcaseApi.getCachedDetail()
+    const [showcase, setShowcase] = React.useState<ProjectShowcaseResponse | null>(() => cachedShowcase)
+    const [loading, setLoading] = React.useState(() => !cachedShowcase)
     const [error, setError] = React.useState<string | null>(null)
     const [openName, setOpenName] = React.useState<string | null>(null)
     const [parallax, setParallax] = React.useState({ x: 0, y: 0 })
 
     const fetchShowcase = React.useCallback(async (isCanceled: () => boolean = () => false) => {
+        const cached = publicProjectShowcaseApi.getCachedDetail()
+        if (cached) {
+            if (isCanceled()) return
+            setShowcase(cached)
+            setLoading(false)
+            setError(null)
+            return
+        }
         setLoading(true)
         setError(null)
         try {
@@ -216,9 +225,17 @@ export function ProjectsPage() {
                     className="blog-home-fade-in relative w-full rounded-2xl px-6 py-8 shadow-2xl sm:px-9 sm:py-10"
                     style={{ background: "var(--desk-sheet)", color: "var(--desk-sheet-ink)" }}
                 >
-                    <h1 className="text-2xl font-bold tracking-tight sm:text-3xl" style={{ color: "var(--desk-sheet-ink)" }}>
-                        {showcase?.heading ?? "开源项目"}
-                    </h1>
+                    {showcase ? (
+                        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl" style={{ color: "var(--desk-sheet-ink)" }}>
+                            {showcase.heading}
+                        </h1>
+                    ) : loading ? (
+                        <div
+                            className="h-7 w-44 animate-pulse rounded sm:h-8"
+                            style={{ background: "var(--desk-sheet-hair)" }}
+                            aria-hidden="true"
+                        />
+                    ) : null}
                     {showcase?.intro ? (
                         <p className="mt-2 max-w-prose text-[0.85rem] leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>
                             {showcase.intro}

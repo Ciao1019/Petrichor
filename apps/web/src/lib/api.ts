@@ -334,7 +334,9 @@ export interface ProjectShowcaseUpdateRequest {
 }
 
 export const publicProjectShowcaseApi = {
-  detail: () => api.get<ProjectShowcaseResponse>("/public/projects"),
+  detail: (options?: { forceRefresh?: boolean }) => fetchPublicProjectShowcase(Boolean(options?.forceRefresh)),
+  getCachedDetail: () => getFreshClientCacheValue(publicProjectShowcaseCache),
+  invalidateClientCache: invalidatePublicProjectShowcaseClientCache,
 }
 
 export const adminProjectShowcaseApi = {
@@ -1407,6 +1409,39 @@ function invalidatePublicArticleClientCache() {
   publicArticleListRequest = null
   publicArticleDetailCache.clear()
   publicArticleDetailRequests.clear()
+}
+
+const publicProjectShowcaseCacheTtlMs = 300_000
+let publicProjectShowcaseCache: ClientCacheEntry<ProjectShowcaseResponse> | null = null
+let publicProjectShowcaseRequest: Promise<AxiosResponse<ProjectShowcaseResponse>> | null = null
+
+function fetchPublicProjectShowcase(forceRefresh = false) {
+  const cached = forceRefresh ? null : getFreshClientCacheValue(publicProjectShowcaseCache)
+  if (cached) {
+    return Promise.resolve(createCachedAxiosResponse(cached))
+  }
+  if (!forceRefresh && publicProjectShowcaseRequest) {
+    return publicProjectShowcaseRequest
+  }
+
+  publicProjectShowcaseRequest = api.get<ProjectShowcaseResponse>("/public/projects")
+    .then((response) => {
+      publicProjectShowcaseCache = {
+        expiresAt: Date.now() + publicProjectShowcaseCacheTtlMs,
+        value: response.data,
+      }
+      return response
+    })
+    .finally(() => {
+      publicProjectShowcaseRequest = null
+    })
+
+  return publicProjectShowcaseRequest
+}
+
+function invalidatePublicProjectShowcaseClientCache() {
+  publicProjectShowcaseCache = null
+  publicProjectShowcaseRequest = null
 }
 
 export const publicArticleShareApi = {
