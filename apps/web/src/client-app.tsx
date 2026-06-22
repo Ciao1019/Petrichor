@@ -1,6 +1,6 @@
 "use client"
 
-import { BrowserRouter, Routes, Route, useLocation, useNavigate, useSearchParams, Outlet } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useSearchParams, Outlet } from 'react-router-dom'
 import { LoginForm } from '@/components/login-form'
 import { AuthCallback } from '@/components/auth-callback'
 import { ThemeProvider } from '@/components/theme-provider'
@@ -42,9 +42,15 @@ import { dashboardRoutes } from '@/lib/dashboard-routes'
 import { isPublicLightThemePath } from '@/lib/public-theme-routes'
 import { SiteAppearanceConfigPage } from '@/features/pages/admin/SiteAppearanceConfigPage'
 
+const isDesktopMode = process.env.NEXT_PUBLIC_DESKTOP_MODE === 'true'
+
 function LoginPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+
+  if (isDesktopMode) {
+    return <Navigate to={dashboardRoutes.root} replace />
+  }
 
   const handleLoginSuccess = () => {
     const redirect = searchParams.get('redirect')
@@ -89,9 +95,13 @@ function DashboardLayout() {
   )
 }
 
+function RedirectToDashboard() {
+  return <Navigate to={dashboardRoutes.root} replace />
+}
+
 function AppThemeScope() {
   const location = useLocation()
-  const forcedTheme = isPublicLightThemePath(location.pathname) ? 'light' : undefined
+  const forcedTheme = !isDesktopMode && isPublicLightThemePath(location.pathname) ? 'light' : undefined
 
   return (
     <ThemeProvider defaultTheme="system" forcedTheme={forcedTheme}>
@@ -99,15 +109,29 @@ function AppThemeScope() {
         <Toaster />
         <div style={{ position: 'relative', minHeight: '100vh' }}>
           <Routes>
-            <Route path="/" element={<BlogHomePage />} />
-            <Route path="/tags" element={<TagsPage />} />
-            <Route path="/ask" element={<PublicQaPage />} />
-            <Route path="/about" element={<AboutPage />} />
-            <Route path="/projects" element={<ProjectsPage />} />
+            {isDesktopMode ? (
+              <>
+                <Route path="/" element={<RedirectToDashboard />} />
+                <Route path="/tags" element={<RedirectToDashboard />} />
+                <Route path="/ask" element={<RedirectToDashboard />} />
+                <Route path="/about" element={<RedirectToDashboard />} />
+                <Route path="/projects" element={<RedirectToDashboard />} />
+                <Route path="/p/:shareCode" element={<RedirectToDashboard />} />
+                <Route path="/b/:code" element={<RedirectToDashboard />} />
+              </>
+            ) : (
+              <>
+                <Route path="/" element={<BlogHomePage />} />
+                <Route path="/tags" element={<TagsPage />} />
+                <Route path="/ask" element={<PublicQaPage />} />
+                <Route path="/about" element={<AboutPage />} />
+                <Route path="/projects" element={<ProjectsPage />} />
+                <Route path="/p/:shareCode" element={<PublicArticlePage />} />
+                <Route path="/b/:code" element={<BurnReadPage />} />
+              </>
+            )}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
-            <Route path="/p/:shareCode" element={<PublicArticlePage />} />
-            <Route path="/b/:code" element={<BurnReadPage />} />
             <Route path="/dashboard" element={<DashboardLayout />}>
               <Route index element={<DashboardMetricsPage />} />
               <Route path="account" element={<AccountPage />} />

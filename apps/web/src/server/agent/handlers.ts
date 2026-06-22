@@ -51,6 +51,7 @@ import { retrieveTreeNodesForAgent } from "@/server/kb/wiki-tree"
 import { invalidatePublicArticleDetailCache, invalidatePublicArticleListCache } from "@/server/public-content-cache"
 import { getServerConfig } from "@/config/server"
 import { deleteS3Objects, extractS4ObjectKeysFromArticleContent } from "@/server/upload/s3-delete"
+import { getLocalStorageDirOrNull } from "@/server/upload/local-storage"
 import {
     AGENT_API_KEY_SCOPES,
     agentApiKeyCreateSchema,
@@ -1662,7 +1663,7 @@ async function cleanupUnreferencedS4Objects(
         if (deletableKeys.length === 0) return
 
         const config = getServerConfig().s3
-        if (!config) return
+        if (!config && !getLocalStorageDirOrNull()) return
 
         const summary = await deleteS3Objects(config, deletableKeys)
         if (summary.failedObjectKeys.length > 0) {

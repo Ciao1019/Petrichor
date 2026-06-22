@@ -3,6 +3,7 @@ import { z } from "zod"
 import { getServerConfig } from "@/config/server"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { HttpError, ok, readJson, toErrorResponse } from "@/server/http/response"
+import { buildLocalObjectUrl, isLocalObjectStorageEnabled } from "./local-storage"
 import { buildS3ObjectKey, createS3PresignedUrl, stripS4KeyPrefix } from "./s3-presign"
 
 const presignPutSchema = z.object({
@@ -34,11 +35,19 @@ export async function presignPutObject(request: NextRequest) {
     try {
         const user = await requireCurrentUser(request)
         const input = presignPutSchema.parse(await readJson(request))
-        const config = getS3ConfigOrThrow()
         const objectKey = buildS3ObjectKey({
             filename: input.filename,
             userId: user.id,
         })
+
+        if (isLocalObjectStorageEnabled()) {
+            return ok({
+                objectKey,
+                presignedUrl: buildLocalObjectUrl(request, objectKey),
+            })
+        }
+
+        const config = getS3ConfigOrThrow()
         const presignedUrl = createS3PresignedUrl({
             ...config,
             expiresSeconds: config.uploadExpireSeconds,
@@ -66,6 +75,11 @@ export async function presignGetObject(request: NextRequest) {
     try {
         await requireCurrentUser(request)
         const input = presignGetSchema.parse(await readJson(request))
+
+        if (isLocalObjectStorageEnabled()) {
+            return ok({ url: buildLocalObjectUrl(request, stripS4KeyPrefix(input.objectKey)) })
+        }
+
         const config = getS3ConfigOrThrow()
         const url = createS3PresignedUrl({
             ...config,
@@ -83,6 +97,11 @@ export async function presignGetObject(request: NextRequest) {
 export async function publicPresignGetObject(request: NextRequest) {
     try {
         const input = presignGetSchema.parse(await readJson(request))
+
+        if (isLocalObjectStorageEnabled()) {
+            return ok({ url: buildLocalObjectUrl(request, stripS4KeyPrefix(input.objectKey)) })
+        }
+
         const config = getS3ConfigOrThrow()
         const url = createS3PresignedUrl({
             ...config,

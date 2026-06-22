@@ -16,7 +16,12 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui",
+    "typecheck": "tsc --noEmit",
+    "analyze": "ANALYZE=true next build",
+    "biome:check": "biome check .",
+    "biome:fix": "biome check --write ."
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.64",
@@ -106,6 +111,7 @@
     "antd": "^6.4.3",
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^12.5.0",
     "better-auth": "^1.6.9",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -170,6 +176,7 @@
     "@eslint/js": "^9.39.1",
     "@tailwindcss/postcss": "^4.2.4",
     "@tailwindcss/vite": "^4.1.18",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/lodash": "^4.17.24",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
