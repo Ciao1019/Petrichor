@@ -1,5 +1,6 @@
 import { getServerConfig } from "@/config/server"
 import { HttpError } from "@/server/http/response"
+import { getLocalStorageDirOrNull, readLocalObjectBytes } from "@/server/upload/local-storage"
 import { createS3PresignedUrl, stripS4KeyPrefix } from "@/server/upload/s3-presign"
 
 const EXT_MIME: Record<string, string> = {
@@ -25,6 +26,10 @@ export interface S3ObjectBytes {
  * 多模态识别与裁剪嵌入图共用这一份字节，避免重复下载。
  */
 export async function fetchS3ObjectBytes(objectKey: string): Promise<S3ObjectBytes> {
+    if (getLocalStorageDirOrNull()) {
+        return readLocalObjectBytes(objectKey)
+    }
+
     const config = getServerConfig().s3
     if (!config) {
         throw new HttpError(500, "S3 存储未配置")

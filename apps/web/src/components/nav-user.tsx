@@ -30,6 +30,8 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { authApi } from "@/lib/api"
 import { dashboardRoutes } from "@/lib/dashboard-routes"
 
+const isDesktopMode = process.env.NEXT_PUBLIC_DESKTOP_MODE === "true"
+
 export function NavUser({
   user,
 }: {
@@ -44,6 +46,11 @@ export function NavUser({
   const displayName = user.nickname || user.email || "用户"
 
   const handleLogout = async () => {
+    if (isDesktopMode) {
+      navigate(dashboardRoutes.root)
+      return
+    }
+
     try {
       await authApi.logout()
     } catch {
@@ -108,11 +115,15 @@ export function NavUser({
                 消息中心
               </DropdownMenuItem>
             </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout}>
-              <IconLogout />
-              退出登录
-            </DropdownMenuItem>
+            {!isDesktopMode && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout}>
+                  <IconLogout />
+                  退出登录
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
         <div className="flex items-center justify-center p-2 group-data-[collapsible=icon]:hidden">

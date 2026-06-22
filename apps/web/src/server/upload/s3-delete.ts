@@ -1,4 +1,5 @@
 import type { S3Config } from "@/config/server"
+import { deleteLocalObject, getLocalStorageDirOrNull } from "@/server/upload/local-storage"
 import { createS3PresignedUrl, stripS4KeyPrefix } from "@/server/upload/s3-presign"
 
 const S4_KEY_PREFIX = "s4key:"
@@ -127,7 +128,7 @@ export async function deleteS3Object(
 }
 
 export async function deleteS3Objects(
-    config: S3Config,
+    config: S3Config | null,
     objectKeys: string[],
     fetchImpl: FetchLike = fetch,
 ): Promise<S3DeleteSummary> {
@@ -136,7 +137,13 @@ export async function deleteS3Objects(
 
     for (const objectKey of [...new Set(objectKeys)]) {
         try {
-            await deleteS3Object(config, objectKey, fetchImpl)
+            if (getLocalStorageDirOrNull()) {
+                await deleteLocalObject(objectKey)
+            } else if (config) {
+                await deleteS3Object(config, objectKey, fetchImpl)
+            } else {
+                throw new Error("S3 存储未配置")
+            }
             deletedObjectKeys.push(objectKey)
         } catch (error) {
             failedObjectKeys.push({

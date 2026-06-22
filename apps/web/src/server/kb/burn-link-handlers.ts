@@ -14,7 +14,9 @@ import {
 import { HttpError, forbidden, notFound, ok, readJson, toErrorResponse } from "@/server/http/response"
 import { getServerConfig } from "@/config/server"
 import { normalizeS4ObjectKey } from "@/lib/s4-url"
+import { buildLocalObjectUrlFromBase, getLocalStorageDirOrNull } from "@/server/upload/local-storage"
 import { createS3PresignedUrl } from "@/server/upload/s3-presign"
+import { getPublicBaseUrl } from "@/server/public-site/site-url"
 import {
     buildPublicArticleContentHash,
     resolvePublicArticleToc,
@@ -349,6 +351,9 @@ function resolvePublicCoverImageUrl(rawUrl: string | null): string | null {
     const objectKey = normalizeS4ObjectKey(rawUrl)
     if (!objectKey) {
         return /^https?:\/\//i.test(rawUrl) ? rawUrl : null
+    }
+    if (getLocalStorageDirOrNull()) {
+        return buildLocalObjectUrlFromBase(getPublicBaseUrl(), objectKey)
     }
     const config = getServerConfig().s3
     if (!config) {

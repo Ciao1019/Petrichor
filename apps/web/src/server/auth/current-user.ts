@@ -5,6 +5,7 @@ import { authSessions, betterAuthSessions, users } from "@/server/db/schema"
 import { unauthorized } from "@/server/http/response"
 import { auth } from "./better-auth"
 import { ensurePetrichorUserForBetterAuthUser } from "./better-auth-bridge"
+import { ensureDesktopCurrentUser, isDesktopAuthEnabled } from "./desktop-user"
 import {
     getSessionExpiresAt,
     getSessionToken,
@@ -42,6 +43,10 @@ async function getBetterAuthCurrentUser(request: NextRequest) {
 }
 
 export async function getCurrentUser(request: NextRequest) {
+    if (isDesktopAuthEnabled()) {
+        return await ensureDesktopCurrentUser()
+    }
+
     const betterAuthUser = await getBetterAuthCurrentUser(request)
     if (betterAuthUser) {
         return betterAuthUser

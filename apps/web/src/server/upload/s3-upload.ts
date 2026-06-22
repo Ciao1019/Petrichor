@@ -1,5 +1,6 @@
 import { getServerConfig } from "@/config/server"
 import { HttpError } from "@/server/http/response"
+import { getLocalStorageDirOrNull, writeLocalObjectBytes } from "@/server/upload/local-storage"
 import { buildS3ObjectKey, createS3PresignedUrl } from "@/server/upload/s3-presign"
 
 /**
@@ -13,12 +14,23 @@ export async function uploadS3ObjectBytes(input: {
     ext: string
     contentType: string
 }): Promise<string> {
+    const ext = input.ext.startsWith(".") ? input.ext : `.${input.ext}`
+    const objectKey = buildS3ObjectKey({ filename: `embedded${ext}`, userId: input.userId })
+
+    if (getLocalStorageDirOrNull()) {
+        await writeLocalObjectBytes({
+            contentType: input.contentType,
+            data: input.data,
+            objectKey,
+        })
+        return objectKey
+    }
+
     const config = getServerConfig().s3
     if (!config) {
         throw new HttpError(500, "S3 存储未配置")
     }
-    const ext = input.ext.startsWith(".") ? input.ext : `.${input.ext}`
-    const objectKey = buildS3ObjectKey({ filename: `embedded${ext}`, userId: input.userId })
+
     const url = createS3PresignedUrl({
         ...config,
         expiresSeconds: config.uploadExpireSeconds,

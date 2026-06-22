@@ -20,6 +20,7 @@ import { buildPublicArticleMetadata } from "@/server/kb/share-logic"
 import { buildArticleAiSummaryContentHash, resolveUsableArticleAiSummary } from "@/server/kb/article-summary-logic"
 import { isDescendantKnowledgeBaseNode, moveNodeIdIntoSiblingOrder } from "@/server/kb/node-move-logic"
 import { deleteS3Objects, extractS4ObjectKeysFromArticleContent } from "@/server/upload/s3-delete"
+import { getLocalStorageDirOrNull } from "@/server/upload/local-storage"
 
 type Db = ReturnType<typeof getDb>
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
@@ -399,8 +400,8 @@ async function cleanupUnreferencedS4Objects(
         }
 
         const config = getServerConfig().s3
-        if (!config) {
-            console.warn("[S4 cleanup] 跳过文章图片清理：S3 存储未配置", {
+        if (!config && !getLocalStorageDirOrNull()) {
+            console.warn("[S4 cleanup] 跳过文章图片清理：对象存储未配置", {
                 action: context.action,
                 objectKeyCount: deletableKeys.length,
                 userId,

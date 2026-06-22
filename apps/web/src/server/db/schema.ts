@@ -1,13 +1,71 @@
+import { sql } from "drizzle-orm"
 import {
-    bigint,
-    boolean,
-    index,
-    integer,
-    pgTable,
-    text,
-    timestamp,
-    uniqueIndex,
+    bigint as pgBigint,
+    boolean as pgBoolean,
+    index as pgIndex,
+    integer as pgInteger,
+    pgTable as pgPgTable,
+    text as pgText,
+    timestamp as pgTimestamp,
+    uniqueIndex as pgUniqueIndex,
 } from "drizzle-orm/pg-core"
+import {
+    index as sqliteIndex,
+    integer as sqliteInteger,
+    sqliteTable,
+    text as sqliteText,
+    uniqueIndex as sqliteUniqueIndex,
+} from "drizzle-orm/sqlite-core"
+
+const useSqliteSchema =
+    process.env.PETRICHOR_DB_DIALECT === "sqlite" ||
+    process.env.PETRICHOR_DESKTOP === "true" ||
+    process.env.DATABASE_URL?.startsWith("file:")
+
+const pgTable = (useSqliteSchema ? sqliteTable : pgPgTable) as typeof pgPgTable
+const index = (useSqliteSchema ? sqliteIndex : pgIndex) as typeof pgIndex
+const uniqueIndex = (useSqliteSchema ? sqliteUniqueIndex : pgUniqueIndex) as typeof pgUniqueIndex
+
+const bigint = ((name: string, config?: unknown) => {
+    if (!useSqliteSchema) {
+        return pgBigint(name, config as Parameters<typeof pgBigint>[1])
+    }
+
+    const builder = sqliteInteger(name) as any
+    const originalPrimaryKey = builder.primaryKey.bind(builder)
+    builder.primaryKey = (primaryKeyConfig?: unknown) => {
+        const primaryKeyBuilder = originalPrimaryKey(
+            primaryKeyConfig ?? { autoIncrement: true },
+        ) as any
+        primaryKeyBuilder.generatedAlwaysAsIdentity = () => primaryKeyBuilder
+        return primaryKeyBuilder
+    }
+    return builder as unknown as ReturnType<typeof pgBigint>
+}) as typeof pgBigint
+
+const boolean = ((name: string) => {
+    return (useSqliteSchema
+        ? sqliteInteger(name, { mode: "boolean" })
+        : pgBoolean(name)) as ReturnType<typeof pgBoolean>
+}) as typeof pgBoolean
+
+const integer = ((name: string) => {
+    return (useSqliteSchema ? sqliteInteger(name) : pgInteger(name)) as ReturnType<typeof pgInteger>
+}) as typeof pgInteger
+
+const text = ((name: string) => {
+    return (useSqliteSchema ? sqliteText(name) : pgText(name)) as ReturnType<typeof pgText>
+}) as typeof pgText
+
+const timestamp = ((name: string, config?: unknown) => {
+    if (!useSqliteSchema) {
+        return pgTimestamp(name, config as Parameters<typeof pgTimestamp>[1])
+    }
+
+    const builder = sqliteInteger(name, { mode: "timestamp_ms" }) as any
+    builder.defaultNow = () => builder.default(sql`(unixepoch() * 1000)`)
+    return builder as unknown as ReturnType<typeof pgTimestamp>
+}) as typeof pgTimestamp
 
 const timestamps = {
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

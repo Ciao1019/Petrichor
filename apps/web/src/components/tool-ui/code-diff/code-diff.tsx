@@ -13,7 +13,7 @@ import {
   FileDiff as PierreFileDiff,
   PatchDiff as PierrePatchDiff,
 } from "@pierre/diffs/react";
-import { parseDiffFromFile, RegisteredCustomThemes } from "@pierre/diffs";
+import { parseDiffFromFile, registerCustomTheme } from "@pierre/diffs";
 import type { FileDiffMetadata, ThemesType } from "@pierre/diffs";
 import { Copy, Check, ChevronDown, ChevronUp } from "lucide-react";
 import type { CodeDiffProps } from "./schema";
@@ -21,16 +21,13 @@ import { useCopyToClipboard } from "../shared/use-copy-to-clipboard";
 import { Button, cn, Collapsible, CollapsibleTrigger } from "./_adapter";
 
 /*
- * Pierre's shared_highlighter registers custom themes with dynamic imports
- * (`import("../themes/pierre-dark.js")`) that fail under Turbopack because the
- * package `exports` field doesn't include those subpaths. We override the
- * RegisteredCustomThemes map entries with loaders that point to local vendored
- * theme files in `components/tool-ui/shared`, which Turbopack can resolve.
+ * Pierre's shared highlighter resolves custom themes through package exports.
+ * Register local vendored theme loaders so Turbopack can resolve them.
  */
-RegisteredCustomThemes.set("pierre-dark", () =>
+registerCustomTheme("pierre-dark", () =>
   import("../shared/pierre-dark-theme.js").then((m) => m.default as never),
 );
-RegisteredCustomThemes.set("pierre-light", () =>
+registerCustomTheme("pierre-light", () =>
   import("../shared/pierre-light-theme.js").then((m) => m.default as never),
 );
 

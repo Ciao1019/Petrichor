@@ -1,5 +1,5 @@
 import { and, desc, eq, gte, sql } from "drizzle-orm"
-import { getDb } from "@/server/db/client"
+import { getDb, isSqliteDatabase } from "@/server/db/client"
 import {
     agentCallLogs,
     knowledgeBaseAgentThreads,
@@ -93,10 +93,21 @@ export async function loadDashboardOverview(userId: number): Promise<DashboardOv
     const today = startOfUtcDay(new Date())
     const heatmapStart = addUtcDays(today, -(HEATMAP_DAYS - 1))
     const trendStart = addUtcDays(today, -(TREND_DAYS - 1))
+    const sqlite = isSqliteDatabase()
 
-    const articleDay = sql<string>`to_char(${knowledgeBaseArticles.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`
-    const threadDay = sql<string>`to_char(${knowledgeBaseAgentThreads.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`
-    const callDay = sql<string>`to_char(${agentCallLogs.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`
+    const articleDay = sqlite
+        ? sql<string>`strftime('%Y-%m-%d', ${knowledgeBaseArticles.createdAt} / 1000, 'unixepoch')`
+        : sql<string>`to_char(${knowledgeBaseArticles.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`
+    const threadDay = sqlite
+        ? sql<string>`strftime('%Y-%m-%d', ${knowledgeBaseAgentThreads.createdAt} / 1000, 'unixepoch')`
+        : sql<string>`to_char(${knowledgeBaseAgentThreads.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`
+    const callDay = sqlite
+        ? sql<string>`strftime('%Y-%m-%d', ${agentCallLogs.createdAt} / 1000, 'unixepoch')`
+        : sql<string>`to_char(${agentCallLogs.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`
+    const countAll = sqlite ? sql<number>`count(*)` : sql<number>`count(*)::int`
+    const articleCount = sqlite
+        ? sql<number>`count(${knowledgeBaseArticles.id})`
+        : sql<number>`count(${knowledgeBaseArticles.id})::int`
 
     const [
         articleDaily,
@@ -110,36 +121,36 @@ export async function loadDashboardOverview(userId: number): Promise<DashboardOv
         recent,
     ] = await Promise.all([
         db
-            .select({ day: articleDay, count: sql<number>`count(*)::int` })
+            .select({ day: articleDay, count: countAll })
             .from(knowledgeBaseArticles)
             .where(and(eq(knowledgeBaseArticles.userId, userId), gte(knowledgeBaseArticles.createdAt, heatmapStart)))
             .groupBy(articleDay),
         db
-            .select({ day: threadDay, count: sql<number>`count(*)::int` })
+            .select({ day: threadDay, count: countAll })
             .from(knowledgeBaseAgentThreads)
             .where(and(eq(knowledgeBaseAgentThreads.userId, userId), gte(knowledgeBaseAgentThreads.createdAt, heatmapStart)))
             .groupBy(threadDay),
         db
-            .select({ day: callDay, count: sql<number>`count(*)::int` })
+            .select({ day: callDay, count: countAll })
             .from(agentCallLogs)
             .where(and(eq(agentCallLogs.userId, userId), gte(agentCallLogs.createdAt, heatmapStart)))
             .groupBy(callDay),
         db
-            .select({ value: sql<number>`count(*)::int` })
+            .select({ value: countAll })
             .from(knowledgeBaseArticles)
             .where(eq(knowledgeBaseArticles.userId, userId)),
         db
-            .select({ value: sql<number>`count(*)::int` })
+            .select({ value: countAll })
             .from(knowledgeBaseAgentThreads)
             .where(eq(knowledgeBaseAgentThreads.userId, userId)),
         db
-            .select({ value: sql<number>`count(*)::int` })
+            .select({ value: countAll })
             .from(knowledgeBases)
             .where(eq(knowledgeBases.userId, userId)),
         db
             .select({
                 label: knowledgeBases.name,
-                count: sql<number>`count(${knowledgeBaseArticles.id})::int`,
+                count: articleCount,
             })
             .from(knowledgeBaseArticles)
             .innerJoin(knowledgeBases, eq(knowledgeBaseArticles.knowledgeBaseId, knowledgeBases.id))
@@ -150,7 +161,7 @@ export async function loadDashboardOverview(userId: number): Promise<DashboardOv
         db
             .select({
                 label: knowledgeBaseArticleTags.tag,
-                count: sql<number>`count(*)::int`,
+                count: countAll,
             })
             .from(knowledgeBaseArticleTags)
             .innerJoin(knowledgeBaseArticles, eq(knowledgeBaseArticleTags.articleId, knowledgeBaseArticles.id))

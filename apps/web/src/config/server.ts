@@ -90,6 +90,7 @@ const s3EnvShape = {
 const serverEnvSchema = z.object({
     DATABASE_URL: z.string().trim().min(1, "DATABASE_URL 不能为空"),
     ...s3EnvShape,
+    PETRICHOR_STORAGE_DIR: optionalTrimmedStringFromEnv(),
     PETRICHOR_SESSION_EXPIRE_SECONDS: positiveIntegerFromEnv(
         "PETRICHOR_SESSION_EXPIRE_SECONDS",
         DEFAULT_SESSION_EXPIRE_SECONDS,
@@ -107,6 +108,7 @@ const formatConfigIssues = (issues: Array<{ message: string; path: PropertyKey[]
 
 export interface ServerConfig {
     databaseUrl: string
+    localStorageDir: string | null
     s3: S3Config | null
     session: {
         expiresInSeconds: number
@@ -154,6 +156,7 @@ export function loadServerConfigFromEnv(env: EnvSource = process.env): ServerCon
 
     return {
         databaseUrl: parsed.data.DATABASE_URL,
+        localStorageDir: parsed.data.PETRICHOR_STORAGE_DIR,
         s3: toS3Config(parsed.data),
         session: {
             expiresInSeconds: parsed.data.PETRICHOR_SESSION_EXPIRE_SECONDS,
