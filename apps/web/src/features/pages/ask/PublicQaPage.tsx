@@ -13,7 +13,6 @@ import {
   useAuiState,
 } from "@assistant-ui/react"
 import { AssistantChatTransport, useChatRuntime } from "@assistant-ui/react-ai-sdk"
-import type { UIMessage } from "ai"
 import { ArrowUp, Copy, MessageCircleQuestion, RefreshCw, Square } from "lucide-react"
 
 import { MarkdownText } from "@/components/assistant-ui/markdown-text"
@@ -156,7 +155,7 @@ function PublicQaChat() {
 
   const transport = React.useMemo(
     () =>
-      new AssistantChatTransport<UIMessage>({
+      new AssistantChatTransport({
         api: "/api/public/qa/chat",
         credentials: "omit",
         fetch: async (input, init) => {

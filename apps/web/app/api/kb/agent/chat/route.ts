@@ -1,5 +1,13 @@
 import type { NextRequest } from "next/server"
-import { convertToModelMessages, stepCountIs, streamText, tool, type UIMessage } from "ai"
+import {
+    convertToModelMessages,
+    createUIMessageStreamResponse,
+    isStepCount,
+    streamText,
+    toUIMessageStream,
+    tool,
+    type UIMessage,
+} from "ai"
 import { z } from "zod"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { createChatLanguageModel } from "@/server/ai/generation"
@@ -162,23 +170,24 @@ export async function POST(request: NextRequest) {
 
         const result = streamText({
             model,
-            system: knowledgeBaseId == null ? buildGlobalAgentSystemPrompt() : buildAgentSystemPrompt(),
+            instructions: knowledgeBaseId == null ? buildGlobalAgentSystemPrompt() : buildAgentSystemPrompt(),
             messages: await convertToModelMessages(input.messages as UIMessage[]),
             tools,
-            stopWhen: stepCountIs(8),
+            stopWhen: isStepCount(8),
             temperature: 0.2,
-            experimental_onToolCallFinish: async (event) => {
+            onToolExecutionEnd: async (event) => {
+                const isSuccess = event.toolOutput.type === "tool-result"
                 await recordAgentStep({
                     runId: run.id,
                     userId: user.id,
                     knowledgeBaseId,
                     stepType: event.toolCall.toolName,
-                    title: event.success ? `完成工具：${event.toolCall.toolName}` : `工具失败：${event.toolCall.toolName}`,
-                    status: event.success ? "COMPLETED" : "FAILED",
-                    payload: event.success ? event.output : { error: String(event.error) },
+                    title: isSuccess ? `完成工具：${event.toolCall.toolName}` : `工具失败：${event.toolCall.toolName}`,
+                    status: isSuccess ? "COMPLETED" : "FAILED",
+                    payload: isSuccess ? event.toolOutput.output : { error: String(event.toolOutput.error) },
                 })
             },
-            onFinish: async () => {
+            onEnd: async () => {
                 if (!finalUsageMetadata) {
                     // Fallback if messageMetadata callback didn't compute usage (e.g. stream aborted)
                     finalUsageMetadata = normalizeOrEstimateUsage({
@@ -203,87 +212,91 @@ export async function POST(request: NextRequest) {
             },
         })
 
-        return result.toUIMessageStreamResponse({
-            headers: {
-                "X-Petrichor-Agent-Thread-Id": String(thread.id),
-                "X-Petrichor-Agent-Run-Id": String(run.id),
-            },
-            onFinish: async ({ responseMessage }) => {
-                // 此回调拿到的 responseMessage 是完整的 UIMessage，包含 text + tool-call + reasoning 所有 part，
-                // 用它持久化才能让历史对话刷新后保留工具卡片渲染。
-                const finishedAt = Date.now()
-                const totalStreamTime = finishedAt - streamStartedAt
-                const firstTokenTime = firstTokenAtMs != null ? firstTokenAtMs - streamStartedAt : null
-                const usage = finalUsageMetadata ?? normalizeOrEstimateUsage({
-                    usage: undefined,
-                    inputTokenEstimate,
-                    assistantText: assistantTextAccumulator,
-                })
-                const outputTokens = usage.outputTokens ?? 0
-                const tokensPerSecond = totalStreamTime > 0 && outputTokens > 0
-                    ? Number((outputTokens / (totalStreamTime / 1000)).toFixed(2))
-                    : null
-                const textContent = extractTextFromUIMessage(responseMessage)
-                await persistAgentMessage({
-                    userId: user.id,
-                    knowledgeBaseId,
-                    threadId: thread.id,
-                    role: "assistant",
-                    contentText: textContent,
-                    content: {
-                        parts: responseMessage.parts,
-                        text: textContent,
-                        usage,
-                        modelId: finalModelId ?? config.model,
-                        modelName: config.name,
-                        firstTokenTime,
-                        totalStreamTime,
-                        totalChunks: chunkCount,
-                        tokensPerSecond,
-                        startedAt: streamStartedAt,
-                        finishedAt,
-                    },
-                })
-            },
-            messageMetadata: ({ part }) => {
-                if (part.type === "text-delta") {
-                    if (firstTokenAtMs == null) firstTokenAtMs = Date.now()
-                    assistantTextAccumulator += part.text
-                    chunkCount += 1
-                    return undefined
-                }
-                if (part.type === "finish-step") {
-                    finalModelId = part.response.modelId ?? finalModelId
-                    return { custom: { modelId: part.response.modelId } }
-                }
-                if (part.type === "finish") {
-                    const usage = normalizeOrEstimateUsage({
-                        usage: part.totalUsage,
+        return createUIMessageStreamResponse({
+            stream: toUIMessageStream({
+                stream: result.stream,
+                tools,
+                onEnd: async ({ responseMessage }) => {
+                    // 此回调拿到的 responseMessage 是完整的 UIMessage，包含 text + tool-call + reasoning 所有 part，
+                    // 用它持久化才能让历史对话刷新后保留工具卡片渲染。
+                    const finishedAt = Date.now()
+                    const totalStreamTime = finishedAt - streamStartedAt
+                    const firstTokenTime = firstTokenAtMs != null ? firstTokenAtMs - streamStartedAt : null
+                    const usage = finalUsageMetadata ?? normalizeOrEstimateUsage({
+                        usage: undefined,
                         inputTokenEstimate,
                         assistantText: assistantTextAccumulator,
                     })
-                    finalUsageMetadata = usage
-                    const finishedAt = Date.now()
-                    const totalStreamTime = finishedAt - streamStartedAt
-                    const firstTokenTime = firstTokenAtMs != null ? firstTokenAtMs - streamStartedAt : undefined
                     const outputTokens = usage.outputTokens ?? 0
                     const tokensPerSecond = totalStreamTime > 0 && outputTokens > 0
                         ? Number((outputTokens / (totalStreamTime / 1000)).toFixed(2))
-                        : undefined
-                    // assistant-ui 的 message converter 只保留 metadata.custom / steps / timing 等已知字段，
-                    // 顶层未知键会被丢弃，所以 usage / 计时数据必须放进 custom 才能落到 thread.messages 上。
-                    return {
-                        custom: {
+                        : null
+                    const textContent = extractTextFromUIMessage(responseMessage)
+                    await persistAgentMessage({
+                        userId: user.id,
+                        knowledgeBaseId,
+                        threadId: thread.id,
+                        role: "assistant",
+                        contentText: textContent,
+                        content: {
+                            parts: responseMessage.parts,
+                            text: textContent,
                             usage,
+                            modelId: finalModelId ?? config.model,
+                            modelName: config.name,
                             firstTokenTime,
                             totalStreamTime,
                             totalChunks: chunkCount,
-                            ...(tokensPerSecond !== undefined ? { tokensPerSecond } : {}),
-                            ...(finalModelId ? { modelId: finalModelId } : {}),
+                            tokensPerSecond,
+                            startedAt: streamStartedAt,
+                            finishedAt,
                         },
+                    })
+                },
+                messageMetadata: ({ part }) => {
+                    if (part.type === "text-delta") {
+                        if (firstTokenAtMs == null) firstTokenAtMs = Date.now()
+                        assistantTextAccumulator += part.text
+                        chunkCount += 1
+                        return undefined
                     }
-                }
-                return undefined
+                    if (part.type === "finish-step") {
+                        finalModelId = part.response.modelId ?? finalModelId
+                        return { custom: { modelId: part.response.modelId } }
+                    }
+                    if (part.type === "finish") {
+                        const usage = normalizeOrEstimateUsage({
+                            usage: part.totalUsage,
+                            inputTokenEstimate,
+                            assistantText: assistantTextAccumulator,
+                        })
+                        finalUsageMetadata = usage
+                        const finishedAt = Date.now()
+                        const totalStreamTime = finishedAt - streamStartedAt
+                        const firstTokenTime = firstTokenAtMs != null ? firstTokenAtMs - streamStartedAt : undefined
+                        const outputTokens = usage.outputTokens ?? 0
+                        const tokensPerSecond = totalStreamTime > 0 && outputTokens > 0
+                            ? Number((outputTokens / (totalStreamTime / 1000)).toFixed(2))
+                            : undefined
+                        // assistant-ui 的 message converter 只保留 metadata.custom / steps / timing 等已知字段，
+                        // 顶层未知键会被丢弃，所以 usage / 计时数据必须放进 custom 才能落到 thread.messages 上。
+                        return {
+                            custom: {
+                                usage,
+                                firstTokenTime,
+                                totalStreamTime,
+                                totalChunks: chunkCount,
+                                ...(tokensPerSecond !== undefined ? { tokensPerSecond } : {}),
+                                ...(finalModelId ? { modelId: finalModelId } : {}),
+                            },
+                        }
+                    }
+                    return undefined
+                },
+            }),
+            headers: {
+                "X-Petrichor-Agent-Thread-Id": String(thread.id),
+                "X-Petrichor-Agent-Run-Id": String(run.id),
             },
         })
     } catch (error) {
@@ -609,8 +622,22 @@ type AssistantUsageMetadata = {
     estimated?: boolean
 }
 
+type AssistantUsageSource = {
+    inputTokens?: number
+    outputTokens?: number
+    totalTokens?: number
+    reasoningTokens?: number
+    cachedInputTokens?: number
+    inputTokenDetails?: {
+        cacheReadTokens?: number
+    }
+    outputTokenDetails?: {
+        reasoningTokens?: number
+    }
+}
+
 function normalizeOrEstimateUsage(input: {
-    usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number; reasoningTokens?: number; cachedInputTokens?: number } | undefined
+    usage: AssistantUsageSource | undefined
     inputTokenEstimate: number
     assistantText: string
 }): AssistantUsageMetadata {
@@ -625,11 +652,13 @@ function normalizeOrEstimateUsage(input: {
     if (typeof usage?.totalTokens === "number" && Number.isFinite(usage.totalTokens) && usage.totalTokens >= 0) {
         result.totalTokens = usage.totalTokens
     }
-    if (typeof usage?.reasoningTokens === "number" && Number.isFinite(usage.reasoningTokens) && usage.reasoningTokens >= 0) {
-        result.reasoningTokens = usage.reasoningTokens
+    const reasoningTokens = usage?.reasoningTokens ?? usage?.outputTokenDetails?.reasoningTokens
+    if (typeof reasoningTokens === "number" && Number.isFinite(reasoningTokens) && reasoningTokens >= 0) {
+        result.reasoningTokens = reasoningTokens
     }
-    if (typeof usage?.cachedInputTokens === "number" && Number.isFinite(usage.cachedInputTokens) && usage.cachedInputTokens >= 0) {
-        result.cachedInputTokens = usage.cachedInputTokens
+    const cachedInputTokens = usage?.cachedInputTokens ?? usage?.inputTokenDetails?.cacheReadTokens
+    if (typeof cachedInputTokens === "number" && Number.isFinite(cachedInputTokens) && cachedInputTokens >= 0) {
+        result.cachedInputTokens = cachedInputTokens
     }
     const hasReal = (result.totalTokens ?? 0) > 0 || (result.inputTokens ?? 0) > 0 || (result.outputTokens ?? 0) > 0
     if (hasReal) {
