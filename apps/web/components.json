@@ -21,6 +21,7 @@
   "registries": {
     "@ai-elements": "https://registry.ai-sdk.dev/{name}.json",
     "@plate": "https://platejs.org/r/{name}.json",
-    "@tool-ui": "https://www.tool-ui.com/r/{name}.json"
+    "@tool-ui": "https://www.tool-ui.com/r/{name}.json",
+    "@extend": "https://www.extend.ai/ui/r/{name}.json"
   }
 }

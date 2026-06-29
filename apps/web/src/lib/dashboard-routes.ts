@@ -14,6 +14,8 @@ export const dashboardRoutes = {
     aiConfig: `${DASHBOARD_ROOT}/ai/config`,
     aiReview: `${DASHBOARD_ROOT}/ai/review`,
     qa: `${DASHBOARD_ROOT}/qa`,
+    docLibrary: `${DASHBOARD_ROOT}/doc-library`,
+    docLibraryQa: `${DASHBOARD_ROOT}/doc-library/qa`,
     agentKeys: `${DASHBOARD_ROOT}/agent/keys`,
     agentLogs: `${DASHBOARD_ROOT}/agent/logs`,
     agentSkill: `${DASHBOARD_ROOT}/agent/skill`,
@@ -45,6 +47,10 @@ export function knowledgeBaseImportsPath(knowledgeBaseId: string) {
 
 export function importJobDetailPath(jobId: string) {
     return `${dashboardRoutes.imports}/${jobId}`
+}
+
+export function docLibraryBrowsePath(libraryId: string) {
+    return `${dashboardRoutes.docLibrary}/${libraryId}`
 }
 
 export function isDashboardSectionPath(pathname: string, sectionPath: string) {

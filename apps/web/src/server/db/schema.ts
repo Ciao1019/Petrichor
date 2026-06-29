@@ -596,6 +596,152 @@ export const aiModelConfigs = pgTable("petrichor_ai_model_config", {
     uniqueIndex("ux_petrichor_ai_model_config_user_type_name").on(table.userId, table.configType, table.name),
 ])
 
+// ===== 文档库（Document Library）：存放原始文件 + 针对文件内容的问答 =====
+
+// 文档库（多个命名库，镜像知识库形态）
+export const docLibraries = pgTable("petrichor_doc_library", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    color: text("color"),
+    icon: text("icon"),
+    documentCount: integer("document_count").notNull().default(0),
+    ...timestamps,
+}, (table) => [
+    index("idx_petrichor_doc_library_user").on(table.userId),
+    index("petrichor_doc_library_user_updated_idx").on(table.userId, table.updatedAt),
+])
+
+// 文件夹树（供 Finder 浏览）
+export const docFolders = pgTable("petrichor_doc_folder", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    libraryId: bigint("library_id", { mode: "number" }).notNull(),
+    parentId: bigint("parent_id", { mode: "number" }),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    ...timestamps,
+}, (table) => [
+    index("idx_petrichor_doc_folder_user_lib").on(table.userId, table.libraryId),
+    index("petrichor_doc_folder_parent_idx").on(table.libraryId, table.parentId, table.sortOrder),
+])
+
+// 文档（文件）：仅支持 pdf / docx / xlsx / csv
+export const docDocuments = pgTable("petrichor_doc_document", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    libraryId: bigint("library_id", { mode: "number" }).notNull(),
+    folderId: bigint("folder_id", { mode: "number" }),
+    fileName: text("file_name").notNull(),
+    title: text("title").notNull(),
+    fileType: text("file_type").notNull(),
+    contentType: text("content_type"),
+    objectKey: text("object_key").notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }),
+    pageCount: integer("page_count"),
+    charCount: integer("char_count"),
+    status: text("status").notNull().default("pending"),
+    blocksJson: text("blocks_json"),
+    summary: text("summary"),
+    error: text("error"),
+    ...timestamps,
+}, (table) => [
+    index("idx_petrichor_doc_document_user_lib").on(table.userId, table.libraryId),
+    index("petrichor_doc_document_folder_idx").on(table.libraryId, table.folderId),
+    index("petrichor_doc_document_status_idx").on(table.userId, table.status),
+])
+
+// 文本分块：agentic 关键词检索的检索单元
+export const docChunks = pgTable("petrichor_doc_chunk", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    libraryId: bigint("library_id", { mode: "number" }).notNull(),
+    documentId: bigint("document_id", { mode: "number" }).notNull(),
+    chunkIndex: integer("chunk_index").notNull(),
+    locator: text("locator"),
+    page: integer("page"),
+    text: text("text").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+    index("idx_petrichor_doc_chunk_document").on(table.documentId, table.chunkIndex),
+    index("idx_petrichor_doc_chunk_library").on(table.libraryId),
+])
+
+// 文档库问答：对话线程（libraryId 为空表示跨库）
+export const docQaThreads = pgTable("petrichor_doc_qa_thread", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    libraryId: bigint("library_id", { mode: "number" }),
+    title: text("title").notNull(),
+    status: text("status").notNull().default("ACTIVE"),
+    lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
+    metadataJson: text("metadata_json"),
+    ...timestamps,
+}, (table) => [
+    index("idx_petrichor_doc_qa_thread_user").on(table.userId, table.updatedAt),
+    index("petrichor_doc_qa_thread_user_history_idx").on(table.userId, table.updatedAt, table.id),
+])
+
+// 文档库问答：消息
+export const docQaMessages = pgTable("petrichor_doc_qa_message", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    threadId: bigint("thread_id", { mode: "number" }).notNull(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    role: text("role").notNull(),
+    contentText: text("content_text").notNull().default(""),
+    contentJson: text("content_json"),
+    metadataJson: text("metadata_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+    index("idx_petrichor_doc_qa_message_thread").on(table.threadId, table.createdAt),
+])
+
+// 文档库问答：Agent 运行记录
+export const docQaRuns = pgTable("petrichor_doc_qa_run", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    threadId: bigint("thread_id", { mode: "number" }).notNull(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    status: text("status").notNull().default("RUNNING"),
+    modelName: text("model_name"),
+    errorMessage: text("error_message"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+}, (table) => [
+    index("idx_petrichor_doc_qa_run_thread").on(table.threadId, table.startedAt),
+])
+
+// 文档库问答：Agent 步骤
+export const docQaSteps = pgTable("petrichor_doc_qa_step", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    runId: bigint("run_id", { mode: "number" }).notNull(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    stepType: text("step_type").notNull(),
+    title: text("title").notNull(),
+    status: text("status").notNull(),
+    payloadJson: text("payload_json"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+    index("idx_petrichor_doc_qa_step_run").on(table.runId, table.createdAt),
+])
+
+// 文档库问答：产物
+export const docQaArtifacts = pgTable("petrichor_doc_qa_artifact", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    threadId: bigint("thread_id", { mode: "number" }).notNull(),
+    runId: bigint("run_id", { mode: "number" }).notNull(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    artifactType: text("artifact_type").notNull(),
+    title: text("title").notNull(),
+    payloadJson: text("payload_json"),
+    contentMd: text("content_md"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+    index("idx_petrichor_doc_qa_artifact_thread").on(table.threadId, table.createdAt),
+])
+
 // AI 回顾报告：按用户 + 周期类型 + 期次唯一，按需生成并缓存
 export const aiReviews = pgTable("petrichor_ai_review", {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
