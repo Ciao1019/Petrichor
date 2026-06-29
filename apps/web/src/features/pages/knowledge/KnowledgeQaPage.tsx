@@ -15,9 +15,13 @@ import {
   useMessageTiming,
   type ToolCallMessagePartStatus,
 } from "@assistant-ui/react"
-import { AssistantChatTransport, useChatRuntime, type ThreadTokenUsage } from "@assistant-ui/react-ai-sdk"
+import {
+  AssistantChatTransport,
+  useChatRuntime,
+  type ThreadTokenUsage,
+  type UseChatRuntimeOptions,
+} from "@assistant-ui/react-ai-sdk"
 import { useNavigate } from "react-router-dom"
-import type { UIMessage } from "ai"
 import {
   ArrowUp,
   Check,
@@ -111,6 +115,7 @@ import { gsap } from "@/lib/gsap"
 import { GsapFade } from "@/components/ui/gsap-transition"
 
 const CHAT_THREAD_HEADER = "X-Petrichor-Agent-Thread-Id"
+type AssistantUIMessage = NonNullable<UseChatRuntimeOptions["messages"]>[number]
 const SKIP_DELETE_CONFIRM_KEY = "petrichor:qa.skipDeleteConfirm"
 
 const PlanToolUI = makeAssistantToolUI({
@@ -386,7 +391,7 @@ export function KnowledgeQaPage() {
   const [selectedConfigId, setSelectedConfigId] = React.useState<string | null>(null)
   const [scopeKnowledgeBaseId, setScopeKnowledgeBaseId] = React.useState<string | null>(null)
   const [activeThreadId, setActiveThreadId] = React.useState<string | null>(null)
-  const [initialMessages, setInitialMessages] = React.useState<UIMessage[]>([])
+  const [initialMessages, setInitialMessages] = React.useState<AssistantUIMessage[]>([])
   const [runtimeSeed, setRuntimeSeed] = React.useState(0)
   const [threadLoading, setThreadLoading] = React.useState(false)
   const [sidebarOpen, setSidebarOpen] = React.useState(true)
@@ -1037,7 +1042,7 @@ function QaChatPanel({
 }: {
   knowledgeBaseId: string | null
   threadId: string | null
-  initialMessages: UIMessage[]
+  initialMessages: AssistantUIMessage[]
   onThreadKnown: (threadId: string) => void
   onStreamSettled: () => void | Promise<void>
   scopeName: string | null
@@ -1053,7 +1058,7 @@ function QaChatPanel({
     configIdRef.current = selectedConfigId
   }, [selectedConfigId])
 
-  const transport = React.useMemo(() => new AssistantChatTransport<UIMessage>({
+  const transport = React.useMemo(() => new AssistantChatTransport<AssistantUIMessage>({
     api: "/api/kb/agent/chat",
     body: {
       knowledgeBaseId,
@@ -2116,7 +2121,7 @@ function isSameLocalDay(aMs: number, bMs: number) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 }
 
-function toInitialMessages(messages: Array<{ id: string; role: string; contentText: string; content?: unknown }>): UIMessage[] {
+function toInitialMessages(messages: Array<{ id: string; role: string; contentText: string; content?: unknown }>): AssistantUIMessage[] {
   return messages
     .filter((message) => message.role === "user" || message.role === "assistant")
     .map((message) => {
@@ -2129,7 +2134,7 @@ function toInitialMessages(messages: Array<{ id: string; role: string; contentTe
         parts,
         ...(metadata ? { metadata } : {}),
       }
-    }) as UIMessage[]
+    }) as AssistantUIMessage[]
 }
 
 function extractPersistedParts(content: unknown) {

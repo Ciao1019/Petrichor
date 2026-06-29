@@ -1,4 +1,4 @@
-import { streamText } from "ai"
+import { createTextStreamResponse, streamText, toTextStream } from "ai"
 import type { NextRequest } from "next/server"
 import { createChatLanguageModel } from "@/server/ai/generation"
 import { requireCurrentUser } from "@/server/auth/current-user"
@@ -14,12 +14,13 @@ export async function streamAiWrite(request: NextRequest) {
 
         const result = streamText({
             model,
-            system: buildWriteSystemPrompt(payload.action),
+            instructions: buildWriteSystemPrompt(payload.action),
             prompt: buildWriteUserMessage(payload),
             temperature: 0.4,
         })
 
-        return result.toTextStreamResponse({
+        return createTextStreamResponse({
+            stream: toTextStream({ stream: result.stream }),
             headers: {
                 "Cache-Control": "no-store",
                 "X-Petrichor-Write-Action": payload.action,

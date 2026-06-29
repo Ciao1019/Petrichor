@@ -1,5 +1,13 @@
 import type { NextRequest } from "next/server"
-import { convertToModelMessages, stepCountIs, streamText, tool, type UIMessage } from "ai"
+import {
+    convertToModelMessages,
+    createUIMessageStreamResponse,
+    isStepCount,
+    streamText,
+    toUIMessageStream,
+    tool,
+    type UIMessage,
+} from "ai"
 import { z } from "zod"
 import { createChatLanguageModel } from "@/server/ai/generation"
 import { badRequest, forbidden, toErrorResponse } from "@/server/http/response"
@@ -106,14 +114,18 @@ export async function publicQaChat(request: NextRequest) {
 
         const result = streamText({
             model,
-            system: buildPublicQaSystemPrompt(),
+            instructions: buildPublicQaSystemPrompt(),
             messages: await convertToModelMessages(input.messages as UIMessage[]),
             tools,
-            stopWhen: stepCountIs(8),
+            stopWhen: isStepCount(8),
             temperature: 0.2,
         })
 
-        return result.toUIMessageStreamResponse({
+        return createUIMessageStreamResponse({
+            stream: toUIMessageStream({
+                stream: result.stream,
+                tools,
+            }),
             headers: {
                 "X-Petrichor-Qa-Remaining": String(quota.remaining),
                 "X-Petrichor-Qa-Limit": String(quota.limit),
