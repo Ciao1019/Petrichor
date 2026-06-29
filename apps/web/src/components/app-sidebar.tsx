@@ -3,10 +3,13 @@ import {
   IconBook,
   IconBookmarks,
   IconFileImport,
+  IconFiles,
+  IconFolders,
   IconHistory,
   IconKey,
   IconListDetails,
   IconMessageChatbot,
+  IconMessages,
   IconPackage,
   IconPalette,
   IconSettings,
@@ -45,6 +48,14 @@ function matchKnowledgeList(pathname: string) {
 
 function matchImportJobs(pathname: string) {
   return pathname === dashboardRoutes.imports || /^\/dashboard\/knowledge\/[^/]+\/imports$/.test(pathname)
+}
+
+function matchDocLibraryList(pathname: string) {
+  return isDashboardSectionPath(pathname, "doc-library") && !matchDocLibraryQa(pathname)
+}
+
+function matchDocLibraryQa(pathname: string) {
+  return pathname === dashboardRoutes.docLibraryQa
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
@@ -98,6 +109,26 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             title: "AI 回顾",
             url: dashboardRoutes.aiReview,
             icon: IconHistory,
+          },
+        ],
+      },
+      {
+        title: "文档库",
+        url: dashboardRoutes.docLibrary,
+        icon: IconFolders,
+        isActive: isDashboardSectionPath(pathname, "doc-library"),
+        items: [
+          {
+            title: "文档列表",
+            url: dashboardRoutes.docLibrary,
+            icon: IconFiles,
+            match: matchDocLibraryList,
+          },
+          {
+            title: "文档问答",
+            url: dashboardRoutes.docLibraryQa,
+            icon: IconMessages,
+            match: matchDocLibraryQa,
           },
         ],
       },

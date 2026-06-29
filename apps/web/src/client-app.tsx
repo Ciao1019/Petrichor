@@ -15,6 +15,9 @@ import { TwoFactorEnforcementBanner } from '@/components/account/two-factor-enfo
 import { KnowledgeBasePage } from '@/features/pages/knowledge/KnowledgeBasePage'
 import { KnowledgeBaseArticleEditorPage } from '@/features/pages/knowledge/KnowledgeBaseArticleEditorPage'
 import { KnowledgeQaPage } from '@/features/pages/knowledge/KnowledgeQaPage'
+import { DocLibraryListPage } from '@/features/pages/doc-library/DocLibraryListPage'
+import { DocLibraryBrowsePage } from '@/features/pages/doc-library/DocLibraryBrowsePage'
+import { DocLibraryQaPage } from '@/features/pages/doc-library/DocLibraryQaPage'
 import { KnowledgeWikiPage } from '@/features/pages/knowledge/KnowledgeWikiPage'
 import { KnowledgeBaseArticleMindMapPage } from '@/features/pages/knowledge/KnowledgeBaseArticleMindMapPage'
 import { KnowledgeBaseTreePage } from '@/features/pages/knowledge/KnowledgeBaseTreePage'
@@ -142,6 +145,9 @@ function AppThemeScope() {
               <Route path="imports" element={<DocumentImportJobsPage />} />
               <Route path="imports/:jobId" element={<DocumentImportJobDetailPage />} />
               <Route path="qa" element={<KnowledgeQaPage />} />
+              <Route path="doc-library" element={<DocLibraryListPage />} />
+              <Route path="doc-library/qa" element={<DocLibraryQaPage />} />
+              <Route path="doc-library/:libraryId" element={<DocLibraryBrowsePage />} />
               <Route path="wiki" element={<KnowledgeWikiPage />} />
               <Route path="knowledge/:knowledgeBaseId/articles/:articleId" element={<KnowledgeBaseArticleEditorPage />} />
               <Route path="knowledge/:knowledgeBaseId/articles/:articleId/mindmap" element={<KnowledgeBaseArticleMindMapPage />} />

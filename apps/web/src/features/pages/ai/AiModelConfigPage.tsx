@@ -97,12 +97,14 @@ function safeTrim(value: string) {
 function configTypeLabel(configType: AiConfigType) {
   if (configType === "CHAT") return "对话（Chat）"
   if (configType === "VISION") return "多模态（Vision）"
+  if (configType === "DOC_QA") return "文档库问答（Doc QA）"
   return configType
 }
 
 const CONFIG_TYPE_TABS: { value: AiConfigType; label: string }[] = [
   { value: "CHAT", label: "对话（Chat）" },
   { value: "VISION", label: "多模态（Vision）" },
+  { value: "DOC_QA", label: "文档库问答（Doc QA）" },
 ]
 
 function buildEditorDescription() {
@@ -112,6 +114,9 @@ function buildEditorDescription() {
 function buildTypeSummary(configType: AiConfigType) {
   if (configType === "VISION") {
     return "负责将 PDF / Word 每一页图片识别转写为文章内容。"
+  }
+  if (configType === "DOC_QA") {
+    return "负责文档库问答：基于文档库里的文件内容进行 agentic 检索与回答。"
   }
   return "负责文章摘要、思维导图和知识图谱等生成能力。"
 }

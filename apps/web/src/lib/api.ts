@@ -1027,7 +1027,7 @@ export const knowledgeBaseQaApi = {
 }
 
 // AI 模型配置相关类型
-export type AiConfigType = "CHAT" | "VISION"
+export type AiConfigType = "CHAT" | "VISION" | "DOC_QA"
 
 export type AiProtocol = "OPENAI" | "DEEPSEEK" | "OPENAI_COMPAT" | "SILICONFLOW" | "GEMINI"
 
@@ -1676,4 +1676,143 @@ export interface DashboardOverviewResponse {
 export const dashboardApi = {
   /** 加载仪表盘总览：KPI、活动热力图、趋势、分布与最近问答 */
   overview: () => api.post<DashboardOverviewResponse>("/dashboard/overview", {}),
+}
+
+// ===== 文档库（Document Library） =====
+
+export type DocLibraryFileType = "pdf" | "docx" | "xlsx" | "csv"
+
+export interface DocLibrary {
+  id: string
+  name: string
+  description: string | null
+  color: string | null
+  icon: string | null
+  documentCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DocFolderItem {
+  id: string
+  libraryId: string
+  parentId: string | null
+  name: string
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type DocDocumentStatus = "pending" | "parsing" | "ready" | "failed"
+
+export interface DocDocument {
+  id: string
+  libraryId: string
+  folderId: string | null
+  fileName: string
+  title: string
+  fileType: DocLibraryFileType
+  contentType: string | null
+  objectKey: string
+  sizeBytes: number | null
+  pageCount: number | null
+  status: DocDocumentStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DocDocumentDetail extends DocDocument {
+  charCount: number | null
+  blocks: unknown[]
+  summary: string | null
+}
+
+export interface DocLibrarySaveRequest {
+  id?: string | null
+  name: string
+  description?: string | null
+  color?: string | null
+  icon?: string | null
+}
+
+export interface DocFolderSaveRequest {
+  id?: string | null
+  libraryId: string
+  parentId?: string | null
+  name: string
+}
+
+export interface DocDocumentRegisterRequest {
+  libraryId: string
+  folderId?: string | null
+  fileName: string
+  title?: string | null
+  fileType: DocLibraryFileType
+  contentType?: string | null
+  objectKey: string
+  sizeBytes?: number | null
+  pageCount?: number | null
+  blocks?: unknown[]
+  chunks?: { text: string; page?: number | null; locator?: string | null }[]
+  summary?: string | null
+}
+
+export interface DocQaThreadResponse {
+  id: string
+  libraryId: string | null
+  title: string
+  status: string
+  lastMessageAt: string | null
+  metadata: Record<string, unknown> | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DocQaThreadMessage {
+  id: string
+  role: string
+  contentText: string
+  content: Record<string, unknown> | null
+  metadata: Record<string, unknown> | null
+  createdAt: string
+}
+
+export interface DocQaModelOption {
+  configId: string
+  modelId: string
+  modelName: string
+  contextWindow: number
+  isDefault: boolean
+}
+
+export interface DocQaModelInfo {
+  configId: string | null
+  modelId: string | null
+  modelName: string | null
+  contextWindow: number | null
+  availableModels?: DocQaModelOption[]
+}
+
+export const docLibraryApi = {
+  listLibraries: () => api.get<{ libraries: DocLibrary[] }>("/doc-library/library/list"),
+  saveLibrary: (data: DocLibrarySaveRequest) => api.post<{ id: string }>("/doc-library/library/save", data),
+  deleteLibrary: (id: string) => api.post<{ id: string }>("/doc-library/library/delete", { id }),
+
+  listFolders: (libraryId: string) => api.post<{ folders: DocFolderItem[] }>("/doc-library/folder/list", { libraryId }),
+  saveFolder: (data: DocFolderSaveRequest) => api.post<{ id: string }>("/doc-library/folder/save", data),
+  deleteFolder: (id: string) => api.post<{ id: string }>("/doc-library/folder/delete", { id }),
+
+  listDocuments: (libraryId: string) => api.post<{ documents: DocDocument[] }>("/doc-library/document/list", { libraryId }),
+  registerDocument: (data: DocDocumentRegisterRequest) => api.post<{ id: string }>("/doc-library/document/register", data),
+  documentDetail: (id: string) => api.post<{ document: DocDocumentDetail }>("/doc-library/document/detail", { id }),
+  deleteDocument: (id: string) => api.post<{ id: string }>("/doc-library/document/delete", { id }),
+
+  modelInfo: () => api.post<DocQaModelInfo>("/doc-library/model-info", {}),
+  threadList: (params: { cursor?: number; limit?: number; q?: string; libraryId?: string | null }) =>
+    api.post<{ threads: DocQaThreadResponse[]; nextCursor: number | null }>("/doc-library/thread/list", params),
+  threadDetail: (threadId: string) =>
+    api.post<{ thread: DocQaThreadResponse; messages: DocQaThreadMessage[] }>("/doc-library/thread/detail", { threadId }),
+  threadDelete: (threadId: string) => api.post<{ id: string }>("/doc-library/thread/delete", { threadId }),
+  threadDeleteMany: (threadIds: string[]) =>
+    api.post<{ deleted: string[]; failed: { id: string; reason: string }[] }>("/doc-library/thread/delete-many", { threadIds }),
 }

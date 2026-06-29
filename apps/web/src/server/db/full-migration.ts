@@ -821,6 +821,166 @@ create table if not exists petrichor_kb_import_job_page (
 
 create index if not exists idx_petrichor_kb_import_job_page_job
     on petrichor_kb_import_job_page(job_id);
+
+create table if not exists petrichor_doc_library (
+    id bigint generated always as identity primary key,
+    user_id bigint not null references petrichor_user(id) on delete cascade,
+    name text not null,
+    description text,
+    color text,
+    icon text,
+    document_count integer not null default 0,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_petrichor_doc_library_user
+    on petrichor_doc_library(user_id);
+
+create index if not exists petrichor_doc_library_user_updated_idx
+    on petrichor_doc_library(user_id, updated_at);
+
+create table if not exists petrichor_doc_folder (
+    id bigint generated always as identity primary key,
+    user_id bigint not null references petrichor_user(id) on delete cascade,
+    library_id bigint not null references petrichor_doc_library(id) on delete cascade,
+    parent_id bigint references petrichor_doc_folder(id) on delete cascade,
+    name text not null,
+    sort_order integer not null default 0,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_petrichor_doc_folder_user_lib
+    on petrichor_doc_folder(user_id, library_id);
+
+create index if not exists petrichor_doc_folder_parent_idx
+    on petrichor_doc_folder(library_id, parent_id, sort_order);
+
+create table if not exists petrichor_doc_document (
+    id bigint generated always as identity primary key,
+    user_id bigint not null references petrichor_user(id) on delete cascade,
+    library_id bigint not null references petrichor_doc_library(id) on delete cascade,
+    folder_id bigint references petrichor_doc_folder(id) on delete set null,
+    file_name text not null,
+    title text not null,
+    file_type text not null,
+    content_type text,
+    object_key text not null,
+    size_bytes bigint,
+    page_count integer,
+    char_count integer,
+    status text not null default 'pending',
+    blocks_json text,
+    summary text,
+    error text,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_petrichor_doc_document_user_lib
+    on petrichor_doc_document(user_id, library_id);
+
+create index if not exists petrichor_doc_document_folder_idx
+    on petrichor_doc_document(library_id, folder_id);
+
+create index if not exists petrichor_doc_document_status_idx
+    on petrichor_doc_document(user_id, status);
+
+create table if not exists petrichor_doc_chunk (
+    id bigint generated always as identity primary key,
+    user_id bigint not null references petrichor_user(id) on delete cascade,
+    library_id bigint not null references petrichor_doc_library(id) on delete cascade,
+    document_id bigint not null references petrichor_doc_document(id) on delete cascade,
+    chunk_index integer not null,
+    locator text,
+    page integer,
+    text text not null,
+    created_at timestamptz not null default now()
+);
+
+create index if not exists idx_petrichor_doc_chunk_document
+    on petrichor_doc_chunk(document_id, chunk_index);
+
+create index if not exists idx_petrichor_doc_chunk_library
+    on petrichor_doc_chunk(library_id);
+
+create table if not exists petrichor_doc_qa_thread (
+    id bigint generated always as identity primary key,
+    user_id bigint not null references petrichor_user(id) on delete cascade,
+    library_id bigint references petrichor_doc_library(id) on delete set null,
+    title text not null,
+    status text not null default 'ACTIVE',
+    last_message_at timestamptz,
+    metadata_json text,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_petrichor_doc_qa_thread_user
+    on petrichor_doc_qa_thread(user_id, updated_at);
+
+create index if not exists petrichor_doc_qa_thread_user_history_idx
+    on petrichor_doc_qa_thread(user_id, updated_at, id);
+
+create table if not exists petrichor_doc_qa_message (
+    id bigint generated always as identity primary key,
+    thread_id bigint not null references petrichor_doc_qa_thread(id) on delete cascade,
+    user_id bigint not null references petrichor_user(id) on delete cascade,
+    role text not null,
+    content_text text not null default '',
+    content_json text,
+    metadata_json text,
+    created_at timestamptz not null default now()
+);
+
+create index if not exists idx_petrichor_doc_qa_message_thread
+    on petrichor_doc_qa_message(thread_id, created_at);
+
+create table if not exists petrichor_doc_qa_run (
+    id bigint generated always as identity primary key,
+    thread_id bigint not null references petrichor_doc_qa_thread(id) on delete cascade,
+    user_id bigint not null references petrichor_user(id) on delete cascade,
+    status text not null default 'RUNNING',
+    model_name text,
+    error_message text,
+    started_at timestamptz not null default now(),
+    finished_at timestamptz
+);
+
+create index if not exists idx_petrichor_doc_qa_run_thread
+    on petrichor_doc_qa_run(thread_id, started_at);
+
+create table if not exists petrichor_doc_qa_step (
+    id bigint generated always as identity primary key,
+    run_id bigint not null references petrichor_doc_qa_run(id) on delete cascade,
+    user_id bigint not null references petrichor_user(id) on delete cascade,
+    step_type text not null,
+    title text not null,
+    status text not null,
+    payload_json text,
+    started_at timestamptz,
+    finished_at timestamptz,
+    created_at timestamptz not null default now()
+);
+
+create index if not exists idx_petrichor_doc_qa_step_run
+    on petrichor_doc_qa_step(run_id, created_at);
+
+create table if not exists petrichor_doc_qa_artifact (
+    id bigint generated always as identity primary key,
+    thread_id bigint not null references petrichor_doc_qa_thread(id) on delete cascade,
+    run_id bigint not null references petrichor_doc_qa_run(id) on delete cascade,
+    user_id bigint not null references petrichor_user(id) on delete cascade,
+    artifact_type text not null,
+    title text not null,
+    payload_json text,
+    content_md text,
+    created_at timestamptz not null default now()
+);
+
+create index if not exists idx_petrichor_doc_qa_artifact_thread
+    on petrichor_doc_qa_artifact(thread_id, created_at);
 `;
 
 export function buildInitialMigrationSql(): string {

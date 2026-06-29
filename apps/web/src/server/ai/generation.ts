@@ -2,7 +2,7 @@ import { asc, and, eq } from "drizzle-orm"
 import { createOpenAI } from "@ai-sdk/openai"
 import { getDb } from "@/server/db/client"
 import { aiModelConfigs } from "@/server/db/schema"
-import { decodeApiKey, type AiProtocol } from "@/server/ai/config-logic"
+import { decodeApiKey, type AiConfigType, type AiProtocol } from "@/server/ai/config-logic"
 import {
     isDeepSeekProtocolContext,
     prepareDeepSeekChatBody,
@@ -116,11 +116,12 @@ export async function callChatCompletion(input: {
 export async function createChatLanguageModel(input: {
     userId: number
     configId?: number | null
+    configType?: AiConfigType
 }) {
-    const config = await resolveChatConfig(input.userId, input.configId ?? null)
+    const config = await resolveChatConfig(input.userId, input.configId ?? null, input.configType ?? "CHAT")
     const apiKey = decodeApiKey(config.apiKeyEnc)
     if (!apiKey) {
-        throw badRequest("CHAT 配置缺少 API Key")
+        throw badRequest(`${config.configType} 配置缺少 API Key`)
     }
     const baseURL = config.baseUrl?.trim().replace(/\/+$/, "")
     if (!baseURL) {
@@ -147,7 +148,7 @@ export async function createChatLanguageModel(input: {
     }
 }
 
-export async function resolveChatConfig(userId: number, configId: number | null) {
+export async function resolveChatConfig(userId: number, configId: number | null, configType: AiConfigType = "CHAT") {
     if (configId != null) {
         const [config] = await getDb()
             .select()
@@ -155,13 +156,13 @@ export async function resolveChatConfig(userId: number, configId: number | null)
             .where(and(eq(aiModelConfigs.id, configId), eq(aiModelConfigs.userId, userId)))
             .limit(1)
         if (!config) {
-            throw notFound("CHAT 配置不存在")
+            throw notFound(`${configType} 配置不存在`)
         }
-        if (config.configType !== "CHAT") {
-            throw badRequest("配置类型不是 CHAT")
+        if (config.configType !== configType) {
+            throw badRequest(`配置类型不是 ${configType}`)
         }
         if (!config.enabled) {
-            throw badRequest("CHAT 配置未启用")
+            throw badRequest(`${configType} 配置未启用`)
         }
         return config
     }
@@ -171,7 +172,7 @@ export async function resolveChatConfig(userId: number, configId: number | null)
         .from(aiModelConfigs)
         .where(and(
             eq(aiModelConfigs.userId, userId),
-            eq(aiModelConfigs.configType, "CHAT"),
+            eq(aiModelConfigs.configType, configType),
             eq(aiModelConfigs.isDefault, true),
             eq(aiModelConfigs.enabled, true),
         ))
@@ -179,7 +180,7 @@ export async function resolveChatConfig(userId: number, configId: number | null)
         .limit(1)
 
     if (!config) {
-        throw badRequest("未找到可用的默认配置：CHAT")
+        throw badRequest(`未找到可用的默认配置：${configType}`)
     }
     return config
 }
