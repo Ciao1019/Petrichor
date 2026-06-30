@@ -3,6 +3,7 @@ import { and, asc, count, desc, eq, inArray, isNull, like, or } from "drizzle-or
 import { z } from "zod"
 import { callChatCompletion } from "@/server/ai/generation"
 import { getDb } from "@/server/db/client"
+import { knowledgeBaseArticlePath } from "@/lib/dashboard-routes"
 import { normalizeS4ObjectKey, normalizeS4ObjectUrl } from "@/lib/s4-url"
 import {
     knowledgeBaseAgentArtifacts,
@@ -817,21 +818,29 @@ export async function searchWikiPagesAcrossKbs(input: {
         .sort((left, right) => right.score - left.score || right.page.updatedAt.getTime() - left.page.updatedAt.getTime())
         .slice(0, input.limit ?? 10)
 
-    return ranked.map((item) => ({
-        knowledgeBaseId: String(item.page.knowledgeBaseId),
-        knowledgeBaseName: item.kbName,
-        pageKey: item.page.pageKey,
-        articleId: extractArticleIdFromPageKey(item.page.pageKey),
-        title: item.page.title,
-        kind: item.page.kind,
-        summary: item.page.summary || summarizePlainText(item.page.contentMd, 180),
-        updatedAt: formatDate(item.page.updatedAt),
-    }))
+    return ranked.map((item) => {
+        const articleId = extractArticleIdFromPageKey(item.page.pageKey)
+        return {
+            knowledgeBaseId: String(item.page.knowledgeBaseId),
+            knowledgeBaseName: item.kbName,
+            pageKey: item.page.pageKey,
+            articleId,
+            href: sourceArticleHref(item.page.knowledgeBaseId, articleId),
+            title: item.page.title,
+            kind: item.page.kind,
+            summary: item.page.summary || summarizePlainText(item.page.contentMd, 180),
+            updatedAt: formatDate(item.page.updatedAt),
+        }
+    })
 }
 
 function extractArticleIdFromPageKey(pageKey: string): string | null {
     const match = pageKey.match(/^source-(\d+)$/)
     return match ? match[1] : null
+}
+
+function sourceArticleHref(knowledgeBaseId: number | string, articleId: string | null) {
+    return articleId ? knowledgeBaseArticlePath(String(knowledgeBaseId), articleId) : null
 }
 
 export async function readWikiPageAnyKb(userId: number, knowledgeBaseId: number, pageKey: string) {
@@ -1068,14 +1077,18 @@ export async function searchWikiPagesForAgent(input: {
         .sort((left, right) => right.score - left.score || right.page.updatedAt.getTime() - left.page.updatedAt.getTime())
         .slice(0, input.limit ?? 8)
 
-    return ranked.map((item) => ({
-        pageKey: item.page.pageKey,
-        articleId: extractArticleIdFromPageKey(item.page.pageKey),
-        title: item.page.title,
-        kind: item.page.kind,
-        summary: item.page.summary || summarizePlainText(item.page.contentMd, 180),
-        updatedAt: formatDate(item.page.updatedAt),
-    }))
+    return ranked.map((item) => {
+        const articleId = extractArticleIdFromPageKey(item.page.pageKey)
+        return {
+            pageKey: item.page.pageKey,
+            articleId,
+            href: sourceArticleHref(input.knowledgeBaseId, articleId),
+            title: item.page.title,
+            kind: item.page.kind,
+            summary: item.page.summary || summarizePlainText(item.page.contentMd, 180),
+            updatedAt: formatDate(item.page.updatedAt),
+        }
+    })
 }
 
 export async function readWikiPageForAgent(userId: number, knowledgeBaseId: number, pageKey: string) {
@@ -1091,6 +1104,7 @@ export async function readWikiPageForAgent(userId: number, knowledgeBaseId: numb
         knowledgeBaseId: String(knowledgeBaseId),
         pageKey: detail.pageKey,
         articleId: extractArticleIdFromPageKey(detail.pageKey),
+        href: sourceArticleHref(knowledgeBaseId, extractArticleIdFromPageKey(detail.pageKey)),
         title: detail.title,
         kind: detail.kind,
         contentMd: detail.contentMd,
@@ -1114,7 +1128,9 @@ export async function readSourceArticleForAgent(userId: number, knowledgeBaseId:
         throw notFound("源文档不存在")
     }
     return {
+        knowledgeBaseId: String(knowledgeBaseId),
         articleId: String(article.id),
+        href: knowledgeBaseArticlePath(String(knowledgeBaseId), String(article.id)),
         title: article.title,
         contentMd: article.contentMd,
         media: extractAgentImageReferences(article.contentMd, {

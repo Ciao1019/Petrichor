@@ -1,5 +1,7 @@
 import { and, asc, desc, eq, like, or, sql } from "drizzle-orm"
 import { z } from "zod"
+import { getServerConfig } from "@/config/server"
+import { CACHE_TTL_SECONDS, cacheDropByPrefix, cacheKey, cacheReadThrough } from "@/server/cache"
 import { getDb } from "@/server/db/client"
 import {
     docChunks,
@@ -8,6 +10,9 @@ import {
     docLibraries,
 } from "@/server/db/schema"
 import { badRequest, notFound } from "@/server/http/response"
+import { docLibraryDocumentPath } from "@/lib/dashboard-routes"
+import { deleteS3Objects, type S3DeleteFailure } from "@/server/upload/s3-delete"
+import { stripS4KeyPrefix } from "@/server/upload/s3-presign"
 
 export const idSchema = z.union([z.string(), z.number()]).transform((value, ctx) => {
     const raw = String(value).trim()
@@ -30,6 +35,23 @@ export type DocFileType = (typeof FILE_TYPES)[number]
 
 const MAX_CHUNKS = 4000
 const MAX_CHUNK_CHARS = 4000
+
+// ===== 文档库缓存键（按用户隔离） =====
+
+const docLibraryListKey = (userId: number) => cacheKey("doclib", userId, "libraries")
+const docFolderListKey = (userId: number, libraryId: number) => cacheKey("doclib", userId, "lib", libraryId, "folders")
+const docDocumentListKey = (userId: number, libraryId: number) => cacheKey("doclib", userId, "lib", libraryId, "documents")
+const docDocumentDetailKey = (userId: number, documentId: number) => cacheKey("doclib", userId, "doc", documentId)
+
+/** 失效某用户文档库下的全部缓存（库/文件夹/文档列表与文档详情）。 */
+function invalidateDocLibraryCache(userId: number) {
+    return cacheDropByPrefix(`${cacheKey("doclib", userId)}:`)
+}
+
+export type DocumentStorageCleanupSummary = {
+    deletedObjectKeys: string[]
+    failedObjectKeys: S3DeleteFailure[]
+}
 
 export const librarySaveSchema = z.object({
     id: optionalIdSchema,
@@ -68,13 +90,15 @@ export const documentRegisterSchema = z.object({
 // ===== 文档库 CRUD =====
 
 export async function listLibraries(userId: number) {
-    const db = getDb()
-    const rows = await db
-        .select()
-        .from(docLibraries)
-        .where(eq(docLibraries.userId, userId))
-        .orderBy(desc(docLibraries.updatedAt), desc(docLibraries.id))
-    return rows.map(toLibraryResponse)
+    return cacheReadThrough(docLibraryListKey(userId), CACHE_TTL_SECONDS.docLibraryCollection, async () => {
+        const db = getDb()
+        const rows = await db
+            .select()
+            .from(docLibraries)
+            .where(eq(docLibraries.userId, userId))
+            .orderBy(desc(docLibraries.updatedAt), desc(docLibraries.id))
+        return rows.map(toLibraryResponse)
+    })
 }
 
 export async function saveLibrary(input: {
@@ -99,6 +123,7 @@ export async function saveLibrary(input: {
                 updatedAt: now,
             })
             .where(and(eq(docLibraries.id, input.id), eq(docLibraries.userId, input.userId)))
+        await invalidateDocLibraryCache(input.userId)
         return { id: String(input.id) }
     }
     const [created] = await db
@@ -114,19 +139,26 @@ export async function saveLibrary(input: {
             updatedAt: now,
         })
         .returning({ id: docLibraries.id })
+    await invalidateDocLibraryCache(input.userId)
     return { id: String(created!.id) }
 }
 
 export async function deleteLibrary(userId: number, libraryId: number) {
     const db = getDb()
     await getLibraryOrThrow(userId, libraryId)
+    const docs = await db
+        .select({ objectKey: docDocuments.objectKey })
+        .from(docDocuments)
+        .where(and(eq(docDocuments.libraryId, libraryId), eq(docDocuments.userId, userId)))
     await db.transaction(async (tx) => {
         await tx.delete(docChunks).where(eq(docChunks.libraryId, libraryId))
         await tx.delete(docDocuments).where(eq(docDocuments.libraryId, libraryId))
         await tx.delete(docFolders).where(eq(docFolders.libraryId, libraryId))
         await tx.delete(docLibraries).where(and(eq(docLibraries.id, libraryId), eq(docLibraries.userId, userId)))
     })
-    return { id: String(libraryId) }
+    const storageCleanup = await cleanupDocumentObjectKeys(userId, docs.map((doc) => doc.objectKey))
+    await invalidateDocLibraryCache(userId)
+    return { id: String(libraryId), storageCleanup }
 }
 
 export async function getLibraryOrThrow(userId: number, libraryId: number) {
@@ -142,20 +174,22 @@ export async function getLibraryOrThrow(userId: number, libraryId: number) {
 // ===== 文件夹 =====
 
 export async function listFolders(userId: number, libraryId: number) {
-    const rows = await getDb()
-        .select()
-        .from(docFolders)
-        .where(and(eq(docFolders.userId, userId), eq(docFolders.libraryId, libraryId)))
-        .orderBy(asc(docFolders.sortOrder), asc(docFolders.id))
-    return rows.map((row) => ({
-        id: String(row.id),
-        libraryId: String(row.libraryId),
-        parentId: row.parentId != null ? String(row.parentId) : null,
-        name: row.name,
-        sortOrder: row.sortOrder,
-        createdAt: row.createdAt.toISOString(),
-        updatedAt: row.updatedAt.toISOString(),
-    }))
+    return cacheReadThrough(docFolderListKey(userId, libraryId), CACHE_TTL_SECONDS.docLibraryCollection, async () => {
+        const rows = await getDb()
+            .select()
+            .from(docFolders)
+            .where(and(eq(docFolders.userId, userId), eq(docFolders.libraryId, libraryId)))
+            .orderBy(asc(docFolders.sortOrder), asc(docFolders.id))
+        return rows.map((row) => ({
+            id: String(row.id),
+            libraryId: String(row.libraryId),
+            parentId: row.parentId != null ? String(row.parentId) : null,
+            name: row.name,
+            sortOrder: row.sortOrder,
+            createdAt: row.createdAt.toISOString(),
+            updatedAt: row.updatedAt.toISOString(),
+        }))
+    })
 }
 
 export async function saveFolder(input: {
@@ -173,6 +207,7 @@ export async function saveFolder(input: {
             .update(docFolders)
             .set({ name: input.name, parentId: input.parentId, updatedAt: now })
             .where(and(eq(docFolders.id, input.id), eq(docFolders.userId, input.userId)))
+        await invalidateDocLibraryCache(input.userId)
         return { id: String(input.id) }
     }
     const [created] = await db
@@ -187,6 +222,7 @@ export async function saveFolder(input: {
             updatedAt: now,
         })
         .returning({ id: docFolders.id })
+    await invalidateDocLibraryCache(input.userId)
     return { id: String(created!.id) }
 }
 
@@ -195,6 +231,7 @@ export async function deleteFolder(userId: number, folderId: number) {
     // 文件夹内的文档归位到根目录，子文件夹级联（DB on delete cascade 已处理子文件夹）
     await db.update(docDocuments).set({ folderId: null }).where(and(eq(docDocuments.userId, userId), eq(docDocuments.folderId, folderId)))
     await db.delete(docFolders).where(and(eq(docFolders.id, folderId), eq(docFolders.userId, userId)))
+    await invalidateDocLibraryCache(userId)
     return { id: String(folderId) }
 }
 
@@ -272,66 +309,88 @@ export async function registerDocument(input: {
         return newId
     })
 
+    await invalidateDocLibraryCache(input.userId)
     return { id: String(documentId) }
 }
 
 export async function listDocuments(userId: number, libraryId: number) {
-    const rows = await getDb()
-        .select({
-            id: docDocuments.id,
-            libraryId: docDocuments.libraryId,
-            folderId: docDocuments.folderId,
-            fileName: docDocuments.fileName,
-            title: docDocuments.title,
-            fileType: docDocuments.fileType,
-            contentType: docDocuments.contentType,
-            objectKey: docDocuments.objectKey,
-            sizeBytes: docDocuments.sizeBytes,
-            pageCount: docDocuments.pageCount,
-            status: docDocuments.status,
-            createdAt: docDocuments.createdAt,
-            updatedAt: docDocuments.updatedAt,
-        })
-        .from(docDocuments)
-        .where(and(eq(docDocuments.userId, userId), eq(docDocuments.libraryId, libraryId)))
-        .orderBy(desc(docDocuments.createdAt), desc(docDocuments.id))
-    return rows.map((row) => ({
-        id: String(row.id),
-        libraryId: String(row.libraryId),
-        folderId: row.folderId != null ? String(row.folderId) : null,
-        fileName: row.fileName,
-        title: row.title,
-        fileType: row.fileType,
-        contentType: row.contentType,
-        objectKey: row.objectKey,
-        sizeBytes: row.sizeBytes,
-        pageCount: row.pageCount,
-        status: row.status,
-        createdAt: row.createdAt.toISOString(),
-        updatedAt: row.updatedAt.toISOString(),
-    }))
+    return cacheReadThrough(docDocumentListKey(userId, libraryId), CACHE_TTL_SECONDS.docLibraryCollection, async () => {
+        const rows = await getDb()
+            .select({
+                id: docDocuments.id,
+                libraryId: docDocuments.libraryId,
+                folderId: docDocuments.folderId,
+                fileName: docDocuments.fileName,
+                title: docDocuments.title,
+                fileType: docDocuments.fileType,
+                contentType: docDocuments.contentType,
+                objectKey: docDocuments.objectKey,
+                sizeBytes: docDocuments.sizeBytes,
+                pageCount: docDocuments.pageCount,
+                status: docDocuments.status,
+                createdAt: docDocuments.createdAt,
+                updatedAt: docDocuments.updatedAt,
+            })
+            .from(docDocuments)
+            .where(and(eq(docDocuments.userId, userId), eq(docDocuments.libraryId, libraryId)))
+            .orderBy(desc(docDocuments.createdAt), desc(docDocuments.id))
+        return rows.map((row) => ({
+            id: String(row.id),
+            libraryId: String(row.libraryId),
+            folderId: row.folderId != null ? String(row.folderId) : null,
+            fileName: row.fileName,
+            title: row.title,
+            fileType: row.fileType,
+            contentType: row.contentType,
+            objectKey: row.objectKey,
+            sizeBytes: row.sizeBytes,
+            pageCount: row.pageCount,
+            status: row.status,
+            createdAt: row.createdAt.toISOString(),
+            updatedAt: row.updatedAt.toISOString(),
+        }))
+    })
 }
 
 export async function getDocumentDetail(userId: number, documentId: number) {
-    const doc = await getDocumentOrThrow(userId, documentId)
-    return {
-        id: String(doc.id),
-        libraryId: String(doc.libraryId),
-        folderId: doc.folderId != null ? String(doc.folderId) : null,
-        fileName: doc.fileName,
-        title: doc.title,
-        fileType: doc.fileType,
-        contentType: doc.contentType,
-        objectKey: doc.objectKey,
-        sizeBytes: doc.sizeBytes,
-        pageCount: doc.pageCount,
-        charCount: doc.charCount,
-        status: doc.status,
-        blocks: parseJsonArray(doc.blocksJson),
-        summary: doc.summary,
-        createdAt: doc.createdAt.toISOString(),
-        updatedAt: doc.updatedAt.toISOString(),
-    }
+    return cacheReadThrough(docDocumentDetailKey(userId, documentId), CACHE_TTL_SECONDS.docDocumentDetail, async () => {
+        const doc = await getDocumentOrThrow(userId, documentId)
+        const chunks = await getDb()
+            .select({
+                chunkIndex: docChunks.chunkIndex,
+                page: docChunks.page,
+                locator: docChunks.locator,
+                text: docChunks.text,
+            })
+            .from(docChunks)
+            .where(and(eq(docChunks.documentId, documentId), eq(docChunks.userId, userId)))
+            .orderBy(asc(docChunks.chunkIndex))
+
+        return {
+            id: String(doc.id),
+            libraryId: String(doc.libraryId),
+            folderId: doc.folderId != null ? String(doc.folderId) : null,
+            fileName: doc.fileName,
+            title: doc.title,
+            fileType: doc.fileType,
+            contentType: doc.contentType,
+            objectKey: doc.objectKey,
+            sizeBytes: doc.sizeBytes,
+            pageCount: doc.pageCount,
+            charCount: doc.charCount,
+            status: doc.status,
+            blocks: parseJsonArray(doc.blocksJson),
+            chunks: chunks.map((chunk) => ({
+                chunkIndex: chunk.chunkIndex,
+                page: chunk.page,
+                locator: chunk.locator,
+                text: chunk.text,
+            })),
+            summary: doc.summary,
+            createdAt: doc.createdAt.toISOString(),
+            updatedAt: doc.updatedAt.toISOString(),
+        }
+    })
 }
 
 export async function getDocumentOrThrow(userId: number, documentId: number) {
@@ -352,10 +411,12 @@ export async function deleteDocument(userId: number, documentId: number) {
         await tx.delete(docDocuments).where(and(eq(docDocuments.id, documentId), eq(docDocuments.userId, userId)))
         await tx
             .update(docLibraries)
-            .set({ documentCount: sql`max(${docLibraries.documentCount} - 1, 0)`, updatedAt: new Date() })
+            .set({ documentCount: decrementDocumentCountSql(), updatedAt: new Date() })
             .where(and(eq(docLibraries.id, doc.libraryId), eq(docLibraries.userId, userId)))
     })
-    return { id: String(documentId), objectKey: doc.objectKey }
+    const storageCleanup = await cleanupDocumentObjectKeys(userId, [doc.objectKey])
+    await invalidateDocLibraryCache(userId)
+    return { id: String(documentId), objectKey: doc.objectKey, storageCleanup }
 }
 
 // ===== Agentic 检索：工具用 =====
@@ -366,6 +427,7 @@ export async function listDocumentsForQa(userId: number, libraryId: number | nul
     const rows = await getDb()
         .select({
             id: docDocuments.id,
+            libraryId: docDocuments.libraryId,
             title: docDocuments.title,
             fileName: docDocuments.fileName,
             fileType: docDocuments.fileType,
@@ -377,6 +439,8 @@ export async function listDocumentsForQa(userId: number, libraryId: number | nul
         .limit(200)
     return rows.map((row) => ({
         documentId: String(row.id),
+        libraryId: String(row.libraryId),
+        href: docLibraryDocumentPath(String(row.libraryId), String(row.id)),
         title: row.title,
         fileName: row.fileName,
         fileType: row.fileType,
@@ -411,6 +475,7 @@ export async function searchChunks(input: {
         .select({
             chunkId: docChunks.id,
             documentId: docChunks.documentId,
+            libraryId: docChunks.libraryId,
             page: docChunks.page,
             locator: docChunks.locator,
             text: docChunks.text,
@@ -438,6 +503,8 @@ export async function searchChunks(input: {
     return scored.slice(0, limit).map(({ row }) => ({
         chunkId: String(row.chunkId),
         documentId: String(row.documentId),
+        libraryId: String(row.libraryId),
+        href: docLibraryDocumentPath(String(row.libraryId), String(row.documentId)),
         title: row.title,
         fileName: row.fileName,
         fileType: row.fileType,
@@ -470,6 +537,8 @@ export async function readDocumentChunks(input: {
         .offset(from)
     return {
         documentId: String(doc.id),
+        libraryId: String(doc.libraryId),
+        href: docLibraryDocumentPath(String(doc.libraryId), String(doc.id)),
         title: doc.title,
         fileName: doc.fileName,
         fileType: doc.fileType,
@@ -510,4 +579,71 @@ export function assertFileType(value: unknown): DocFileType {
     const v = String(value ?? "").toLowerCase()
     if ((FILE_TYPES as readonly string[]).includes(v)) return v as DocFileType
     throw badRequest("仅支持 PDF / docx / xlsx / csv")
+}
+
+function decrementDocumentCountSql() {
+    return sql<number>`case when ${docLibraries.documentCount} > 0 then ${docLibraries.documentCount} - 1 else 0 end`
+}
+
+function normalizeOwnedDocumentObjectKey(
+    objectKey: string,
+    userId: number,
+): { key: string } | { failure: S3DeleteFailure } {
+    const key = stripS4KeyPrefix(objectKey).trim()
+    if (!key) {
+        return {
+            failure: {
+                errorMessage: "文档对象键为空",
+                objectKey,
+            },
+        }
+    }
+    if (!key.startsWith(`uploads/${userId}/`)) {
+        return {
+            failure: {
+                errorMessage: "文档对象键不属于当前用户，已跳过远程删除",
+                objectKey: key,
+            },
+        }
+    }
+    return { key }
+}
+
+async function cleanupDocumentObjectKeys(
+    userId: number,
+    objectKeys: string[],
+): Promise<DocumentStorageCleanupSummary> {
+    const uniqueObjectKeys = [...new Set(objectKeys)]
+    const normalizedKeys: string[] = []
+    const failedObjectKeys: S3DeleteFailure[] = []
+
+    for (const objectKey of uniqueObjectKeys) {
+        const normalized = normalizeOwnedDocumentObjectKey(objectKey, userId)
+        if ("failure" in normalized) {
+            failedObjectKeys.push(normalized.failure)
+        } else {
+            normalizedKeys.push(normalized.key)
+        }
+    }
+
+    if (normalizedKeys.length === 0) {
+        return { deletedObjectKeys: [], failedObjectKeys }
+    }
+
+    try {
+        const summary = await deleteS3Objects(getServerConfig().s3, normalizedKeys)
+        return {
+            deletedObjectKeys: summary.deletedObjectKeys,
+            failedObjectKeys: [...failedObjectKeys, ...summary.failedObjectKeys],
+        }
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "未知错误"
+        return {
+            deletedObjectKeys: [],
+            failedObjectKeys: [
+                ...failedObjectKeys,
+                ...normalizedKeys.map((objectKey) => ({ errorMessage, objectKey })),
+            ],
+        }
+    }
 }

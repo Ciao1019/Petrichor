@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, like } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNull, like } from "drizzle-orm"
 import { z } from "zod"
 import { getDb } from "@/server/db/client"
 import {
@@ -18,6 +18,7 @@ export const docQaThreadListSchema = z.object({
     limit: z.number().int().positive().max(100).optional(),
     q: z.string().trim().max(120).optional(),
     libraryId: z.union([z.string(), z.number()]).optional(),
+    scope: z.enum(["cross"]).optional(),
 })
 
 export const docQaThreadDeleteManySchema = z.object({
@@ -147,12 +148,14 @@ export async function listDocQaThreads(input: {
     cursor?: number
     query?: string
     libraryId?: number | null
+    scope?: "cross"
 }) {
     const db = getDb()
     const limit = Math.min(Math.max(input.limit ?? 30, 1), 100)
     const offset = input.cursor ?? 0
     const filters = [eq(docQaThreads.userId, input.userId)]
-    if (input.libraryId != null) filters.push(eq(docQaThreads.libraryId, input.libraryId))
+    if (input.scope === "cross") filters.push(isNull(docQaThreads.libraryId))
+    else if (input.libraryId != null) filters.push(eq(docQaThreads.libraryId, input.libraryId))
     const keyword = input.query?.trim()
     if (keyword) {
         const pattern = `%${keyword.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`

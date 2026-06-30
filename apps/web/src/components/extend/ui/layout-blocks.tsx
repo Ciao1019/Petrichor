@@ -8176,6 +8176,51 @@ export function blockToArea(
   }
 }
 
+/**
+ * 把检索召回的片段文本（chunk / snippet）反向匹配到版面文本块。
+ * PDF 的 chunk 文本由「同一页所有 block 文本拼接后再切分」得到，
+ * 因此 snippet 通常包含若干个完整 block 的文本，可用归一化包含关系命中。
+ */
+function normalizeForMatch(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/<[^>]*>/g, " ") // 去掉 figure/caption 等 HTML 标签
+    .replace(/[#*_`>~]+/g, " ") // 去掉 markdown 标记
+    .replace(/[\s　]+/g, "") // 去掉所有空白（兼容中文）
+    .replace(/[.,;:!?！？，。；：、()（）[\]【】"'""'']/g, "")
+}
+
+export function matchRecallBlockIds(
+  blocks: OcrBlock[],
+  page: number | null | undefined,
+  text: string
+): string[] {
+  if (!page || page <= 0) return []
+  const snippet = normalizeForMatch(text)
+  if (snippet.length < 4) return []
+  const matched: string[] = []
+  for (const block of blocks) {
+    if (block.page !== page) continue
+    const normalized = normalizeForMatch(block.text)
+    if (normalized.length < 2) continue
+    if (snippet.includes(normalized)) {
+      matched.push(block.id)
+      continue
+    }
+    // snippet 比 block 短（罕见）：反向包含
+    if (normalized.length >= 8 && snippet.length >= 12 && normalized.includes(snippet)) {
+      matched.push(block.id)
+      continue
+    }
+    // snippet 被截断时，尾部 block 可能只命中前缀
+    const prefix = normalized.slice(0, Math.min(16, normalized.length))
+    if (prefix.length >= 6 && snippet.includes(prefix)) {
+      matched.push(block.id)
+    }
+  }
+  return matched
+}
+
 const OcrBlockMarkdown = React.memo(function OcrBlockMarkdown({
   text,
 }: {
@@ -8243,10 +8288,12 @@ const OcrBlockMarkdown = React.memo(function OcrBlockMarkdown({
 const OcrBlockButton = React.memo(function OcrBlockButton({
   block,
   isActive,
+  isHighlighted,
   onFocusBlock,
 }: {
   block: OcrBlock
   isActive: boolean
+  isHighlighted?: boolean
   onFocusBlock: (block: OcrBlock) => void
 }) {
   const style = BLOCK_STYLES[block.type]
@@ -8258,7 +8305,9 @@ const OcrBlockButton = React.memo(function OcrBlockButton({
       onFocus={() => onFocusBlock(block)}
       className={cn(
         "w-full rounded-lg border bg-background p-3 text-left hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-        isActive && style.ring
+        isActive && !isHighlighted && style.ring,
+        isHighlighted &&
+          "border-amber-400/80 bg-amber-50/80 ring-2 ring-amber-400/50 dark:border-amber-400/60 dark:bg-amber-400/10"
       )}
     >
       <div className="min-w-0">
@@ -8273,9 +8322,15 @@ const OcrBlockButton = React.memo(function OcrBlockButton({
               <HugeiconsIcon icon={style.icon} className="size-3.5" />
               {style.label}
             </div>
-            <div className="truncate text-xs text-muted-foreground">
-              {Math.round(block.confidence * 100)}%
-            </div>
+            {isHighlighted ? (
+              <span className="inline-flex shrink-0 items-center rounded-full bg-amber-400/20 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                命中
+              </span>
+            ) : (
+              <div className="truncate text-xs text-muted-foreground">
+                {Math.round(block.confidence * 100)}%
+              </div>
+            )}
           </div>
           <div className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
             p. {block.page}
@@ -8292,11 +8347,15 @@ const OcrBlockButton = React.memo(function OcrBlockButton({
 export const OcrBlockOverlay = React.memo(function OcrBlockOverlay({
   block,
   isActive,
+  isHighlighted,
+  pulse,
   pageHeight,
   pageWidth,
 }: {
   block: OcrBlock
   isActive?: boolean
+  isHighlighted?: boolean
+  pulse?: boolean
   pageHeight?: number
   pageWidth?: number
 }) {
@@ -8305,8 +8364,13 @@ export const OcrBlockOverlay = React.memo(function OcrBlockOverlay({
   return (
     <div
       className={cn(
-        "pointer-events-none absolute z-10 border",
-        isActive ? style.overlay : style.mutedOverlay
+        "pointer-events-none absolute border",
+        isHighlighted
+          ? cn(
+              "z-20 rounded-[3px] border-2 border-amber-400 bg-amber-300/30 shadow-[0_0_0_3px_rgba(251,191,36,0.22)] dark:border-amber-300 dark:bg-amber-400/25",
+              pulse && "animate-pulse"
+            )
+          : cn("z-10", isActive ? style.overlay : style.mutedOverlay)
       )}
       style={blockToArea(
         block,
@@ -8323,11 +8387,13 @@ export function OcrBlocksPanel({
   blocks,
   className,
   onBlockFocus,
+  highlightedBlockIds,
 }: {
   activeBlockId?: string
   blocks: OcrBlock[]
   className?: string
   onBlockFocus?: (block: OcrBlock) => void
+  highlightedBlockIds?: Set<string>
 }) {
   const scrollViewportRef = React.useRef<HTMLDivElement | null>(null)
   const [localActiveBlockId, setLocalActiveBlockId] = React.useState(
@@ -8383,6 +8449,17 @@ export function OcrBlocksPanel({
     setLocalActiveBlockId(firstBlock.id)
   }, [activeBlockId, blocks, firstBlock, localActiveBlockId])
 
+  // 召回命中时，把列表滚动到第一个命中块
+  React.useEffect(() => {
+    if (!highlightedBlockIds || highlightedBlockIds.size === 0) return
+    const index = blocks.findIndex((block) => highlightedBlockIds.has(block.id))
+    if (index < 0) return
+    const frame = requestAnimationFrame(() => {
+      virtualizer.scrollToIndex(index, { align: "center" })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [blocks, highlightedBlockIds, virtualizer])
+
   return (
     <aside
       className={cn("flex h-[420px] min-h-0 flex-col bg-background", className)}
@@ -8418,6 +8495,7 @@ export function OcrBlocksPanel({
                   <OcrBlockButton
                     block={block}
                     isActive={block.id === activeBlock?.id}
+                    isHighlighted={highlightedBlockIds?.has(block.id)}
                     onFocusBlock={focusBlock}
                   />
                 </div>

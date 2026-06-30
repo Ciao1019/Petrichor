@@ -105,11 +105,13 @@ import {
 } from "@/components/ui/dropdown-menu"
 import {
   type KnowledgeBaseAgentThreadResponse,
+  knowledgeBaseArticleApi,
   type KnowledgeBaseQaModelInfo,
   type KnowledgeBaseQaModelOption,
   type KnowledgeBaseQaSummary,
   knowledgeBaseQaApi,
 } from "@/lib/api"
+import { knowledgeBaseArticlePath } from "@/lib/dashboard-routes"
 import { cn } from "@/lib/utils"
 import { gsap } from "@/lib/gsap"
 import { GsapFade } from "@/components/ui/gsap-transition"
@@ -153,15 +155,27 @@ function CitationToolRender({ result, args, status }: { result: unknown; args: u
   const citations = Array.isArray(payload?.citations)
     ? payload.citations.map((item) => safeParseSerializableCitation(item)).filter(isPresent)
     : []
-  const handleNavigate = React.useCallback((href: string) => {
-    if (isInternalAppPath(href)) {
-      navigate(href)
+  const handleNavigate = React.useCallback(async (href: string) => {
+    const legacyDocumentId = parseLegacyDocumentHref(href)
+    if (legacyDocumentId) {
+      try {
+        const res = await knowledgeBaseArticleApi.detail(legacyDocumentId)
+        navigate(knowledgeBaseArticlePath(res.data.knowledgeBaseId, res.data.articleId))
+      } catch {
+        toast.error("无法打开引用文档")
+      }
+      return
+    }
+
+    const internalPath = toInternalAppPath(href)
+    if (internalPath) {
+      navigate(internalPath)
       return
     }
     if (typeof window !== "undefined") {
       window.open(href, "_blank", "noopener,noreferrer")
     }
-  }, [navigate])
+}, [navigate])
   if (citations.length === 0) {
     return <ToolStatusCard title="引用来源" status={status} />
   }
@@ -175,15 +189,26 @@ function CitationToolRender({ result, args, status }: { result: unknown; args: u
   )
 }
 
-function isInternalAppPath(href: string) {
+function toInternalAppPath(href: string) {
   if (!href) return false
-  if (href.startsWith("/")) return true
+  if (href.startsWith("/") && !href.startsWith("//")) return href
   if (typeof window === "undefined") return false
   try {
     const url = new URL(href, window.location.origin)
-    return url.origin === window.location.origin
+    return url.origin === window.location.origin ? `${url.pathname}${url.search}${url.hash}` : false
   } catch {
     return false
+  }
+}
+
+function parseLegacyDocumentHref(href: string) {
+  if (!href) return null
+  try {
+    const url = new URL(href, typeof window === "undefined" ? "http://localhost" : window.location.origin)
+    const match = url.pathname.match(/^\/document\/(\d+)$/)
+    return match?.[1] ?? null
+  } catch {
+    return null
   }
 }
 
@@ -483,17 +508,33 @@ export function KnowledgeQaPage() {
   }, [])
 
   React.useEffect(() => {
-    void fetchFirstPage()
+    let cancelled = false
+    queueMicrotask(() => {
+      if (!cancelled) void fetchFirstPage()
+    })
+    return () => {
+      cancelled = true
+    }
   }, [fetchFirstPage])
 
   React.useEffect(() => {
-    void refreshKnowledgeBases()
-    knowledgeBaseQaApi.modelInfo()
-      .then((response) => {
-        setModelInfo(response.data)
-        setSelectedConfigId((current) => current ?? response.data.configId)
-      })
-      .catch(() => setModelInfo(null))
+    let cancelled = false
+    queueMicrotask(() => {
+      if (cancelled) return
+      void refreshKnowledgeBases()
+      knowledgeBaseQaApi.modelInfo()
+        .then((response) => {
+          if (cancelled) return
+          setModelInfo(response.data)
+          setSelectedConfigId((current) => current ?? response.data.configId)
+        })
+        .catch(() => {
+          if (!cancelled) setModelInfo(null)
+        })
+    })
+    return () => {
+      cancelled = true
+    }
   }, [refreshKnowledgeBases])
 
   const selectedModel = React.useMemo<KnowledgeBaseQaModelInfo | null>(() => {
@@ -1053,11 +1094,6 @@ function QaChatPanel({
   onConfigChange: (next: string) => void
   onComposerFocus?: () => void
 }) {
-  const configIdRef = React.useRef(selectedConfigId)
-  React.useEffect(() => {
-    configIdRef.current = selectedConfigId
-  }, [selectedConfigId])
-
   const transport = React.useMemo(() => new AssistantChatTransport<AssistantUIMessage>({
     api: "/api/kb/agent/chat",
     body: {
@@ -1066,7 +1102,7 @@ function QaChatPanel({
     },
     credentials: "include",
     fetch: async (input, init) => {
-      const currentConfigId = configIdRef.current
+      const currentConfigId = selectedConfigId
       let nextInit = init
       if (currentConfigId && init && typeof init.body === "string") {
         try {
@@ -1090,7 +1126,7 @@ function QaChatPanel({
       }
       return response
     },
-  }), [knowledgeBaseId, onThreadKnown, threadId])
+  }), [knowledgeBaseId, onThreadKnown, selectedConfigId, threadId])
 
   const suggestions = React.useMemo(() => {
     if (knowledgeBaseId == null) {

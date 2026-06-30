@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
         const user = await requireCurrentUser(request)
         const input = schema.parse(await readJson(request))
         const result = await deleteDocument(user.id, input.id)
-        return ok({ id: result.id })
+        return ok({ id: result.id, storageCleanup: result.storageCleanup })
     } catch (error) {
         return toErrorResponse(error, request.nextUrl.pathname)
     }

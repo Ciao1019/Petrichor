@@ -407,7 +407,7 @@ function buildKnowledgeAgentTools(context: {
             execute: async ({ articleId }) => await readSourceArticleForAgent(context.userId, context.knowledgeBaseId, articleId),
         }),
         show_citations: tool({
-            description: "把最终答案使用的 Wiki 页面或源文档引用渲染为引用卡片。",
+            description: "把最终答案使用的 Wiki 页面或源文档引用渲染为引用卡片。href 必须优先使用检索/读取工具返回的 href，或按 `/dashboard/knowledge/<knowledgeBaseId>/articles/<articleId>` 生成，禁止使用 `/document/<id>`。",
             inputSchema: citationToolSchema,
             execute: async ({ citations }) => ({
                 id: `citations-${Date.now()}`,
@@ -469,7 +469,7 @@ function buildAgentSystemPrompt() {
         "1. 回答关于文档内容的问题时，第一步先调用 search_document_tree 在章节目录树上做推理式检索，定位最相关的章节（这是默认首选的检索方式）。",
         "1.1 树检索与 Wiki/源文档是互补关系，应按需配合：当命中片段不足、需要更完整的上下文，或要展示图片/视频/附件等媒体时，再结合 read_tree_node 读该章节全文、或 read_wiki_page / read_source_article 读整篇来补全，不要只停在树检索片段上。read_wiki_index 用于需要纵览「这个知识库里有哪些文档」时；search_wiki_pages 作为树检索不到结果时的整篇粒度兜底。",
         "2. 只有目录树与 Wiki 都不足、需要核验或引用原文时，才调用 read_source_article。",
-        "3. 回答必须给出依据；适合时调用 show_citations 渲染引用。引用 href 必须用文章详情页路径，格式为 `/dashboard/knowledge/<knowledgeBaseId>/articles/<articleId>`，title 写「页面标题」，domain 写「知识库名」。articleId 从 search/read 工具返回的 articleId 字段获取，或从 pageKey `source-<id>` 解析。",
+        "3. 回答必须给出依据；适合时调用 show_citations 渲染引用。引用 href 必须优先使用 search/read 工具返回的 href，或用文章详情页路径 `/dashboard/knowledge/<knowledgeBaseId>/articles/<articleId>`；禁止使用 `/document/<id>`。title 写「页面标题」，domain 写「知识库名」。articleId 从 search/read 工具返回的 articleId 字段获取，或从 pageKey `source-<id>` 解析。",
         "4. 涉及多步分析时先调用 show_agent_plan，执行中可调用 show_progress。",
         "5. 每次回答后都要主动评估「这次内容是否值得回写 Wiki」，满足任一条件就调用 propose_wiki_patch 提交待审批补丁：(a) Wiki 缺少该主题对应的页面；(b) 现有页面信息过时、不完整、或与源文档有出入；(c) 你综合多处来源 / 基于源文档整理出了现有 Wiki 页面尚未记录的结论。调用时必须给出：pageKey（更新填现有页面的 pageKey，新建用语义化的英文短横线 key 如 `topic-mole-cli`）、title、完整的 proposedContentMd（Markdown 正文）、reason（一句话说明为什么值得沉淀）。只提交补丁等用户审批，绝不声称已写入 Wiki。仅当内容与现有 Wiki 已基本一致、没有实质增量时才跳过，避免噪音补丁。",
         "6. 对比、矩阵、清单类结果优先调用 show_data_table。",
@@ -486,7 +486,7 @@ function buildGlobalAgentSystemPrompt() {
         "1. 当用户提问时，先调用 list_knowledge_bases 了解用户有哪些知识库（如有需要）。",
         "2. 使用 search_across_kbs 在所有知识库的 Wiki 页面中检索关键词，找到最可能命中的知识库与页面。",
         "3. 命中后调用 read_wiki_page 读取详细内容；如果 Wiki 不足以回答，可用 read_source_article 核验原文。",
-        "4. 回答必须给出依据，调用 show_citations 渲染引用。每个引用的 href 必须填可跳转的文章详情页路径：`/dashboard/knowledge/<knowledgeBaseId>/articles/<articleId>`。articleId 从工具返回值的 articleId 字段获取；如果只有 pageKey 形如 `source-<id>`，可以解析出 articleId。title 写「页面标题」，domain 写「知识库名」。",
+        "4. 回答必须给出依据，调用 show_citations 渲染引用。每个引用的 href 必须优先使用工具返回的 href；没有 href 时才按可跳转的文章详情页路径 `/dashboard/knowledge/<knowledgeBaseId>/articles/<articleId>` 生成；禁止使用 `/document/<id>`。articleId 从工具返回值的 articleId 字段获取；如果只有 pageKey 形如 `source-<id>`，可以解析出 articleId。title 写「页面标题」，domain 写「知识库名」。",
         "5. 涉及多步分析时调用 show_agent_plan / show_progress。结构化结果调用 show_data_table。",
         "6. 不要直接修改 Wiki；如果需要沉淀结论，请提示用户去具体知识库内提交补丁。",
         "7. 当用户需要查看或下载文档里的图片、架构图、截图、图表、视频、音频或附件时，必须查看 read_wiki_page / read_source_article 返回的 media 字段，并按每项的 media.kind 在最终答案中直接输出对应标签（src 一律使用 media.src 原值，不要只给对象路径或只让用户点击引用卡片）：image 用 `![说明](src)`；video 用自闭合 `<video src=\"src\" />`；audio 用自闭合 `<audio src=\"src\" />`；file 用自闭合 `<file src=\"src\" name=\"文件名\" />`（name 用 media.filename）。务必使用自闭合写法，不要输出 `</video>`、`</audio>`、`</file>` 等闭合标签；这些媒体标签要独立成段，不要放进表格单元格里。",
@@ -554,7 +554,7 @@ function buildGlobalAgentTools(context: {
             execute: async ({ knowledgeBaseId, articleId }) => await readSourceArticleForAgent(context.userId, knowledgeBaseId, articleId),
         }),
         show_citations: tool({
-            description: "把最终答案使用的 Wiki 页面或源文档引用渲染为引用卡片。",
+            description: "把最终答案使用的 Wiki 页面或源文档引用渲染为引用卡片。href 必须优先使用检索/读取工具返回的 href，或按 `/dashboard/knowledge/<knowledgeBaseId>/articles/<articleId>` 生成，禁止使用 `/document/<id>`。",
             inputSchema: citationToolSchema,
             execute: async ({ citations }) => ({
                 id: `citations-${Date.now()}`,
