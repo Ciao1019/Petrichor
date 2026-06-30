@@ -126,6 +126,7 @@
     "@tanstack/react-virtual": "^3.14.4",
     "@udecode/cn": "^52.0.11",
     "@uploadthing/react": "7.3.3",
+    "@upstash/redis": "^1.38.0",
     "@xyflow/react": "^12.10.0",
     "@zumer/snapdom": "^2.0.1",
     "ai": "^7.0.4",

@@ -325,7 +325,7 @@ function buildDocLibraryTools(context: {
             }),
         }),
         show_citations: tool({
-            description: "把最终答案引用到的文档渲染为引用卡片。href 用文档浏览路径，title 写文档标题，domain 写定位（如 p.3 / Sheet1）。",
+            description: "把最终答案引用到的文档渲染为引用卡片。href 必须使用工具结果里的 href，或按 `/dashboard/doc-library/<libraryId>?documentId=<documentId>` 生成；title 写文档标题，domain 写定位（如 p.3 / Sheet1）。",
             inputSchema: citationToolSchema,
             execute: async ({ citations }) => ({
                 id: `citations-${Date.now()}`,
@@ -370,7 +370,7 @@ function buildDocLibrarySystemPrompt(crossLibrary: boolean) {
         "1. 回答关于文档内容的问题时，第一步先调用 search_documents 按关键词检索相关片段；命中后若上下文不足，再用 read_document 读取该文档更多片段。",
         "2. 需要了解库里有哪些文件时调用 list_documents。",
         "3. 回答必须严格基于检索到的文档内容，不要编造。检索不到就如实说明文档库里没有相关内容。",
-        "4. 回答必须给出来源：调用 show_citations 渲染引用，title 写文档标题，domain 写定位（如 p.3 / Sheet1），snippet 写命中片段。",
+        "4. 回答必须给出来源：调用 show_citations 渲染引用；每个引用的 href 必须直接使用 list_documents / search_documents / read_document 返回的 href，或按 `/dashboard/doc-library/<libraryId>?documentId=<documentId>` 生成，禁止使用 `/document/<id>`。title 写文档标题，domain 写定位（如 p.3 / Sheet1），snippet 必须照抄 search_documents / read_document 返回的 snippet 原文（用于在原文中精确高亮，不要改写或截断）。",
         "5. 涉及多步分析时先调用 show_agent_plan，执行中可调用 show_progress。",
         "6. 对比、矩阵、清单类结果优先调用 show_data_table。可复用的最终答案调用 save_answer_artifact。",
         "7. 只使用中文回答。答案要直接、结构清晰。",

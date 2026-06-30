@@ -15,6 +15,7 @@ export async function POST(request: NextRequest) {
             cursor: input.cursor,
             query: input.q,
             libraryId,
+            scope: input.scope,
         })
         return ok(result)
     } catch (error) {

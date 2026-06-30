@@ -53,6 +53,10 @@ export function docLibraryBrowsePath(libraryId: string) {
     return `${dashboardRoutes.docLibrary}/${libraryId}`
 }
 
+export function docLibraryDocumentPath(libraryId: string, documentId: string) {
+    return `${docLibraryBrowsePath(libraryId)}?documentId=${encodeURIComponent(documentId)}`
+}
+
 export function isDashboardSectionPath(pathname: string, sectionPath: string) {
     const targetPath = dashboardPath(sectionPath)
     return pathname === targetPath || pathname.startsWith(`${targetPath}/`)

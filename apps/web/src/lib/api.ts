@@ -1721,9 +1721,17 @@ export interface DocDocument {
   updatedAt: string
 }
 
+export interface DocDocumentChunk {
+  chunkIndex: number
+  page: number | null
+  locator: string | null
+  text: string
+}
+
 export interface DocDocumentDetail extends DocDocument {
   charCount: number | null
   blocks: unknown[]
+  chunks: DocDocumentChunk[]
   summary: string | null
 }
 
@@ -1755,6 +1763,22 @@ export interface DocDocumentRegisterRequest {
   blocks?: unknown[]
   chunks?: { text: string; page?: number | null; locator?: string | null }[]
   summary?: string | null
+}
+
+export interface DocStorageCleanupFailure {
+  errorMessage: string
+  objectKey: string
+  status?: number
+}
+
+export interface DocStorageCleanupSummary {
+  deletedObjectKeys: string[]
+  failedObjectKeys: DocStorageCleanupFailure[]
+}
+
+export interface DocDeleteResponse {
+  id: string
+  storageCleanup: DocStorageCleanupSummary
 }
 
 export interface DocQaThreadResponse {
@@ -1793,10 +1817,18 @@ export interface DocQaModelInfo {
   availableModels?: DocQaModelOption[]
 }
 
+export interface DocQaThreadListParams {
+  cursor?: number
+  limit?: number
+  q?: string
+  libraryId?: string | null
+  scope?: "cross"
+}
+
 export const docLibraryApi = {
   listLibraries: () => api.get<{ libraries: DocLibrary[] }>("/doc-library/library/list"),
   saveLibrary: (data: DocLibrarySaveRequest) => api.post<{ id: string }>("/doc-library/library/save", data),
-  deleteLibrary: (id: string) => api.post<{ id: string }>("/doc-library/library/delete", { id }),
+  deleteLibrary: (id: string) => api.post<DocDeleteResponse>("/doc-library/library/delete", { id }),
 
   listFolders: (libraryId: string) => api.post<{ folders: DocFolderItem[] }>("/doc-library/folder/list", { libraryId }),
   saveFolder: (data: DocFolderSaveRequest) => api.post<{ id: string }>("/doc-library/folder/save", data),
@@ -1805,10 +1837,10 @@ export const docLibraryApi = {
   listDocuments: (libraryId: string) => api.post<{ documents: DocDocument[] }>("/doc-library/document/list", { libraryId }),
   registerDocument: (data: DocDocumentRegisterRequest) => api.post<{ id: string }>("/doc-library/document/register", data),
   documentDetail: (id: string) => api.post<{ document: DocDocumentDetail }>("/doc-library/document/detail", { id }),
-  deleteDocument: (id: string) => api.post<{ id: string }>("/doc-library/document/delete", { id }),
+  deleteDocument: (id: string) => api.post<DocDeleteResponse>("/doc-library/document/delete", { id }),
 
   modelInfo: () => api.post<DocQaModelInfo>("/doc-library/model-info", {}),
-  threadList: (params: { cursor?: number; limit?: number; q?: string; libraryId?: string | null }) =>
+  threadList: (params: DocQaThreadListParams) =>
     api.post<{ threads: DocQaThreadResponse[]; nextCursor: number | null }>("/doc-library/thread/list", params),
   threadDetail: (threadId: string) =>
     api.post<{ thread: DocQaThreadResponse; messages: DocQaThreadMessage[] }>("/doc-library/thread/detail", { threadId }),
