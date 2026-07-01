@@ -24,7 +24,9 @@ function shouldSkipStatement(statement: string) {
         normalized.startsWith("update ") ||
         normalized.startsWith("insert into better_auth_user") ||
         normalized.startsWith("insert into better_auth_account") ||
-        normalized.includes(" using gin ")
+        normalized.includes(" using gin ") ||
+        normalized.includes(" using hnsw ") ||
+        normalized.includes(" using ivfflat ")
     )
 }
 

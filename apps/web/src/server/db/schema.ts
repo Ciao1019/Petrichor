@@ -374,6 +374,8 @@ export const knowledgeBaseWikiTreeNodes = pgTable("petrichor_kb_wiki_tree_node",
     endLine: integer("end_line"),
     tokenEstimate: integer("token_estimate").notNull().default(0),
     contentHash: text("content_hash").notNull(),
+    // 注意：embedding vector(1024) 列仅存在于 Postgres（见 full-migration / 迁移 SQL），
+    // 且只通过原生 SQL 读写。故意不在 Drizzle schema 声明，避免 loadTreeNodes 等 select() 全列查询在 SQLite（无该列）报错。
     ...timestamps,
 }, (table) => [
     uniqueIndex("ux_petrichor_kb_wiki_tree_node_key").on(table.userId, table.knowledgeBaseId, table.nodeKey),

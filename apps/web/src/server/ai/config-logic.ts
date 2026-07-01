@@ -2,7 +2,7 @@ import { badRequest } from "@/server/http/response"
 import type { AiModelConfigRecord } from "@/server/db/schema"
 import { decryptText, encryptText } from "@/server/crypto/spring-text-encryptor"
 
-export type AiConfigType = "CHAT" | "VISION" | "DOC_QA"
+export type AiConfigType = "CHAT" | "VISION" | "DOC_QA" | "EMBEDDING"
 export type AiProtocol = "GEMINI" | "OPENAI" | "DEEPSEEK" | "OPENAI_COMPAT" | "SILICONFLOW"
 
 const defaultEncryptKey = "Ek4EhsOIVMQZ2gMAuJXJzUPjCZOjyKIt"
@@ -73,7 +73,7 @@ export function validateAiConfigIdInput(raw: unknown) {
 
 export function parseConfigType(raw: unknown): AiConfigType | null {
     const value = String(raw ?? "").trim()
-    return value === "CHAT" || value === "VISION" || value === "DOC_QA" ? value : null
+    return value === "CHAT" || value === "VISION" || value === "DOC_QA" || value === "EMBEDDING" ? value : null
 }
 
 export function parseProtocol(raw: unknown): AiProtocol | null {

@@ -1,5 +1,6 @@
 const BUSINESS_SCHEMA_SQL = `
 create extension if not exists pg_trgm;
+create extension if not exists vector;
 
 create table if not exists petrichor_user (
     id bigint generated always as identity primary key,
@@ -440,6 +441,11 @@ create index if not exists petrichor_kb_wiki_tree_node_article_idx
 
 create index if not exists petrichor_kb_wiki_tree_node_kb_idx
     on petrichor_kb_wiki_tree_node(user_id, knowledge_base_id, position);
+
+alter table petrichor_kb_wiki_tree_node add column if not exists embedding vector(1024);
+
+create index if not exists idx_petrichor_kb_wiki_tree_node_embedding
+    on petrichor_kb_wiki_tree_node using hnsw (embedding vector_cosine_ops);
 
 create table if not exists petrichor_kb_wiki_patch (
     id bigint generated always as identity primary key,
@@ -904,6 +910,9 @@ create index if not exists idx_petrichor_doc_chunk_document
 
 create index if not exists idx_petrichor_doc_chunk_library
     on petrichor_doc_chunk(library_id);
+
+create index if not exists idx_petrichor_doc_chunk_text_trgm
+    on petrichor_doc_chunk using gin (text gin_trgm_ops);
 
 create table if not exists petrichor_doc_qa_thread (
     id bigint generated always as identity primary key,

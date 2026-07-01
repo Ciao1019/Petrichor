@@ -904,6 +904,20 @@ export interface KnowledgeBaseWikiDashboardResponse {
   lint: KnowledgeBaseWikiLintResponse
   artifacts: KnowledgeBaseAgentArtifactResponse[]
   treeNodeCount: number
+  embedding: KbWikiEmbeddingStatus
+}
+
+export interface KbWikiEmbeddingStatus {
+  supported: boolean
+  total: number
+  embedded: number
+  pending: number
+}
+
+export interface KbWikiEmbeddingRunResult {
+  embedded: number
+  total: number
+  pending: number
 }
 
 export interface KnowledgeBaseWikiTreeNode {
@@ -940,6 +954,8 @@ export const knowledgeBaseWikiAgentApi = {
     api.post<KnowledgeBaseWikiTreeResponse>("/kb/wiki/tree", { knowledgeBaseId, articleId }),
   ingest: (data: { knowledgeBaseId: string; articleIds?: string[]; forceRebuild?: boolean }) =>
     api.post<KnowledgeBaseWikiIngestResponse>("/kb/wiki/ingest", data),
+  embedWiki: (knowledgeBaseId: string) =>
+    api.post<KbWikiEmbeddingRunResult>("/kb/wiki/embedding/run", { knowledgeBaseId }),
   patches: (knowledgeBaseId: string) =>
     api.post<{ knowledgeBaseId: string; patches: KnowledgeBaseWikiPatchResponse[] }>("/kb/wiki/patch/list", { knowledgeBaseId }),
   applyPatch: (knowledgeBaseId: string, patchId: string) =>
@@ -1027,7 +1043,7 @@ export const knowledgeBaseQaApi = {
 }
 
 // AI 模型配置相关类型
-export type AiConfigType = "CHAT" | "VISION" | "DOC_QA"
+export type AiConfigType = "CHAT" | "VISION" | "DOC_QA" | "EMBEDDING"
 
 export type AiProtocol = "OPENAI" | "DEEPSEEK" | "OPENAI_COMPAT" | "SILICONFLOW" | "GEMINI"
 

@@ -1,13 +1,15 @@
 import { createHash } from "node:crypto"
-import { and, asc, eq, inArray } from "drizzle-orm"
+import { and, asc, eq, inArray, sql } from "drizzle-orm"
 import { callChatCompletion } from "@/server/ai/generation"
-import { getDb } from "@/server/db/client"
+import { embedQuery, embedTexts, hasEmbeddingConfig } from "@/server/ai/embedding"
+import { getDb, isSqliteDatabase } from "@/server/db/client"
 import {
     knowledgeBaseArticles,
     knowledgeBaseWikiTreeNodes,
     type KnowledgeBaseArticleRecord,
     type KnowledgeBaseWikiTreeNodeRecord,
 } from "@/server/db/schema"
+import { badRequest } from "@/server/http/response"
 import {
     assertKnowledgeBaseOwner,
     extractAgentImageReferences,
@@ -383,6 +385,156 @@ export async function retrieveTreeNodesForAgent(input: {
         reason,
         depth: node.depth,
     }))
+}
+
+// ===== 章节节点向量语义检索（pgvector）：作为 PageIndex 推理式导航的补充 =====
+
+const KB_EMBED_BATCH_SIZE = 64
+// 单次请求最多补写的节点数，避免超大知识库把接口拖到超时；剩余可再次触发或用 backfill 脚本。
+const KB_MAX_EMBED_PER_REQUEST = 2000
+const KB_EMBED_MAX_CHARS = 4000
+
+function buildTreeNodeEmbedText(node: { title: string; summary: string | null; contentMd: string }) {
+    return [node.title, node.summary ?? "", node.contentMd]
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .join("\n")
+        .slice(0, KB_EMBED_MAX_CHARS)
+}
+
+// 把一批章节节点的向量写入 embedding 列（原生 SQL，不走 Drizzle 列引用）。返回实际写入条数。
+async function writeTreeNodeEmbeddings(
+    userId: number,
+    rows: Array<{ id: number; title: string; summary: string | null; contentMd: string }>,
+): Promise<number> {
+    let written = 0
+    for (let offset = 0; offset < rows.length; offset += KB_EMBED_BATCH_SIZE) {
+        const batch = rows.slice(offset, offset + KB_EMBED_BATCH_SIZE)
+        const vectors = await embedTexts(userId, batch.map((node) => buildTreeNodeEmbedText(node)))
+        for (let i = 0; i < batch.length; i += 1) {
+            const vector = vectors[i]
+            if (!vector) continue
+            const literal = `[${vector.join(",")}]`
+            await getDb().execute(sql`
+                update petrichor_kb_wiki_tree_node set embedding = ${literal}::vector where id = ${batch[i].id}
+            `)
+            written += 1
+        }
+    }
+    return written
+}
+
+async function loadPendingTreeNodeRows(userId: number, knowledgeBaseId: number) {
+    return await getDb()
+        .select({
+            id: knowledgeBaseWikiTreeNodes.id,
+            title: knowledgeBaseWikiTreeNodes.title,
+            summary: knowledgeBaseWikiTreeNodes.summary,
+            contentMd: knowledgeBaseWikiTreeNodes.contentMd,
+        })
+        .from(knowledgeBaseWikiTreeNodes)
+        .where(and(
+            eq(knowledgeBaseWikiTreeNodes.userId, userId),
+            eq(knowledgeBaseWikiTreeNodes.knowledgeBaseId, knowledgeBaseId),
+            sql`${knowledgeBaseWikiTreeNodes.id} in (select id from petrichor_kb_wiki_tree_node where knowledge_base_id = ${knowledgeBaseId} and embedding is null)`,
+        ))
+        .orderBy(asc(knowledgeBaseWikiTreeNodes.articleId), asc(knowledgeBaseWikiTreeNodes.position))
+        .limit(KB_MAX_EMBED_PER_REQUEST)
+}
+
+// 知识库维度的向量化状态：目录树总节点数 / 已向量化数 / 待处理数。SQLite 不支持时返回 supported=false。
+export async function getKbWikiEmbeddingStatus(userId: number, knowledgeBaseId: number) {
+    if (isSqliteDatabase()) {
+        return { supported: false, total: 0, embedded: 0, pending: 0 }
+    }
+    await assertKnowledgeBaseOwner(getDb(), userId, knowledgeBaseId)
+    const rows = await getDb().execute(sql`
+        select count(*)::int as total, count(embedding)::int as embedded
+        from petrichor_kb_wiki_tree_node
+        where user_id = ${userId} and knowledge_base_id = ${knowledgeBaseId}
+    `)
+    const row = (rows as Iterable<Record<string, unknown>>)[Symbol.iterator]().next().value as
+        | { total?: unknown; embedded?: unknown }
+        | undefined
+    const total = Number(row?.total ?? 0)
+    const embedded = Number(row?.embedded ?? 0)
+    return { supported: true, total, embedded, pending: Math.max(total - embedded, 0) }
+}
+
+// 为整个知识库尚未向量化的目录树节点补写向量（单次最多 KB_MAX_EMBED_PER_REQUEST 条）。供「生成向量」按钮调用，缺配置时抛错。
+export async function embedKnowledgeBaseTreeNodes(userId: number, knowledgeBaseId: number) {
+    if (isSqliteDatabase()) {
+        throw badRequest("向量生成需要 PostgreSQL 数据库")
+    }
+    await assertKnowledgeBaseOwner(getDb(), userId, knowledgeBaseId)
+    if (!(await hasEmbeddingConfig(userId))) {
+        throw badRequest("未配置向量模型：请先在「AI 模型配置」新增并启用一条 EMBEDDING 配置（推荐 bge-m3）")
+    }
+    const pending = await loadPendingTreeNodeRows(userId, knowledgeBaseId)
+    const embedded = await writeTreeNodeEmbeddings(userId, pending)
+    const status = await getKbWikiEmbeddingStatus(userId, knowledgeBaseId)
+    return { embedded, total: status.total, pending: status.pending }
+}
+
+// best-effort：编译 Wiki 后自动补写节点向量（无配置 / SQLite / 出错都静默跳过，绝不影响编译流程）。
+export async function embedKnowledgeBaseTreeNodesBestEffort(userId: number, knowledgeBaseId: number) {
+    if (isSqliteDatabase()) return
+    if (!(await hasEmbeddingConfig(userId))) return
+    const pending = await loadPendingTreeNodeRows(userId, knowledgeBaseId)
+    if (pending.length === 0) return
+    await writeTreeNodeEmbeddings(userId, pending)
+}
+
+/** 向量语义检索：对章节节点做余弦相似度召回。作为 search_document_tree（推理式导航）的补充。 */
+export async function semanticSearchTreeNodes(input: {
+    userId: number
+    knowledgeBaseId: number
+    query: string
+    limit?: number
+    articleId?: number
+    maxContentChars?: number
+}): Promise<TreeRetrievalHit[]> {
+    if (isSqliteDatabase()) {
+        throw badRequest("向量语义检索需要 PostgreSQL 数据库")
+    }
+    await assertKnowledgeBaseOwner(getDb(), input.userId, input.knowledgeBaseId)
+    const keyword = input.query.trim()
+    if (!keyword) return []
+    const limit = Math.min(Math.max(input.limit ?? 6, 1), 12)
+    const maxContentChars = input.maxContentChars ?? 1600
+
+    const vec = await embedQuery(input.userId, keyword)
+    const literal = `[${vec.join(",")}]`
+    const rows = await getDb().execute(sql`
+        select node_key
+        from petrichor_kb_wiki_tree_node
+        where user_id = ${input.userId} and knowledge_base_id = ${input.knowledgeBaseId} and embedding is not null
+          ${input.articleId != null ? sql`and article_id = ${input.articleId}` : sql``}
+        order by embedding <=> ${literal}::vector
+        limit ${limit}
+    `)
+    const orderedKeys: string[] = []
+    for (const raw of rows as Iterable<Record<string, unknown>>) {
+        if (raw.node_key != null) orderedKeys.push(String(raw.node_key))
+    }
+    if (orderedKeys.length === 0) return []
+
+    // 载入全量节点用于构造面包屑路径（同一知识库节点量有限）
+    const nodes = await loadTreeNodes(input.userId, input.knowledgeBaseId, input.articleId)
+    const byKey = new Map(nodes.map((node) => [node.nodeKey, node]))
+    return orderedKeys.flatMap((key) => {
+        const node = byKey.get(key)
+        if (!node) return []
+        return [{
+            nodeKey: node.nodeKey,
+            articleId: String(node.articleId),
+            title: node.title,
+            path: buildNodePath(node, byKey),
+            summary: node.summary,
+            contentMd: node.contentMd.length > maxContentChars ? `${node.contentMd.slice(0, maxContentChars)}…` : node.contentMd,
+            depth: node.depth,
+        }]
+    })
 }
 
 function keywordFallback(nodes: KnowledgeBaseWikiTreeNodeRecord[], query: string, limit: number) {

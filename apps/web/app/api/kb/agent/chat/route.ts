@@ -30,7 +30,7 @@ import {
     searchWikiPagesAcrossKbs,
     searchWikiPagesForAgent,
 } from "@/server/kb/wiki-agent-logic"
-import { readTreeNodeForAgent, retrieveTreeNodesForAgent } from "@/server/kb/wiki-tree"
+import { readTreeNodeForAgent, retrieveTreeNodesForAgent, semanticSearchTreeNodes } from "@/server/kb/wiki-tree"
 import { getDb } from "@/server/db/client"
 
 export const maxDuration = 300
@@ -369,6 +369,27 @@ function buildKnowledgeAgentTools(context: {
                 articleId: articleId ?? undefined,
             }),
         }),
+        semantic_search_tree: tool({
+            description: "向量语义检索：对目录树章节节点做向量相似度召回。当用户用近义/概念性表述、或 search_document_tree 推理导航召回不佳时使用；返回结构与 search_document_tree 一致（含面包屑路径、摘要、原文片段、articleId 与 nodeKey）。可传 articleId 限定单篇。",
+            inputSchema: z.object({
+                query: z.string().min(1),
+                limit: z.number().int().min(1).max(12).optional(),
+                articleId: idSchema.optional(),
+            }),
+            execute: async ({ query, limit, articleId }) => {
+                try {
+                    return await semanticSearchTreeNodes({
+                        userId: context.userId,
+                        knowledgeBaseId: context.knowledgeBaseId,
+                        query,
+                        limit,
+                        articleId: articleId ?? undefined,
+                    })
+                } catch {
+                    return { hits: [], note: "语义检索当前不可用（未配置向量模型、Wiki 尚未编译或数据库不支持），请改用 search_document_tree。" }
+                }
+            },
+        }),
         read_tree_node: tool({
             description: "读取目录树中某个章节节点的完整内容（含面包屑路径、子节点与媒体引用）。当 search_document_tree 返回的片段被截断、需要看全文时使用，传 nodeKey。",
             inputSchema: z.object({
@@ -468,6 +489,7 @@ function buildAgentSystemPrompt() {
         "核心规则：",
         "1. 回答关于文档内容的问题时，第一步先调用 search_document_tree 在章节目录树上做推理式检索，定位最相关的章节（这是默认首选的检索方式）。",
         "1.1 树检索与 Wiki/源文档是互补关系，应按需配合：当命中片段不足、需要更完整的上下文，或要展示图片/视频/附件等媒体时，再结合 read_tree_node 读该章节全文、或 read_wiki_page / read_source_article 读整篇来补全，不要只停在树检索片段上。read_wiki_index 用于需要纵览「这个知识库里有哪些文档」时；search_wiki_pages 作为树检索不到结果时的整篇粒度兜底。",
+        "1.2 当用户用近义/概念性表述提问，或 search_document_tree 推理导航召回不佳时，改用或补充 semantic_search_tree 做向量语义检索（返回结构与 search_document_tree 一致）。",
         "2. 只有目录树与 Wiki 都不足、需要核验或引用原文时，才调用 read_source_article。",
         "3. 回答必须给出依据；适合时调用 show_citations 渲染引用。引用 href 必须优先使用 search/read 工具返回的 href，或用文章详情页路径 `/dashboard/knowledge/<knowledgeBaseId>/articles/<articleId>`；禁止使用 `/document/<id>`。title 写「页面标题」，domain 写「知识库名」。articleId 从 search/read 工具返回的 articleId 字段获取，或从 pageKey `source-<id>` 解析。",
         "4. 涉及多步分析时先调用 show_agent_plan，执行中可调用 show_progress。",
