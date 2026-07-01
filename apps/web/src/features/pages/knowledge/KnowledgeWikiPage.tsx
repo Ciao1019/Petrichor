@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CheckCircle2, Eye, FileStack, GitPullRequestArrow, ListTree, Loader2, RefreshCw, Sparkles, X } from "lucide-react"
+import { CheckCircle2, Eye, FileStack, GitPullRequestArrow, ListTree, Loader2, RefreshCw, Sparkles, Wand2, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
@@ -143,6 +143,7 @@ export function KnowledgeWikiPage() {
   const [loading, setLoading] = React.useState(false)
   const [ingesting, setIngesting] = React.useState(false)
   const [linting, setLinting] = React.useState(false)
+  const [embedding, setEmbedding] = React.useState(false)
   const [patchBusyId, setPatchBusyId] = React.useState<string | null>(null)
 
   const [activePatch, setActivePatch] = React.useState<KnowledgeBaseWikiPatchResponse | null>(null)
@@ -221,6 +222,27 @@ export function KnowledgeWikiPage() {
     }
   }, [selectedKbId, loadDashboard])
 
+  const runEmbed = React.useCallback(async () => {
+    if (!selectedKbId) return
+    setEmbedding(true)
+    try {
+      const res = await knowledgeBaseWikiAgentApi.embedWiki(selectedKbId)
+      const { embedded, pending } = res.data
+      if (embedded === 0 && pending === 0) {
+        toast.success("所有章节均已向量化")
+      } else if (pending > 0) {
+        toast.success(`已向量化 ${embedded} 个章节，还剩 ${pending} 个，可再次点击继续`)
+      } else {
+        toast.success(`已向量化 ${embedded} 个章节，全部完成`)
+      }
+      await loadDashboard(selectedKbId)
+    } catch (error) {
+      toast.error(resolveApiErrorMessage(error, "生成向量失败"))
+    } finally {
+      setEmbedding(false)
+    }
+  }, [selectedKbId, loadDashboard])
+
   const runLint = React.useCallback(async () => {
     if (!selectedKbId) return
     setLinting(true)
@@ -296,7 +318,8 @@ export function KnowledgeWikiPage() {
   const lint = dashboard?.lint
   const pendingPatches = dashboard?.pendingPatches ?? []
   const pages = dashboard?.pages ?? []
-  const busy = ingesting || linting
+  const busy = ingesting || linting || embedding
+  const embeddingStatus = dashboard?.embedding
 
   const PAGE_SIZE = 10
   const [pageIndex, setPageIndex] = React.useState(0)
@@ -344,6 +367,27 @@ export function KnowledgeWikiPage() {
             <Sparkles className={cn("mr-2 size-4", ingesting && "animate-spin")} />
             重新生成 Wiki
           </Button>
+          {embeddingStatus?.supported ? (
+            <Button
+              variant="outline"
+              onClick={() => runEmbed()}
+              disabled={!selectedKbId || busy || embeddingStatus.total === 0 || embeddingStatus.pending === 0}
+              title={
+                embeddingStatus.total === 0
+                  ? "请先编译 Wiki 生成目录树节点，再生成向量"
+                  : embeddingStatus.pending === 0
+                    ? "所有章节均已向量化，可用于语义检索"
+                    : `为 ${embeddingStatus.pending} 个未向量化的章节节点生成向量`
+              }
+            >
+              <Wand2 className={cn("mr-2 size-4", embedding && "animate-spin")} />
+              {embeddingStatus.pending === 0 && embeddingStatus.total > 0
+                ? "向量已就绪"
+                : embedding
+                  ? "生成中…"
+                  : `生成向量${embeddingStatus.pending > 0 ? ` (${embeddingStatus.pending})` : ""}`}
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -358,9 +402,14 @@ export function KnowledgeWikiPage() {
         </div>
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
             <StatCard label="Wiki 页面" value={lint?.pageCount ?? pages.length} />
             <StatCard label="目录树节点" value={dashboard?.treeNodeCount ?? 0} />
+            <StatCard
+              label="已向量化章节"
+              value={embeddingStatus?.supported ? `${embeddingStatus.embedded}/${embeddingStatus.total}` : "-"}
+              accent={Boolean(embeddingStatus?.supported && embeddingStatus.pending > 0)}
+            />
             <StatCard label="页面链接" value={lint?.linkCount ?? 0} />
             <StatCard label="来源引用" value={lint?.sourceRefCount ?? 0} />
             <StatCard label="Lint 得分" value={lint ? lint.score : "-"} />

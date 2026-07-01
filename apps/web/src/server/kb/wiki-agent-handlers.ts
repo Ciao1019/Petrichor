@@ -37,7 +37,7 @@ import {
     wikiPatchDecisionInputSchema,
     wikiTreeInputSchema,
 } from "./wiki-agent-logic"
-import { loadDocumentTreeOutline } from "@/server/kb/wiki-tree"
+import { embedKnowledgeBaseTreeNodes, loadDocumentTreeOutline } from "@/server/kb/wiki-tree"
 
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
 
@@ -94,6 +94,13 @@ export async function wikiIngest(request: NextRequest) {
             articleIds: input.articleIds,
             forceRebuild: input.forceRebuild,
         }))
+    })
+}
+
+export async function wikiEmbeddingRun(request: NextRequest) {
+    return withUser(request, async (user) => {
+        const input = wikiIngestInputSchema.pick({ knowledgeBaseId: true }).parse(await readJson(request))
+        return ok(await embedKnowledgeBaseTreeNodes(user.id, input.knowledgeBaseId))
     })
 }
 

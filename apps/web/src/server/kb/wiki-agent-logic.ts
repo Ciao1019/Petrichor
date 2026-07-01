@@ -28,7 +28,11 @@ import {
     type KnowledgeBaseWikiPatchRecord,
 } from "@/server/db/schema"
 import { badRequest, notFound } from "@/server/http/response"
-import { buildArticleTree } from "@/server/kb/wiki-tree"
+import {
+    buildArticleTree,
+    embedKnowledgeBaseTreeNodesBestEffort,
+    getKbWikiEmbeddingStatus,
+} from "@/server/kb/wiki-tree"
 
 type Db = ReturnType<typeof getDb>
 
@@ -313,6 +317,8 @@ export async function loadWikiDashboard(userId: number, knowledgeBaseId: number)
             eq(knowledgeBaseWikiTreeNodes.knowledgeBaseId, knowledgeBaseId),
         ))
 
+    const embedding = await getKbWikiEmbeddingStatus(userId, knowledgeBaseId)
+
     return {
         knowledgeBase: kb ? toKnowledgeBaseLite(kb) : null,
         pages,
@@ -321,6 +327,7 @@ export async function loadWikiDashboard(userId: number, knowledgeBaseId: number)
         lint,
         artifacts,
         treeNodeCount: treeNodeRow?.value ?? 0,
+        embedding,
     }
 }
 
@@ -396,6 +403,11 @@ export async function ingestKnowledgeBaseWiki(input: {
         articleCount: graph.articles.length,
         pageCount: pages.length + 1,
         warnings,
+    })
+
+    // best-effort：编译后自动为新章节节点补写向量（已配置向量模型时才执行），失败不影响编译结果
+    await embedKnowledgeBaseTreeNodesBestEffort(input.userId, input.knowledgeBaseId).catch((error: unknown) => {
+        warnings.push(error instanceof Error ? `向量生成失败：${error.message}` : "向量生成失败")
     })
 
     return {

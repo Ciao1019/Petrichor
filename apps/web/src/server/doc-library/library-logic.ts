@@ -1,8 +1,8 @@
-import { and, asc, desc, eq, like, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, ilike, like, or, sql } from "drizzle-orm"
 import { z } from "zod"
 import { getServerConfig } from "@/config/server"
 import { CACHE_TTL_SECONDS, cacheDropByPrefix, cacheKey, cacheReadThrough } from "@/server/cache"
-import { getDb } from "@/server/db/client"
+import { getDb, isSqliteDatabase } from "@/server/db/client"
 import {
     docChunks,
     docDocuments,
@@ -462,9 +462,65 @@ export async function searchChunks(input: {
     const filters = [eq(docChunks.userId, input.userId)]
     if (input.libraryId != null) filters.push(eq(docChunks.libraryId, input.libraryId))
     if (input.documentId != null) filters.push(eq(docChunks.documentId, input.documentId))
+
+    if (isSqliteDatabase()) {
+        // SQLite 分支：LIKE OR 召回 + JS 词频打分（中文效果一般，仅作 dev 兜底）
+        const termConditions = terms.map((term) => {
+            const pattern = `%${term.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`
+            return like(docChunks.text, pattern)
+        })
+        if (termConditions.length > 0) {
+            const combined = termConditions.length === 1 ? termConditions[0] : or(...termConditions)
+            if (combined) filters.push(combined)
+        }
+
+        const rows = await getDb()
+            .select({
+                chunkId: docChunks.id,
+                documentId: docChunks.documentId,
+                libraryId: docChunks.libraryId,
+                page: docChunks.page,
+                locator: docChunks.locator,
+                text: docChunks.text,
+                title: docDocuments.title,
+                fileName: docDocuments.fileName,
+                fileType: docDocuments.fileType,
+            })
+            .from(docChunks)
+            .innerJoin(docDocuments, eq(docDocuments.id, docChunks.documentId))
+            .where(and(...filters))
+            .limit(limit * 4)
+
+        // 简单打分：命中词数 + 出现次数
+        const lowerTerms = terms.map((t) => t.toLowerCase())
+        const scored = rows.map((row) => {
+            const lower = row.text.toLowerCase()
+            let score = 0
+            for (const term of lowerTerms) {
+                const count = lower.split(term).length - 1
+                if (count > 0) score += 1 + Math.min(count, 5) * 0.2
+            }
+            return { row, score }
+        })
+        scored.sort((a, b) => b.score - a.score)
+        return scored.slice(0, limit).map(({ row }) => ({
+            chunkId: String(row.chunkId),
+            documentId: String(row.documentId),
+            libraryId: String(row.libraryId),
+            href: docLibraryDocumentPath(String(row.libraryId), String(row.documentId)),
+            title: row.title,
+            fileName: row.fileName,
+            fileType: row.fileType,
+            locator: row.locator ?? (row.page != null ? `p.${row.page}` : null),
+            page: row.page,
+            snippet: row.text.slice(0, 600),
+        }))
+    }
+
+    // Postgres 分支：pg_trgm ILIKE 召回过滤 + word_similarity 打分排序（对中文更友好）
     const termConditions = terms.map((term) => {
         const pattern = `%${term.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`
-        return like(docChunks.text, pattern)
+        return ilike(docChunks.text, pattern)
     })
     if (termConditions.length > 0) {
         const combined = termConditions.length === 1 ? termConditions[0] : or(...termConditions)
@@ -482,25 +538,15 @@ export async function searchChunks(input: {
             title: docDocuments.title,
             fileName: docDocuments.fileName,
             fileType: docDocuments.fileType,
+            score: sql<number>`word_similarity(${keyword}, ${docChunks.text})`.as("score"),
         })
         .from(docChunks)
         .innerJoin(docDocuments, eq(docDocuments.id, docChunks.documentId))
         .where(and(...filters))
-        .limit(limit * 4)
+        .orderBy(sql`score DESC`, asc(docChunks.chunkIndex))
+        .limit(limit)
 
-    // 简单打分：命中词数 + 出现次数
-    const lowerTerms = terms.map((t) => t.toLowerCase())
-    const scored = rows.map((row) => {
-        const lower = row.text.toLowerCase()
-        let score = 0
-        for (const term of lowerTerms) {
-            const count = lower.split(term).length - 1
-            if (count > 0) score += 1 + Math.min(count, 5) * 0.2
-        }
-        return { row, score }
-    })
-    scored.sort((a, b) => b.score - a.score)
-    return scored.slice(0, limit).map(({ row }) => ({
+    return rows.map((row) => ({
         chunkId: String(row.chunkId),
         documentId: String(row.documentId),
         libraryId: String(row.libraryId),

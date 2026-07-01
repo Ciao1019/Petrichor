@@ -98,6 +98,7 @@ function configTypeLabel(configType: AiConfigType) {
   if (configType === "CHAT") return "对话（Chat）"
   if (configType === "VISION") return "多模态（Vision）"
   if (configType === "DOC_QA") return "文档库问答（Doc QA）"
+  if (configType === "EMBEDDING") return "向量嵌入（Embedding）"
   return configType
 }
 
@@ -105,6 +106,7 @@ const CONFIG_TYPE_TABS: { value: AiConfigType; label: string }[] = [
   { value: "CHAT", label: "对话（Chat）" },
   { value: "VISION", label: "多模态（Vision）" },
   { value: "DOC_QA", label: "文档库问答（Doc QA）" },
+  { value: "EMBEDDING", label: "向量嵌入（Embedding）" },
 ]
 
 function buildEditorDescription() {
@@ -117,6 +119,9 @@ function buildTypeSummary(configType: AiConfigType) {
   }
   if (configType === "DOC_QA") {
     return "负责文档库问答：基于文档库里的文件内容进行 agentic 检索与回答。"
+  }
+  if (configType === "EMBEDDING") {
+    return "负责文档库语义检索：把文档分块和查询转成向量用于相似度召回（推荐 bge-m3，1024 维）。"
   }
   return "负责文章摘要、思维导图和知识图谱等生成能力。"
 }
