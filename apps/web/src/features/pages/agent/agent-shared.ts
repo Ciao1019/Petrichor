@@ -81,3 +81,82 @@ export function formatPayload(value: unknown, fallback?: string | null) {
     return fallback || String(value)
   }
 }
+
+export function getMcpUrl() {
+  const baseUrl = getBaseUrl()
+  return baseUrl ? `${baseUrl}/api/mcp` : "/api/mcp"
+}
+
+export function buildClaudeCodeMcpSnippet() {
+  return [
+    `claude mcp add --transport http petrichor ${getMcpUrl()} \\`,
+    `  --header "Authorization: Bearer ptc_live_xxx"`,
+  ].join("\n")
+}
+
+export function buildCodexMcpSnippet() {
+  return [
+    `# ~/.codex/config.toml`,
+    `[mcp_servers.petrichor]`,
+    `url = "${getMcpUrl()}"`,
+    `# 推荐把 Key 放环境变量，Codex 会自动以 Authorization: Bearer 发送`,
+    `bearer_token_env_var = "PETRICHOR_API_KEY"`,
+  ].join("\n")
+}
+
+export function buildJsonMcpSnippet() {
+  return JSON.stringify(
+    {
+      mcpServers: {
+        petrichor: {
+          url: getMcpUrl(),
+          headers: { Authorization: "Bearer ptc_live_xxx" },
+        },
+      },
+    },
+    null,
+    2,
+  )
+}
+
+export function buildClaudeCodeSkillSnippet() {
+  return [
+    `# 下载 Skill 包并解压到 Claude Code 的个人 skills 目录`,
+    `curl -L "${getSkillPackUrl()}" -o petrichor-skill.zip`,
+    `unzip -o petrichor-skill.zip -d ~/.claude/skills/`,
+    ``,
+    `# 配置环境变量（也可写入 shell profile）`,
+    `export PETRICHOR_BASE_URL="${getBaseUrl()}"`,
+    `export PETRICHOR_API_KEY="ptc_live_xxx"`,
+  ].join("\n")
+}
+
+export function buildCodexSkillSnippet() {
+  return [
+    `# 下载 Skill 包并解压到项目（或 Codex 全局 skills 目录）`,
+    `curl -L "${getSkillPackUrl()}" -o petrichor-skill.zip`,
+    `unzip -o petrichor-skill.zip -d .codex/skills/   # 或 ~/.codex/skills/`,
+    ``,
+    `export PETRICHOR_BASE_URL="${getBaseUrl()}"`,
+    `export PETRICHOR_API_KEY="ptc_live_xxx"`,
+  ].join("\n")
+}
+
+export function buildGenericSkillSnippet() {
+  return [
+    `# 任何能执行 shell 的 Agent 都可以直接使用包内 CLI`,
+    `curl -L "${getSkillPackUrl()}" -o petrichor-skill.zip`,
+    `unzip -o petrichor-skill.zip -d ./skills/`,
+    `chmod +x ./skills/petrichor/scripts/petrichor`,
+    ``,
+    `export PETRICHOR_BASE_URL="${getBaseUrl()}"`,
+    `export PETRICHOR_API_KEY="ptc_live_xxx"`,
+    `./skills/petrichor/scripts/petrichor capabilities   # 自检`,
+  ].join("\n")
+}
+
+// 从审计日志的 User-Agent 中识别 MCP 工具调用（服务端委托请求会带 petrichor-mcp/<toolName> 前缀）
+export function parseMcpToolFromUserAgent(userAgent?: string | null): string | null {
+  const match = userAgent?.match(/^petrichor-mcp\/([a-z0-9_]+)/)
+  return match ? match[1] : null
+}

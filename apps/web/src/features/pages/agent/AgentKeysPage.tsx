@@ -6,6 +6,7 @@ import { toast } from "sonner"
 
 import { agentApi, type AgentApiKeyItem } from "@/lib/api"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -20,6 +21,7 @@ import {
   normalizeAxiosErrorMessage,
   scopeLabels,
 } from "./agent-shared"
+import { AgentPageHeader } from "./agent-ui"
 
 export function AgentKeysPage() {
   const [items, setItems] = React.useState<AgentApiKeyItem[]>([])
@@ -84,38 +86,34 @@ export function AgentKeysPage() {
 
   return (
     <div className="flex w-full flex-col gap-6 px-6 py-6 lg:px-10">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="space-y-1">
-          <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <KeyRound className="size-6 text-primary" />
-            API Key 管理
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            为 Claude Code、Codex、OpenClaw 等 Agent 工具生成可调用文档能力的密钥。
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => void fetchKeys()} disabled={loading}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            刷新
-          </Button>
-          <Button type="button" size="sm" onClick={() => void createKey()} disabled={creating}>
-            <KeyRound className="mr-2 h-4 w-4" />
-            {creating ? "生成中..." : "生成 Key"}
-          </Button>
-        </div>
-      </div>
+      <AgentPageHeader
+        icon={KeyRound}
+        title="API Key 管理"
+        description="为 Claude Code、Codex、Cursor 等 Agent 工具颁发密钥。MCP Server、Skill 包与 REST 接口共用同一套 Key，服务端只存哈希，明文仅生成时展示一次。"
+        actions={
+          <>
+            <Button type="button" variant="outline" size="sm" onClick={() => void fetchKeys()} disabled={loading}>
+              <RefreshCw className="mr-2 size-4" />
+              刷新
+            </Button>
+            <Button type="button" size="sm" onClick={() => void createKey()} disabled={creating}>
+              <KeyRound className="mr-2 size-4" />
+              {creating ? "生成中..." : "生成 Key"}
+            </Button>
+          </>
+        }
+      />
 
       {createdApiKey ? (
-        <Alert>
-          <ShieldCheck className="h-4 w-4" />
+        <Alert className="border-primary/30 bg-primary/5">
+          <ShieldCheck className="size-4" />
           <AlertTitle>请立即保存 API Key</AlertTitle>
           <AlertDescription className="space-y-3">
             <div className="text-sm">明文只显示这一次，刷新页面后无法再次查看。</div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <Input readOnly value={createdApiKey} className="font-mono text-xs" />
               <Button type="button" variant="outline" onClick={() => void copyToClipboard(createdApiKey, "API Key")}>
-                <Copy className="mr-2 h-4 w-4" />
+                <Copy className="mr-2 size-4" />
                 复制
               </Button>
             </div>
@@ -140,13 +138,14 @@ export function AgentKeysPage() {
         <CardHeader>
           <CardTitle className="text-base">已颁发的 API Key</CardTitle>
           <CardDescription>
-            外部调用必须带 <span className="font-mono">Authorization: Bearer $PETRICHOR_API_KEY</span>，否则接口会失败并写入审计日志。
+            调用时以 <span className="font-mono">Authorization: Bearer &lt;API Key&gt;</span> 请求头鉴权；
+            撤销立即生效。
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           <div className="divide-y border-t">
             {loading && items.length === 0 ? (
-              <div className="space-y-3 p-4">
+              <div className="space-y-3 p-6">
                 <Skeleton className="h-4 w-40" />
                 <Skeleton className="h-4 w-full" />
                 <Skeleton className="h-4 w-2/3" />
@@ -154,35 +153,53 @@ export function AgentKeysPage() {
             ) : null}
 
             {!loading && items.length === 0 ? (
-              <div className="p-4 text-sm text-muted-foreground">
-                暂无 API Key，生成后即可安装 Skill 并调用文档能力。
+              <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
+                <div className="flex size-12 items-center justify-center rounded-full border bg-muted/50 text-muted-foreground">
+                  <KeyRound className="size-5" />
+                </div>
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">还没有 API Key</div>
+                  <div className="text-xs text-muted-foreground">
+                    生成后即可接入 MCP Server 或安装 Skill 包，调用文档能力。
+                  </div>
+                </div>
+                <Button type="button" size="sm" onClick={() => void createKey()} disabled={creating}>
+                  <KeyRound className="mr-2 size-4" />
+                  {creating ? "生成中..." : "生成第一个 Key"}
+                </Button>
               </div>
             ) : null}
 
             {items.map((item) => (
-              <div key={item.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0 space-y-1">
+              <div key={item.id} className="flex flex-col gap-3 px-6 py-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium">{item.name}</span>
-                    <span className="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
+                    <span className="rounded border bg-muted/60 px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
                       {item.keyPrefix}
                     </span>
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    权限：{item.scopes.map((scope) => scopeLabels[scope] ?? scope).join("、")}
+                  <div className="flex flex-wrap gap-1.5">
+                    {item.scopes.map((scope) => (
+                      <Badge key={scope} variant="outline" className="font-normal text-[11px] text-muted-foreground">
+                        {scopeLabels[scope] ?? scope}
+                      </Badge>
+                    ))}
                   </div>
                   <div className="text-xs text-muted-foreground">
                     最近使用：{formatDateTime(item.lastUsedAt)} · 创建：{formatDateTime(item.createdAt)}
+                    {item.expiresAt ? ` · 到期：${formatDateTime(item.expiresAt)}` : null}
                   </div>
                 </div>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
+                  className="shrink-0 text-muted-foreground hover:text-destructive"
                   onClick={() => void revokeKey(item)}
                   disabled={revokingId === item.id}
                 >
-                  <Trash2 className="mr-2 h-4 w-4" />
+                  <Trash2 className="mr-2 size-4" />
                   {revokingId === item.id ? "撤销中..." : "撤销"}
                 </Button>
               </div>

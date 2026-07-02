@@ -799,6 +799,29 @@ export const knowledgeBaseImportJobPages = pgTable("petrichor_kb_import_job_page
     index("idx_petrichor_kb_import_job_page_job").on(table.jobId),
 ])
 
+// 问答 Agent 跨 thread 长期记忆：从历史对话蒸馏的用户偏好/常关注主题/背景事实。
+// embedding 向量列（用于语义去重）通过迁移单独添加，走原生 SQL 读写。
+export const agentMemories = pgTable("petrichor_agent_memory", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    kind: text("kind").notNull(),
+    content: text("content").notNull(),
+    evidenceCount: integer("evidence_count").notNull().default(1),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    ...timestamps,
+}, (table) => [
+    index("idx_petrichor_agent_memory_user").on(table.userId, table.lastSeenAt),
+])
+
+// 蒸馏限频状态：每个用户一行，记录上次蒸馏时间与已消费到的消息水位
+export const agentMemoryStates = pgTable("petrichor_agent_memory_state", {
+    userId: bigint("user_id", { mode: "number" }).primaryKey(),
+    lastDistilledAt: timestamp("last_distilled_at", { withTimezone: true }),
+    lastMessageId: bigint("last_message_id", { mode: "number" }).notNull().default(0),
+    distillCount: integer("distill_count").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+})
+
 export type UserRecord = typeof users.$inferSelect
 export type BetterAuthUserRecord = typeof betterAuthUsers.$inferSelect
 export type BetterAuthAccountRecord = typeof betterAuthAccounts.$inferSelect
@@ -824,3 +847,5 @@ export type AiModelConfigRecord = typeof aiModelConfigs.$inferSelect
 export type AiReviewRecord = typeof aiReviews.$inferSelect
 export type KnowledgeBaseImportJobRecord = typeof knowledgeBaseImportJobs.$inferSelect
 export type KnowledgeBaseImportJobPageRecord = typeof knowledgeBaseImportJobPages.$inferSelect
+export type AgentMemoryRecord = typeof agentMemories.$inferSelect
+export type AgentMemoryStateRecord = typeof agentMemoryStates.$inferSelect

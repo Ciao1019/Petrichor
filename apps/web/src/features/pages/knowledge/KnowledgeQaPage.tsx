@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { createPortal } from "react-dom"
 import {
   ActionBarPrimitive,
   AssistantRuntimeProvider,
@@ -271,6 +272,84 @@ const SearchAcrossToolUI = makeAssistantToolUI({
                 <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{row.summary}</p>
               ) : null}
             </div>
+          ))}
+        </div>
+      </ToolStatusCard>
+    )
+  },
+})
+
+const DEEP_RESEARCH_TOOL_LABELS: Record<string, string> = {
+  read_wiki_index: "读索引",
+  search_document_tree: "推理检索",
+  semantic_search_tree: "语义检索",
+  read_tree_node: "读章节",
+  search_wiki_pages: "搜索 Wiki",
+  read_wiki_page: "读 Wiki",
+  read_source_article: "读原文",
+}
+
+function DeepResearchStatusIcon({ status }: { status: string }) {
+  if (status === "researching") return <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />
+  if (status === "completed") return <CheckCircle2 className="size-3.5 shrink-0 text-emerald-500" />
+  if (status === "failed") return <CircleAlert className="size-3.5 shrink-0 text-destructive" />
+  return <span className="size-2 shrink-0 rounded-full bg-muted-foreground/40" />
+}
+
+function DeepResearchKbRow({ kb }: { kb: Record<string, unknown> }) {
+  const name = String(kb.knowledgeBaseName ?? "知识库")
+  const status = typeof kb.status === "string" ? kb.status : "pending"
+  const steps = Array.isArray(kb.steps) ? kb.steps.map(asRecord).filter(isPresent) : []
+  const findings = typeof kb.findings === "string" ? kb.findings : ""
+  const citations = Array.isArray(kb.citations) ? kb.citations : []
+  const lastStep = steps.length > 0 ? steps[steps.length - 1] : null
+  const inProgress = status !== "completed" && status !== "failed"
+  return (
+    <div className="rounded-md border bg-background px-3 py-2">
+      <div className="flex items-center gap-2">
+        <DeepResearchStatusIcon status={status} />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{name}</span>
+        {steps.length > 0 ? <Badge variant="outline" className="shrink-0 text-[10px]">{steps.length} 步</Badge> : null}
+        {citations.length > 0 ? <Badge variant="secondary" className="shrink-0 text-[10px]">{citations.length} 引用</Badge> : null}
+      </div>
+      {inProgress && lastStep ? (
+        <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">
+          {DEEP_RESEARCH_TOOL_LABELS[String(lastStep.tool ?? "")] ?? String(lastStep.tool ?? "检索")}
+          {typeof lastStep.detail === "string" && lastStep.detail ? `：${lastStep.detail}` : ""}
+        </p>
+      ) : null}
+      {findings ? <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">{findings}</p> : null}
+    </div>
+  )
+}
+
+const DeepResearchToolUI = makeAssistantToolUI({
+  toolName: "deep_research_kbs",
+  render: ({ result, args, status }) => {
+    const payload = asRecord(result)
+    const kbs = Array.isArray(payload?.kbs) ? payload.kbs.map(asRecord).filter(isPresent) : []
+    const note = typeof payload?.note === "string" ? payload.note : ""
+    const query = typeof payload?.query === "string"
+      ? payload.query
+      : typeof asRecord(args)?.query === "string"
+        ? String(asRecord(args)?.query)
+        : ""
+    if (kbs.length === 0) {
+      return (
+        <ToolStatusCard title="跨库并行检索" status={status} icon={<Globe2 className="size-4" />}>
+          {note ? (
+            <p className="text-xs text-muted-foreground">{note}</p>
+          ) : query ? (
+            <p className="line-clamp-1 text-xs text-muted-foreground">研究：{query}</p>
+          ) : null}
+        </ToolStatusCard>
+      )
+    }
+    return (
+      <ToolStatusCard title="跨库并行检索" status={status} icon={<Globe2 className="size-4" />} collapsible defaultOpen>
+        <div className="space-y-1.5">
+          {kbs.map((kb, index) => (
+            <DeepResearchKbRow key={String(kb.knowledgeBaseId ?? index)} kb={kb} />
           ))}
         </div>
       </ToolStatusCard>
@@ -1163,6 +1242,7 @@ function QaChatPanel({
       <DataTableToolUI />
       <ListKbToolUI />
       <SearchAcrossToolUI />
+      <DeepResearchToolUI />
       <SearchWikiToolUI />
       <SearchTreeToolUI />
       <ReadTreeNodeToolUI />
@@ -1233,11 +1313,12 @@ function GrokThread({
       </AuiIf>
 
       <AuiIf condition={(s) => s.thread.isEmpty === false}>
-        <ThreadPrimitive.Viewport className="flex grow flex-col overflow-y-auto pt-10">
+        <ThreadPrimitive.Viewport className="qa-thread-viewport flex grow flex-col overflow-y-auto pt-10">
           <ThreadPrimitive.Messages>
             {() => <ChatMessage />}
           </ThreadPrimitive.Messages>
         </ThreadPrimitive.Viewport>
+        <QaThreadToc />
         <GrokComposer placeholder={isCrossKb ? "继续提问..." : `继续在「${scopeLabel}」里提问...`} {...composerProps} />
         <p className="mx-auto w-full max-w-3xl pb-2 text-center text-[#9a9a9a] text-xs">
           回答由 AI 生成，请自行核验关键信息。
@@ -1626,8 +1707,10 @@ function BottomModelSelector({
 }
 
 function ChatMessage() {
+  // data-qa-msg-id 是对话大纲（QaThreadToc）定位/滚动的 DOM 锚点
+  const messageId = useAuiState((s) => s.message.id)
   return (
-    <MessagePrimitive.Root className="group/message relative mx-auto mb-2 flex w-full max-w-3xl flex-col pb-0.5">
+    <MessagePrimitive.Root data-qa-msg-id={messageId} className="group/message relative mx-auto mb-2 flex w-full max-w-3xl flex-col pb-0.5">
       <AuiIf condition={(s) => s.message.role === "user"}>
         <UserMessageBubble />
       </AuiIf>
@@ -1635,6 +1718,235 @@ function ChatMessage() {
         <AssistantMessageBubble />
       </AuiIf>
     </MessagePrimitive.Root>
+  )
+}
+
+/* ─── 对话大纲（复用文档详情 .ftoc 悬浮目录，交互与 EditorTocOverlay 一致） ─── */
+
+const QA_TOC_VIEWPORT_SELECTOR = ".qa-thread-viewport"
+// 激活判定线：消息顶部越过视口顶部 + 该偏移即视为当前项（对齐文档页 +80 的判定）
+const QA_TOC_ACTIVE_OFFSET = 80
+// 点击定位后消息顶部距视口顶部的留白
+const QA_TOC_CLICK_OFFSET = 16
+const QA_TOC_LINE_W: Record<number, number> = { 2: 14, 3: 10 }
+const QA_TOC_LINE_W_ACTIVE: Record<number, number> = { 2: 22, 3: 18 }
+
+type QaTocItem = { id: string; level: number; text: string }
+
+function getQaViewport(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(QA_TOC_VIEWPORT_SELECTOR)
+}
+
+function stripInlineMarkdown(text: string): string {
+  return text
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[*_~`#>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function firstTextOfParts(parts: readonly unknown[]): string {
+  for (const raw of parts) {
+    const part = asRecord(raw)
+    if (part?.type === "text" && typeof part.text === "string" && part.text.trim()) {
+      return part.text.trim()
+    }
+  }
+  return ""
+}
+
+/** 用户消息取问题原文；AI 回复优先取正文首个 Markdown 标题，否则取首行。 */
+function deriveQaTocText(role: string, raw: string): string {
+  const fallback = role === "user" ? "（空消息）" : "AI 回答"
+  if (!raw) return fallback
+  if (role === "assistant") {
+    const heading = raw.match(/^#{1,6}\s+(.+)$/m)?.[1]
+    if (heading) return stripInlineMarkdown(heading) || fallback
+    const line = raw
+      .split("\n")
+      .map((item) => item.trim())
+      .find((item) => item.length > 0 && !item.startsWith("```"))
+    return stripInlineMarkdown(line ?? "") || fallback
+  }
+  return stripInlineMarkdown(raw) || fallback
+}
+
+function QaThreadToc() {
+  const messages = useAuiState((s) => s.thread.messages)
+  const items = React.useMemo<QaTocItem[]>(() => {
+    const list: QaTocItem[] = []
+    for (const message of messages) {
+      if (message.role !== "user" && message.role !== "assistant") continue
+      list.push({
+        id: message.id,
+        level: message.role === "user" ? 2 : 3,
+        text: deriveQaTocText(message.role, firstTextOfParts(message.parts)),
+      })
+    }
+    return list
+  }, [messages])
+  const hasItems = items.length > 0
+
+  const [activeId, setActiveId] = React.useState("")
+  // null = 未测量；测好定位再渲染，避免首帧闪位
+  const [tocRight, setTocRight] = React.useState<number | null>(null)
+  const [tocTop, setTocTop] = React.useState<number | null>(null)
+
+  React.useEffect(() => {
+    if (!hasItems) { setActiveId(""); return }
+    setActiveId((prev) => {
+      if (!prev) return items[0].id
+      return items.some((item) => item.id === prev) ? prev : items[0].id
+    })
+  }, [hasItems, items])
+
+  // 定位：贴聊天视口右缘，顶部按视口高度 20% 并夹在视口范围内
+  React.useLayoutEffect(() => {
+    const calc = () => {
+      const viewport = getQaViewport()
+      if (!viewport) return
+      const rect = viewport.getBoundingClientRect()
+      const vh = window.innerHeight
+      setTocRight(Math.max(4, window.innerWidth - rect.right + 8))
+      setTocTop(Math.min(Math.max(vh * 0.2, rect.top + 16), vh * 0.75))
+    }
+    calc()
+    const ro = new ResizeObserver(calc)
+    ro.observe(document.documentElement)
+    const viewport = getQaViewport()
+    if (viewport) ro.observe(viewport)
+    window.addEventListener("resize", calc)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener("resize", calc)
+    }
+  }, [])
+
+  // 滚动跟踪激活项：滚动源是聊天视口而非 window，其余与文档页一致
+  React.useEffect(() => {
+    if (!hasItems) return
+    const viewport = getQaViewport()
+    if (!viewport) return
+    let ticking = false
+
+    const updateActive = () => {
+      const nodes = Array.from(viewport.querySelectorAll<HTMLElement>("[data-qa-msg-id]"))
+      if (!nodes.length) return
+      const threshold = viewport.getBoundingClientRect().top + QA_TOC_ACTIVE_OFFSET
+      let active = nodes[0]
+      for (const node of nodes) {
+        if (node.getBoundingClientRect().top <= threshold) active = node
+      }
+      const id = active.dataset.qaMsgId
+      if (id) setActiveId(id)
+    }
+
+    updateActive()
+    const requestUpdate = () => {
+      if (ticking) return
+      ticking = true
+      window.requestAnimationFrame(() => { ticking = false; updateActive() })
+    }
+    viewport.addEventListener("scroll", requestUpdate, { passive: true })
+    window.addEventListener("resize", requestUpdate)
+    return () => {
+      viewport.removeEventListener("scroll", requestUpdate)
+      window.removeEventListener("resize", requestUpdate)
+    }
+  }, [hasItems])
+
+  const handleTocClick = React.useCallback((id: string) => {
+    const viewport = getQaViewport()
+    if (!viewport) return
+    const target = viewport.querySelector<HTMLElement>(`[data-qa-msg-id="${CSS.escape(id)}"]`)
+    if (!target) return
+    const top = target.getBoundingClientRect().top
+      - viewport.getBoundingClientRect().top
+      + viewport.scrollTop
+      - QA_TOC_CLICK_OFFSET
+    viewport.scrollTo({ top: Math.max(0, top), behavior: "smooth" })
+    setActiveId(id)
+  }, [])
+
+  if (!hasItems || tocRight === null || tocTop === null) return null
+  return (
+    <QaTocOverlay
+      items={items}
+      activeId={activeId}
+      rightOffset={tocRight}
+      topOffset={tocTop}
+      onTocClick={handleTocClick}
+    />
+  )
+}
+
+function QaTocOverlay({
+  items,
+  activeId,
+  rightOffset,
+  topOffset,
+  onTocClick,
+}: {
+  items: QaTocItem[]
+  activeId: string
+  rightOffset: number
+  topOffset: number
+  onTocClick: (id: string) => void
+}) {
+  const containerRef = React.useRef<HTMLElement | null>(null)
+  const clickLockRef = React.useRef(false)
+
+  React.useEffect(() => {
+    if (clickLockRef.current) return
+    const container = containerRef.current
+    if (!container || !activeId) return
+    const el = container.querySelector<HTMLElement>(`[data-toc-id="${CSS.escape(activeId)}"]`)
+    if (!el) return
+    const scrollTarget = el.offsetTop - container.clientHeight / 2 + el.clientHeight / 2
+    container.scrollTo({ top: scrollTarget, behavior: "smooth" })
+  }, [activeId])
+
+  const handleClick = React.useCallback((id: string) => {
+    const container = containerRef.current
+    if (container) {
+      const el = container.querySelector<HTMLElement>(`[data-toc-id="${CSS.escape(id)}"]`)
+      if (el) {
+        const scrollTarget = el.offsetTop - container.clientHeight / 2 + el.clientHeight / 2
+        container.scrollTo({ top: scrollTarget, behavior: "smooth" })
+      }
+    }
+    clickLockRef.current = true
+    onTocClick(id)
+    setTimeout(() => { clickLockRef.current = false }, 900)
+  }, [onTocClick])
+
+  // Portal 到 body，position:fixed 相对真实视口定位（同 EditorTocOverlay）
+  return createPortal(
+    <nav
+      className="ftoc"
+      ref={containerRef}
+      aria-label="对话大纲"
+      style={{ right: rightOffset, top: topOffset }}
+    >
+      {items.map((item) => {
+        const active = activeId === item.id
+        const w = active ? (QA_TOC_LINE_W_ACTIVE[item.level] ?? 18) : (QA_TOC_LINE_W[item.level] ?? 10)
+        return (
+          <div
+            key={item.id}
+            data-toc-id={item.id}
+            data-level={item.level}
+            className={cn("ftoc-item", active && "is-active")}
+            onClick={() => handleClick(item.id)}
+          >
+            <span className="ftoc-text">{item.text}</span>
+            <span className="ftoc-line" style={{ width: w }} />
+          </div>
+        )
+      })}
+    </nav>,
+    document.body
   )
 }
 
@@ -1723,6 +2035,7 @@ function MessageTimingDisplay() {
   const liveTiming = useMessageTiming()
   const messageMetadata = useAuiState((s) => s.message.metadata)
   const persistedTiming = React.useMemo(() => readPersistedTiming(messageMetadata), [messageMetadata])
+  const subAgentUsage = React.useMemo(() => readSubAgentUsage(messageMetadata), [messageMetadata])
   const timing = liveTiming?.totalStreamTime ? liveTiming : persistedTiming
   if (!timing?.totalStreamTime) return null
 
@@ -1761,6 +2074,14 @@ function MessageTimingDisplay() {
               </span>
             </div>
           )}
+          {subAgentUsage && (
+            <div className="flex items-center justify-between gap-4 border-t border-[#e5e5e5] pt-1.5 dark:border-[#2a2a2a]">
+              <span className="text-[#6b6b6b] dark:text-[#9a9a9a]">子检索</span>
+              <span className="font-mono text-[#0d0d0d] tabular-nums dark:text-white">
+                {subAgentUsage.calls} 次 · {formatCompactTokens(subAgentUsage.totalTokens)} tok
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1777,6 +2098,26 @@ function readPersistedTiming(metadata: unknown) {
   const tokensPerSecond = typeof record.tokensPerSecond === "number" ? record.tokensPerSecond : undefined
   const totalChunks = typeof record.totalChunks === "number" ? record.totalChunks : 0
   return { firstTokenTime, totalStreamTime, tokensPerSecond, totalChunks }
+}
+
+function readSubAgentUsage(metadata: unknown) {
+  const root = asRecord(metadata)
+  if (!root) return undefined
+  const record = asRecord(root.custom) ?? root
+  const usage = asRecord(record.subAgentUsage)
+  if (!usage) return undefined
+  const calls = typeof usage.calls === "number" ? usage.calls : 0
+  if (calls <= 0) return undefined
+  const inputTokens = typeof usage.inputTokens === "number" ? usage.inputTokens : 0
+  const outputTokens = typeof usage.outputTokens === "number" ? usage.outputTokens : 0
+  const totalTokens = typeof usage.totalTokens === "number" ? usage.totalTokens : inputTokens + outputTokens
+  return { calls, totalTokens }
+}
+
+function formatCompactTokens(tokens: number) {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`
+  return String(tokens)
 }
 
 function formatStreamTime(ms: number | undefined) {
@@ -2228,6 +2569,7 @@ function extractPersistedMessageMetadata(content: unknown) {
   if (typeof record.totalStreamTime === "number") custom.totalStreamTime = record.totalStreamTime
   if (typeof record.totalChunks === "number") custom.totalChunks = record.totalChunks
   if (typeof record.tokensPerSecond === "number") custom.tokensPerSecond = record.tokensPerSecond
+  if (record.subAgentUsage !== undefined) custom.subAgentUsage = record.subAgentUsage
   return Object.keys(custom).length > 0 ? { custom } : null
 }
 

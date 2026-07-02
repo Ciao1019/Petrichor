@@ -1,13 +1,50 @@
 "use client"
 
-import { Copy, Download, Package } from "lucide-react"
+import { ArrowRight, Download, FileCode2, Package, Plug } from "lucide-react"
 import { Link } from "react-router-dom"
 
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { CodeBlock, CodeBlockCode } from "@/components/ui/code-block"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { dashboardRoutes } from "@/lib/dashboard-routes"
 
-import { copyToClipboard, getSkillPackUrl, getSkillUrl } from "./agent-shared"
+import {
+  buildClaudeCodeSkillSnippet,
+  buildCodexSkillSnippet,
+  buildGenericSkillSnippet,
+  copyToClipboard,
+  getSkillPackUrl,
+  getSkillUrl,
+} from "./agent-shared"
+import { AgentCopyRow, AgentPageHeader, AgentStepList, AgentToolChips } from "./agent-ui"
+
+const SKILL_PACKAGE_FILES: Array<{ path: string; description: string }> = [
+  { path: "petrichor/SKILL.md", description: "根入口：按用户意图路由到对应子文档" },
+  { path: "skills/setup.md", description: "安装、环境变量、自检与接口发现" },
+  { path: "skills/articles.md", description: "文章 / 文件夹的新建、更新、删除、移动" },
+  { path: "skills/docs.md", description: "知识库浏览与关键词 / 推理 / 语义三种检索" },
+  { path: "skills/qa.md", description: "单库与跨库文档问答" },
+  { path: "skills/share.md", description: "分享链接、密码与到期管理" },
+  { path: "skills/ai.md", description: "AI 摘要、思维导图、知识图谱生成" },
+  { path: "skills/wiki.md", description: "知识 Wiki 浏览、重建与体检" },
+  { path: "scripts/petrichor", description: "零依赖 Python CLI（所有能力的统一入口）" },
+  { path: "scripts/petrichor-api.sh", description: "curl 版回退脚本（无 Python 环境时）" },
+  { path: "references/endpoints.md", description: "全部 REST 端点的字段与示例" },
+]
+
+const SKILL_CAPABILITIES = [
+  "文章读写",
+  "关键词检索",
+  "推理检索",
+  "语义检索",
+  "文档问答",
+  "文章分享",
+  "AI 摘要",
+  "思维导图",
+  "Wiki 维护",
+]
 
 export function AgentSkillPage() {
   const skillUrl = getSkillUrl()
@@ -15,94 +52,219 @@ export function AgentSkillPage() {
 
   return (
     <div className="flex w-full flex-col gap-6 px-6 py-6 lg:px-10">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="space-y-1">
-          <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <Package className="size-6 text-primary" />
-            Skill 包
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            下载并在 Agent 工具（Claude Code、Codex 等）中安装 Skill 包，使其可调用 Petrichor 的文档能力。
-          </p>
+      <AgentPageHeader
+        icon={Package}
+        title="Skill 包"
+        description={
+          <>
+            为不支持 MCP 的 Agent 准备的能力包：一个按意图路由的 Skill 加零依赖 CLI，
+            任何能执行 shell 的 Agent（Claude Code、Codex 等）都能调用 Petrichor 的全部文档能力。
+          </>
+        }
+        actions={
+          <Button type="button" asChild>
+            <a href={skillPackUrl} download="petrichor-agent-skills.zip">
+              <Download className="mr-2 size-4" />
+              下载 Skill 包
+            </a>
+          </Button>
+        }
+      />
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="flex min-w-0 flex-col gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">包地址</CardTitle>
+              <CardDescription>
+                调用需配合
+                <Link to={dashboardRoutes.agentKeys} className="mx-1 underline underline-offset-2">
+                  API Key
+                </Link>
+                使用：所有受保护接口都要带
+                <span className="mx-1 font-mono">Authorization: Bearer $PETRICHOR_API_KEY</span>
+                请求头。
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <AgentCopyRow label="Skill 包（ZIP，推荐）" value={skillPackUrl} />
+              <div className="text-xs text-muted-foreground">
+                兼容旧单文件 Skill：
+                <button
+                  type="button"
+                  className="ml-1 font-mono underline underline-offset-2"
+                  onClick={() => void copyToClipboard(skillUrl, "单文件 Skill 地址")}
+                >
+                  {skillUrl}
+                </button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">安装方式</CardTitle>
+              <CardDescription>选择你的 Agent 工具，替换其中的 API Key 后执行。</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Tabs defaultValue="claude-code">
+                <TabsList className="w-full">
+                  <TabsTrigger value="claude-code" className="flex-1">Claude Code</TabsTrigger>
+                  <TabsTrigger value="codex" className="flex-1">Codex CLI</TabsTrigger>
+                  <TabsTrigger value="generic" className="flex-1">通用 CLI</TabsTrigger>
+                </TabsList>
+                <TabsContent value="claude-code" className="mt-3 space-y-2">
+                  <CodeBlock>
+                    <CodeBlockCode code={buildClaudeCodeSkillSnippet()} language="bash" showLineNumbers={false} />
+                  </CodeBlock>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    解压到 <span className="font-mono">~/.claude/skills/</span> 后全局可用；只给单个项目用就解压到项目的
+                    <span className="ml-1 font-mono">.claude/skills/</span>。对话中说「问问我的知识库」即可触发。
+                  </p>
+                </TabsContent>
+                <TabsContent value="codex" className="mt-3 space-y-2">
+                  <CodeBlock>
+                    <CodeBlockCode code={buildCodexSkillSnippet()} language="bash" showLineNumbers={false} />
+                  </CodeBlock>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    旧版本 Codex 不支持 skills 目录时，把包解压到仓库任意位置，并在
+                    <span className="mx-1 font-mono">AGENTS.md</span>
+                    中注明「Petrichor 相关任务请先阅读 petrichor/SKILL.md」。
+                  </p>
+                </TabsContent>
+                <TabsContent value="generic" className="mt-3 space-y-2">
+                  <CodeBlock>
+                    <CodeBlockCode code={buildGenericSkillSnippet()} language="bash" showLineNumbers={false} />
+                  </CodeBlock>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    CLI 仅依赖 Python 3.8+ 标准库；没有 Python 时用
+                    <span className="mx-1 font-mono">scripts/petrichor-api.sh</span>
+                    （curl 版，功能等价）。
+                  </p>
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileCode2 className="size-4 text-muted-foreground" />
+                包内结构
+              </CardTitle>
+              <CardDescription>
+                根 SKILL.md 按需路由，Agent 不会一次性加载所有子文档，节省上下文。
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="divide-y border-t">
+                {SKILL_PACKAGE_FILES.map((file) => (
+                  <div key={file.path} className="flex flex-col gap-1 px-6 py-2.5 sm:flex-row sm:items-center sm:gap-4">
+                    <span className="shrink-0 font-mono text-xs sm:w-56">{file.path}</span>
+                    <span className="text-xs text-muted-foreground">{file.description}</span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">使用步骤</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AgentStepList
+                steps={[
+                  {
+                    title: (
+                      <>
+                        生成
+                        <Link to={dashboardRoutes.agentKeys} className="mx-1 underline underline-offset-2">
+                          API Key
+                        </Link>
+                      </>
+                    ),
+                    description: "明文仅展示一次，请妥善保存。",
+                  },
+                  {
+                    title: "下载并解压 Skill 包",
+                    description: "按左侧对应工具的安装片段操作。",
+                  },
+                  {
+                    title: "设置环境变量",
+                    description: (
+                      <>
+                        <span className="font-mono">PETRICHOR_BASE_URL</span> 与
+                        <span className="ml-1 font-mono">PETRICHOR_API_KEY</span>。
+                      </>
+                    ),
+                  },
+                  {
+                    title: "自检",
+                    description: (
+                      <>
+                        运行 <span className="font-mono">scripts/petrichor capabilities</span>
+                        ，返回权限列表即安装成功。
+                      </>
+                    ),
+                  },
+                  {
+                    title: "审计与排障",
+                    description: (
+                      <>
+                        调用记录在
+                        <Link to={dashboardRoutes.agentLogs} className="mx-1 underline underline-offset-2">
+                          调用日志
+                        </Link>
+                        中可查。
+                      </>
+                    ),
+                  },
+                ]}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">能力范围</CardTitle>
+              <CardDescription>与 MCP 工具能力一致，并额外覆盖 AI 生成。</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <AgentToolChips items={SKILL_CAPABILITIES} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Plug className="size-4 text-muted-foreground" />
+                客户端支持 MCP？
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-xs leading-relaxed text-muted-foreground">
+              <p>
+                Claude Code、Codex、Cursor 等支持 MCP 的客户端推荐优先接入 MCP Server：
+                无需下载文件与配置环境变量，工具参数还带结构化校验。
+              </p>
+              <Button asChild variant="outline" size="sm" className="w-full">
+                <Link to={dashboardRoutes.agentMcp}>
+                  前往 MCP Server
+                  <ArrowRight className="ml-2 size-4" />
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <div className="flex flex-wrap gap-1.5 px-1">
+            <Badge variant="secondary" className="font-normal">零依赖 CLI</Badge>
+            <Badge variant="secondary" className="font-normal">按意图路由</Badge>
+            <Badge variant="secondary" className="font-normal">兼容 Agent Skills 规范</Badge>
+          </div>
         </div>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Skill 包下载</CardTitle>
-          <CardDescription>
-            推荐使用打包后的 Skill 压缩包。该地址需配合
-            <Link to={dashboardRoutes.agentKeys} className="ml-1 underline underline-offset-2">
-              API Key
-            </Link>
-            一起使用。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-col gap-2 rounded-md border bg-muted/30 p-3">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <div className="text-sm font-medium">Skill 包地址</div>
-                <div className="break-all text-xs text-muted-foreground">{skillPackUrl}</div>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void copyToClipboard(skillPackUrl, "Skill 包地址")}
-                >
-                  <Copy className="mr-2 h-4 w-4" />
-                  复制地址
-                </Button>
-                <Button type="button" size="sm" asChild>
-                  <a href={skillPackUrl} download="petrichor-agent-skills.zip">
-                    <Download className="mr-2 h-4 w-4" />
-                    下载包
-                  </a>
-                </Button>
-              </div>
-            </div>
-            <div className="text-xs text-muted-foreground">
-              兼容旧单文件 Skill：
-              <button
-                type="button"
-                className="ml-1 underline underline-offset-2"
-                onClick={() => void copyToClipboard(skillUrl, "单文件 Skill 地址")}
-              >
-                {skillUrl}
-              </button>
-            </div>
-            <div className="text-xs text-muted-foreground">
-              外部调用必须带 <span className="font-mono">Authorization: Bearer $PETRICHOR_API_KEY</span> 请求头，否则接口会失败并写入审计日志。
-            </div>
-          </div>
-
-          <div className="grid gap-3 text-sm">
-            <div className="rounded-md border p-3">
-              <div className="mb-1 font-medium">使用步骤</div>
-              <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
-                <li>
-                  前往
-                  <Link to={dashboardRoutes.agentKeys} className="mx-1 underline underline-offset-2">
-                    API Key 管理
-                  </Link>
-                  生成专属密钥（明文仅展示一次，请妥善保存）。
-                </li>
-                <li>下载 Skill 包并在本地 Agent 工具（Claude Code、Codex 等）中导入。</li>
-                <li>按提示设置 <span className="font-mono">PETRICHOR_BASE_URL</span> 与 <span className="font-mono">PETRICHOR_API_KEY</span> 环境变量。</li>
-                <li>
-                  调用情况会同步记录到
-                  <Link to={dashboardRoutes.agentLogs} className="mx-1 underline underline-offset-2">
-                    调用日志
-                  </Link>
-                  ，可用于审计与排障。
-                </li>
-              </ol>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }

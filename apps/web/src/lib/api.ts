@@ -1190,6 +1190,18 @@ export interface AiReviewStatsKnowledgeBase {
   articleCount: number
 }
 
+export interface AiReviewEvolutionEntry {
+  period: string
+  title: string
+  note: string
+}
+
+export interface AiReviewEvolution {
+  topic: string
+  synthesis: string
+  entries: AiReviewEvolutionEntry[]
+}
+
 export interface AiReviewStats {
   newArticles: number
   updatedArticles: number
@@ -1198,6 +1210,7 @@ export interface AiReviewStats {
   topTags: AiReviewStatsTopTag[]
   topArticles: AiReviewStatsTopArticle[]
   knowledgeBases: AiReviewStatsKnowledgeBase[]
+  evolution?: AiReviewEvolution | null
 }
 
 export interface AiReviewResponse {
@@ -1263,6 +1276,39 @@ export const aiReviewApi = {
     api.post<TableDataInfo<AiReviewListItem>>("/ai/review/list", data),
   periodOptions: () =>
     api.post<AiReviewPeriodOptionsResponse>("/ai/review/period-options", {}),
+}
+
+export type AgentMemoryKind = "PREFERENCE" | "TOPIC" | "FACT"
+
+export interface AgentMemoryItem {
+  id: string
+  kind: AgentMemoryKind
+  content: string
+  evidenceCount: number
+  lastSeenAt: string
+  createdAt: string
+}
+
+export interface AgentMemoryListResponse {
+  items: AgentMemoryItem[]
+  state: {
+    lastDistilledAt: string | null
+    distillCount: number
+    pendingMessageCount: number
+  }
+}
+
+export interface AgentMemoryDistillResponse {
+  status: "distilled" | "skipped" | "no_new_messages" | "nothing_to_keep"
+  created: number
+  merged: number
+  sampledQuestions: number
+}
+
+export const agentMemoryApi = {
+  list: () => api.post<AgentMemoryListResponse>("/kb/agent/memory/list", {}),
+  delete: (memoryId: string) => api.post<{ memoryId: string; deleted: boolean }>("/kb/agent/memory/delete", { memoryId }),
+  distill: () => api.post<AgentMemoryDistillResponse>("/kb/agent/memory/distill", {}),
 }
 
 export const notificationApi = {

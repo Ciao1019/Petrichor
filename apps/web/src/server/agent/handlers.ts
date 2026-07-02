@@ -47,7 +47,7 @@ import {
     searchWikiPagesAcrossKbs,
     searchWikiPagesForAgent,
 } from "@/server/kb/wiki-agent-logic"
-import { retrieveTreeNodesForAgent } from "@/server/kb/wiki-tree"
+import { retrieveTreeNodesForAgent, semanticSearchTreeNodes } from "@/server/kb/wiki-tree"
 import { invalidatePublicArticleDetailCache, invalidatePublicArticleListCache } from "@/server/public-content-cache"
 import { getServerConfig } from "@/config/server"
 import { deleteS3Objects, extractS4ObjectKeysFromArticleContent } from "@/server/upload/s3-delete"
@@ -65,7 +65,7 @@ import {
     toAgentApiKeyResponse,
     type AgentAuthContext,
 } from "@/server/agent/api-key"
-import { buildAgentManifest, buildAgentSkillMarkdown, buildAgentSkillPackageZip } from "@/server/agent/skill"
+import { buildAgentManifest, buildAgentMcpInfo, buildAgentSkillMarkdown, buildAgentSkillPackageZip } from "@/server/agent/skill"
 import { getPublicBaseUrl } from "@/server/public-site/site-url"
 
 type Db = ReturnType<typeof getDb>
@@ -139,6 +139,13 @@ const agentDocumentViewSchema = z.object({
 })
 
 const agentDocumentTreeSchema = z.object({
+    knowledgeBaseId: idSchema,
+    query: z.string().trim().min(1).max(200),
+    limit: z.coerce.number().int().min(1).max(12).optional().default(6),
+    articleId: idSchema.optional(),
+})
+
+const agentDocumentSemanticSearchSchema = z.object({
     knowledgeBaseId: idSchema,
     query: z.string().trim().min(1).max(200),
     limit: z.coerce.number().int().min(1).max(12).optional().default(6),
@@ -370,6 +377,7 @@ export async function agentCapabilities(request: NextRequest) {
                 "article.mindmap.generate",
                 "document.search",
                 "document.tree",
+                "document.semantic-search",
                 "document.view",
                 "document.qa",
                 "wiki.page.list",
@@ -378,6 +386,7 @@ export async function agentCapabilities(request: NextRequest) {
                 "wiki.ingest",
             ],
             manifest: buildAgentManifest(baseUrl),
+            mcp: buildAgentMcpInfo(baseUrl),
             knowledgeBases: await listUserKnowledgeBases(context.userId),
         })
     })
@@ -706,6 +715,21 @@ export async function agentRetrieveDocumentTree(request: NextRequest) {
         requireAgentScope(context, "doc:read")
         const input = agentDocumentTreeSchema.parse(await readJson(request))
         const items = await retrieveTreeNodesForAgent({
+            userId: context.userId,
+            knowledgeBaseId: input.knowledgeBaseId,
+            query: input.query,
+            limit: input.limit,
+            articleId: input.articleId ?? undefined,
+        })
+        return ok({ items })
+    })
+}
+
+export async function agentSemanticSearchDocumentTree(request: NextRequest) {
+    return withAgent(request, async (context) => {
+        requireAgentScope(context, "doc:read")
+        const input = agentDocumentSemanticSearchSchema.parse(await readJson(request))
+        const items = await semanticSearchTreeNodes({
             userId: context.userId,
             knowledgeBaseId: input.knowledgeBaseId,
             query: input.query,

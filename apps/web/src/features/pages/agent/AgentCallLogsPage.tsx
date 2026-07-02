@@ -27,7 +27,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 
-import { formatDateTime, formatPayload, normalizeAxiosErrorMessage } from "./agent-shared"
+import { formatDateTime, formatPayload, normalizeAxiosErrorMessage, parseMcpToolFromUserAgent } from "./agent-shared"
+import { AgentPageHeader } from "./agent-ui"
 
 const PAGE_SIZE = 12
 
@@ -82,17 +83,11 @@ export function AgentCallLogsPage() {
 
   return (
     <div className="flex w-full flex-col gap-6 px-6 py-6 lg:px-10">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="space-y-1">
-          <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <FileText className="size-6 text-primary" />
-            外部调用日志
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            展示最近 100 条 Agent API 调用，包含接口、状态与耗时。点击「详情」查看完整入参/出参。
-          </p>
-        </div>
-      </div>
+      <AgentPageHeader
+        icon={FileText}
+        title="外部调用日志"
+        description="展示最近 100 条 Agent API 调用（含 MCP 工具调用），包含接口、状态与耗时。点击「详情」查看完整入参/出参。"
+      />
 
       <Card>
         <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -141,6 +136,7 @@ export function AgentCallLogsPage() {
                 ) : pagedLogs.length > 0 ? (
                   pagedLogs.map((log) => {
                     const isFailure = log.statusCode >= 400
+                    const mcpTool = parseMcpToolFromUserAgent(log.userAgent)
                     return (
                       <TableRow key={log.id}>
                         <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
@@ -148,11 +144,21 @@ export function AgentCallLogsPage() {
                         </TableCell>
                         <TableCell className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="shrink-0 font-mono text-[11px]">
-                              {log.method}
-                            </Badge>
-                            <span className="truncate font-mono text-xs" title={log.path}>
-                              {log.path}
+                            {mcpTool ? (
+                              <Badge
+                                variant="outline"
+                                className="shrink-0 border-primary/25 bg-primary/5 font-mono text-[11px] font-normal text-primary"
+                                title={`MCP 工具：${mcpTool}`}
+                              >
+                                MCP
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="shrink-0 font-mono text-[11px]">
+                                {log.method}
+                              </Badge>
+                            )}
+                            <span className="truncate font-mono text-xs" title={mcpTool ?? log.path}>
+                              {mcpTool ?? log.path}
                             </span>
                           </div>
                           {log.errorMessage ? (
@@ -235,6 +241,7 @@ function CallLogDetailDialog({
   onClose: () => void
 }) {
   const isFailure = log ? log.statusCode >= 400 : false
+  const mcpTool = log ? parseMcpToolFromUserAgent(log.userAgent) : null
 
   return (
     <Dialog open={Boolean(log)} onOpenChange={(open) => (open ? null : onClose())}>
@@ -252,6 +259,14 @@ function CallLogDetailDialog({
                 <Badge variant="outline" className="font-mono text-xs">
                   {log.method}
                 </Badge>
+                {mcpTool ? (
+                  <Badge
+                    variant="outline"
+                    className="border-primary/25 bg-primary/5 font-mono text-xs font-normal text-primary"
+                  >
+                    MCP · {mcpTool}
+                  </Badge>
+                ) : null}
                 <span className="break-all font-mono text-sm text-foreground">{log.path}</span>
                 <Badge
                   variant="outline"

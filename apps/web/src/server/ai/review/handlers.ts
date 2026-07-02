@@ -36,7 +36,16 @@ import {
     buildReviewUserMessage,
     normalizeReviewNarrative,
 } from "./prompt"
-import { aggregateReviewStats, type ReviewStats } from "./stats"
+import {
+    buildEvolutionSystemPrompt,
+    buildEvolutionUserMessage,
+    evolutionTopicLabel,
+    gatherEvolutionMaterial,
+    hasEnoughEvolutionSpan,
+    parseEvolutionResult,
+    selectEvolutionTopic,
+} from "./evolution"
+import { aggregateReviewStats, type ReviewEvolution, type ReviewStats } from "./stats"
 
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
 
@@ -211,6 +220,11 @@ async function generateAndPersist(input: {
         modelConfigId = chatResult.config?.id ?? null
     }
 
+    // 月报专属：认知演化时间线。任何环节失败都静默降级，不影响月报主体。
+    if (period === "MONTH" && hasActivity) {
+        stats.evolution = await buildEvolutionForReview({ db, userId, stats }).catch(() => null)
+    }
+
     ensureNarrativeLength(narrative)
     const statsJson = JSON.stringify(stats)
     ensureStatsJsonLength(statsJson)
@@ -272,6 +286,29 @@ async function generateAndPersist(input: {
         fromCache: false,
         now,
     })
+}
+
+async function buildEvolutionForReview(input: {
+    db: ReturnType<typeof getDb>
+    userId: number
+    stats: ReviewStats
+}): Promise<ReviewEvolution | null> {
+    const { db, userId, stats } = input
+    const topic = selectEvolutionTopic(stats)
+    if (!topic) return null
+
+    const articles = await gatherEvolutionMaterial({ db, userId, topic })
+    if (!hasEnoughEvolutionSpan(articles)) return null
+
+    const completion = await callChatCompletion({
+        userId,
+        systemPrompt: buildEvolutionSystemPrompt(),
+        message: buildEvolutionUserMessage({
+            topicLabel: evolutionTopicLabel(topic),
+            articles,
+        }),
+    })
+    return parseEvolutionResult(completion.answer)
 }
 
 async function collectArticleSnippets(input: {

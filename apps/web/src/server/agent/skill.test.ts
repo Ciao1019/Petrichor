@@ -83,6 +83,16 @@ describe("Agent Skill 文件", () => {
             .toContain("petrichor wiki ingest")
         expect(files.find((file) => file.path === "petrichor/scripts/petrichor")?.content)
             .toContain("/api/agent/wiki/page/list")
+
+        // 与 MCP 工具能力保持一致：语义检索命令、端点说明、MCP 替代入口
+        expect(files.find((file) => file.path === "petrichor/scripts/petrichor")?.content)
+            .toContain("/api/agent/document/semantic-search")
+        expect(files.find((file) => file.path === "petrichor/skills/docs.md")?.content)
+            .toContain("doc semantic")
+        expect(files.find((file) => file.path === "petrichor/references/endpoints.md")?.content)
+            .toContain("/api/agent/document/semantic-search")
+        expect(files.find((file) => file.path === "petrichor/skills/setup.md")?.content)
+            .toContain("/api/mcp")
     })
 
     it("输出 ZIP 文件", () => {
@@ -107,6 +117,9 @@ describe("Agent Skill 文件", () => {
         expect(manifest.endpoints.wikiIngest).toBe("/api/agent/wiki/ingest")
         expect(manifest.scopes["wiki:read"]).toEqual(["wiki.page.list", "wiki.page.detail", "wiki.lint"])
         expect(manifest.scopes["wiki:write"]).toEqual(["wiki.ingest"])
+        expect(manifest.endpoints.documentSemanticSearch).toBe("/api/agent/document/semantic-search")
+        expect(manifest.mcp.endpoint).toBe("https://petrichor.example.com/api/mcp")
+        expect(manifest.mcp.transport).toBe("streamable-http")
         expect(manifest).not.toHaveProperty("requiredHeaders")
     })
 })
