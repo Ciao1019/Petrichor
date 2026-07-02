@@ -634,6 +634,10 @@ export function KnowledgeQaPage() {
     setSelectedConfigId(next)
   }, [])
 
+  const hideThreadSidebar = React.useCallback(() => {
+    setSidebarOpen(false)
+  }, [])
+
   const loadThread = React.useCallback(async (threadId: string) => {
     setThreadLoading(true)
     try {
@@ -1029,7 +1033,7 @@ export function KnowledgeQaPage() {
         ) : null}
 
         {/* Chat area */}
-        <div className="relative min-h-0 flex-1">
+        <div className="relative min-h-0 flex-1" onPointerDownCapture={hideThreadSidebar}>
           <QaChatPanel
             key={runtimeSeed}
             knowledgeBaseId={scopeKnowledgeBaseId}
@@ -1043,7 +1047,7 @@ export function KnowledgeQaPage() {
             modelInfo={selectedModel}
             selectedConfigId={selectedConfigId}
             onConfigChange={handleSelectConfigId}
-            onComposerFocus={() => setSidebarOpen(false)}
+            onComposerFocus={hideThreadSidebar}
           />
         </div>
       </main>

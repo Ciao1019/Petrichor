@@ -634,6 +634,10 @@ export function DocLibraryQaPage() {
     setSelectedConfigId(next)
   }, [])
 
+  const hideThreadSidebar = React.useCallback(() => {
+    setSidebarOpen(false)
+  }, [])
+
   const loadThread = React.useCallback(async (threadId: string) => {
     setThreadLoading(true)
     try {
@@ -1031,7 +1035,7 @@ export function DocLibraryQaPage() {
         ) : null}
 
         {/* Chat area */}
-        <div className="relative min-h-0 flex-1">
+        <div className="relative min-h-0 flex-1" onPointerDownCapture={hideThreadSidebar}>
           {modelInfo && modelInfo.configId == null ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
               <p>还没有配置「文档库问答（Doc QA）」模型。</p>
@@ -1051,7 +1055,7 @@ export function DocLibraryQaPage() {
               modelInfo={selectedModel}
               selectedConfigId={selectedConfigId}
               onConfigChange={handleSelectConfigId}
-              onComposerFocus={() => setSidebarOpen(false)}
+              onComposerFocus={hideThreadSidebar}
             />
           )}
         </div>
