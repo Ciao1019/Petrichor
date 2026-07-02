@@ -99,7 +99,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           isDashboardSectionPath(pathname, "agent-memory"),
         items: [
           {
-            title: "文档问答",
+            title: "知识问答",
             url: dashboardRoutes.qa,
             icon: IconMessageChatbot,
           },
