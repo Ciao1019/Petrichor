@@ -31,13 +31,14 @@
 - 公开 manifest：`/api/agent/manifest`，让 Agent 不依赖猜测即可发现接口地址。
 - Skill 兼容层：`/api/agent/skill`，输出单文件 `SKILL.md`（兼容旧入口）。
 - Skill 包：`/api/agent/skill-pack`，输出 `petrichor-agent-skills.zip`，内含一个顶层 `petrichor/` Skill，根目录 `SKILL.md` 按用户意图路由到子文档：
-  - `skills/setup.md`：环境变量、自检、接口发现。
+  - `config.json`：站点地址与 Agent API Key 配置。
+  - `skills/setup.md`：配置、自检、接口发现。
   - `skills/articles.md`：新建文章、更新文章、删除文章、创建文件夹、移动文章。
   - `skills/docs.md`：知识库列表、目录树、文档搜索、文档查看。
   - `skills/qa.md`：文档问答和引用结果使用。
   - `skills/share.md`：文章分享创建/撤销/查询、密码与到期管理。
   - `skills/ai.md`：AI 摘要、思维导图、知识图谱生成。
-  - `scripts/petrichor`、`scripts/petrichor-api.sh`、`references/endpoints.md` 全 skill 共用一份。
+  - `scripts/petrichor`、`scripts/petrichor-api.sh`、`references/endpoints.md` 全 skill 共用一份，并默认读取 `config.json`。
 - MCP Server：`/api/mcp`，无状态 Streamable HTTP，详见下方「MCP Server」一节。
 - API Key：平台账号页生成，服务端只存 `sha256` 哈希，明文只返回一次。
 - 调用审计：服务端记录每次外部 Agent API 调用的来源 IP、User-Agent、
@@ -97,8 +98,7 @@ Codex CLI（`~/.codex/config.toml`）：
 ```toml
 [mcp_servers.petrichor]
 url = "https://your-petrichor.example.com/api/mcp"
-# 推荐：把 Key 放环境变量，Codex 会自动以 Authorization: Bearer 发送
-bearer_token_env_var = "PETRICHOR_API_KEY"
+http_headers = { Authorization = "Bearer ptc_live_xxx" }
 ```
 
 Cursor / Claude Desktop 等 JSON 配置的客户端：

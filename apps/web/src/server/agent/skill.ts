@@ -147,6 +147,7 @@ export function buildAgentSkillPackageFiles(baseUrl: string): AgentSkillPackageF
 
     return [
         { path: "petrichor/SKILL.md", content: buildRootSkillMarkdown(normalizedBaseUrl) },
+        { path: "petrichor/config.json", content: buildSkillConfigJson(normalizedBaseUrl) },
         { path: "petrichor/skills/setup.md", content: buildSetupSubSkillMarkdown(normalizedBaseUrl) },
         { path: "petrichor/skills/articles.md", content: buildArticlesSubSkillMarkdown() },
         { path: "petrichor/skills/docs.md", content: buildDocsSubSkillMarkdown() },
@@ -165,6 +166,14 @@ export function buildAgentSkillPackageZip(baseUrl: string) {
     return createZip(buildAgentSkillPackageFiles(baseUrl))
 }
 
+function buildSkillConfigJson(baseUrl: string) {
+    return `${JSON.stringify({
+        baseUrl: normalizeAgentBaseUrl(baseUrl),
+        apiKey: "ptc_live_xxx",
+    }, null, 2)}
+`
+}
+
 function buildRootSkillMarkdown(baseUrl: string) {
     return `---
 name: petrichor
@@ -175,26 +184,29 @@ description: Use this skill when an AI agent needs to call the Petrichor externa
 
 Petrichor 的外部 Agent 入口。整个 skill 只暴露一个 \`petrichor\`，根据用户意图按需读取对应子文档，不要一次性加载所有子文档。
 
-## 首次安装/排错
+## 首次配置/排错
 
 \`\`\`bash
 chmod +x scripts/petrichor
 \`\`\`
 
-确保终端里有以下环境变量：
+编辑同目录的 \`config.json\`，填入 Petrichor 站点地址和 Agent API Key：
 
-\`\`\`bash
-export PETRICHOR_BASE_URL="${baseUrl}"
-export PETRICHOR_API_KEY="ptc_live_xxx"
+\`\`\`json
+{
+  "baseUrl": "${baseUrl}",
+  "apiKey": "ptc_live_xxx"
+}
 \`\`\`
 
+> \`scripts/petrichor\` 和 \`scripts/petrichor-api.sh\` 都优先读取 \`config.json\`；环境变量仅作为兼容兜底。
 > 如果运行环境没有 Python 3.8+，回退到 \`scripts/petrichor-api.sh\`（curl 版本，功能等价）。
 
 ## 路由（按用户意图选一个子文档读）
 
 | 用户意图 | 读取这个子文档 |
 | --- | --- |
-| 安装、自检、查 API Key 权限、发现接口 | \`Read skills/setup.md\` |
+| 配置、自检、查 API Key 权限、发现接口 | \`Read skills/setup.md\` |
 | 新建 / 更新 / 删除文章、新建文件夹、移动文章 | \`Read skills/articles.md\` |
 | 浏览知识库、看目录树、列文章、搜索文档（关键词 / 推理 / 语义）、查看正文 / Wiki | \`Read skills/docs.md\` |
 | 文档问答、跨库问答、引用知识库内容回答 | \`Read skills/qa.md\` |
@@ -207,7 +219,7 @@ export PETRICHOR_API_KEY="ptc_live_xxx"
 ## 通用规则（任何子文档都生效）
 
 - 不要把完整 API Key 写入文件、提交、日志或最终回复。
-- 所有受保护接口必须带 \`Authorization: Bearer $PETRICHOR_API_KEY\`，否则会失败并写入审计日志。
+- 所有受保护接口必须带 \`Authorization: Bearer <apiKey>\`，CLI 会从 \`config.json\` 读取并自动添加，否则会失败并写入审计日志。
 - 删除文章前必须向用户复述文章 ID 和标题，并获得明确确认。
 - 启用分享密码、设置到期时间、撤销分享前，先用 \`share info\` 复述当前状态。
 - 触发 AI 生成（summary、mindmap）前，先告诉用户会调用模型可能产生费用。
@@ -220,9 +232,9 @@ export PETRICHOR_API_KEY="ptc_live_xxx"
 }
 
 function buildSetupSubSkillMarkdown(baseUrl: string) {
-    return `# Petrichor — Setup（安装与自检）
+    return `# Petrichor — Setup（配置与自检）
 
-## 安装 CLI
+## CLI
 
 Skill 内置了一个零依赖的 Python CLI（仅需 Python 3.8+，使用标准库）。首次使用前赋予执行权限：
 
@@ -232,16 +244,19 @@ chmod +x scripts/petrichor
 
 > 如果运行环境没有 Python，可以回退到 \`scripts/petrichor-api.sh\`（curl 版本，功能等价）。
 
-## 环境变量
+## 配置文件
 
-确认终端里有：
+编辑 skill 根目录的 \`config.json\`：
 
-\`\`\`bash
-export PETRICHOR_BASE_URL="${baseUrl}"
-export PETRICHOR_API_KEY="ptc_live_xxx"
+\`\`\`json
+{
+  "baseUrl": "${baseUrl}",
+  "apiKey": "ptc_live_xxx"
+}
 \`\`\`
 
-不要把完整 API Key 写入文件、提交、日志或最终回复。
+\`baseUrl\` 通常已经由下载地址自动写好；把 \`apiKey\` 改成「Agent 集成 → API Key 管理」里生成的明文 Key。
+不要把完整 API Key 提交到代码仓库、日志或最终回复。
 
 ## 自检
 
@@ -265,8 +280,8 @@ scripts/petrichor capabilities
 直接连接 Petrichor 的 MCP Server（同一套 API Key，能力与本 Skill 的文档/检索/写作能力一致）：
 
 \`\`\`text
-端点：$PETRICHOR_BASE_URL/api/mcp（Streamable HTTP）
-鉴权：Authorization: Bearer $PETRICHOR_API_KEY
+端点：<baseUrl>/api/mcp（Streamable HTTP）
+鉴权：Authorization: Bearer <apiKey>
 \`\`\`
 `
 }
@@ -400,7 +415,7 @@ scripts/petrichor share revoke --article-id 123
 scripts/petrichor share info --article-id 123
 \`\`\`
 
-返回中的 \`shareUrl\` 是相对路径，对外完整链接需要拼接 \`PETRICHOR_BASE_URL\`。
+返回中的 \`shareUrl\` 是相对路径，对外完整链接需要拼接 \`config.json\` 里的 \`baseUrl\`。
 `
 }
 
@@ -471,17 +486,38 @@ function buildApiHelperScript() {
     return `#!/usr/bin/env bash
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+skill_root="$(cd "$script_dir/.." && pwd)"
+config_file="$skill_root/config.json"
+
 method="\${1:-}"
 path="\${2:-}"
 body="\${3:-}"
 
-if [[ -z "\${PETRICHOR_BASE_URL:-}" ]]; then
-  echo "缺少 PETRICHOR_BASE_URL" >&2
+read_config_field() {
+  local field="$1"
+  if [[ ! -f "$config_file" ]]; then
+    return 0
+  fi
+  awk -F '"' -v field="$field" '$2 == field { print $4; exit }' "$config_file"
+}
+
+base_url="$(read_config_field baseUrl)"
+api_key="$(read_config_field apiKey)"
+if [[ -z "$base_url" || "$base_url" == "https://your-petrichor.example.com" ]]; then
+  base_url="\${PETRICHOR_BASE_URL:-$base_url}"
+fi
+if [[ -z "$api_key" || "$api_key" == "ptc_live_xxx" ]]; then
+  api_key="\${PETRICHOR_API_KEY:-$api_key}"
+fi
+
+if [[ -z "$base_url" || "$base_url" == "https://your-petrichor.example.com" ]]; then
+  echo "缺少 baseUrl：请编辑 $config_file" >&2
   exit 2
 fi
 
-if [[ -z "\${PETRICHOR_API_KEY:-}" ]]; then
-  echo "缺少 PETRICHOR_API_KEY" >&2
+if [[ -z "$api_key" || "$api_key" == "ptc_live_xxx" ]]; then
+  echo "缺少 apiKey：请编辑 $config_file" >&2
   exit 2
 fi
 
@@ -490,17 +526,17 @@ if [[ -z "$method" || -z "$path" ]]; then
   exit 2
 fi
 
-base="\${PETRICHOR_BASE_URL%/}"
+base="\${base_url%/}"
 url="$base$path"
 
 if [[ -n "$body" ]]; then
   curl -sS -X "$method" "$url" \\
-    -H "Authorization: Bearer $PETRICHOR_API_KEY" \\
+    -H "Authorization: Bearer $api_key" \\
     -H "Content-Type: application/json" \\
     -d "$body"
 else
   curl -sS -X "$method" "$url" \\
-    -H "Authorization: Bearer $PETRICHOR_API_KEY" \\
+    -H "Authorization: Bearer $api_key" \\
     -H "Content-Type: application/json"
 fi
 `
@@ -514,7 +550,7 @@ function buildCommonEndpointReference() {
 所有受保护接口使用：
 
 \`\`\`http
-Authorization: Bearer <PETRICHOR_API_KEY>
+Authorization: Bearer <apiKey>
 \`\`\`
 
 ## 发现与自检
@@ -638,9 +674,12 @@ Petrichor Agent CLI — zero-dep wrapper around the Petrichor external Agent API
 
 Requires Python 3.8+. Uses only the standard library (urllib, argparse, json).
 
-Environment variables (required unless noted):
-  PETRICHOR_BASE_URL       e.g. https://petrichor.example.com
-  PETRICHOR_API_KEY        Agent API Key generated in the Petrichor dashboard
+Configuration:
+  Edit ../config.json next to this script:
+    {"baseUrl": "https://petrichor.example.com", "apiKey": "ptc_live_xxx"}
+
+Environment variables PETRICHOR_BASE_URL and PETRICHOR_API_KEY are only fallback
+compatibility inputs.
 
 Run --help on any command to see usage:
   petrichor --help
@@ -663,13 +702,46 @@ EXIT_CONFIG = 3
 EXIT_HTTP = 4
 EXIT_NETWORK = 5
 
+CONFIG_PLACEHOLDER_BASE_URL = "https://your-petrichor.example.com"
+CONFIG_PLACEHOLDER_API_KEY = "ptc_live_xxx"
+_CONFIG_CACHE: Optional[Dict[str, Any]] = None
 
-def _env(name: str, required: bool = True) -> Optional[str]:
-    value = os.environ.get(name, "").strip()
-    if value:
+
+def _config_path() -> str:
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "config.json"))
+
+
+def _load_config() -> Dict[str, Any]:
+    global _CONFIG_CACHE
+    if _CONFIG_CACHE is not None:
+        return _CONFIG_CACHE
+    path = _config_path()
+    if not os.path.exists(path):
+        _CONFIG_CACHE = {}
+        return _CONFIG_CACHE
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        sys.stderr.write(f"[petrichor] Cannot read config {path}: {e}\\n")
+        sys.exit(EXIT_CONFIG)
+    if not isinstance(raw, dict):
+        sys.stderr.write(f"[petrichor] Config {path} must be a JSON object\\n")
+        sys.exit(EXIT_CONFIG)
+    _CONFIG_CACHE = raw
+    return _CONFIG_CACHE
+
+
+def _setting(config_key: str, env_name: str, placeholder: str, required: bool = True) -> Optional[str]:
+    raw = _load_config().get(config_key)
+    value = str(raw).strip() if raw is not None else ""
+    if value and value != placeholder:
         return value
+    env_value = os.environ.get(env_name, "").strip()
+    if env_value:
+        return env_value
     if required:
-        sys.stderr.write(f"[petrichor] Missing required env var {name}\\n")
+        sys.stderr.write(f"[petrichor] Missing {config_key}; edit {_config_path()}\\n")
         sys.exit(EXIT_CONFIG)
     return None
 
@@ -680,11 +752,11 @@ def _request(
     body: Optional[Dict[str, Any]] = None,
     require_auth: bool = True,
 ) -> Dict[str, Any]:
-    base_url = _env("PETRICHOR_BASE_URL").rstrip("/")
+    base_url = _setting("baseUrl", "PETRICHOR_BASE_URL", CONFIG_PLACEHOLDER_BASE_URL).rstrip("/")
     url = base_url + path
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     if require_auth:
-        headers["Authorization"] = f"Bearer {_env('PETRICHOR_API_KEY')}"
+        headers["Authorization"] = f"Bearer {_setting('apiKey', 'PETRICHOR_API_KEY', CONFIG_PLACEHOLDER_API_KEY)}"
 
     data = None if body is None else json.dumps(body).encode("utf-8")
     req = urlrequest.Request(url, data=data, method=method, headers=headers)

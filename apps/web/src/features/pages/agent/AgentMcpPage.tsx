@@ -138,8 +138,7 @@ export function AgentMcpPage() {
                     <CodeBlockCode code={buildCodexMcpSnippet()} language="toml" showLineNumbers={false} />
                   </CodeBlock>
                   <p className="text-xs leading-relaxed text-muted-foreground">
-                    然后 <span className="font-mono">export PETRICHOR_API_KEY=ptc_live_xxx</span>。
-                    也可以改用 <span className="font-mono">http_headers</span> 直接写入完整请求头。
+                    将 <span className="font-mono">ptc_live_xxx</span> 替换成 API Key 管理里生成的明文 Key。
                   </p>
                 </TabsContent>
                 <TabsContent value="json" className="mt-3 space-y-2">

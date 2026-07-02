@@ -26,6 +26,7 @@ describe("Agent Skill 文件", () => {
 
         expect(paths).toEqual(expect.arrayContaining([
             "petrichor/SKILL.md",
+            "petrichor/config.json",
             "petrichor/skills/setup.md",
             "petrichor/skills/articles.md",
             "petrichor/skills/docs.md",
@@ -62,6 +63,12 @@ describe("Agent Skill 文件", () => {
         expect(rootSkill).toContain("Read skills/share.md")
         expect(rootSkill).toContain("Read skills/ai.md")
         expect(rootSkill).toContain("Read skills/wiki.md")
+        expect(rootSkill).toContain("config.json")
+
+        expect(files.find((file) => file.path === "petrichor/config.json")?.content)
+            .toContain('"baseUrl": "https://petrichor.example.com"')
+        expect(files.find((file) => file.path === "petrichor/config.json")?.content)
+            .toContain('"apiKey": "ptc_live_xxx"')
 
         expect(files.find((file) => file.path === "petrichor/skills/articles.md")?.content)
             .toContain("petrichor article update")
@@ -70,11 +77,15 @@ describe("Agent Skill 文件", () => {
         expect(files.find((file) => file.path === "petrichor/skills/share.md")?.content)
             .toContain("share create")
         expect(files.find((file) => file.path === "petrichor/scripts/petrichor-api.sh")?.content)
-            .toContain("Authorization: Bearer $PETRICHOR_API_KEY")
+            .toContain("config.json")
+        expect(files.find((file) => file.path === "petrichor/scripts/petrichor-api.sh")?.content)
+            .toContain("Authorization: Bearer $api_key")
         expect(files.find((file) => file.path === "petrichor/scripts/petrichor-api.sh")?.content)
             .not.toContain("X-Petrichor-Agent-Source")
         expect(files.find((file) => file.path === "petrichor/scripts/petrichor")?.content)
             .toContain("#!/usr/bin/env python3")
+        expect(files.find((file) => file.path === "petrichor/scripts/petrichor")?.content)
+            .toContain("_setting(\"baseUrl\"")
         expect(files.find((file) => file.path === "petrichor/references/endpoints.md")?.content)
             .toContain("/api/agent/article/list")
         expect(files.find((file) => file.path === "petrichor/references/endpoints.md")?.content)

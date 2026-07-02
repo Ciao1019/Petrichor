@@ -7,7 +7,7 @@ Petrichor 提供两条把知识库能力接入外部 Agent（Claude Code、Codex
 | --- | --- | --- |
 | 形态 | 标准 Model Context Protocol 服务器（Streamable HTTP） | 按意图路由的 SKILL.md + 零依赖 CLI |
 | 适用客户端 | 原生支持 MCP 的工具（Claude Code / Codex / Cursor / Claude Desktop 等） | 任何能执行 shell 命令的 Agent |
-| 安装成本 | 一行配置，无需下载文件 | 下载 ZIP、解压、配两个环境变量 |
+| 安装成本 | 一行配置，无需下载文件 | 下载 ZIP、解压、改包内 `config.json` |
 | 参数校验 | 工具入参带 JSON Schema，客户端调用前校验 | 由 CLI 的 argparse 校验 |
 | 能力范围 | 检索 / 阅读 / 问答 / 文章写操作 / Wiki / 分享（20 个工具） | 同 MCP，额外覆盖 AI 摘要 / 思维导图 / 知识图谱 |
 | 推荐场景 | 客户端支持 MCP 时的默认选择 | 客户端不支持 MCP，或需要 AI 生成能力 |
@@ -48,15 +48,7 @@ petrichor 已连接，并列出全部工具。
 ```toml
 [mcp_servers.petrichor]
 url = "https://your-petrichor.example.com/api/mcp"
-# 推荐：Key 放环境变量，Codex 自动以 Authorization: Bearer 发送
-bearer_token_env_var = "PETRICHOR_API_KEY"
-```
-
-然后 `export PETRICHOR_API_KEY=ptc_live_xxx`。不想用环境变量时改用：
-
-```toml
-[mcp_servers.petrichor.http_headers]
-Authorization = "Bearer ptc_live_xxx"
+http_headers = { Authorization = "Bearer ptc_live_xxx" }
 ```
 
 ### Cursor / Claude Desktop 等 JSON 配置客户端
@@ -107,6 +99,7 @@ Skill 包是一个 ZIP（`GET /api/agent/skill-pack`），解压后是一个符�
 ```text
 petrichor/
 ├── SKILL.md                 # 根入口：按用户意图路由到子文档
+├── config.json              # 站点地址与 Agent API Key
 ├── skills/                  # setup / articles / docs / qa / share / ai / wiki 七个子能力
 ├── scripts/petrichor        # 零依赖 Python CLI（所有能力的统一入口）
 ├── scripts/petrichor-api.sh # curl 版回退脚本
@@ -121,9 +114,8 @@ Agent 只加载根 SKILL.md，按需读取子文档，不会撑爆上下文。
 ```bash
 curl -L "https://your-petrichor.example.com/api/agent/skill-pack" -o petrichor-skill.zip
 unzip -o petrichor-skill.zip -d ~/.claude/skills/        # 全局；项目级用 .claude/skills/
-
-export PETRICHOR_BASE_URL="https://your-petrichor.example.com"
-export PETRICHOR_API_KEY="ptc_live_xxx"
+$EDITOR ~/.claude/skills/petrichor/config.json           # 填入 apiKey
+chmod +x ~/.claude/skills/petrichor/scripts/petrichor
 ```
 
 对话中提到知识库相关任务（「问问我的知识库」「把这篇总结存到 Petrichor」）时会自动触发。
@@ -132,16 +124,19 @@ export PETRICHOR_API_KEY="ptc_live_xxx"
 
 ```bash
 unzip -o petrichor-skill.zip -d ~/.codex/skills/         # 或项目的 .codex/skills/
+$EDITOR ~/.codex/skills/petrichor/config.json            # 填入 apiKey
+chmod +x ~/.codex/skills/petrichor/scripts/petrichor
 ```
 
 旧版本 Codex 不支持 skills 目录时：把包解压到仓库任意位置，在 `AGENTS.md` 中注明
-「Petrichor 相关任务请先阅读 `petrichor/SKILL.md`」。环境变量同上。
+「Petrichor 相关任务请先阅读 `petrichor/SKILL.md`」。配置仍写 `petrichor/config.json`。
 
 ### 其他任何能执行 shell 的 Agent
 
 不依赖 Skill 机制，直接用包内 CLI（仅需 Python 3.8+ 标准库）：
 
 ```bash
+$EDITOR petrichor/config.json                   # 填入 apiKey
 chmod +x petrichor/scripts/petrichor
 petrichor/scripts/petrichor capabilities        # 自检：返回权限列表即配置成功
 petrichor/scripts/petrichor kb list
@@ -152,7 +147,7 @@ petrichor/scripts/petrichor doc tree --query "问题" --kb-id 1
 
 ### 验证与排障
 
-- 自检：`scripts/petrichor capabilities`。`401` 检查 `PETRICHOR_API_KEY`；`403` 说明缺 scope。
+- 自检：`scripts/petrichor capabilities`。`401` 检查 `config.json` 里的 `apiKey`；`403` 说明缺 scope。
 - 所有命令支持 `--help`；错误信息会透传服务端的 `msg` 字段。
 - 调用同样记录在「调用日志」中。
 
