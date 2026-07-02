@@ -2,6 +2,7 @@ import * as React from "react"
 import {
   IconBook,
   IconBookmarks,
+  IconBrain,
   IconFileImport,
   IconFiles,
   IconFolders,
@@ -11,6 +12,7 @@ import {
   IconMessageChatbot,
   IconMessages,
   IconPackage,
+  IconPlugConnected,
   IconPalette,
   IconSettings,
   IconSparkles,
@@ -93,7 +95,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         isActive:
           isDashboardSectionPath(pathname, "qa") ||
           isDashboardSectionPath(pathname, "wiki") ||
-          isDashboardSectionPath(pathname, "ai/review"),
+          isDashboardSectionPath(pathname, "ai/review") ||
+          isDashboardSectionPath(pathname, "agent-memory"),
         items: [
           {
             title: "文档问答",
@@ -109,6 +112,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             title: "AI 回顾",
             url: dashboardRoutes.aiReview,
             icon: IconHistory,
+          },
+          {
+            title: "Agent 记忆",
+            url: dashboardRoutes.agentMemory,
+            icon: IconBrain,
           },
         ],
       },
@@ -155,6 +163,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         url: dashboardRoutes.agentLogs,
         icon: IconHistory,
         isActive: isDashboardSectionPath(pathname, "agent/logs"),
+      },
+      {
+        title: "MCP Server",
+        url: dashboardRoutes.agentMcp,
+        icon: IconPlugConnected,
+        isActive: isDashboardSectionPath(pathname, "agent/mcp"),
       },
       {
         title: "Skill 包",

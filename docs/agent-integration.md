@@ -1,5 +1,8 @@
 # Agent 接入设计说明
 
+> 面向使用者的客户端接入指南（Claude Code / Codex / Cursor 分别怎么装 MCP 与 Skill 包）见
+> [agent-clients.md](./agent-clients.md)；本文侧重设计与实现说明。
+
 ## 主流平台模式
 
 - GitBook：公开文档自动生成 MCP Server，AI 工具通过站点 URL 后追加
@@ -22,7 +25,7 @@
 
 ## 本项目落地
 
-当前实现采用“REST 能力层 + 单 Skill 路由包”：
+当前实现采用“REST 能力层 + MCP Server + 单 Skill 路由包”：
 
 - REST 能力层：`/api/agent/**`，统一使用 `Authorization: Bearer <apiKey>`。
 - 公开 manifest：`/api/agent/manifest`，让 Agent 不依赖猜测即可发现接口地址。
@@ -35,10 +38,11 @@
   - `skills/share.md`：文章分享创建/撤销/查询、密码与到期管理。
   - `skills/ai.md`：AI 摘要、思维导图、知识图谱生成。
   - `scripts/petrichor`、`scripts/petrichor-api.sh`、`references/endpoints.md` 全 skill 共用一份。
+- MCP Server：`/api/mcp`，无状态 Streamable HTTP，详见下方「MCP Server」一节。
 - API Key：平台账号页生成，服务端只存 `sha256` 哈希，明文只返回一次。
-- 调用审计：所有外部 Agent API 调用都要求带
-  `X-Petrichor-Agent-Source`，否则调用失败；服务端记录来源 Agent、具体工具、
-  来源 IP、User-Agent、入参、出参、状态码和耗时。
+- 调用审计：服务端记录每次外部 Agent API 调用的来源 IP、User-Agent、
+  入参、出参、状态码和耗时（MCP 工具调用同样入审计日志，User-Agent 以
+  `petrichor-mcp/<toolName>` 开头，可与直接 REST 调用区分）。
 - 权限粒度：
   - `article:write`：新建文章
   - `article:delete`：删除文章
@@ -56,9 +60,56 @@
 - `POST /api/agent/article/update`：更新文章。
 - `POST /api/agent/article/delete`：删除文章。
 - `POST /api/agent/document/search`：搜索文档。
+- `POST /api/agent/document/tree`：章节目录树推理式检索。
+- `POST /api/agent/document/semantic-search`：章节目录树向量语义检索（需要
+  PostgreSQL + 向量模型）。
 - `POST /api/agent/document/view`：查看源文章或 Wiki 页面。
 - `POST /api/agent/document/qa`：基于文档上下文问答。
 - `POST /api/agent/call-log/list`：登录用户查看外部调用日志。
 
-后续如果需要和 Cursor、Claude Desktop、ChatGPT 等 MCP 客户端深度集成，可以在
-当前 REST 能力层前再包一层 Streamable HTTP MCP Server。
+## MCP Server
+
+`POST /api/mcp` 暴露一个无状态 Streamable HTTP MCP Server
+（实现在 `apps/web/app/api/mcp/route.ts`），是 REST 能力层之上的协议适配层：
+20 个 MCP 工具一一委托到对应的 `/api/agent/**` 端点，鉴权、scope 校验、调用
+审计日志全部复用现有实现。工具规格（名称、scope、目标端点、入参 schema）
+集中在 `apps/web/src/server/agent/mcp-tools.ts`，接线在
+`apps/web/src/server/agent/mcp.ts`。
+
+- 鉴权：与 REST 层同一套 API Key，请求头 `Authorization: Bearer <ptc_live_...>`；
+  未带或无效 Key 一律 401（`initialize` 也不例外）。
+- 传输：仅 Streamable HTTP（POST）；未启用 SSE 传输，因此不需要 Redis，
+  可直接跑在 Vercel Serverless 上。
+- 工具覆盖：知识库/目录树浏览、关键词/推理/语义三种检索、文档阅读、文档问答、
+  文章与文件夹写操作、Wiki 编译/体检、文章分享管理。
+
+### 客户端接入
+
+Claude Code：
+
+```bash
+claude mcp add --transport http petrichor https://your-petrichor.example.com/api/mcp \
+  --header "Authorization: Bearer ptc_live_xxx"
+```
+
+Codex CLI（`~/.codex/config.toml`）：
+
+```toml
+[mcp_servers.petrichor]
+url = "https://your-petrichor.example.com/api/mcp"
+# 推荐：把 Key 放环境变量，Codex 会自动以 Authorization: Bearer 发送
+bearer_token_env_var = "PETRICHOR_API_KEY"
+```
+
+Cursor / Claude Desktop 等 JSON 配置的客户端：
+
+```json
+{
+  "mcpServers": {
+    "petrichor": {
+      "url": "https://your-petrichor.example.com/api/mcp",
+      "headers": { "Authorization": "Bearer ptc_live_xxx" }
+    }
+  }
+}
+```

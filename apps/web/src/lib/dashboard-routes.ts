@@ -14,10 +14,12 @@ export const dashboardRoutes = {
     aiConfig: `${DASHBOARD_ROOT}/ai/config`,
     aiReview: `${DASHBOARD_ROOT}/ai/review`,
     qa: `${DASHBOARD_ROOT}/qa`,
+    agentMemory: `${DASHBOARD_ROOT}/agent-memory`,
     docLibrary: `${DASHBOARD_ROOT}/doc-library`,
     docLibraryQa: `${DASHBOARD_ROOT}/doc-library/qa`,
     agentKeys: `${DASHBOARD_ROOT}/agent/keys`,
     agentLogs: `${DASHBOARD_ROOT}/agent/logs`,
+    agentMcp: `${DASHBOARD_ROOT}/agent/mcp`,
     agentSkill: `${DASHBOARD_ROOT}/agent/skill`,
 } as const
 

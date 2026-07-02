@@ -59,7 +59,7 @@
 | **📊 仪表盘** | 写作数据统计、活跃度图、知识库分布 |
 | **🎨 主题与外观** | 浅色/深色模式、自定义网站标题/图标、Retypeset 主题博客首页 |
 | **🌐 公开站点** | 文章公开页、SEO 元数据、RSS、Atom、sitemap.xml |
-| **🛠️ Agent 集成** | API Key 管理、Skill 包（兼容 Claude Code / Codex）、调用审计日志、REST 能力层 |
+| **🛠️ Agent 集成** | API Key 管理、MCP Server（Streamable HTTP，兼容 Claude Code / Codex / Cursor）、Skill 包（兼容 Claude Code / Codex）、调用审计日志、REST 能力层 |
 
 ---
 

@@ -25,9 +25,11 @@ import { DocumentImportJobsPage } from '@/features/pages/knowledge/DocumentImpor
 import { DocumentImportJobDetailPage } from '@/features/pages/knowledge/DocumentImportJobDetailPage'
 import { AiModelConfigPage } from '@/features/pages/ai/AiModelConfigPage'
 import { AiReviewPage } from '@/features/pages/ai/AiReviewPage'
+import { AgentMemoryPage } from '@/features/pages/memory/AgentMemoryPage'
 import { AgentKeysPage } from '@/features/pages/agent/AgentKeysPage'
 import { AgentCallLogsPage } from '@/features/pages/agent/AgentCallLogsPage'
 import { AgentSkillPage } from '@/features/pages/agent/AgentSkillPage'
+import { AgentMcpPage } from '@/features/pages/agent/AgentMcpPage'
 import { BlogHomePage } from '@/features/pages/blog/BlogHomePage'
 import { TagsPage } from '@/features/pages/blog/TagsPage'
 import { AboutPage } from '@/features/pages/about/AboutPage'
@@ -157,9 +159,11 @@ function AppThemeScope() {
               <Route path="admin/appearance" element={<SiteAppearanceConfigPage />} />
               <Route path="ai/config" element={<AiModelConfigPage />} />
               <Route path="ai/review" element={<AiReviewPage />} />
+              <Route path="agent-memory" element={<AgentMemoryPage />} />
               <Route path="agent" element={<AgentKeysPage />} />
               <Route path="agent/keys" element={<AgentKeysPage />} />
               <Route path="agent/logs" element={<AgentCallLogsPage />} />
+              <Route path="agent/mcp" element={<AgentMcpPage />} />
               <Route path="agent/skill" element={<AgentSkillPage />} />
             </Route>
           </Routes>

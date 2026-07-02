@@ -990,6 +990,33 @@ create table if not exists petrichor_doc_qa_artifact (
 
 create index if not exists idx_petrichor_doc_qa_artifact_thread
     on petrichor_doc_qa_artifact(thread_id, created_at);
+
+create table if not exists petrichor_agent_memory (
+    id bigint generated always as identity primary key,
+    user_id bigint not null,
+    kind text not null,
+    content text not null,
+    evidence_count integer not null default 1,
+    last_seen_at timestamptz not null default now(),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_petrichor_agent_memory_user
+    on petrichor_agent_memory(user_id, last_seen_at desc);
+
+alter table petrichor_agent_memory add column if not exists embedding vector(1024);
+
+create index if not exists idx_petrichor_agent_memory_embedding
+    on petrichor_agent_memory using hnsw (embedding vector_cosine_ops);
+
+create table if not exists petrichor_agent_memory_state (
+    user_id bigint primary key,
+    last_distilled_at timestamptz,
+    last_message_id bigint not null default 0,
+    distill_count integer not null default 0,
+    updated_at timestamptz not null default now()
+);
 `;
 
 export function buildInitialMigrationSql(): string {

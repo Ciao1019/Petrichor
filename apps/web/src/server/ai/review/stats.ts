@@ -30,6 +30,19 @@ export interface KnowledgeBaseActivity {
     articleCount: number
 }
 
+export interface ReviewEvolutionEntry {
+    period: string
+    title: string
+    note: string
+}
+
+// 认知演化时间线：月报专属板块，回看用户对某主题的理解随时间的变化
+export interface ReviewEvolution {
+    topic: string
+    synthesis: string
+    entries: ReviewEvolutionEntry[]
+}
+
 export interface ReviewStats {
     newArticles: number
     updatedArticles: number
@@ -38,6 +51,7 @@ export interface ReviewStats {
     topTags: TopTag[]
     topArticles: TopArticle[]
     knowledgeBases: KnowledgeBaseActivity[]
+    evolution?: ReviewEvolution | null
 }
 
 const TOP_ARTICLE_LIMIT = 5

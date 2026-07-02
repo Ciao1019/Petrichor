@@ -1,12 +1,22 @@
 "use client"
 
 import * as React from "react"
-import { Calendar, FileText, Loader2, RefreshCcw, Sparkles, TrendingUp } from "lucide-react"
+import {
+  Calendar,
+  FilePlus2,
+  FileText,
+  Loader2,
+  Milestone,
+  Quote,
+  RefreshCcw,
+  Sparkles,
+  Tags,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Markdown } from "@/components/ui/markdown"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -25,6 +35,7 @@ import {
   type AiReviewResponse,
 } from "@/lib/api"
 import { emitNotificationRefresh } from "@/hooks/use-notification-center"
+import { cn } from "@/lib/utils"
 
 interface PeriodOptionsState {
   week: AiReviewPeriodOption[]
@@ -120,10 +131,6 @@ export function AiReviewPage() {
     }
   }
 
-  const handleKeyChange = (value: string) => {
-    setSelectedKey(value)
-  }
-
   const handleGenerate = async () => {
     if (!selectedKey) {
       return
@@ -159,198 +166,324 @@ export function AiReviewPage() {
   const showEmpty = !loading && !review && !generating && !errorMessage
 
   return (
-    <div className="flex flex-1 flex-col gap-4 p-4 lg:p-6">
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <Sparkles className="size-5 text-primary" />
-          <h1 className="text-lg font-semibold">AI 回顾</h1>
+    <div className="flex w-full flex-col gap-6 px-6 py-6 lg:px-10">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+            <Sparkles className="size-5" />
+          </div>
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight">AI 回顾</h1>
+            <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              基于你的写作数据生成周期回顾；月报还会回看你对高频主题的认知演化。结果会缓存，按需生成。
+            </p>
+          </div>
         </div>
-        <p className="text-sm text-muted-foreground">
-          基于你在某个周期内的写作数据，由 AI 生成一段自然的回顾。结果会缓存，按需触发。
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Tabs value={period} onValueChange={handlePeriodChange}>
+            <TabsList>
+              {PERIOD_TABS.map((tab) => (
+                <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+          <Select
+            value={selectedKey}
+            onValueChange={setSelectedKey}
+            disabled={optionsLoading || activeOptions.length === 0}
+          >
+            <SelectTrigger className="w-44">
+              <Calendar className="mr-1 size-4 text-muted-foreground" />
+              <SelectValue placeholder={optionsLoading ? "加载中…" : "选择周期"} />
+            </SelectTrigger>
+            <SelectContent>
+              {activeOptions.map((option) => (
+                <SelectItem key={option.key} value={option.key}>
+                  <div className="flex items-center gap-2">
+                    <span>{option.label}</span>
+                    {option.isCurrent ? (
+                      <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">本期</Badge>
+                    ) : null}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader className="gap-2 pb-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Tabs value={period} onValueChange={handlePeriodChange}>
-              <TabsList>
-                {PERIOD_TABS.map((tab) => (
-                  <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-            <div className="flex items-center gap-2">
-              <Calendar className="size-4 text-muted-foreground" />
-              <Select
-                value={selectedKey}
-                onValueChange={handleKeyChange}
-                disabled={optionsLoading || activeOptions.length === 0}
-              >
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder={optionsLoading ? "加载中…" : "选择周期"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {activeOptions.map((option) => (
-                    <SelectItem key={option.key} value={option.key}>
-                      <div className="flex items-center gap-2">
-                        <span>{option.label}</span>
-                        {option.isCurrent ? (
-                          <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">本期</Badge>
-                        ) : null}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          {review ? (
-            <CardDescription className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              <span>时间范围 {formatRange(review.periodStart, review.periodEnd)}</span>
-              {review.generatedAt ? <span>生成于 {formatDateTime(review.generatedAt)}</span> : null}
-              {review.fromCache ? <Badge variant="outline" className="text-[10px]">缓存命中</Badge> : null}
-            </CardDescription>
-          ) : null}
-        </CardHeader>
+      <div className="mx-auto w-full max-w-4xl">
+        {loading ? <ReviewSkeleton /> : null}
 
-        <CardContent className="flex flex-col gap-6">
-          {loading ? <ReviewSkeleton /> : null}
-          {errorMessage ? (
-            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-              {errorMessage}
-            </div>
-          ) : null}
-          {showEmpty ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-md border border-dashed py-12 text-center">
-              <Sparkles className="size-8 text-muted-foreground" />
+        {errorMessage ? (
+          <Card>
+            <CardContent className="py-6">
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+                {errorMessage}
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {showEmpty ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+              <div className="flex size-12 items-center justify-center rounded-full border bg-muted/50 text-muted-foreground">
+                <Sparkles className="size-5" />
+              </div>
               <p className="text-sm text-muted-foreground">
-                {selectedKey ? `点击下方按钮生成 ${formatPeriodLabel(period, selectedKey)} 的 AI 回顾。` : "请先选择一个周期。"}
+                {selectedKey ? `点击生成 ${formatPeriodLabel(period, selectedKey)} 的 AI 回顾。` : "请先选择一个周期。"}
               </p>
               <Button onClick={handleGenerate} disabled={!selectedKey || generating}>
-                {generating ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                {generating ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Sparkles className="mr-2 size-4" />}
                 立即生成
               </Button>
-            </div>
-          ) : null}
+            </CardContent>
+          </Card>
+        ) : null}
 
-          {review && !loading ? (
-            <>
-              <StatsGrid review={review} />
-              <NarrativeSection review={review} />
-              {review.stats.topArticles.length > 0 ? (
-                <TopArticlesSection review={review} />
-              ) : null}
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-muted-foreground">
-                <span>
-                  {review.regenerateCount > 0 ? `今日已重新生成 ${review.regenerateCount} 次` : "今日尚未重新生成"}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRegenerate}
-                  disabled={regenerating || !review.canRegenerate}
-                >
-                  {regenerating ? <Loader2 className="size-4 animate-spin" /> : <RefreshCcw className="size-4" />}
-                  {review.canRegenerate ? "重新生成" : "今日已达上限"}
-                </Button>
-              </div>
-            </>
-          ) : null}
-        </CardContent>
-      </Card>
+        {review && !loading ? (
+          <ReviewReport
+            review={review}
+            period={period}
+            regenerating={regenerating}
+            onRegenerate={handleRegenerate}
+          />
+        ) : null}
+      </div>
     </div>
   )
 }
 
-function StatsGrid({ review }: { review: AiReviewResponse }) {
-  const items = [
-    { label: "新增文章", value: review.stats.newArticles },
-    { label: "修改文章", value: review.stats.updatedArticles },
-    { label: "涉及字数", value: review.stats.totalChars },
-    { label: "活跃知识库", value: review.stats.knowledgeBaseCount },
-  ]
+function ReviewReport({
+  review,
+  period,
+  regenerating,
+  onRegenerate,
+}: {
+  review: AiReviewResponse
+  period: AiReviewPeriod
+  regenerating: boolean
+  onRegenerate: () => void
+}) {
+  const evolution = review.stats.evolution ?? null
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <Card className="overflow-hidden">
+      {/* 报告头 */}
+      <div className="border-b bg-muted/30 px-6 py-6 sm:px-10">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1.5">
+            <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+              {period === "WEEK" ? "WEEKLY REVIEW" : "MONTHLY REVIEW"}
+            </div>
+            <h2 className="text-2xl font-semibold tracking-tight">
+              {formatPeriodLabel(period, review.periodKey)}
+              <span className="ml-2 text-base font-normal text-muted-foreground">
+                {period === "WEEK" ? "周度回顾" : "月度回顾"}
+              </span>
+            </h2>
+            <div className="text-xs text-muted-foreground">
+              {formatRange(review.periodStart, review.periodEnd)}
+            </div>
+          </div>
+          <div className="flex flex-col items-end gap-1.5 text-xs text-muted-foreground">
+            {review.fromCache ? <Badge variant="outline" className="text-[10px]">缓存</Badge> : null}
+            {review.generatedAt ? <span>生成于 {formatDateTime(review.generatedAt)}</span> : null}
+          </div>
+        </div>
+      </div>
+
+      <CardContent className="space-y-8 px-6 py-8 sm:px-10">
+        {/* AI 综述：引言式排版 */}
+        <section className="relative">
+          <Quote className="absolute -left-1 -top-1 size-5 text-primary/30 sm:-left-4" aria-hidden />
+          <div className="pl-6 text-[15px] leading-7 text-foreground sm:pl-4">
+            <Markdown>{review.narrative}</Markdown>
+          </div>
+        </section>
+
+        {/* 核心统计 */}
+        <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <StatTile label="新增文章" value={review.stats.newArticles} />
+          <StatTile label="修改文章" value={review.stats.updatedArticles} />
+          <StatTile label="涉及字数" value={review.stats.totalChars} />
+          <StatTile label="活跃知识库" value={review.stats.knowledgeBaseCount} />
+        </section>
+
+        {/* 知识库分布：单色横向条形 */}
+        {review.stats.knowledgeBases.length > 0 ? (
+          <ReportSection icon={FileText} title="知识库分布">
+            <KnowledgeBaseBars items={review.stats.knowledgeBases} />
+          </ReportSection>
+        ) : null}
+
+        {/* 高频标签 */}
+        {review.stats.topTags.length > 0 ? (
+          <ReportSection icon={Tags} title="高频标签">
+            <div className="flex flex-wrap gap-1.5">
+              {review.stats.topTags.map((tag) => (
+                <Badge key={tag.tag} variant="secondary" className="font-normal">
+                  {tag.tag}
+                  <span className="ml-1 text-muted-foreground">×{tag.count}</span>
+                </Badge>
+              ))}
+            </div>
+          </ReportSection>
+        ) : null}
+
+        {/* 认知演化时间线（月报专属） */}
+        {evolution ? (
+          <ReportSection icon={Milestone} title="认知演化" badge={evolution.topic}>
+            <p className="text-sm leading-relaxed text-muted-foreground">{evolution.synthesis}</p>
+            <ol className="mt-4">
+              {evolution.entries.map((entry, index) => (
+                <li key={`${entry.period}-${index}`} className="relative flex gap-4 pb-6 last:pb-0">
+                  {index < evolution.entries.length - 1 ? (
+                    <span className="absolute left-[7px] top-5 h-[calc(100%-1rem)] w-px bg-border" aria-hidden />
+                  ) : null}
+                  <span
+                    className={cn(
+                      "mt-1.5 size-[15px] shrink-0 rounded-full border-2",
+                      index === evolution.entries.length - 1
+                        ? "border-primary bg-primary/20"
+                        : "border-muted-foreground/40 bg-background",
+                    )}
+                    aria-hidden
+                  />
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs text-muted-foreground">{entry.period}</span>
+                      <span className="text-sm font-medium">{entry.title}</span>
+                    </div>
+                    <p className="text-sm leading-relaxed text-muted-foreground">{entry.note}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </ReportSection>
+        ) : null}
+
+        {/* 代表文章 */}
+        {review.stats.topArticles.length > 0 ? (
+          <ReportSection icon={FilePlus2} title="本期代表文章">
+            <ol className="space-y-0 divide-y">
+              {review.stats.topArticles.map((article, index) => (
+                <li key={article.id} className="flex items-baseline gap-4 py-2.5">
+                  <span className="w-6 shrink-0 text-right font-mono text-lg font-semibold text-muted-foreground/50">
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate text-sm font-medium">{article.title}</span>
+                      <Badge variant={article.isNew ? "default" : "secondary"} className="px-1.5 py-0 text-[10px]">
+                        {article.isNew ? "新建" : "更新"}
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {article.knowledgeBaseName ?? "未命名知识库"} · {article.charCount.toLocaleString()} 字 · {formatDateTime(article.updatedAt)}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </ReportSection>
+        ) : null}
+
+        {/* 底部操作 */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4 text-xs text-muted-foreground">
+          <span>
+            {review.regenerateCount > 0 ? `今日已重新生成 ${review.regenerateCount} 次` : "今日尚未重新生成"}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRegenerate}
+            disabled={regenerating || !review.canRegenerate}
+          >
+            {regenerating ? <Loader2 className="mr-2 size-4 animate-spin" /> : <RefreshCcw className="mr-2 size-4" />}
+            {review.canRegenerate ? "重新生成" : "今日已达上限"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function ReportSection({
+  icon: Icon,
+  title,
+  badge,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  title: string
+  badge?: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Icon className="size-4 text-primary" aria-hidden />
+        <h3 className="text-sm font-semibold tracking-wide">{title}</h3>
+        {badge ? (
+          <Badge variant="outline" className="border-primary/25 bg-primary/5 font-normal text-primary">
+            {badge}
+          </Badge>
+        ) : null}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function StatTile({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 text-2xl font-semibold tabular-nums">{value.toLocaleString()}</div>
+    </div>
+  )
+}
+
+// 知识库文章数分布：同一度量的量级对比，单主题色、数值直接标注、逐条悬停提示
+function KnowledgeBaseBars({ items }: { items: Array<{ id: string; name: string; articleCount: number }> }) {
+  const max = Math.max(1, ...items.map((item) => item.articleCount))
+  return (
+    <div className="space-y-2">
       {items.map((item) => (
-        <div key={item.label} className="rounded-md border bg-muted/30 p-3">
-          <div className="text-xs text-muted-foreground">{item.label}</div>
-          <div className="mt-1 text-2xl font-semibold tabular-nums">{item.value}</div>
+        <div
+          key={item.id}
+          className="group grid grid-cols-[minmax(0,10rem)_1fr_auto] items-center gap-3"
+          title={`${item.name} · ${item.articleCount} 篇`}
+        >
+          <span className="truncate text-xs text-muted-foreground">{item.name}</span>
+          <div className="h-4 overflow-hidden rounded-r-[4px] bg-muted/50">
+            <div
+              className="h-full rounded-r-[4px] bg-primary/80 transition-colors group-hover:bg-primary"
+              style={{ width: `${Math.max(4, (item.articleCount / max) * 100)}%` }}
+            />
+          </div>
+          <span className="font-mono text-xs tabular-nums text-muted-foreground">{item.articleCount} 篇</span>
         </div>
       ))}
     </div>
   )
 }
 
-function NarrativeSection({ review }: { review: AiReviewResponse }) {
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2 text-sm font-medium">
-        <TrendingUp className="size-4 text-primary" />
-        AI 综述
-      </div>
-      <div className="rounded-md border bg-card p-4 text-sm leading-relaxed text-foreground">
-        <Markdown>{review.narrative}</Markdown>
-      </div>
-      {review.stats.topTags.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          <span className="text-xs text-muted-foreground">高频标签</span>
-          {review.stats.topTags.map((tag) => (
-            <Badge key={tag.tag} variant="secondary" className="text-xs">
-              {tag.tag} <span className="ml-1 text-muted-foreground">×{tag.count}</span>
-            </Badge>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-function TopArticlesSection({ review }: { review: AiReviewResponse }) {
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2 text-sm font-medium">
-        <FileText className="size-4 text-primary" />
-        本期代表文章
-      </div>
-      <div className="overflow-hidden rounded-md border">
-        {review.stats.topArticles.map((article, index) => (
-          <div
-            key={article.id}
-            className={
-              "flex items-start justify-between gap-3 px-3 py-2.5" +
-              (index === 0 ? "" : " border-t")
-            }
-          >
-            <div className="flex min-w-0 flex-col gap-1">
-              <div className="flex items-center gap-2">
-                <Badge variant={article.isNew ? "default" : "secondary"} className="text-[10px]">
-                  {article.isNew ? "新建" : "更新"}
-                </Badge>
-                <span className="truncate text-sm font-medium">{article.title}</span>
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {article.knowledgeBaseName ?? "未命名知识库"} · {article.charCount} 字 · {formatDateTime(article.updatedAt)}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 function ReviewSkeleton() {
   return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[0, 1, 2, 3].map((index) => (
-          <Skeleton key={index} className="h-20 w-full" />
-        ))}
-      </div>
-      <Skeleton className="h-32 w-full" />
-      <Skeleton className="h-20 w-full" />
-    </div>
+    <Card>
+      <CardContent className="space-y-6 py-8">
+        <Skeleton className="h-8 w-56" />
+        <Skeleton className="h-24 w-full" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[0, 1, 2, 3].map((index) => (
+            <Skeleton key={index} className="h-20 w-full" />
+          ))}
+        </div>
+        <Skeleton className="h-32 w-full" />
+      </CardContent>
+    </Card>
   )
 }
 

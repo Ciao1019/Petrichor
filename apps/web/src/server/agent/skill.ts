@@ -26,6 +26,7 @@ export function buildAgentEndpointMap() {
         articleMindmapGenerate: "/api/agent/article/mindmap/generate",
         documentSearch: "/api/agent/document/search",
         documentTree: "/api/agent/document/tree",
+        documentSemanticSearch: "/api/agent/document/semantic-search",
         documentView: "/api/agent/document/view",
         documentQa: "/api/agent/document/qa",
         wikiPageList: "/api/agent/wiki/page/list",
@@ -37,11 +38,23 @@ export function buildAgentEndpointMap() {
     }
 }
 
+export function buildAgentMcpInfo(baseUrl: string) {
+    return {
+        endpoint: `${normalizeAgentBaseUrl(baseUrl)}/api/mcp`,
+        transport: "streamable-http",
+        auth: {
+            type: "bearer",
+            header: "Authorization: Bearer <apiKey>",
+        },
+    }
+}
+
 export function buildAgentManifest(baseUrl: string) {
     return {
         name: "Petrichor Agent API",
         version: "2026-06-08",
         baseUrl: normalizeAgentBaseUrl(baseUrl),
+        mcp: buildAgentMcpInfo(baseUrl),
         auth: {
             type: "bearer",
             env: "PETRICHOR_API_KEY",
@@ -54,7 +67,7 @@ export function buildAgentManifest(baseUrl: string) {
         scopes: {
             "article:write": ["article.create", "article.update", "article.move", "folder.create"],
             "article:delete": ["article.delete"],
-            "doc:read": ["knowledge-base.list", "knowledge-base.tree", "article.list", "document.search", "document.tree", "document.view"],
+            "doc:read": ["knowledge-base.list", "knowledge-base.tree", "article.list", "document.search", "document.tree", "document.semantic-search", "document.view"],
             "qa:read": ["document.qa"],
             "share:write": ["article.share.create", "article.share.revoke", "article.share.info"],
             "ai:write": ["article.summary.generate", "article.mindmap.generate"],
@@ -155,7 +168,7 @@ export function buildAgentSkillPackageZip(baseUrl: string) {
 function buildRootSkillMarkdown(baseUrl: string) {
     return `---
 name: petrichor
-description: Use this skill when an AI agent needs to call the Petrichor external Agent API. Covers knowledge base browsing, article CRUD, folder organization, full-text document search, document viewing, knowledge-base question answering, article share-link management, AI summary / mindmap / knowledge-graph generation, and knowledge Wiki browsing / ingest / lint. Triggers include create / update / delete article, organize folders, browse knowledge base, search docs, ask the knowledge base, share article, set share password, summarize article, generate mindmap, generate knowledge graph, browse wiki pages, rebuild wiki, lint wiki.
+description: Use this skill when an AI agent needs to call the Petrichor external Agent API. Covers knowledge base browsing, article CRUD, folder organization, full-text document search, tree-based reasoning retrieval, vector semantic search, document viewing, knowledge-base question answering, article share-link management, AI summary / mindmap / knowledge-graph generation, and knowledge Wiki browsing / ingest / lint. Triggers include create / update / delete article, organize folders, browse knowledge base, search docs, semantic search, ask the knowledge base, share article, set share password, summarize article, generate mindmap, generate knowledge graph, browse wiki pages, rebuild wiki, lint wiki.
 ---
 
 # Petrichor
@@ -183,7 +196,7 @@ export PETRICHOR_API_KEY="ptc_live_xxx"
 | --- | --- |
 | 安装、自检、查 API Key 权限、发现接口 | \`Read skills/setup.md\` |
 | 新建 / 更新 / 删除文章、新建文件夹、移动文章 | \`Read skills/articles.md\` |
-| 浏览知识库、看目录树、列文章、搜索文档、查看正文 / Wiki | \`Read skills/docs.md\` |
+| 浏览知识库、看目录树、列文章、搜索文档（关键词 / 推理 / 语义）、查看正文 / Wiki | \`Read skills/docs.md\` |
 | 文档问答、跨库问答、引用知识库内容回答 | \`Read skills/qa.md\` |
 | 公开文章、设置分享密码 / 到期、撤销分享、查询分享状态 | \`Read skills/share.md\` |
 | AI 摘要、思维导图、知识图谱生成 | \`Read skills/ai.md\` |
@@ -245,6 +258,16 @@ scripts/petrichor capabilities
 - 带鉴权能力：\`scripts/petrichor capabilities\`
 - 详细接口说明：按需读取 \`references/endpoints.md\`
 - 所有命令支持 \`--help\`，例如 \`scripts/petrichor article create --help\`
+
+## MCP Server（可选替代）
+
+如果运行环境是支持 MCP 的客户端（Claude Code、Codex、Cursor 等），也可以不装本 Skill，
+直接连接 Petrichor 的 MCP Server（同一套 API Key，能力与本 Skill 的文档/检索/写作能力一致）：
+
+\`\`\`text
+端点：$PETRICHOR_BASE_URL/api/mcp（Streamable HTTP）
+鉴权：Authorization: Bearer $PETRICHOR_API_KEY
+\`\`\`
 `
 }
 
@@ -308,8 +331,9 @@ function buildDocsSubSkillMarkdown() {
 3. 平铺列出某知识库的文章用 \`scripts/petrichor article list --kb-id <ID>\`，可加 \`--tag\` / \`--keyword\` / \`--parent-id\` / \`--direct\` 过滤。
 4. 搜索内容 \`scripts/petrichor doc search\`；跨库搜索时省略 \`--kb-id\`。
 5. 细节性问题优先用目录树推理检索 \`scripts/petrichor doc tree --query "问题" --kb-id <ID>\`，比关键词更精准；只想在某篇文档内检索时加 \`--article-id\`。
-6. 读取原文 \`scripts/petrichor doc view --article-id <ID>\`。
-7. 读取 Wiki 页面 \`scripts/petrichor doc view --kb-id <ID> --page-key <key>\`。
+6. 用户使用近义/概念性表述、或 \`doc tree\` 召回不佳时，改用向量语义检索 \`scripts/petrichor doc semantic --query "问题" --kb-id <ID>\`（需服务端配置 PostgreSQL + 向量模型，不可用时会返回错误，回退到 \`doc tree\`）。
+7. 读取原文 \`scripts/petrichor doc view --article-id <ID>\`。
+8. 读取 Wiki 页面 \`scripts/petrichor doc view --kb-id <ID> --page-key <key>\`。
 
 ## 命令
 
@@ -319,6 +343,7 @@ scripts/petrichor article list --kb-id 1 --parent-id 5 --direct
 scripts/petrichor doc search --query "关键词" --kb-id 1 --limit 8
 scripts/petrichor doc tree --query "问题" --kb-id 1 --limit 6
 scripts/petrichor doc tree --query "问题" --kb-id 1 --article-id 123
+scripts/petrichor doc semantic --query "概念性问题" --kb-id 1 --limit 6
 scripts/petrichor doc view --article-id 123
 scripts/petrichor doc view --kb-id 1 --page-key index
 \`\`\`
@@ -567,6 +592,11 @@ Authorization: Bearer <PETRICHOR_API_KEY>
   - body: \`{"query":"问题","knowledgeBaseId":"1","limit":6,"articleId":"123"}\`
   - PageIndex 式推理检索：在文档目录树上按问题推理导航，返回最相关的章节节点（含面包屑 \`path\`、\`summary\`、\`contentMd\` 片段、\`nodeKey\` 与 \`articleId\`）。
   - \`knowledgeBaseId\` 必填；只想在某篇文档内检索时加 \`articleId\`。比关键词搜索更精准，适合细节性问题。
+- \`POST /api/agent/document/semantic-search\`
+  - scope: \`doc:read\`
+  - body: \`{"query":"问题","knowledgeBaseId":"1","limit":6,"articleId":"123"}\`
+  - 向量语义检索：对目录树章节节点做向量相似度召回，返回结构与 \`document/tree\` 一致。
+  - 适合近义/概念性表述；需服务端配置 PostgreSQL 与向量模型，否则返回 400。
 - \`POST /api/agent/document/view\`
   - scope: \`doc:read\`
   - 读取文章：\`{"articleId":"123"}\`
@@ -841,6 +871,17 @@ def cmd_doc_tree(args: argparse.Namespace) -> None:
     _print_json(_request("POST", "/api/agent/document/tree", body))
 
 
+def cmd_doc_semantic(args: argparse.Namespace) -> None:
+    body: Dict[str, Any] = {
+        "knowledgeBaseId": _id(args.kb_id),
+        "query": args.query,
+        "limit": args.limit,
+    }
+    if args.article_id is not None:
+        body["articleId"] = _id(args.article_id)
+    _print_json(_request("POST", "/api/agent/document/semantic-search", body))
+
+
 def cmd_doc_ask(args: argparse.Namespace) -> None:
     body: Dict[str, Any] = {"question": args.question, "limit": args.limit}
     if args.kb_id is not None:
@@ -973,6 +1014,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--kb-id", type=int, required=True)
     p.add_argument("--article-id", type=int, default=None, help="只在某篇文档内检索；省略则检索整个知识库")
     p.add_argument("--limit", type=int, default=6)
+    p = doc_sub.add_parser("semantic", help="向量语义检索（近义/概念性表述；需服务端配置 PostgreSQL + 向量模型）")
+    p.add_argument("--query", required=True)
+    p.add_argument("--kb-id", type=int, required=True)
+    p.add_argument("--article-id", type=int, default=None, help="只在某篇文档内检索；省略则检索整个知识库")
+    p.add_argument("--limit", type=int, default=6)
     p = doc_sub.add_parser("ask", help="文档问答")
     p.add_argument("--question", required=True)
     p.add_argument("--kb-id", type=int, default=None)
@@ -1036,6 +1082,7 @@ COMMANDS = {
     ("doc", "view"): cmd_doc_view,
     ("doc", "search"): cmd_doc_search,
     ("doc", "tree"): cmd_doc_tree,
+    ("doc", "semantic"): cmd_doc_semantic,
     ("doc", "ask"): cmd_doc_ask,
     ("share", "create"): cmd_share_create,
     ("share", "revoke"): cmd_share_revoke,
