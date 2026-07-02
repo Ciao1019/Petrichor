@@ -290,7 +290,7 @@ Petrichor 内置了一套**面向外部 Agent**（Claude Code、Codex、Cursor�
 | 子模块 | 入口 | 说明 |
 | --- | --- | --- |
 | **API Key 管理** | 仪表盘 → Agent 集成 → API Key 管理 | 生成 / 撤销外部 Agent 调用密钥。明文仅展示一次，服务端只存 `sha256` 哈希 |
-| **Skill 包** | 仪表盘 → Agent 集成 → Skill 包 | 下载 `petrichor-agent-skills.zip`，内含一个顶层 `petrichor` Skill，根 `SKILL.md` 按意图路由到子文档；兼容旧单文件 `SKILL.md` |
+| **Skill 包** | 仪表盘 → Agent 集成 → Skill 包 | 下载 `petrichor-agent-skills.zip`，内含一个顶层 `petrichor` Skill 与 `config.json`；兼容旧单文件 `SKILL.md` |
 | **调用日志** | 仪表盘 → Agent 集成 → 调用日志 | 完整审计：来源 Agent、工具、IP、UA、入参、出参、状态码、耗时 |
 | **REST 能力层** | `/api/agent/**` | 所有外部接口统一鉴权 + 审计，可直接被任意 HTTP 客户端调用 |
 
@@ -300,26 +300,23 @@ Petrichor 内置了一套**面向外部 Agent**（Claude Code、Codex、Cursor�
 
 | 子文档 | 触发时机 |
 | --- | --- |
-| `skills/setup.md` | 首次安装、自检、API Key 权限检查、接口发现 |
+| `config.json` | Skill 包内配置文件，填写站点地址与 Agent API Key |
+| `skills/setup.md` | 首次配置、自检、API Key 权限检查、接口发现 |
 | `skills/articles.md` | 新建 / 更新 / 删除文章、创建文件夹、移动文章 |
 | `skills/docs.md` | 浏览知识库、查看目录树、列文章、搜索文档、查看正文 / Wiki |
 | `skills/qa.md` | 基于知识库上下文的文档问答（含跨库问答） |
 | `skills/share.md` | 公开 / 撤销文章分享、设置访问密码与到期时间 |
 | `skills/ai.md` | AI 摘要、思维导图、知识图谱生成 |
 
-`scripts/petrichor`（零依赖 Python CLI）、`scripts/petrichor-api.sh`（curl 兜底）和 `references/endpoints.md`（完整接口字段说明）整个 skill 共用一份。
+`scripts/petrichor`（零依赖 Python CLI）、`scripts/petrichor-api.sh`（curl 兜底）和 `references/endpoints.md`（完整接口字段说明）整个 skill 共用一份，默认读取同目录的 `config.json`。
 
 ### 接入步骤
 
 1. **生成 API Key**：仪表盘 → **Agent 集成 → API Key 管理 → 新建**，按需勾选权限（`article:write` / `article:delete` / `doc:read` / `qa:read`），保存明文。
-2. **下载 Skill 包**：仪表盘 → **Agent 集成 → Skill 包 → 下载包**，得到 `petrichor-agent-skills.zip`。
+2. **下载 Skill 包**：仪表盘 → **Agent 集成 → Skill 包 → 下载包**，或直接访问 `/api/agent/skill-pack`，得到 `petrichor-agent-skills.zip`。
 3. **导入 Agent 工具**：解压后将 Skill 目录放入 Claude Code / Codex 对应的 Skills 路径（参考各工具文档）。
-4. **配置环境变量**（在 Agent 工具侧）：
-   - `PETRICHOR_BASE_URL`：你的 Petrichor 站点根 URL，如 `https://你的项目.vercel.app`
-   - `PETRICHOR_API_KEY`：上一步生成的明文 Key
-5. **调用约定**：所有外部请求必须携带：
-   - `Authorization: Bearer <apiKey>`
-   - `X-Petrichor-Agent-Source: <agent 标识>`（缺失会被拒绝并写入审计日志）
+4. **编辑配置文件**：打开解压后的 `petrichor/config.json`，确认 `baseUrl`，并把 `apiKey` 改成上一步生成的明文 Key。
+5. **调用约定**：Skill 包内 CLI 会从 `config.json` 读取 `apiKey`，并自动携带 `Authorization: Bearer <apiKey>`。
 6. **审计**：每次调用都会自动写入「调用日志」，登录用户可在仪表盘内回看。
 
 > 公开接口清单：未带鉴权也能访问的 `GET /api/agent/manifest` 会列出全部可用接口、参数和所需权限，方便 Agent 自动发现能力。详细设计见 [`docs/agent-integration.md`](docs/agent-integration.md)。
@@ -508,9 +505,9 @@ See the full breakdown in the [Chinese section above](#-环境变量速查表).
 Petrichor exposes a permissioned REST layer at `/api/agent/**` for external AI agents (Claude Code, Codex, Cursor, ChatGPT Desktop, …), together with a downloadable **Skill pack** containing a single top-level `petrichor` Skill that routes by user intent into sub-docs for setup, articles, docs, qa, share and AI generation.
 
 1. **Generate an API key** in *Dashboard → Agent 集成 → API Key 管理* (plaintext shown once; only `sha256` is persisted).
-2. **Download the Skill pack** (`petrichor-agent-skills.zip`) and import it into your agent tool.
-3. **Set agent-side env vars**: `PETRICHOR_BASE_URL` (your deployment URL) and `PETRICHOR_API_KEY`.
-4. **Call convention**: every request must carry `Authorization: Bearer <key>` and `X-Petrichor-Agent-Source: <agent-id>` — missing the source header fails the call and is logged for audit.
+2. **Download the Skill pack** (`petrichor-agent-skills.zip`) from the dashboard or `/api/agent/skill-pack`, then import it into your agent tool.
+3. **Edit `petrichor/config.json`**: confirm `baseUrl` and paste the generated API key into `apiKey`.
+4. **Call convention**: the packaged CLI reads `config.json` and sends `Authorization: Bearer <key>`.
 5. **Audit**: every call (source, tool, IP, UA, request, response, status, latency) is recorded in *Dashboard → Agent 集成 → 调用日志*.
 
 Public manifest endpoint (no auth) for capability discovery: `GET /api/agent/manifest`. Full design notes in [`docs/agent-integration.md`](docs/agent-integration.md).

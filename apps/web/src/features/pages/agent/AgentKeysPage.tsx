@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 import {
   DEFAULT_AGENT_SCOPES,
-  buildShellSnippet,
+  buildSkillConfigSnippet,
   copyToClipboard,
   formatDateTime,
   normalizeAxiosErrorMessage,
@@ -89,7 +89,7 @@ export function AgentKeysPage() {
       <AgentPageHeader
         icon={KeyRound}
         title="API Key 管理"
-        description="为 Claude Code、Codex、Cursor 等 Agent 工具颁发密钥。MCP Server、Skill 包与 REST 接口共用同一套 Key，服务端只存哈希，明文仅生成时展示一次。"
+        description="为 Claude Code、Codex、Cursor 等 Agent 工具颁发密钥。MCP Server、Skill 包与 REST 接口共用同一套 Key，明文仅生成时展示一次。"
         actions={
           <>
             <Button type="button" variant="outline" size="sm" onClick={() => void fetchKeys()} disabled={loading}>
@@ -118,9 +118,9 @@ export function AgentKeysPage() {
               </Button>
             </div>
             <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">终端环境变量</Label>
+              <Label className="text-xs text-muted-foreground">Skill config.json</Label>
               <pre className="overflow-x-auto rounded-md bg-muted px-3 py-2 text-xs">
-                {buildShellSnippet(createdApiKey)}
+                {buildSkillConfigSnippet(createdApiKey)}
               </pre>
             </div>
           </AlertDescription>

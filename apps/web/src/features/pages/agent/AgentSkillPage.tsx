@@ -22,7 +22,8 @@ import { AgentCopyRow, AgentPageHeader, AgentStepList, AgentToolChips } from "./
 
 const SKILL_PACKAGE_FILES: Array<{ path: string; description: string }> = [
   { path: "petrichor/SKILL.md", description: "根入口：按用户意图路由到对应子文档" },
-  { path: "skills/setup.md", description: "安装、环境变量、自检与接口发现" },
+  { path: "config.json", description: "站点地址与 Agent API Key 配置" },
+  { path: "skills/setup.md", description: "配置、自检与接口发现" },
   { path: "skills/articles.md", description: "文章 / 文件夹的新建、更新、删除、移动" },
   { path: "skills/docs.md", description: "知识库浏览与关键词 / 推理 / 语义三种检索" },
   { path: "skills/qa.md", description: "单库与跨库文档问答" },
@@ -81,9 +82,9 @@ export function AgentSkillPage() {
                 <Link to={dashboardRoutes.agentKeys} className="mx-1 underline underline-offset-2">
                   API Key
                 </Link>
-                使用：所有受保护接口都要带
-                <span className="mx-1 font-mono">Authorization: Bearer $PETRICHOR_API_KEY</span>
-                请求头。
+                使用：下载包可通过地址直接获取，解压后编辑
+                <span className="mx-1 font-mono">config.json</span>
+                即可。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -104,7 +105,7 @@ export function AgentSkillPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">安装方式</CardTitle>
-              <CardDescription>选择你的 Agent 工具，替换其中的 API Key 后执行。</CardDescription>
+              <CardDescription>选择你的 Agent 工具，解压后编辑包内 config.json。</CardDescription>
             </CardHeader>
             <CardContent>
               <Tabs defaultValue="claude-code">
@@ -119,7 +120,9 @@ export function AgentSkillPage() {
                   </CodeBlock>
                   <p className="text-xs leading-relaxed text-muted-foreground">
                     解压到 <span className="font-mono">~/.claude/skills/</span> 后全局可用；只给单个项目用就解压到项目的
-                    <span className="ml-1 font-mono">.claude/skills/</span>。对话中说「问问我的知识库」即可触发。
+                    <span className="ml-1 font-mono">.claude/skills/</span>。API Key 写在
+                    <span className="mx-1 font-mono">petrichor/config.json</span>
+                    里。
                   </p>
                 </TabsContent>
                 <TabsContent value="codex" className="mt-3 space-y-2">
@@ -129,7 +132,8 @@ export function AgentSkillPage() {
                   <p className="text-xs leading-relaxed text-muted-foreground">
                     旧版本 Codex 不支持 skills 目录时，把包解压到仓库任意位置，并在
                     <span className="mx-1 font-mono">AGENTS.md</span>
-                    中注明「Petrichor 相关任务请先阅读 petrichor/SKILL.md」。
+                    中注明「Petrichor 相关任务请先阅读 petrichor/SKILL.md」；配置仍写
+                    <span className="mx-1 font-mono">petrichor/config.json</span>。
                   </p>
                 </TabsContent>
                 <TabsContent value="generic" className="mt-3 space-y-2">
@@ -190,14 +194,15 @@ export function AgentSkillPage() {
                   },
                   {
                     title: "下载并解压 Skill 包",
-                    description: "按左侧对应工具的安装片段操作。",
+                    description: "可以点击下载，也可以复制包地址用 curl 下载。",
                   },
                   {
-                    title: "设置环境变量",
+                    title: "编辑 config.json",
                     description: (
                       <>
-                        <span className="font-mono">PETRICHOR_BASE_URL</span> 与
-                        <span className="ml-1 font-mono">PETRICHOR_API_KEY</span>。
+                        填入 <span className="font-mono">apiKey</span>；通常
+                        <span className="mx-1 font-mono">baseUrl</span>
+                        已按下载地址自动写好。
                       </>
                     ),
                   },
@@ -247,7 +252,7 @@ export function AgentSkillPage() {
             <CardContent className="space-y-3 text-xs leading-relaxed text-muted-foreground">
               <p>
                 Claude Code、Codex、Cursor 等支持 MCP 的客户端推荐优先接入 MCP Server：
-                无需下载文件与配置环境变量，工具参数还带结构化校验。
+                无需下载文件，工具参数还带结构化校验。
               </p>
               <Button asChild variant="outline" size="sm" className="w-full">
                 <Link to={dashboardRoutes.agentMcp}>
