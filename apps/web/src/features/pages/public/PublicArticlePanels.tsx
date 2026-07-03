@@ -4,6 +4,7 @@ import { List, Loader2, X } from "lucide-react"
 import { Suspense, useMemo } from "react"
 
 import { PlateMarkdownPreview } from "@/components/plate/PlateMarkdownPreview"
+import { ArticleImageLightbox, useArticleImageLightbox } from "@/features/pages/public/ArticleImageLightbox"
 import { cn } from "@/lib/utils"
 import type { TocItem } from "@/features/pages/public/public-article-utils"
 
@@ -162,17 +163,22 @@ export function PublicArticlePanel({
 }: PublicArticlePanelProps) {
   const navToc = React.useMemo(() => toc.filter((item) => item.level >= TOC_MIN_LEVEL && item.level <= TOC_MAX_LEVEL), [toc])
   const [mobileTocOpen, setMobileTocOpen] = React.useState(false)
+  const contentContainerRef = React.useRef<HTMLDivElement | null>(null)
+  const lightbox = useArticleImageLightbox(contentContainerRef)
 
   return (
     <>
-      <PlateMarkdownPreview
-        contentJson={contentJson}
-        contentMetaJson={contentMetaJson}
-        markdown={contentMd}
-        headings={toc}
-        className="mx-auto max-w-none"
-        publicMediaAccess
-      />
+      <div ref={contentContainerRef}>
+        <PlateMarkdownPreview
+          contentJson={contentJson}
+          contentMetaJson={contentMetaJson}
+          markdown={contentMd}
+          headings={toc}
+          className="mx-auto max-w-none"
+          publicMediaAccess
+        />
+      </div>
+      <ArticleImageLightbox image={lightbox.image} onClose={lightbox.close} />
       {navToc.length > 0 ? (
         <>
           <PublicArticleFloatingToc navToc={navToc} activeHeadingId={activeHeadingId} onTocClick={onTocClick} />
