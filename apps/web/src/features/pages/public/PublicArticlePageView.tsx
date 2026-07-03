@@ -10,7 +10,10 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PixelFlowerLayer, type PixelFlowerDecoration } from "@/features/pages/blog/PixelDecorations"
 import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import { PublicArticleErrorCard, PublicArticlePasswordCard } from "@/features/pages/public/PublicArticleChrome"
+import { PublicArticleComments } from "@/features/pages/public/PublicArticleComments"
 import { PublicArticlePanel, PublicMindmapPanel } from "@/features/pages/public/PublicArticlePanels"
+import { PublicArticlePrevNext } from "@/features/pages/public/PublicArticlePrevNext"
+import { QaMarkdownScope, QaStreamingMarkdown } from "@/features/pages/knowledge/QaMarkdown"
 import {
   shouldRenderPublicArticleBody,
   shouldShowPublicArticleLoadingCard,
@@ -53,6 +56,8 @@ export type PublicArticleRepostSource = {
   originalUrl: string
   originalAuthorName: string
 }
+
+const PUBLIC_ARTICLE_SUMMARY_REVEAL_CPS = 13
 
 export const articleDetailBackgroundFlowers: PixelFlowerDecoration[] = [
   {
@@ -180,6 +185,8 @@ function PublicArticleBody({ model }: { model: PublicArticlePageModel }) {
         mindmapMounted={mindmapMounted || tab === "mindmap"}
       />
       <PublicArticleTagsFooter tags={tags} />
+      <PublicArticlePrevNext shareCode={model.shareCode} />
+      <PublicArticleComments shareCode={model.shareCode} />
       <ArticleCardDialog
         open={cardDialogOpen}
         onOpenChange={setCardDialogOpen}
@@ -218,65 +225,25 @@ function PublicArticleRepostAttribution({ source }: { source: PublicArticleRepos
 }
 
 function PublicArticleAiSummary({ summary }: { summary: string | null }) {
-  const displayText = useTypewriterText(summary ?? "")
   if (!summary?.trim()) return null
   const normalizedSummary = summary.trim()
 
   return (
     <section className="post-ai-summary" aria-label="AI 总结">
       <div className="post-ai-summary-label">AI 总结</div>
-      <p className="post-ai-summary-text">
-        <span className="invisible block" aria-hidden="true">{normalizedSummary}</span>
-        <span className="absolute inset-0">
-          {displayText}
-          <span
-            className="post-ai-summary-caret"
-            aria-hidden="true"
-            data-done={displayText.length >= normalizedSummary.length}
+      <div className="post-ai-summary-text">
+        <QaMarkdownScope mode="light">
+          <QaStreamingMarkdown
+            key={normalizedSummary}
+            text={normalizedSummary}
+            revealOnMount
+            revealCps={PUBLIC_ARTICLE_SUMMARY_REVEAL_CPS}
+            catchupMs={null}
           />
-        </span>
-      </p>
+        </QaMarkdownScope>
+      </div>
     </section>
   )
-}
-
-function useTypewriterText(value: string) {
-  const [displayText, setDisplayText] = useState("")
-
-  useEffect(() => {
-    const text = value.trim()
-    if (!text) {
-      setDisplayText("")
-      return
-    }
-    const characters = Array.from(text)
-    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    if (prefersReducedMotion) {
-      setDisplayText(text)
-      return
-    }
-
-    let index = 1
-    setDisplayText("")
-    setDisplayText(characters.slice(0, index).join(""))
-    if (characters.length <= 1) {
-      return
-    }
-
-    const timer = window.setInterval(() => {
-      index = Math.min(index + 1, characters.length)
-      setDisplayText(characters.slice(0, index).join(""))
-      if (index >= characters.length) {
-        window.clearInterval(timer)
-      }
-    }, 46)
-
-    return () => {
-      window.clearInterval(timer)
-    }
-  }, [value])
-
-  return displayText
 }
 
 function PublicArticleTitleSection({

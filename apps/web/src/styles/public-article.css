@@ -123,30 +123,21 @@
   }
 
   .public-article .post-ai-summary-text {
-    @apply relative m-0 whitespace-pre-wrap break-words text-[0.9375rem] leading-7;
+    @apply m-0 break-words text-[0.9375rem] leading-7;
     color: var(--retypeset-secondary);
+  }
+
+  .public-article .post-ai-summary-text :where(p) {
+    @apply m-0;
     text-indent: 2em;
   }
 
-  .public-article .post-ai-summary-caret {
-    @apply ml-0.5 inline-block h-[1em] w-px translate-y-0.5 align-baseline;
-    background-color: var(--retypeset-accent);
-    animation: public-article-summary-caret 1s steps(2, start) infinite;
+  .public-article .post-ai-summary-text :where(p + p) {
+    @apply mt-2;
   }
 
-  .public-article .post-ai-summary-caret[data-done="true"] {
-    background-color: color-mix(in oklab, var(--retypeset-secondary) 55%, transparent);
-  }
-
-  @keyframes public-article-summary-caret {
-    0%,
-    45% {
-      opacity: 1;
-    }
-    46%,
-    100% {
-      opacity: 0;
-    }
+  .public-article .post-ai-summary-text :where(a) {
+    color: var(--retypeset-accent);
   }
 
   /* ── Tags footer: below content ── */
@@ -181,6 +172,59 @@
   .public-article--retypeset .post-tag:hover {
     border-color: color-mix(in oklab, var(--retypeset-accent) 65%, transparent);
     color: var(--retypeset-accent);
+  }
+
+  /* ── 正文图片：可点击放大（!important 压过 ImageElement 上的 cursor-pointer 工具类） ── */
+
+  .public-article .plate-article-content figure img {
+    cursor: zoom-in !important;
+  }
+
+  /* ── Prev / Next navigation ── */
+
+  .public-article .post-nav {
+    @apply mt-10 grid grid-cols-1 gap-x-8 gap-y-5 border-t pt-6 sm:grid-cols-2;
+    border-color: color-mix(in oklab, var(--retypeset-secondary) 18%, transparent);
+  }
+
+  .public-article .post-nav-link {
+    @apply flex min-w-0 flex-col gap-1 rounded-sm;
+  }
+
+  .public-article .post-nav-link--next {
+    @apply sm:items-end sm:text-right;
+  }
+
+  .public-article .post-nav-label {
+    @apply text-xs;
+    color: color-mix(in oklab, var(--retypeset-secondary) 65%, transparent);
+    font-family: "Maple Mono", Georgia, "Times New Roman", serif;
+  }
+
+  .public-article .post-nav-title {
+    @apply break-words text-[0.95rem] font-medium leading-6 transition-colors;
+    color: var(--retypeset-primary);
+  }
+
+  .public-article .post-nav-link:hover .post-nav-title {
+    color: var(--retypeset-accent);
+  }
+
+  .public-article .post-nav-date {
+    @apply text-xs;
+    color: color-mix(in oklab, var(--retypeset-secondary) 55%, transparent);
+    font-family: "Maple Mono", Georgia, "Times New Roman", serif;
+  }
+
+  /* ── Comments (giscus) ── */
+
+  .public-article .post-comments {
+    @apply mt-12;
+  }
+
+  .public-article .post-comments-line {
+    @apply mb-8 h-px w-16;
+    background-color: color-mix(in oklab, var(--retypeset-secondary) 28%, transparent);
   }
 
   /* ── Skeleton loading bars ── */

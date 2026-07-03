@@ -94,56 +94,64 @@ function QaMarkdownThemeShell({ children }: { children: React.ReactNode }) {
 const GENTLE_CPS = 21 // 稳定放字速度（字/秒）。silky≈28，这里更柔。
 const GENTLE_CATCHUP_MS = 900 // 突发大块积压时，在该窗口内温和追平。
 
-function useGentleReveal(text: string, isRunning: boolean): number {
-  const steadyMsPerChar = 1000 / GENTLE_CPS
-  const [revealed, setRevealed] = React.useState(() => (isRunning ? 0 : text.length))
+type GentleRevealOptions = {
+  cps?: number
+  catchupMs?: number | null
+}
 
-  const [tracked, setTracked] = React.useState(text)
-  if (text !== tracked) {
-    setTracked(text)
-    // 流被替换（新消息/重新生成）时回退进度，避免闪烁。
-    if (!text.startsWith(tracked)) setRevealed(isRunning ? 0 : text.length)
-  }
+function useGentleReveal(text: string, isRunning: boolean, options: GentleRevealOptions = {}): number {
+  const cps = options.cps ?? GENTLE_CPS
+  const catchupMs = options.catchupMs ?? GENTLE_CATCHUP_MS
+  const steadyMsPerChar = 1000 / cps
+  const [revealed, setRevealed] = React.useState(() => (isRunning ? 0 : text.length))
+  const effectiveRevealed = Math.min(revealed, text.length)
 
   const revealedRef = React.useRef(revealed)
-  revealedRef.current = revealed
   const targetRef = React.useRef(text.length)
-  targetRef.current = text.length
-  const prevTextRef = React.useRef(text)
   const rafRef = React.useRef<number | null>(null)
   const lastTimeRef = React.useRef(0)
-
-  const tick = React.useCallback(() => {
-    const now = performance.now()
-    const delta = now - lastTimeRef.current
-    const remaining = targetRef.current - revealedRef.current
-    if (remaining <= 0) {
-      rafRef.current = null
-      return
-    }
-    // 积压越大越快（追平），越小越趋于匀速 GENTLE_CPS。
-    const msPerChar = Math.min(steadyMsPerChar, GENTLE_CATCHUP_MS / remaining)
-    let charsToAdd = Math.floor(delta / msPerChar)
-    if (charsToAdd <= 0) {
-      rafRef.current = requestAnimationFrame(tick)
-      return
-    }
-    if (charsToAdd > remaining) charsToAdd = remaining
-    lastTimeRef.current = now - (delta - charsToAdd * msPerChar)
-    const next = revealedRef.current + charsToAdd
-    revealedRef.current = next
-    setRevealed(next)
-    rafRef.current = next < targetRef.current ? requestAnimationFrame(tick) : null
-  }, [steadyMsPerChar])
+  const tickRef = React.useRef<() => void>(() => {})
 
   React.useEffect(() => {
-    const prev = prevTextRef.current
-    prevTextRef.current = text
-    if (!text.startsWith(prev) && isRunning) revealedRef.current = 0
+    revealedRef.current = effectiveRevealed
+  }, [effectiveRevealed])
+
+  React.useEffect(() => {
+    targetRef.current = text.length
+  }, [text.length])
+
+  React.useEffect(() => {
+    tickRef.current = () => {
+      const now = performance.now()
+      const delta = now - lastTimeRef.current
+      const remaining = targetRef.current - revealedRef.current
+      if (remaining <= 0) {
+        rafRef.current = null
+        return
+      }
+      // 积压越大越快（追平），越小越趋于匀速 GENTLE_CPS。
+      const msPerChar = catchupMs == null
+        ? steadyMsPerChar
+        : Math.min(steadyMsPerChar, catchupMs / remaining)
+      let charsToAdd = Math.floor(delta / msPerChar)
+      if (charsToAdd <= 0) {
+        rafRef.current = requestAnimationFrame(tickRef.current)
+        return
+      }
+      if (charsToAdd > remaining) charsToAdd = remaining
+      lastTimeRef.current = now - (delta - charsToAdd * msPerChar)
+      const next = revealedRef.current + charsToAdd
+      revealedRef.current = next
+      setRevealed(next)
+      rafRef.current = next < targetRef.current ? requestAnimationFrame(tickRef.current) : null
+    }
+  }, [steadyMsPerChar, catchupMs])
+
+  React.useEffect(() => {
     if (revealedRef.current >= text.length) return
     if (rafRef.current == null) {
       lastTimeRef.current = performance.now()
-      rafRef.current = requestAnimationFrame(tick)
+      rafRef.current = requestAnimationFrame(tickRef.current)
     }
     return () => {
       if (rafRef.current != null) {
@@ -151,9 +159,9 @@ function useGentleReveal(text: string, isRunning: boolean): number {
         rafRef.current = null
       }
     }
-  }, [text, isRunning, tick])
+  }, [text, isRunning])
 
-  return revealed
+  return effectiveRevealed
 }
 
 /**
@@ -197,9 +205,26 @@ export function QaPreparing({ label = "准备响应中" }: { label?: string }) {
 export function QaMarkdownText() {
   const { text, status } = useMessagePartText()
   const isRunning = status?.type === "running"
-  const revealed = useGentleReveal(text, isRunning)
+  return <QaStreamingMarkdown text={text} running={isRunning} />
+}
+
+export function QaStreamingMarkdown({
+  text,
+  running = false,
+  revealOnMount = false,
+  revealCps,
+  catchupMs,
+}: {
+  text: string
+  running?: boolean
+  revealOnMount?: boolean
+  revealCps?: number
+  catchupMs?: number | null
+}) {
+  const shouldReveal = running || revealOnMount
+  const revealed = useGentleReveal(text, shouldReveal, { cps: revealCps, catchupMs })
   const shown = revealed >= text.length ? text : text.slice(0, revealed)
-  const animating = isRunning || revealed < text.length
+  const animating = running || revealed < text.length
   return (
     <Markdown
       variant="chat"
