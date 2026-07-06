@@ -5,6 +5,18 @@ import { nextCookies } from "better-auth/next-js"
 import { twoFactor } from "better-auth/plugins/two-factor"
 import { getServerConfig } from "@/config/server"
 import { getDb } from "@/server/db/client"
+
+// better-auth 在模块加载时就要拿到 db 实例，但在 Cloudflare Workers 上数据库
+// 连接必须「每请求一个」（见 db/client.ts）。用 Proxy 惰性转发：每次访问都在
+// 当前请求上下文里重新解析 getDb()，从而拿到本请求专属的连接，避免跨请求复用
+// 导致的 "Cannot perform I/O on behalf of a different request" 挂死。
+const requestScopedDb = new Proxy({} as ReturnType<typeof getDb>, {
+    get(_target, prop) {
+        const db = getDb() as unknown as Record<PropertyKey, unknown>
+        const value = db[prop]
+        return typeof value === "function" ? value.bind(db) : value
+    },
+})
 import {
     betterAuthAccounts,
     betterAuthSessions,
@@ -49,7 +61,7 @@ export const auth = betterAuth({
     baseURL: readBaseUrl(),
     secret: serverConfig.sessionSecret,
     trustedOrigins: buildTrustedOrigins(),
-    database: drizzleAdapter(getDb(), {
+    database: drizzleAdapter(requestScopedDb, {
         provider: "pg",
         schema: {
             user: betterAuthUsers,
@@ -64,8 +76,12 @@ export const auth = betterAuth({
         autoSignIn: true,
         minPasswordLength: 6,
         password: {
-            hash: (password) => bcrypt.hash(password, 10),
-            verify: ({ hash, password }) => bcrypt.compare(password, hash),
+            // 用同步 API：bcryptjs 的异步版靠 setTimeout 分片调度，在 Cloudflare
+            // Workers(workerd) 的单请求事件循环里回调不执行，导致 Promise 永不
+            // resolve、请求挂死(Error 1101)。同步版内联算完即返回，格式一致。
+            hash: (password) => Promise.resolve(bcrypt.hashSync(password, 10)),
+            verify: ({ hash, password }) =>
+                Promise.resolve(bcrypt.compareSync(password, hash)),
         },
     },
     session: {

@@ -1307,7 +1307,7 @@ async function resolveAgentSharePasswordHash(
     if (!accessPassword) {
         return passwordEnabled === true ? existing?.passwordHash ?? null : null
     }
-    return await bcrypt.hash(accessPassword, 10)
+    return bcrypt.hashSync(accessPassword, 10)
 }
 
 function toAgentShareResponse(share: KnowledgeBaseArticleShareRecord) {

@@ -77,7 +77,7 @@ export async function createBurnLink(request: NextRequest) {
         await requireArticleOwner(user.id, input.articleId)
 
         const passwordHash = input.passwordEnabled && input.accessPassword
-            ? await bcrypt.hash(input.accessPassword, 10)
+            ? bcrypt.hashSync(input.accessPassword, 10)
             : null
         const [link] = await getDb()
             .insert(knowledgeBaseArticleBurnLinks)
@@ -206,7 +206,7 @@ export async function publicBurnConsume(request: NextRequest) {
             if (!input.accessPassword) {
                 throw forbidden("该链接需要访问密码")
             }
-            if (!await bcrypt.compare(input.accessPassword, link.passwordHash)) {
+            if (!bcrypt.compareSync(input.accessPassword, link.passwordHash)) {
                 throw forbidden("访问密码错误")
             }
         }
