@@ -305,7 +305,7 @@ openssl rand -hex 8
    |---|---|
    | 生产分支 | `main` |
    | 构建命令 | `pnpm cf:build` |
-   | 部署命令 | `npx wrangler deploy` |
+   | 部署命令 | `pnpm exec opennextjs-cloudflare deploy` |
    | 根目录（高级设置） | `apps/web` |
 
 3. 高级设置 → **构建变量** 加公开构建变量（`NEXT_PUBLIC_*` 会打进客户端 bundle）：
