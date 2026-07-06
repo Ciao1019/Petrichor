@@ -219,7 +219,7 @@ export async function createLocalUserWithBetterAuth(input: {
     }
 
     const authUserId = randomUUID()
-    const passwordHash = await bcrypt.hash(input.password, 10)
+    const passwordHash = bcrypt.hashSync(input.password, 10)
     const username = normalizedEmail.split("@")[0]?.trim() || input.name
 
     const [user] = await db.transaction(async (tx) => {

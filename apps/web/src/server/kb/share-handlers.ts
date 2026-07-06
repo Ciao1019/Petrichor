@@ -539,7 +539,7 @@ async function loadPublicShareDetailResponse(input: PublicShareDetailLoadInput) 
         if (!input.allowPassword || !input.accessPassword) {
             throw forbidden("该链接需要访问密码")
         }
-        if (!await bcrypt.compare(input.accessPassword, share.passwordHash)) {
+        if (!bcrypt.compareSync(input.accessPassword, share.passwordHash)) {
             throw forbidden("访问密码错误")
         }
     }
@@ -643,7 +643,7 @@ async function resolvePublicPasswordHash(existing: KnowledgeBaseArticleShareReco
     if (!accessPassword) {
         return passwordEnabled === true ? existing?.passwordHash ?? null : null
     }
-    return await bcrypt.hash(accessPassword, 10)
+    return bcrypt.hashSync(accessPassword, 10)
 }
 
 function buildShareCreateResponse(articleId: number, share: KnowledgeBaseArticleShareRecord) {

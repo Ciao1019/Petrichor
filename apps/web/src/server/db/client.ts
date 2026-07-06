@@ -1,4 +1,5 @@
 import { createRequire } from "node:module"
+import { getCloudflareContext } from "@opennextjs/cloudflare"
 import type BetterSqlite3 from "better-sqlite3"
 import type { drizzle as drizzleSqliteType } from "drizzle-orm/better-sqlite3"
 import { drizzle as drizzlePostgres } from "drizzle-orm/postgres-js"
@@ -19,11 +20,18 @@ function loadSqliteDeps() {
     return { Database, drizzleSqlite }
 }
 
-let client: postgres.Sql | null = null
-let sqliteClient: BetterSqlite3.Database | null = null
-let sqliteMigrated = false
 type Db = ReturnType<typeof drizzlePostgres<typeof schema>>
-let db: Db | null = null
+
+let sqliteClient: BetterSqlite3.Database | null = null
+let sqliteDb: Db | null = null
+let sqliteMigrated = false
+
+// 本地 Node（非 Workers）下的 PostgreSQL 连接单例。
+let localPgDb: Db | null = null
+// Cloudflare Workers 下按「当前请求」缓存的连接。workerd 里 TCP socket 绑定
+// 创建它的那个请求，跨请求复用会抛 "Cannot perform I/O on behalf of a
+// different request" 并导致请求挂死。因此每个请求必须用独立连接。
+const pgDbByRequest = new WeakMap<object, Db>()
 
 function isSqliteUrl(databaseUrl: string) {
     return process.env.PETRICHOR_DB_DIALECT === "sqlite" || databaseUrl.startsWith("file:")
@@ -37,15 +45,57 @@ function sqlitePathFromUrl(databaseUrl: string) {
     return databaseUrl.startsWith("file:") ? databaseUrl.slice("file:".length) : databaseUrl
 }
 
+function isCloudflareWorkers() {
+    return typeof (globalThis as { WebSocketPair?: unknown }).WebSocketPair !== "undefined"
+}
+
+// 取当前 Cloudflare 请求的执行上下文（每个请求唯一），作为按请求缓存连接的键。
+// 非 Workers 或拿不到上下文时返回 null。
+function currentRequestKey(): object | null {
+    try {
+        return getCloudflareContext().ctx ?? null
+    } catch {
+        return null
+    }
+}
+
+function createPgDb(): Db {
+    const client = postgres(getServerConfig().databaseUrl, {
+        // 每请求一个连接，单连接即可；并发查询由 postgres.js 在该连接上排队。
+        max: 1,
+        prepare: false,
+    })
+    return drizzlePostgres(client, { schema })
+}
+
+function getPgDb(): Db {
+    if (isCloudflareWorkers()) {
+        const key = currentRequestKey()
+        if (key) {
+            let requestDb = pgDbByRequest.get(key)
+            if (!requestDb) {
+                requestDb = createPgDb()
+                pgDbByRequest.set(key, requestDb)
+            }
+            return requestDb
+        }
+        // 拿不到请求上下文时宁可每次新建，也绝不退化成跨请求复用的单例。
+        return createPgDb()
+    }
+    // 本地 Node / 非 Workers：无跨请求 I/O 限制，单例复用即可。
+    localPgDb ??= createPgDb()
+    return localPgDb
+}
+
+// 仅保留给可能的原生 SQL 场景；同样遵循「不缓存跨请求连接」原则。
 export function getSqlClient() {
     if (isSqliteDatabase()) {
         throw new Error("当前运行在 SQLite 模式，getSqlClient 仅用于 PostgreSQL")
     }
-    client ??= postgres(getServerConfig().databaseUrl, {
-        max: 5,
+    return postgres(getServerConfig().databaseUrl, {
+        max: 1,
         prepare: false,
     })
-    return client
 }
 
 function getSqliteClient() {
@@ -62,15 +112,12 @@ function getSqliteClient() {
 }
 
 export function getDb(): Db {
-    if (db) {
-        return db
-    }
-
     if (isSqliteDatabase()) {
-        const { drizzleSqlite } = loadSqliteDeps()
-        db = drizzleSqlite(getSqliteClient(), { schema }) as unknown as Db
-    } else {
-        db = drizzlePostgres(getSqlClient(), { schema })
+        if (!sqliteDb) {
+            const { drizzleSqlite } = loadSqliteDeps()
+            sqliteDb = drizzleSqlite(getSqliteClient(), { schema }) as unknown as Db
+        }
+        return sqliteDb
     }
-    return db
+    return getPgDb()
 }
