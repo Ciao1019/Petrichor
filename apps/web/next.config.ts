@@ -7,8 +7,20 @@ const turbopackRoot = fs.existsSync(path.join(workspaceRoot, "pnpm-workspace.yam
     ? workspaceRoot
     : process.cwd()
 
+// Cloudflare Workers Builds 免费版仅 2 vCPU 且有 20 分钟构建硬超时，
+// 而 in-build 的类型检查在 CI 上会拖到十几分钟导致超时。
+// 通过 CF_BUILD 环境变量在 Cloudflare 构建时跳过 tsc/eslint（由独立的
+// `pnpm typecheck` / `pnpm lint` 和 Vercel 构建保证质量），Vercel 构建不受影响。
+const skipInBuildChecks = process.env.CF_BUILD === "1"
+
 const nextConfig: NextConfig = {
     reactStrictMode: true,
+    typescript: {
+        ignoreBuildErrors: skipInBuildChecks,
+    },
+    eslint: {
+        ignoreDuringBuilds: skipInBuildChecks,
+    },
     turbopack: {
         root: turbopackRoot,
     },
