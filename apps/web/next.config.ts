@@ -9,17 +9,15 @@ const turbopackRoot = fs.existsSync(path.join(workspaceRoot, "pnpm-workspace.yam
 
 // Cloudflare Workers Builds 免费版仅 2 vCPU 且有 20 分钟构建硬超时，
 // 而 in-build 的类型检查在 CI 上会拖到十几分钟导致超时。
-// 通过 CF_BUILD 环境变量在 Cloudflare 构建时跳过 tsc/eslint（由独立的
-// `pnpm typecheck` / `pnpm lint` 和 Vercel 构建保证质量），Vercel 构建不受影响。
+// 通过 CF_BUILD 环境变量在 Cloudflare 构建时跳过 tsc（由独立的
+// `pnpm typecheck` 和 Vercel 构建保证质量），Vercel 构建不受影响。
+// 注：Next 16 已移除 next.config 的 eslint 配置项，且 build 不再跑 ESLint，故无需处理。
 const skipInBuildChecks = process.env.CF_BUILD === "1"
 
 const nextConfig: NextConfig = {
     reactStrictMode: true,
     typescript: {
         ignoreBuildErrors: skipInBuildChecks,
-    },
-    eslint: {
-        ignoreDuringBuilds: skipInBuildChecks,
     },
     turbopack: {
         root: turbopackRoot,
