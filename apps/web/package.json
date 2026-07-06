@@ -22,9 +22,9 @@
     "analyze": "ANALYZE=true next build",
     "biome:check": "biome check .",
     "biome:fix": "biome check --write .",
-    "cf:build": "NODE_OPTIONS=--max-old-space-size=6144 opennextjs-cloudflare build",
-    "cf:preview": "NODE_OPTIONS=--max-old-space-size=6144 opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "cf:deploy": "NODE_OPTIONS=--max-old-space-size=6144 opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "cf:build": "CF_BUILD=1 NODE_OPTIONS=--max-old-space-size=6144 opennextjs-cloudflare build",
+    "cf:preview": "CF_BUILD=1 NODE_OPTIONS=--max-old-space-size=6144 opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "cf:deploy": "CF_BUILD=1 NODE_OPTIONS=--max-old-space-size=6144 opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
   },
   "dependencies": {
