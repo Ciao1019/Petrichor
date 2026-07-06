@@ -11,7 +11,7 @@ type LocalObjectParams = {
 }
 
 type LocalObjectContext = {
-    params: LocalObjectParams | Promise<LocalObjectParams>
+    params: Promise<LocalObjectParams>
 }
 
 async function resolveObjectKey(context: LocalObjectContext) {

@@ -94,6 +94,10 @@ const nextConfig: NextConfig = {
                 ...config.optimization,
                 splitChunks: {
                     chunks: "all",
+                    // 单个 chunk 体积上限（约 20MB）。Cloudflare Workers 静态资源单文件
+                    // 上限 25MiB，若把整个 vendor 合成一个文件会超限，这里让 webpack
+                    // 按体积自动拆分为多个子 chunk。
+                    maxSize: 20 * 1024 * 1024,
                     cacheGroups: {
                         // PlateJS 单独打包
                         platejs: {
@@ -116,11 +120,11 @@ const nextConfig: NextConfig = {
                             name: "icons-bundle",
                             reuseExistingChunk: true,
                         },
-                        // 其他 vendor 库
+                        // 其他 vendor 库（不固定 name，交给 webpack 按 maxSize 自动切分，
+                        // 避免合成单个超过 Cloudflare 25MiB 限制的巨型文件）
                         vendor: {
                             test: /[\\/]node_modules[\\/]/,
                             priority: 5,
-                            name: "vendor-bundle",
                             reuseExistingChunk: true,
                         },
                     },
@@ -132,3 +136,7 @@ const nextConfig: NextConfig = {
 }
 
 export default nextConfig
+
+// 让 `next dev` 也能访问 Cloudflare 绑定（R2/KV 等）与 env，仅本地开发生效。
+// 对 Vercel 构建无副作用：只在 dev 时惰性加载 @opennextjs/cloudflare。
+import("@opennextjs/cloudflare").then((m) => m.initOpenNextCloudflareForDev()).catch(() => {})

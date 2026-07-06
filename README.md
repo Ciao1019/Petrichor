@@ -13,11 +13,13 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com)
 [![Vercel](https://img.shields.io/badge/Deploy-Vercel-black?logo=vercel)](#-vercel-一键部署傻瓜式教程)
+[![Cloudflare](https://img.shields.io/badge/Deploy-Cloudflare-F38020?logo=cloudflare&logoColor=white)](#️-部署到-cloudflare-workers)
 
 [**🌐 产品介绍**](https://wl.do/tags) ·
 [**📖 在线 Demo（前台）**](https://wl.do)
 
 [**🚀 一键部署到 Vercel**](#-vercel-一键部署傻瓜式教程) ·
+[**☁️ 部署到 Cloudflare**](#️-部署到-cloudflare-workers) ·
 [功能特性](#-功能特性) ·
 [环境变量](#-环境变量速查表) ·
 [本地开发](#-本地开发) ·
@@ -230,6 +232,91 @@ openssl rand -hex 8
 3. 进入 **Deployments**，对最新一次部署点 **⋯ → Redeploy**。
 
 **完成！** 🎉 用第 6 步创建的管理员账号登录，开始使用。
+
+---
+
+## ☁️ 部署到 Cloudflare Workers
+
+除了 Vercel，本项目也支持通过官方 [`@opennextjs/cloudflare`](https://opennext.js.org/cloudflare) 适配器部署到 **Cloudflare Workers**（跑在 Workers 的 Node.js 兼容层上，非 Edge 阉割版）。相关配置已内置：`wrangler.jsonc`、`open-next.config.ts` 与 `apps/web` 里的 `cf:*` 脚本。
+
+> ⚠️ **部署前必读**
+> - **数据库必须用 PostgreSQL**：Cloudflare Workers 不支持原生模块 `better-sqlite3`，因此本地开发用的 SQLite 模式在 Workers 上不可用。请使用 Supabase。
+> - **`DATABASE_URL` 必须是连接池串**：Workers 无常驻 TCP 连接，请用 Supabase 的 **Session/Transaction Pooler**（`...pooler.supabase.com:6543`），不要用 5432 直连。
+> - **构建用 webpack**：Next 16 默认 Turbopack 的产物布局与 OpenNext 不兼容，`open-next.config.ts` 已强制 `next build --webpack`，无需手动处理。
+> - **Worker 体积**：实测打包后 gzip ≈ 2.2 MB，可装进 Workers **免费版**（3 MB 上限）。客户端 chunk 已按 20MB 上限自动切分，避免触碰静态资源单文件 25MiB 限制。
+> - 图片导入的服务端裁剪依赖原生 `sharp`，在 Workers 上会自动降级（不影响文章、上传等主功能）。
+
+### 部署步骤
+
+1. **准备数据与存储**：同 Vercel 教程的第 1～3 步（Supabase 数据库、S3 对象存储、生成密钥）。记得 `DATABASE_URL` 用 **Pooler** 连接串。
+
+2. **本地拉起并登录 Cloudflare**：
+
+   ```bash
+   pnpm install
+   pnpm --filter @petrichor/web exec wrangler login
+   ```
+
+3. **配置环境变量**（两种方式，任选其一）：
+
+   - **本地预览**：在 `apps/web/` 下复制 `.dev.vars.example` 为 `.dev.vars` 并填入真实值。
+   - **线上部署**：用命令逐个写入 Secret（不会进 git），例如：
+
+     ```bash
+     cd apps/web
+     wrangler secret put DATABASE_URL
+     wrangler secret put SESSION_SECRET
+     wrangler secret put PETRICHOR_ENCRYPT_KEY
+     wrangler secret put PETRICHOR_ENCRYPT_SALT
+     wrangler secret put S3_ENDPOINT
+     wrangler secret put S3_ACCESS_KEY_ID
+     wrangler secret put S3_SECRET_ACCESS_KEY
+     # ……其余见「环境变量速查表」
+     ```
+
+     非敏感项（如 `NEXT_PUBLIC_APP_URL`、`S3_REGION`、`S3_BUCKET`）也可写进 `wrangler.jsonc` 的 `vars` 字段。
+
+4. **本地预览**（在 Workers 运行时里跑，最接近生产）：
+
+   ```bash
+   pnpm --filter @petrichor/web cf:preview
+   ```
+
+5. **部署**：
+
+   ```bash
+   pnpm --filter @petrichor/web cf:deploy
+   ```
+
+   首次部署后拿到 `https://petrichor.<你的子域>.workers.dev`，把它回填到 `NEXT_PUBLIC_APP_URL`（`wrangler secret put NEXT_PUBLIC_APP_URL` 或 `vars`）后再 `cf:deploy` 一次即可。
+
+6. **初始化数据库表 / 创建管理员**：与 Vercel 教程的第 5、6 步完全相同（在 Supabase SQL Editor 执行初始化 SQL、临时开放注册创建超管）。
+
+> 💡 需要 ISR / fetch 缓存时，取消 `wrangler.jsonc` 里 R2 桶绑定的注释，并按 `open-next.config.ts` 内注释启用 R2 增量缓存。
+
+### 🔄 git push 自动部署（Cloudflare Workers Builds）
+
+不想每次手动 `cf:deploy`？用 Cloudflare 官方 CI 实现「push 即部署」：
+
+1. 控制台 → **Workers & Pages → petrichor → Settings → Build → Connect to Git**，授权并选中本仓库。
+2. 构建设置（**注意 monorepo 要设根目录**）：
+
+   | 项 | 值 |
+   |---|---|
+   | 生产分支 | `main` |
+   | 构建命令 | `pnpm cf:build` |
+   | 部署命令 | `npx wrangler deploy` |
+   | 根目录（高级设置） | `apps/web` |
+
+3. 高级设置 → **构建变量** 加公开构建变量（`NEXT_PUBLIC_*` 会打进客户端 bundle）：
+
+   | 变量名 | 值 |
+   |---|---|
+   | `NEXT_PUBLIC_APP_URL` | 你的站点域名，如 `https://wl.do` |
+
+4. 保存后 push 到 `main` 即由 Cloudflare 自动构建部署。
+
+> ℹ️ **运行时密钥无需在此重填**：`DATABASE_URL`、`S3_*`、`SESSION_SECRET` 等作为 **Worker Secret** 常驻，`wrangler deploy` 不会清除它们。构建变量只放 `NEXT_PUBLIC_*`；新增/轮换密钥时才用 `wrangler secret put <NAME>`。
 
 ---
 
