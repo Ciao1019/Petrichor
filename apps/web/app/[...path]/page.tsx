@@ -8,7 +8,7 @@ type CatchAllParams = {
 }
 
 type CatchAllPageProps = {
-    params: CatchAllParams | Promise<CatchAllParams>
+    params: Promise<CatchAllParams>
 }
 
 export async function generateMetadata({ params }: CatchAllPageProps): Promise<Metadata> {

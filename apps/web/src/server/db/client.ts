@@ -1,13 +1,26 @@
-import Database from "better-sqlite3"
-import { drizzle as drizzleSqlite } from "drizzle-orm/better-sqlite3"
+import { createRequire } from "node:module"
+import type BetterSqlite3 from "better-sqlite3"
+import type { drizzle as drizzleSqliteType } from "drizzle-orm/better-sqlite3"
 import { drizzle as drizzlePostgres } from "drizzle-orm/postgres-js"
 import postgres from "postgres"
 import { getServerConfig } from "@/config/server"
 import * as schema from "./schema"
 import { runSqliteMigration } from "./sqlite-migration"
 
+// better-sqlite3 是原生模块，只在 SQLite 模式下用于本地开发。
+// 用惰性 require 加载，避免在 Cloudflare Workers 等无原生模块的运行时
+// 因顶层 import 直接加载失败（生产部署走 PostgreSQL，永远不会触达这里）。
+function loadSqliteDeps() {
+    const require = createRequire(import.meta.url)
+    const Database = require("better-sqlite3") as typeof BetterSqlite3
+    const { drizzle: drizzleSqlite } = require(
+        "drizzle-orm/better-sqlite3",
+    ) as { drizzle: typeof drizzleSqliteType }
+    return { Database, drizzleSqlite }
+}
+
 let client: postgres.Sql | null = null
-let sqliteClient: Database.Database | null = null
+let sqliteClient: BetterSqlite3.Database | null = null
 let sqliteMigrated = false
 type Db = ReturnType<typeof drizzlePostgres<typeof schema>>
 let db: Db | null = null
@@ -37,6 +50,7 @@ export function getSqlClient() {
 
 function getSqliteClient() {
     const databaseUrl = getServerConfig().databaseUrl
+    const { Database } = loadSqliteDeps()
     sqliteClient ??= new Database(sqlitePathFromUrl(databaseUrl))
     sqliteClient.pragma("journal_mode = WAL")
     sqliteClient.pragma("foreign_keys = ON")
@@ -52,8 +66,11 @@ export function getDb(): Db {
         return db
     }
 
-    db = isSqliteDatabase()
-        ? drizzleSqlite(getSqliteClient(), { schema }) as unknown as Db
-        : drizzlePostgres(getSqlClient(), { schema })
+    if (isSqliteDatabase()) {
+        const { drizzleSqlite } = loadSqliteDeps()
+        db = drizzleSqlite(getSqliteClient(), { schema }) as unknown as Db
+    } else {
+        db = drizzlePostgres(getSqlClient(), { schema })
+    }
     return db
 }
