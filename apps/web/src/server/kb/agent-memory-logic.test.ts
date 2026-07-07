@@ -4,8 +4,9 @@ import {
     DISTILL_MIN_NEW_MESSAGES,
     MAX_DISTILLED_PER_RUN,
     MAX_PROMPT_MEMORIES,
-    buildMemoryDistillUserMessage,
     buildMemoryPromptSection,
+    buildObserverUserMessage,
+    buildReflectorUserMessage,
     normalizeMemoryContent,
     parseDistilledMemories,
     shouldDistillAgentMemory,
@@ -111,11 +112,25 @@ describe("buildMemoryPromptSection", () => {
     })
 })
 
-describe("buildMemoryDistillUserMessage", () => {
-    it("按时间升序编号列出提问", () => {
-        const message = buildMemoryDistillUserMessage(["第一个问题", "第二个问题"])
-        expect(message).toContain("1. 第一个问题")
-        expect(message).toContain("2. 第二个问题")
+describe("buildObserverUserMessage", () => {
+    it("按时间升序列出对话双方消息并标注 User/Agent", () => {
+        const message = buildObserverUserMessage([
+            { role: "user", text: "第一个问题" },
+            { role: "assistant", text: "第一个回答" },
+        ])
+        expect(message).toContain("User: 第一个问题")
+        expect(message).toContain("Agent: 第一个回答")
+    })
+})
+
+describe("buildReflectorUserMessage", () => {
+    it("编号列出现有观察并带 kind 标签", () => {
+        const message = buildReflectorUserMessage([
+            { kind: "PREFERENCE", content: "用户偏好带引用的回答" },
+            { kind: "TOPIC", content: "用户经常研究 MCP 协议" },
+        ])
+        expect(message).toContain("1. [偏好] 用户偏好带引用的回答")
+        expect(message).toContain("2. [常关注] 用户经常研究 MCP 协议")
     })
 })
 

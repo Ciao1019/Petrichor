@@ -60,8 +60,6 @@ import { CitationList } from "@/components/tool-ui/citation"
 import { safeParseSerializableCitation } from "@/components/tool-ui/citation/schema"
 import { DataTable } from "@/components/tool-ui/data-table"
 import { safeParseSerializableDataTable } from "@/components/tool-ui/data-table/schema"
-import { Plan } from "@/components/tool-ui/plan"
-import { safeParseSerializablePlan } from "@/components/tool-ui/plan/schema"
 import { ProgressTracker } from "@/components/tool-ui/progress-tracker"
 import { safeParseSerializableProgressTracker } from "@/components/tool-ui/progress-tracker/schema"
 import { Badge } from "@/components/ui/badge"
@@ -121,15 +119,10 @@ const CHAT_THREAD_HEADER = "X-Petrichor-Agent-Thread-Id"
 type AssistantUIMessage = NonNullable<UseChatRuntimeOptions["messages"]>[number]
 const SKIP_DELETE_CONFIRM_KEY = "petrichor:qa.skipDeleteConfirm"
 
+// 执行计划卡片已弃用：不再注册该工具，历史对话里遗留的 show_agent_plan part 也一并隐藏。
 const PlanToolUI = makeAssistantToolUI({
   toolName: "show_agent_plan",
-  render: ({ result, args, status }) => {
-    const parsed = safeParseSerializablePlan(result ?? args)
-    if (!parsed) {
-      return <ToolStatusCard title="执行计划" status={status} />
-    }
-    return <Plan {...parsed} />
-  },
+  render: () => null,
 })
 
 const ProgressToolUI = makeAssistantToolUI({
@@ -323,38 +316,44 @@ function DeepResearchKbRow({ kb }: { kb: Record<string, unknown> }) {
   )
 }
 
-const DeepResearchToolUI = makeAssistantToolUI({
-  toolName: "deep_research_kbs",
-  render: ({ result, args, status }) => {
-    const payload = asRecord(result)
-    const kbs = Array.isArray(payload?.kbs) ? payload.kbs.map(asRecord).filter(isPresent) : []
-    const note = typeof payload?.note === "string" ? payload.note : ""
-    const query = typeof payload?.query === "string"
-      ? payload.query
-      : typeof asRecord(args)?.query === "string"
-        ? String(asRecord(args)?.query)
-        : ""
-    if (kbs.length === 0) {
-      return (
-        <ToolStatusCard title="跨库并行检索" status={status} icon={<Globe2 className="size-4" />}>
-          {note ? (
-            <p className="text-xs text-muted-foreground">{note}</p>
-          ) : query ? (
-            <p className="line-clamp-1 text-xs text-muted-foreground">研究：{query}</p>
-          ) : null}
-        </ToolStatusCard>
-      )
-    }
+// 跨库并行检索卡片：既用于流式进度（data-deep-research part 逐步刷新），也用于最终态。
+// running 状态直接从快照里各库的 status 推导，而不是依赖工具/消息 part 的 status。
+function DeepResearchCard({ payload, query: queryFromArgs }: { payload: Record<string, unknown> | null; query?: string }) {
+  const kbs = Array.isArray(payload?.kbs) ? payload.kbs.map(asRecord).filter(isPresent) : []
+  const note = typeof payload?.note === "string" ? payload.note : ""
+  const query = typeof payload?.query === "string" && payload.query ? payload.query : (queryFromArgs ?? "")
+  const anyInFlight = kbs.some((kb) => {
+    const s = typeof kb.status === "string" ? kb.status : ""
+    return s !== "completed" && s !== "failed"
+  })
+  const status: ToolCallMessagePartStatus = { type: kbs.length > 0 && !anyInFlight ? "complete" : "running" }
+  if (kbs.length === 0) {
     return (
-      <ToolStatusCard title="跨库并行检索" status={status} icon={<Globe2 className="size-4" />} collapsible defaultOpen>
-        <div className="space-y-1.5">
-          {kbs.map((kb, index) => (
-            <DeepResearchKbRow key={String(kb.knowledgeBaseId ?? index)} kb={kb} />
-          ))}
-        </div>
+      <ToolStatusCard title="跨库并行检索" status={status} icon={<Globe2 className="size-4" />}>
+        {note ? (
+          <p className="text-xs text-muted-foreground">{note}</p>
+        ) : query ? (
+          <p className="line-clamp-1 text-xs text-muted-foreground">研究：{query}</p>
+        ) : null}
       </ToolStatusCard>
     )
-  },
+  }
+  return (
+    <ToolStatusCard title="跨库并行检索" status={status} icon={<Globe2 className="size-4" />} collapsible defaultOpen>
+      <div className="space-y-1.5">
+        {kbs.map((kb, index) => (
+          <DeepResearchKbRow key={String(kb.knowledgeBaseId ?? index)} kb={kb} />
+        ))}
+      </div>
+    </ToolStatusCard>
+  )
+}
+
+// deep_research_kbs 的工具卡片本身不再渲染：其执行期与最终态都由 data-deep-research part 上的
+// DeepResearchCard 承担（单一来源、可实时刷新、可持久化回放），避免与之重复出现两张卡。
+const DeepResearchToolUI = makeAssistantToolUI({
+  toolName: "deep_research_kbs",
+  render: () => null,
 })
 
 const SearchWikiToolUI = makeAssistantToolUI({
@@ -2010,6 +2009,14 @@ function AssistantMessageBubble() {
                   </div>
                 )
               }
+              // 跨库并行检索的实时进度 / 最终态（由服务端 writer.custom 推送的 data-deep-research part）
+              if (part.type === "data" && part.name === "deep-research") {
+                return (
+                  <div className="not-prose my-3">
+                    <DeepResearchCard payload={asRecord(part.data)} />
+                  </div>
+                )
+              }
               return null
             }}
           </MessagePrimitive.Parts>
@@ -2557,6 +2564,10 @@ function sanitizeUIMessagePart(part: unknown): Record<string, unknown> | null {
     return next
   }
   if (type === "source-url" || type === "source-document" || type === "file") {
+    return record
+  }
+  // 自定义 data-* part（如跨库检索进度 data-deep-research）：原样保留 type/id/data，供刷新后重放卡片。
+  if (type.startsWith("data-")) {
     return record
   }
   return null

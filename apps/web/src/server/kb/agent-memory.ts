@@ -18,14 +18,19 @@ import {
     DISTILL_MESSAGE_SAMPLE_LIMIT,
     MAX_ACTIVE_MEMORIES,
     MAX_PROMPT_MEMORIES,
+    MAX_REFLECTED,
     MEMORY_MERGE_MAX_DISTANCE,
+    REFLECT_TRIGGER_ACTIVE_COUNT,
     agentMemoryDeleteInputSchema,
-    buildMemoryDistillSystemPrompt,
-    buildMemoryDistillUserMessage,
     buildMemoryPromptSection,
+    buildObserverSystemPrompt,
+    buildObserverUserMessage,
+    buildReflectorSystemPrompt,
+    buildReflectorUserMessage,
     normalizeMemoryContent,
     parseDistilledMemories,
     shouldDistillAgentMemory,
+    type ConversationTurn,
     type DistilledMemory,
 } from "./agent-memory-logic"
 
@@ -101,24 +106,33 @@ export async function runAgentMemoryDistillation(
         return { status: "skipped", created: 0, merged: 0, sampledQuestions: 0 }
     }
 
-    const messages = await db
+    // Observer 观察完整对话（提问 + 回答），而不只是提问，观察更稠密、更贴近真实语境。
+    const sliceRows = await db
         .select({
             id: knowledgeBaseAgentMessages.id,
+            role: knowledgeBaseAgentMessages.role,
             contentText: knowledgeBaseAgentMessages.contentText,
         })
         .from(knowledgeBaseAgentMessages)
-        .where(newMessagesWhere)
+        .where(and(
+            eq(knowledgeBaseAgentMessages.userId, userId),
+            gt(knowledgeBaseAgentMessages.id, lastMessageId),
+        ))
         .orderBy(asc(knowledgeBaseAgentMessages.id))
         .limit(DISTILL_MESSAGE_SAMPLE_LIMIT)
-    const questions = messages
-        .map((message) => message.contentText.trim())
-        .filter(Boolean)
-    if (questions.length === 0) {
+    const turns: ConversationTurn[] = sliceRows
+        .map((row) => ({
+            role: row.role === "assistant" ? "assistant" as const : "user" as const,
+            text: (row.contentText ?? "").trim(),
+        }))
+        .filter((turn) => turn.text)
+    if (turns.length === 0) {
         return { status: "no_new_messages", created: 0, merged: 0, sampledQuestions: 0 }
     }
-    const consumedMaxId = messages[messages.length - 1].id
+    const consumedMaxId = sliceRows[sliceRows.length - 1].id
+    const sampledQuestions = turns.filter((turn) => turn.role === "user").length
 
-    // 先推进水位再蒸馏：并发请求下最多丢一轮样本，绝不会重复蒸馏同一批消息
+    // 先推进水位再观察：并发请求下最多丢一轮样本，绝不会重复观察同一批消息
     await upsertMemoryState(db, {
         userId,
         lastDistilledAt: now,
@@ -128,21 +142,82 @@ export async function runAgentMemoryDistillation(
 
     const completion = await callChatCompletion({
         userId,
-        systemPrompt: buildMemoryDistillSystemPrompt(),
-        message: buildMemoryDistillUserMessage(questions),
+        systemPrompt: buildObserverSystemPrompt(),
+        message: buildObserverUserMessage(turns),
     })
-    const distilled = parseDistilledMemories(completion.answer)
-    if (distilled.length === 0) {
-        return { status: "nothing_to_keep", created: 0, merged: 0, sampledQuestions: questions.length }
+    const observed = parseDistilledMemories(completion.answer)
+    if (observed.length === 0) {
+        return { status: "nothing_to_keep", created: 0, merged: 0, sampledQuestions }
     }
 
-    const mergeResult = await mergeDistilledMemories({ db, userId, distilled, now })
+    const mergeResult = await mergeDistilledMemories({ db, userId, distilled: observed, now })
+    // Reflector：观察日志变大时做一次全量重构压缩；失败或不划算会自动跳过，最终仍由硬上限兜底。
+    await reflectMemoryLog(db, userId, now)
     await enforceMemoryCap(db, userId)
     return {
         status: "distilled",
         created: mergeResult.created,
         merged: mergeResult.merged,
-        sampledQuestions: questions.length,
+        sampledQuestions,
+    }
+}
+
+// Reflector（对标 Mastra OM 的反思器）：活跃观察超过阈值时，请模型对全量日志做一次
+// 「合并相关 + 删除过时 + 抽象共性 + 压缩」重构，并在单个事务里原子替换旧日志。
+// 任何异常都被吞掉且事务回滚，保证不影响问答主流程、也不会因半途失败而丢记忆。
+async function reflectMemoryLog(db: Db, userId: number, now: Date): Promise<void> {
+    try {
+        const active = await db
+            .select({ id: agentMemories.id, kind: agentMemories.kind, content: agentMemories.content })
+            .from(agentMemories)
+            .where(eq(agentMemories.userId, userId))
+            .orderBy(desc(agentMemories.evidenceCount), desc(agentMemories.lastSeenAt))
+        if (active.length <= REFLECT_TRIGGER_ACTIVE_COUNT) return
+
+        const completion = await callChatCompletion({
+            userId,
+            systemPrompt: buildReflectorSystemPrompt(),
+            message: buildReflectorUserMessage(active),
+        })
+        const condensed = parseDistilledMemories(completion.answer, MAX_REFLECTED)
+        // 安全护栏：必须确实压缩（少于原数量）又不能塌缩过头（至少保留 40%），否则放弃本次反思。
+        const floor = Math.max(1, Math.ceil(active.length * 0.4))
+        if (condensed.length < floor || condensed.length >= active.length) return
+
+        const vectorReady = !isSqliteDatabase() && await hasEmbeddingConfig(userId).catch(() => false)
+        const embeddings = vectorReady
+            ? await embedTexts(userId, condensed.map((item) => item.content)).catch(() => null)
+            : null
+
+        const insertedIds = await db.transaction(async (tx) => {
+            await tx.delete(agentMemories).where(eq(agentMemories.userId, userId))
+            const ids: number[] = []
+            for (const item of condensed) {
+                const [inserted] = await tx
+                    .insert(agentMemories)
+                    .values({
+                        userId,
+                        kind: item.kind,
+                        content: item.content,
+                        // 反思后的观察是被语料反复印证的综合，给一个 >1 的证据基线。
+                        evidenceCount: 2,
+                        lastSeenAt: now,
+                    })
+                    .returning({ id: agentMemories.id })
+                ids.push(inserted.id)
+            }
+            return ids
+        })
+
+        // 向量重建放在事务提交后、best-effort：失败只降级为精确去重，不影响记忆本身。
+        if (embeddings) {
+            for (const [index, id] of insertedIds.entries()) {
+                const embedding = embeddings[index]
+                if (embedding) await writeMemoryEmbedding(db, id, embedding)
+            }
+        }
+    } catch (error) {
+        console.warn("[AgentMemory] 观察日志反思失败（已跳过，保留原有记忆）", error)
     }
 }
 
