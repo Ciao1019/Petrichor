@@ -7,23 +7,14 @@ const turbopackRoot = fs.existsSync(path.join(workspaceRoot, "pnpm-workspace.yam
     ? workspaceRoot
     : process.cwd()
 
-// Cloudflare Workers Builds 免费版仅 2 vCPU 且有 20 分钟构建硬超时，
-// 而 in-build 的类型检查在 CI 上会拖到十几分钟导致超时。
-// 通过 CF_BUILD 环境变量在 Cloudflare 构建时跳过 tsc（由独立的
-// `pnpm typecheck` 和 Vercel 构建保证质量），Vercel 构建不受影响。
-// 注：Next 16 已移除 next.config 的 eslint 配置项，且 build 不再跑 ESLint，故无需处理。
-const skipInBuildChecks = process.env.CF_BUILD === "1"
-
 const nextConfig: NextConfig = {
     reactStrictMode: true,
-    typescript: {
-        ignoreBuildErrors: skipInBuildChecks,
-    },
     turbopack: {
         root: turbopackRoot,
     },
-    // sharp 是原生模块，交给运行时直接 require，不要打进 server bundle。
-    serverExternalPackages: ["better-sqlite3", "sharp"],
+    // 原生 / 非 ESM 可打包模块交给运行时 require，不要打进 server bundle。
+    // @ast-grep/napi：Mastra 依赖，Turbopack/webpack 都无法正确打包其原生绑定。
+    serverExternalPackages: ["better-sqlite3", "sharp", "@ast-grep/napi"],
     typedRoutes: false,
 
     // 🚀 性能优化：启用实验性优化
@@ -104,9 +95,7 @@ const nextConfig: NextConfig = {
                 ...config.optimization,
                 splitChunks: {
                     chunks: "all",
-                    // 单个 chunk 体积上限（约 20MB）。Cloudflare Workers 静态资源单文件
-                    // 上限 25MiB，若把整个 vendor 合成一个文件会超限，这里让 webpack
-                    // 按体积自动拆分为多个子 chunk。
+                    // 单个 chunk 体积上限（约 20MB），避免 vendor 合成过大文件。
                     maxSize: 20 * 1024 * 1024,
                     cacheGroups: {
                         // PlateJS 单独打包
@@ -130,8 +119,7 @@ const nextConfig: NextConfig = {
                             name: "icons-bundle",
                             reuseExistingChunk: true,
                         },
-                        // 其他 vendor 库（不固定 name，交给 webpack 按 maxSize 自动切分，
-                        // 避免合成单个超过 Cloudflare 25MiB 限制的巨型文件）
+                        // 其他 vendor 库（不固定 name，交给 webpack 按 maxSize 自动切分）
                         vendor: {
                             test: /[\\/]node_modules[\\/]/,
                             priority: 5,
@@ -146,7 +134,3 @@ const nextConfig: NextConfig = {
 }
 
 export default nextConfig
-
-// 让 `next dev` 也能访问 Cloudflare 绑定（R2/KV 等）与 env，仅本地开发生效。
-// 对 Vercel 构建无副作用：只在 dev 时惰性加载 @opennextjs/cloudflare。
-import("@opennextjs/cloudflare").then((m) => m.initOpenNextCloudflareForDev()).catch(() => {})

@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "db:backfill-public-article-metadata": "tsx scripts/backfill-public-article-metadata.ts",
     "db:sql": "tsx scripts/print-initial-migration.ts",
     "lint": "eslint .",
@@ -21,11 +21,7 @@
     "typecheck": "tsc --noEmit",
     "analyze": "ANALYZE=true next build",
     "biome:check": "biome check .",
-    "biome:fix": "biome check --write .",
-    "cf:build": "CF_BUILD=1 NODE_OPTIONS=--max-old-space-size=6144 opennextjs-cloudflare build",
-    "cf:preview": "CF_BUILD=1 NODE_OPTIONS=--max-old-space-size=6144 opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "cf:deploy": "CF_BUILD=1 NODE_OPTIONS=--max-old-space-size=6144 opennextjs-cloudflare build && opennextjs-cloudflare deploy",
-    "cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
+    "biome:fix": "biome check --write ."
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.2",
@@ -208,7 +204,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
-    "@opennextjs/cloudflare": "^1.20.1",
     "@tailwindcss/postcss": "^4.2.4",
     "@tailwindcss/vite": "^4.1.18",
     "@types/better-sqlite3": "^7.6.13",
@@ -229,7 +224,6 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",
-    "vitest": "^4.1.5",
-    "wrangler": "^4.107.0"
+    "vitest": "^4.1.5"
   }
 }
