@@ -147,28 +147,8 @@ function toS3Config(data: z.infer<z.ZodObject<typeof s3EnvShape>>): S3Config | n
     }
 }
 
-// Cloudflare Workers Builds 的构建环境里没有运行时密钥（它们是部署后的 Worker
-// Secret）。而 `next build` 收集页面数据时会 import 路由模块、触发顶层的
-// getServerConfig() 校验，导致缺 DATABASE_URL/SESSION_SECRET 而构建失败。
-// 构建阶段（CF_BUILD=1）为缺失的必填项注入占位值让校验通过——构建不连数据库、
-// 动态路由也不预渲染，占位值不会进入任何产物；运行时（无 CF_BUILD）校验照旧严格。
-function withBuildPlaceholders(env: EnvSource): EnvSource {
-    if (process.env.CF_BUILD !== "1") {
-        return env
-    }
-    return {
-        ...env,
-        DATABASE_URL: env.DATABASE_URL?.trim()
-            ? env.DATABASE_URL
-            : "postgres://build:build@localhost:5432/build",
-        SESSION_SECRET: env.SESSION_SECRET && env.SESSION_SECRET.length >= 32
-            ? env.SESSION_SECRET
-            : "cloudflare-build-time-placeholder-session-secret",
-    }
-}
-
 export function loadServerConfigFromEnv(env: EnvSource = process.env): ServerConfig {
-    const parsed = serverEnvSchema.safeParse(withBuildPlaceholders(env))
+    const parsed = serverEnvSchema.safeParse(env)
 
     if (!parsed.success) {
         throw new Error(`服务端配置无效：${formatConfigIssues(parsed.error.issues)}`)
