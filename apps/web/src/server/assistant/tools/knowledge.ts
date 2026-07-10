@@ -191,7 +191,7 @@ export const knowledgeAssistantTools: AssistantToolRegistration[] = [
         name: "read_knowledge_node",
         domain: "knowledge",
         risk: "read",
-        description: "读取检索命中的知识内容；nodeKey、pageKey、articleId 三选一，可省略 knowledgeBaseId 使用 focus 默认库。",
+        description: "读取检索命中的知识内容；nodeKey、pageKey、articleId 三选一，可省略 knowledgeBaseId 使用 focus 默认库。若内容含图片/附件，会在 media 字段返回可直接渲染的引用（src 多为 s4key:…）；需要展示图片时在最终答案中输出 Markdown：`![说明](media.src)`。",
         inputSchema: readKnowledgeNodeSchema,
         execute: async (ctx, input) => await readKnowledgeNode(ctx, readKnowledgeNodeSchema.parse(input)),
     },
