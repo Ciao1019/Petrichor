@@ -99,7 +99,7 @@ items:
       - agent-plan-resilience
       - agent-tools-admin
       - agent-context-compress
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-07-10-agent-subagents
     minimal_loop: false
-    notes: 契约 4.10；只读域子集；危险确认仅主对话
+    notes: 2026-07-10 验收通过；spawn_research_subagent；只读域；内层 step 前缀
