@@ -1112,6 +1112,21 @@ create unique index if not exists ux_petrichor_assistant_plan_thread_key
 
 create index if not exists petrichor_assistant_plan_thread_updated_idx
     on petrichor_assistant_plan(thread_id, updated_at desc);
+
+create table if not exists petrichor_assistant_message_embedding (
+    message_id bigint primary key references petrichor_assistant_message(id) on delete cascade,
+    thread_id bigint not null,
+    user_id bigint not null,
+    excerpt_md text not null,
+    embedding vector(1024),
+    created_at timestamptz not null default now()
+);
+
+create index if not exists petrichor_assistant_message_embedding_thread_idx
+    on petrichor_assistant_message_embedding(thread_id, user_id);
+
+create index if not exists idx_petrichor_assistant_message_embedding
+    on petrichor_assistant_message_embedding using hnsw (embedding vector_cosine_ops);
 `;
 
 export function buildInitialMigrationSql(): string {

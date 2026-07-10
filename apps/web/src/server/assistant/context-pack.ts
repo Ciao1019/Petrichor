@@ -3,6 +3,11 @@ import type { UIMessage } from "ai"
 import { callChatCompletion } from "@/server/ai/generation"
 import { getDb } from "@/server/db/client"
 import { assistantMessages, assistantThreads } from "@/server/db/schema"
+import {
+    buildInstructionsWithContextExtras,
+    recallRelevantHistory,
+    type RecalledSnippet,
+} from "./context-recall"
 
 /** 契约 4.3：最近窗口下限 */
 export const CONTEXT_RECENT_MESSAGE_MIN = 6
@@ -32,6 +37,7 @@ export type ContextPack = {
     refreshed: boolean
     status: "skipped" | "done" | "failed"
     windowPolicy: ContextWindowPolicy
+    recalledSnippets?: RecalledSnippet[]
 }
 
 export type ContextCompressPartData = {
@@ -139,14 +145,12 @@ export function buildFoldableTranscript(messages: unknown[]): string {
         .slice(0, 24_000)
 }
 
-export function buildInstructionsWithContextSummary(basePrompt: string, summaryMd: string | null): string {
-    if (!summaryMd?.trim()) return basePrompt
-    return [
-        basePrompt,
-        "",
-        "以下是本对话较早内容的摘要（已折叠细节，仅供连贯理解；最近几轮原文仍在消息中）：",
-        summaryMd.trim(),
-    ].join("\n")
+export function buildInstructionsWithContextSummary(
+    basePrompt: string,
+    summaryMd: string | null,
+    recalledSnippets?: RecalledSnippet[] | null,
+): string {
+    return buildInstructionsWithContextExtras(basePrompt, summaryMd, recalledSnippets)
 }
 
 export function stripContextCompressParts(parts: unknown): unknown[] {
@@ -223,6 +227,14 @@ export async function buildContextPack(input: {
         recentCount: windowPolicy.recentCount,
     }) && foldable.length > 0
 
+    const recalledSnippets = await maybeRecallSnippets({
+        userId: input.userId,
+        threadId: input.threadId,
+        messages: input.messages,
+        recentCount: windowPolicy.recentCount,
+        persistedCount,
+    })
+
     if (!needsRefresh) {
         return {
             summaryMd: existingSummary,
@@ -233,6 +245,7 @@ export async function buildContextPack(input: {
             refreshed: false,
             status: "skipped",
             windowPolicy,
+            recalledSnippets,
         }
     }
 
@@ -266,6 +279,7 @@ export async function buildContextPack(input: {
             refreshed: true,
             status: "done",
             windowPolicy,
+            recalledSnippets,
         }
     } catch {
         return {
@@ -277,8 +291,48 @@ export async function buildContextPack(input: {
             refreshed: false,
             status: "failed",
             windowPolicy,
+            recalledSnippets,
         }
     }
+}
+
+async function maybeRecallSnippets(input: {
+    userId: number
+    threadId: number
+    messages: UIMessage[]
+    recentCount: number
+    persistedCount: number
+}): Promise<RecalledSnippet[]> {
+    if (input.persistedCount <= input.recentCount) return []
+    const query = extractLastUserPlainText(input.messages)
+    if (!query) return []
+    const excludeMessageIds = await listRecentPersistedMessageIds(input.threadId, input.recentCount)
+    return await recallRelevantHistory({
+        userId: input.userId,
+        threadId: input.threadId,
+        query,
+        excludeMessageIds,
+    })
+}
+
+function extractLastUserPlainText(messages: UIMessage[]): string {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+        const message = messages[i]
+        if (!message || message.role !== "user") continue
+        const text = extractMessagePlainText(message)
+        if (text) return text.replace(/^user:\s*/i, "").trim()
+    }
+    return ""
+}
+
+async function listRecentPersistedMessageIds(threadId: number, recentCount: number) {
+    const rows = await getDb()
+        .select({ id: assistantMessages.id })
+        .from(assistantMessages)
+        .where(eq(assistantMessages.threadId, threadId))
+        .orderBy(asc(assistantMessages.createdAt), asc(assistantMessages.id))
+    if (rows.length <= recentCount) return rows.map((row) => row.id)
+    return rows.slice(-recentCount).map((row) => row.id)
 }
 
 async function countThreadMessages(threadId: number) {
