@@ -1,0 +1,236 @@
+"use client"
+
+import * as React from "react"
+import { Check, Circle, Loader2, ListTodo, X } from "lucide-react"
+import { useAuiState } from "@assistant-ui/react"
+
+import { safeParseSerializablePlan } from "@/components/tool-ui/plan/schema"
+import { safeParseSerializableProgressTracker } from "@/components/tool-ui/progress-tracker/schema"
+import { cn } from "@/lib/utils"
+
+const TASK_TOOL_NAMES = new Set(["show_progress", "upsert_plan"])
+
+export type AssistantTaskStepStatus =
+  | "pending"
+  | "in_progress"
+  | "completed"
+  | "failed"
+  | "cancelled"
+
+export type AssistantTaskStep = {
+  id: string
+  label: string
+  status: AssistantTaskStepStatus
+}
+
+export type AssistantLiveTask = {
+  id: string
+  title: string
+  description?: string
+  steps: AssistantTaskStep[]
+  source: "progress" | "plan"
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+function normalizeProgressStatus(status: string): AssistantTaskStepStatus {
+  if (status === "in-progress") return "in_progress"
+  if (status === "pending" || status === "completed" || status === "failed") return status
+  return "pending"
+}
+
+function extractLiveTaskFromMessages(messages: readonly { parts?: readonly unknown[] }[]): AssistantLiveTask | null {
+  let latest: AssistantLiveTask | null = null
+
+  for (const message of messages) {
+    const parts = Array.isArray(message.parts) ? message.parts : []
+    for (const raw of parts) {
+      const part = asRecord(raw)
+      if (!part || part.type !== "tool-call") continue
+      const toolName = typeof part.toolName === "string" ? part.toolName : ""
+      if (!TASK_TOOL_NAMES.has(toolName)) continue
+
+      const payload = part.result ?? part.args
+      if (toolName === "show_progress") {
+        const parsed = safeParseSerializableProgressTracker(payload)
+        if (!parsed) continue
+        const active =
+          parsed.steps.find((step) => step.status === "in-progress") ??
+          parsed.steps.find((step) => step.status === "pending") ??
+          parsed.steps[0]
+        latest = {
+          id: parsed.id,
+          title: parsed.choice?.summary || active?.label || "任务进度",
+          description: undefined,
+          source: "progress",
+          steps: parsed.steps.map((step) => ({
+            id: step.id,
+            label: step.label,
+            status: normalizeProgressStatus(step.status),
+          })),
+        }
+        continue
+      }
+
+      const parsed = safeParseSerializablePlan(payload)
+      if (!parsed) continue
+      latest = {
+        id: parsed.id,
+        title: parsed.title,
+        description: parsed.description,
+        source: "plan",
+        steps: parsed.todos.map((todo) => ({
+          id: todo.id,
+          label: todo.label,
+          status: todo.status,
+        })),
+      }
+    }
+  }
+
+  return latest
+}
+
+/** 流结束后把卡死的 in_progress / 未执行 pending 收口，避免侧栏一直转圈。 */
+export function settleLiveTask(task: AssistantLiveTask, isRunning: boolean): AssistantLiveTask {
+  if (isRunning) return task
+
+  const hasIncomplete = task.steps.some(
+    (step) => step.status === "in_progress" || step.status === "pending",
+  )
+  if (!hasIncomplete) return task
+
+  const hasFailure = task.steps.some((step) => step.status === "failed")
+  return {
+    ...task,
+    steps: task.steps.map((step) => {
+      if (step.status === "in_progress") {
+        return { ...step, status: hasFailure ? "cancelled" : "completed" }
+      }
+      if (step.status === "pending") {
+        return { ...step, status: "cancelled" }
+      }
+      return step
+    }),
+  }
+}
+
+export function AssistantTaskRail() {
+  const messages = useAuiState((s) => s.thread.messages)
+  const isRunning = useAuiState((s) => s.thread.isRunning)
+  const [dismissedId, setDismissedId] = React.useState<string | null>(null)
+  const [pinned, setPinned] = React.useState(false)
+
+  const rawTask = React.useMemo(() => extractLiveTaskFromMessages(messages), [messages])
+  const task = React.useMemo(
+    () => (rawTask ? settleLiveTask(rawTask, isRunning) : null),
+    [rawTask, isRunning],
+  )
+
+  React.useEffect(() => {
+    if (isRunning && rawTask) setPinned(true)
+  }, [isRunning, rawTask])
+
+  React.useEffect(() => {
+    if (!task) {
+      setDismissedId(null)
+      return
+    }
+    if (dismissedId && dismissedId !== task.id) setDismissedId(null)
+  }, [task, dismissedId])
+
+  const completedCount = task?.steps.filter((step) => step.status === "completed").length ?? 0
+  const total = task?.steps.length ?? 0
+  const allSettled =
+    !!task &&
+    !isRunning &&
+    task.steps.every((step) =>
+      step.status === "completed" || step.status === "failed" || step.status === "cancelled",
+    )
+
+  React.useEffect(() => {
+    if (!task || !allSettled || !pinned) return
+    const timer = window.setTimeout(() => {
+      setDismissedId(task.id)
+      setPinned(false)
+    }, 4000)
+    return () => window.clearTimeout(timer)
+  }, [task, allSettled, pinned])
+
+  // 仅本轮运行中或刚结束后短暂展示，避免历史卡住的 Plan 再次占位
+  if (!task || dismissedId === task.id || (!isRunning && !pinned)) return null
+
+  const progress = total > 0 ? Math.round((completedCount / total) * 100) : 0
+
+  return (
+    <aside
+      className="pointer-events-auto absolute top-16 right-3 z-20 w-[220px] rounded-lg border border-[#e5e5e5] bg-white/95 p-3 shadow-sm backdrop-blur-sm dark:border-[#2a2a2a] dark:bg-[#1a1a1a]/95"
+      aria-label="任务进度"
+    >
+      <div className="mb-2 flex items-start gap-2">
+        <ListTodo className="mt-0.5 size-3.5 shrink-0 text-[#6b6b6b] dark:text-[#9a9a9a]" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13px] font-medium text-[#0d0d0d] dark:text-white">{task.title}</p>
+          <p className="mt-0.5 text-[11px] tabular-nums text-[#9a9a9a]">
+            {isRunning ? `${completedCount}/${total}` : allSettled ? "已完成" : `${completedCount}/${total}`}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="rounded p-0.5 text-[#9a9a9a] hover:bg-[#f0f0f0] hover:text-[#0d0d0d] dark:hover:bg-[#2a2a2a] dark:hover:text-white"
+          aria-label="关闭任务面板"
+          onClick={() => {
+            setDismissedId(task.id)
+            setPinned(false)
+          }}
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+
+      <div className="mb-2.5 h-1 overflow-hidden rounded-full bg-[#ececec] dark:bg-[#2a2a2a]">
+        <div
+          className="h-full rounded-full bg-[#0d0d0d] transition-[width] duration-300 dark:bg-white"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+
+      <ul className="space-y-1.5">
+        {task.steps.map((step) => (
+          <li key={step.id} className="flex items-start gap-2">
+            <StepIcon status={step.status} />
+            <span
+              className={cn(
+                "min-w-0 flex-1 text-[12px] leading-snug",
+                step.status === "pending" || step.status === "cancelled"
+                  ? "text-[#9a9a9a]"
+                  : "text-[#3a3a3a] dark:text-[#c8c8c8]",
+                step.status === "cancelled" && "line-through",
+              )}
+            >
+              {step.label}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </aside>
+  )
+}
+
+function StepIcon({ status }: { status: AssistantTaskStepStatus }) {
+  if (status === "completed") {
+    return <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-500" strokeWidth={2.5} />
+  }
+  if (status === "in_progress") {
+    return <Loader2 className="mt-0.5 size-3.5 shrink-0 animate-spin text-[#0d0d0d] dark:text-white" />
+  }
+  if (status === "failed") {
+    return <X className="mt-0.5 size-3.5 shrink-0 text-destructive" strokeWidth={2.5} />
+  }
+  return <Circle className="mt-0.5 size-3.5 shrink-0 text-[#c8c8c8] dark:text-[#4a4a4a]" />
+}
+
+export { TASK_TOOL_NAMES }

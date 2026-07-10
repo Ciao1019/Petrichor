@@ -60,10 +60,7 @@ import { CitationList } from "@/components/tool-ui/citation"
 import { safeParseSerializableCitation } from "@/components/tool-ui/citation/schema"
 import { DataTable } from "@/components/tool-ui/data-table"
 import { safeParseSerializableDataTable } from "@/components/tool-ui/data-table/schema"
-import { Plan } from "@/components/tool-ui/plan"
-import { safeParseSerializablePlan } from "@/components/tool-ui/plan/schema"
-import { ProgressTracker } from "@/components/tool-ui/progress-tracker"
-import { safeParseSerializableProgressTracker } from "@/components/tool-ui/progress-tracker/schema"
+import { AssistantTaskRail, TASK_TOOL_NAMES } from "@/features/pages/assistant/AssistantTaskRail"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -148,20 +145,13 @@ function threadRecencyKey(thread: AssistantThreadSummary) {
 
 const PlanToolUI = makeAssistantToolUI({
   toolName: "upsert_plan",
-  render: ({ result, args, status }) => {
-    const parsed = safeParseSerializablePlan(result ?? args)
-    if (!parsed) return <ToolStatusCard title="执行计划" status={status} icon={<ListChecks className="size-4" />} />
-    return <Plan {...parsed} />
-  },
+  // 进度改由右侧 AssistantTaskRail 展示，消息流内不再渲染大卡
+  render: () => null,
 })
 
 const ProgressToolUI = makeAssistantToolUI({
   toolName: "show_progress",
-  render: ({ result, args, status }) => {
-    const parsed = safeParseSerializableProgressTracker(result ?? args)
-    if (!parsed) return <ToolStatusCard title="执行进度" status={status} />
-    return <ProgressTracker {...parsed} />
-  },
+  render: () => null,
 })
 
 const CitationToolUI = makeAssistantToolUI({
@@ -1270,7 +1260,7 @@ function GrokThread({
 
   return (
     <ThreadPrimitive.Root
-      className="flex h-full flex-col items-stretch bg-[#fdfdfd] px-4 dark:bg-[#141414]"
+      className="relative flex h-full flex-col items-stretch bg-[#fdfdfd] px-4 dark:bg-[#141414]"
     >
       <AuiIf condition={(s) => s.thread.isEmpty}>
         <div className="flex h-full flex-col items-center justify-center">
@@ -1285,6 +1275,7 @@ function GrokThread({
             {() => <ChatMessage />}
           </ThreadPrimitive.Messages>
         </ThreadPrimitive.Viewport>
+        <AssistantTaskRail />
         <QaThreadToc />
         <GrokComposer placeholder={isUnscoped ? "继续提问..." : `继续在「${scopeLabel}」里提问...`} {...composerProps} />
         <p className="mx-auto w-full max-w-3xl pb-2 text-center text-[#9a9a9a] text-xs">
@@ -1989,6 +1980,7 @@ function AssistantMessageBubble() {
             {({ part }) => {
               if (part.type === "text") return <QaMarkdownText />
               if (part.type === "tool-call") {
+                if (TASK_TOOL_NAMES.has(part.toolName)) return null
                 return (
                   <div className="not-prose my-3">
                     {part.toolUI ?? <ToolFallback {...part} />}
