@@ -10,6 +10,7 @@ import {
     type KnowledgeBaseWikiTreeNodeRecord,
 } from "@/server/db/schema"
 import { badRequest } from "@/server/http/response"
+import { scoreSearchFields } from "@/server/kb/search-terms"
 import {
     assertKnowledgeBaseOwner,
     extractAgentImageReferences,
@@ -317,16 +318,12 @@ function renderOutline(nodes: KnowledgeBaseWikiTreeNodeRecord[]) {
         .join("\n")
 }
 
-function scoreTreeNode(node: KnowledgeBaseWikiTreeNodeRecord, terms: string[]) {
-    if (terms.length === 0) return 1
-    const haystack = `${node.title}\n${node.summary ?? ""}\n${node.contentMd}`.toLowerCase()
-    // 标题/摘要命中权重更高，正文命中权重较低。
-    const head = `${node.title}\n${node.summary ?? ""}`.toLowerCase()
-    return terms.reduce((score, term) => {
-        if (head.includes(term)) return score + 2
-        if (haystack.includes(term)) return score + 1
-        return score
-    }, 0)
+function scoreTreeNode(node: KnowledgeBaseWikiTreeNodeRecord, query: string) {
+    return scoreSearchFields({
+        title: node.title,
+        summary: node.summary,
+        content: node.contentMd,
+    }, query)
 }
 
 const MAX_OUTLINE_NODES = 200
@@ -538,10 +535,10 @@ export async function semanticSearchTreeNodes(input: {
 }
 
 function keywordFallback(nodes: KnowledgeBaseWikiTreeNodeRecord[], query: string, limit: number) {
-    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+    const normalized = query.trim()
     return nodes
-        .map((node) => ({ node, score: scoreTreeNode(node, terms) }))
-        .filter((item) => item.score > 0 || terms.length === 0)
+        .map((node) => ({ node, score: scoreTreeNode(node, normalized) }))
+        .filter((item) => item.score > 0 || !normalized)
         .sort((left, right) => right.score - left.score || left.node.position - right.node.position)
         .slice(0, limit)
         .map((item) => item.node)

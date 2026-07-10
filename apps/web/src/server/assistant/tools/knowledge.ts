@@ -183,7 +183,7 @@ export const knowledgeAssistantTools: AssistantToolRegistration[] = [
         name: "search_knowledge",
         domain: "knowledge",
         risk: "read",
-        description: "检索知识内容：有 knowledgeBaseId（或 focus 默认库）时组合树检索与语义检索；无库范围时跨知识库检索。",
+        description: "检索知识内容：有 knowledgeBaseId（或 focus 默认库）时组合树检索与语义检索；无库范围时跨知识库模糊检索（支持中文近邻标题，不必精确全名）。",
         inputSchema: searchKnowledgeSchema,
         execute: async (ctx, input) => await searchKnowledge(ctx, searchKnowledgeSchema.parse(input)),
     },
