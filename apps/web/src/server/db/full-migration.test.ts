@@ -87,5 +87,7 @@ describe("buildInitialMigrationSql", () => {
         expect(sql).toContain("duration_ms integer")
         expect(sql).toContain("create table if not exists petrichor_assistant_artifact")
         expect(sql).toContain("petrichor_assistant_thread_user_history_idx")
+        expect(sql).toContain("create table if not exists petrichor_assistant_plan")
+        expect(sql).toContain("ux_petrichor_assistant_plan_thread_key")
     })
 })

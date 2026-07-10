@@ -101,7 +101,12 @@ describe("system assistant tools", () => {
         expect(result).toEqual({ id: "21", artifactType: "report", title: "部署报告" })
     })
 
-    it("upsert_plan 只回显组件可解析的 Plan，status 使用 completed", async () => {
+    it("upsert_plan 回显 Plan 并尝试落库", async () => {
+        const onConflictDoUpdate = vi.fn(async () => undefined)
+        const values = vi.fn(() => ({ onConflictDoUpdate }))
+        const insert = vi.fn(() => ({ values }))
+        dbMocks.getDb.mockReturnValue({ insert })
+
         const input = {
             id: "plan-deploy",
             title: "部署计划",
@@ -113,10 +118,37 @@ describe("system assistant tools", () => {
         const output = await findTool("upsert_plan").execute(ctx, input)
 
         expect(SerializablePlanSchema.parse(output)).toEqual(input)
+        expect(insert).toHaveBeenCalled()
+        expect(values).toHaveBeenCalledWith(expect.objectContaining({
+            threadId: 11,
+            userId: 7,
+            planKey: "plan-deploy",
+        }))
         expect(() => findTool("upsert_plan").inputSchema.parse({
             ...input,
             todos: [{ id: "build", label: "构建", status: "done" }],
         })).toThrow()
+    })
+
+    it("upsert_plan 落库失败时仍返回 Plan（fail-open）", async () => {
+        const values = vi.fn(() => ({
+            onConflictDoUpdate: vi.fn(async () => {
+                throw new Error("db down")
+            }),
+        }))
+        dbMocks.getDb.mockReturnValue({
+            insert: vi.fn(() => ({ values })),
+        })
+        const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined)
+
+        const input = {
+            id: "plan-1",
+            title: "计划",
+            todos: [{ id: "a", label: "A", status: "pending" as const }],
+        }
+        await expect(findTool("upsert_plan").execute(ctx, input)).resolves.toEqual(input)
+        expect(errorSpy).toHaveBeenCalled()
+        errorSpy.mockRestore()
     })
 
     it("三个 UI 回显工具的输出均符合现有组件 schema", async () => {

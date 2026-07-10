@@ -889,6 +889,22 @@ export const assistantArtifacts = pgTable("petrichor_assistant_artifact", {
     index("petrichor_assistant_artifact_thread_idx").on(table.threadId, table.createdAt),
 ])
 
+// Plan 持久化（assistant-runtime-depth 契约 4.1）：upsert_plan 落库，供侧栏冷启动回放。
+export const assistantPlans = pgTable("petrichor_assistant_plan", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    threadId: bigint("thread_id", { mode: "number" }).notNull(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    planKey: text("plan_key").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    todosJson: text("todos_json").notNull(),
+    status: text("status").notNull().default("active"),
+    ...timestamps,
+}, (table) => [
+    uniqueIndex("ux_petrichor_assistant_plan_thread_key").on(table.threadId, table.planKey),
+    index("petrichor_assistant_plan_thread_updated_idx").on(table.threadId, table.updatedAt),
+])
+
 export type UserRecord = typeof users.$inferSelect
 export type BetterAuthUserRecord = typeof betterAuthUsers.$inferSelect
 export type BetterAuthAccountRecord = typeof betterAuthAccounts.$inferSelect
@@ -921,3 +937,4 @@ export type AssistantMessageRecord = typeof assistantMessages.$inferSelect
 export type AssistantRunRecord = typeof assistantRuns.$inferSelect
 export type AssistantStepRecord = typeof assistantSteps.$inferSelect
 export type AssistantArtifactRecord = typeof assistantArtifacts.$inferSelect
+export type AssistantPlanRecord = typeof assistantPlans.$inferSelect

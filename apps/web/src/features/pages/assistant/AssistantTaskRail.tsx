@@ -4,7 +4,10 @@ import * as React from "react"
 import { Check, Circle, Loader2, ListTodo, X } from "lucide-react"
 import { useAuiState } from "@assistant-ui/react"
 
-import { safeParseSerializablePlan } from "@/components/tool-ui/plan/schema"
+import {
+  safeParseSerializablePlan,
+  type SerializablePlan,
+} from "@/components/tool-ui/plan/schema"
 import { safeParseSerializableProgressTracker } from "@/components/tool-ui/progress-tracker/schema"
 import { cn } from "@/lib/utils"
 
@@ -42,6 +45,49 @@ function normalizeProgressStatus(status: string): AssistantTaskStepStatus {
   return "pending"
 }
 
+export function planToLiveTask(plan: SerializablePlan): AssistantLiveTask {
+  return {
+    id: plan.id,
+    title: plan.title,
+    description: plan.description,
+    source: "plan",
+    steps: plan.todos.map((todo) => ({
+      id: todo.id,
+      label: todo.label,
+      status: todo.status,
+    })),
+  }
+}
+
+export function taskHasIncompleteSteps(task: AssistantLiveTask): boolean {
+  return task.steps.some((step) => step.status === "pending" || step.status === "in_progress")
+}
+
+/** 冷启动：取最新一条仍有未完成 todo 的 Plan。plans 假定已按 updated_at desc。 */
+export function pickPersistedTaskForRail(
+  plans: readonly SerializablePlan[] | null | undefined,
+): AssistantLiveTask | null {
+  if (!plans?.length) return null
+  for (const plan of plans) {
+    const task = planToLiveTask(plan)
+    if (taskHasIncompleteSteps(task)) return task
+  }
+  return null
+}
+
+/**
+ * live 优先；本轮从未出现 live 时才回落 persisted（避免 settle/dismiss 后立刻被库态顶回）。
+ */
+export function resolveRailTask(input: {
+  liveTask: AssistantLiveTask | null
+  persistedTask: AssistantLiveTask | null
+  sawLiveThisMount: boolean
+}): AssistantLiveTask | null {
+  if (input.liveTask) return input.liveTask
+  if (!input.sawLiveThisMount) return input.persistedTask
+  return null
+}
+
 function extractLiveTaskFromMessages(messages: readonly { parts?: readonly unknown[] }[]): AssistantLiveTask | null {
   let latest: AssistantLiveTask | null = null
 
@@ -77,17 +123,7 @@ function extractLiveTaskFromMessages(messages: readonly { parts?: readonly unkno
 
       const parsed = safeParseSerializablePlan(payload)
       if (!parsed) continue
-      latest = {
-        id: parsed.id,
-        title: parsed.title,
-        description: parsed.description,
-        source: "plan",
-        steps: parsed.todos.map((todo) => ({
-          id: todo.id,
-          label: todo.label,
-          status: todo.status,
-        })),
-      }
+      latest = planToLiveTask(parsed)
     }
   }
 
@@ -118,21 +154,43 @@ export function settleLiveTask(task: AssistantLiveTask, isRunning: boolean): Ass
   }
 }
 
-export function AssistantTaskRail() {
+export function AssistantTaskRail({
+  persistedPlans,
+}: {
+  persistedPlans?: SerializablePlan[] | null
+} = {}) {
   const messages = useAuiState((s) => s.thread.messages)
   const isRunning = useAuiState((s) => s.thread.isRunning)
   const [dismissedId, setDismissedId] = React.useState<string | null>(null)
   const [pinned, setPinned] = React.useState(false)
 
-  const rawTask = React.useMemo(() => extractLiveTaskFromMessages(messages), [messages])
-  const task = React.useMemo(
-    () => (rawTask ? settleLiveTask(rawTask, isRunning) : null),
-    [rawTask, isRunning],
+  const rawLive = React.useMemo(() => extractLiveTaskFromMessages(messages), [messages])
+  const [sawLiveThisMount, setSawLiveThisMount] = React.useState(false)
+  React.useEffect(() => {
+    if (rawLive) setSawLiveThisMount(true)
+  }, [rawLive])
+
+  const settledLive = React.useMemo(
+    () => (rawLive ? settleLiveTask(rawLive, isRunning) : null),
+    [rawLive, isRunning],
   )
+  const persistedTask = React.useMemo(
+    () => pickPersistedTaskForRail(persistedPlans),
+    [persistedPlans],
+  )
+  const task = React.useMemo(
+    () => resolveRailTask({
+      liveTask: settledLive,
+      persistedTask,
+      sawLiveThisMount,
+    }),
+    [settledLive, persistedTask, sawLiveThisMount],
+  )
+  const isPersistedOnly = !!task && !settledLive
 
   React.useEffect(() => {
-    if (isRunning && rawTask) setPinned(true)
-  }, [isRunning, rawTask])
+    if (isRunning && rawLive) setPinned(true)
+  }, [isRunning, rawLive])
 
   React.useEffect(() => {
     if (!task) {
@@ -152,16 +210,18 @@ export function AssistantTaskRail() {
     )
 
   React.useEffect(() => {
-    if (!task || !allSettled || !pinned) return
+    // 冷启动 persisted 不自动收起；仅 live 路径在全部收口后短暂展示再 dismiss
+    if (!task || !allSettled || !pinned || isPersistedOnly) return
     const timer = window.setTimeout(() => {
       setDismissedId(task.id)
       setPinned(false)
     }, 4000)
     return () => window.clearTimeout(timer)
-  }, [task, allSettled, pinned])
+  }, [task, allSettled, pinned, isPersistedOnly])
 
-  // 仅本轮运行中或刚结束后短暂展示，避免历史卡住的 Plan 再次占位
-  if (!task || dismissedId === task.id || (!isRunning && !pinned)) return null
+  const showLive = !!settledLive && dismissedId !== settledLive.id && (isRunning || pinned)
+  const showPersisted = isPersistedOnly && !!task && dismissedId !== task.id
+  if (!task || (!showLive && !showPersisted)) return null
 
   const progress = total > 0 ? Math.round((completedCount / total) * 100) : 0
 

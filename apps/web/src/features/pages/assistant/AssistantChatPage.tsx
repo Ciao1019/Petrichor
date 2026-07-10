@@ -105,6 +105,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import {
   type AssistantFocus,
+  type AssistantPersistedPlan,
   type AssistantThreadSummary,
   assistantApi,
   knowledgeBaseArticleApi,
@@ -518,6 +519,7 @@ export function AssistantChatPage() {
   const [focusSelection, setFocusSelection] = React.useState<AssistantFocusSelection>({ kind: "none" })
   const [activeThreadId, setActiveThreadId] = React.useState<string | null>(null)
   const [initialMessages, setInitialMessages] = React.useState<AssistantUIMessage[]>([])
+  const [persistedPlans, setPersistedPlans] = React.useState<AssistantPersistedPlan[]>([])
   const [runtimeSeed, setRuntimeSeed] = React.useState(0)
   const [threadLoading, setThreadLoading] = React.useState(false)
   const [sidebarOpen, setSidebarOpen] = React.useState(true)
@@ -675,6 +677,7 @@ export function AssistantChatPage() {
       setActiveThreadId(response.data.thread.id)
       setFocusSelection(focusFromThread(response.data.thread.focus))
       setInitialMessages(toInitialMessages(response.data.messages))
+      setPersistedPlans(response.data.plans ?? [])
       setRuntimeSeed((value) => value + 1)
     } catch (error) {
       toast.error(resolveApiErrorMessage(error, "加载对话失败"))
@@ -686,6 +689,7 @@ export function AssistantChatPage() {
   const handleNewThread = React.useCallback(() => {
     setActiveThreadId(null)
     setInitialMessages([])
+    setPersistedPlans([])
     setRuntimeSeed((value) => value + 1)
   }, [])
 
@@ -703,6 +707,7 @@ export function AssistantChatPage() {
       if (activeThreadId === thread.id) {
         setActiveThreadId(null)
         setInitialMessages([])
+        setPersistedPlans([])
         setRuntimeSeed((value) => value + 1)
       }
       setPendingDeleteThread(null)
@@ -727,6 +732,7 @@ export function AssistantChatPage() {
       if (activeThreadId && deletedSet.has(activeThreadId)) {
         setActiveThreadId(null)
         setInitialMessages([])
+        setPersistedPlans([])
         setRuntimeSeed((value) => value + 1)
       }
       toast.success(`已删除 ${response.data.deleted} 个对话`)
@@ -1059,6 +1065,7 @@ export function AssistantChatPage() {
             focusSelection={focusSelection}
             threadId={activeThreadId}
             initialMessages={initialMessages}
+            persistedPlans={persistedPlans}
             onThreadKnown={handleThreadKnown}
             onStreamSettled={onStreamSettled}
             scopeName={activeFocusName}
@@ -1175,6 +1182,7 @@ function QaChatPanel({
   focusSelection,
   threadId,
   initialMessages,
+  persistedPlans,
   onThreadKnown,
   onStreamSettled,
   scopeName,
@@ -1189,6 +1197,7 @@ function QaChatPanel({
   focusSelection: AssistantFocusSelection
   threadId: string | null
   initialMessages: AssistantUIMessage[]
+  persistedPlans: AssistantPersistedPlan[]
   onThreadKnown: (threadId: string) => void
   onStreamSettled: () => void | Promise<void>
   scopeName: string | null
@@ -1311,6 +1320,7 @@ function QaChatPanel({
           selectedConfigId={selectedConfigId}
           onConfigChange={onConfigChange}
           onComposerFocus={onComposerFocus}
+          persistedPlans={persistedPlans}
         />
       </div>
       </QaMarkdownScope>
@@ -1328,6 +1338,7 @@ function GrokThread({
   selectedConfigId,
   onConfigChange,
   onComposerFocus,
+  persistedPlans,
 }: {
   scopeName: string | null
   focusSelection: AssistantFocusSelection
@@ -1338,6 +1349,7 @@ function GrokThread({
   selectedConfigId: string | null
   onConfigChange: (next: string) => void
   onComposerFocus?: () => void
+  persistedPlans: AssistantPersistedPlan[]
 }) {
   const isUnscoped = focusSelection.kind === "none"
   const scopeLabel =
@@ -1375,7 +1387,7 @@ function GrokThread({
             {() => <ChatMessage />}
           </ThreadPrimitive.Messages>
         </ThreadPrimitive.Viewport>
-        <AssistantTaskRail />
+        <AssistantTaskRail persistedPlans={persistedPlans} />
         <QaThreadToc />
         <GrokComposer placeholder={isUnscoped ? "继续提问..." : `继续在「${scopeLabel}」里提问...`} {...composerProps} />
         <p className="mx-auto w-full max-w-3xl pb-2 text-center text-[#9a9a9a] text-xs">

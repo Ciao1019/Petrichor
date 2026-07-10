@@ -1,0 +1,45 @@
+feature: 2026-07-10-agent-plan-persist
+created: 2026-07-10
+
+steps:
+  - action: "持久化骨架：schema + 迁移 + plan-store 读写"
+    exit_signal: "单测覆盖同 key upsert 覆盖与归属过滤"
+    status: done
+  - action: "工具接线：upsert_plan 写库 + fail-open + 描述更新"
+    exit_signal: "system 单测断言写库且返回仍可 parse"
+    status: done
+  - action: "Detail 扩展：thread/detail 带 plans[] + api 类型"
+    exit_signal: "thread-logic 单测断言 plans 形状与归属"
+    status: done
+  - action: "侧栏冷启动：live 优先、未完成才展示"
+    exit_signal: "TaskRail 单测覆盖优先级与全完成不弹出"
+    status: done
+  - action: "收尾：提示词/架构一句 + 定向测试通过"
+    exit_signal: "相关 vitest 通过；runtime-assistant 已更新"
+    status: done
+
+checks:
+  - item: "petrichor_assistant_plan 表字段与契约 4.1 一致"
+    source: 名词契约
+    status: done
+  - item: "upsert_plan 同 plan_key 覆盖写；返回 SerializablePlan"
+    source: 名词契约
+    status: done
+  - item: "thread/detail 可选 plans[]，仅 active"
+    source: 名词契约
+    status: done
+  - item: "侧栏 live > 未完成 persisted；全完成冷启动不弹"
+    source: 编排骨架
+    status: done
+  - item: "写库失败 fail-open，仍返回 Plan"
+    source: 流程级约束
+    status: done
+  - item: "挂载：表/迁移、upsert_plan、detail.plans、TaskRail"
+    source: 挂载点
+    status: done
+  - item: "不持久化 show_progress；无新 Plan HTTP；工具名仍 upsert_plan"
+    source: 范围守护
+    status: done
+  - item: "验收场景 1–8 有可观察证据"
+    source: 验收场景
+    status: done

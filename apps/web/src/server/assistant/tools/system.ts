@@ -15,6 +15,7 @@ import {
     knowledgeBases,
 } from "@/server/db/schema"
 import type { AssistantToolContext, AssistantToolRegistration } from "../domain-types"
+import { upsertAssistantPlan } from "../plan-store"
 
 const citationListSchema = z.object({
     id: z.string().min(1),
@@ -150,8 +151,20 @@ export const systemAssistantTools: AssistantToolRegistration[] = [
         name: "upsert_plan",
         domain: "system",
         risk: "read",
-        description: "按 Plan 形状回显当前任务计划；重复使用同一 id 表示更新，不做持久化或韧性处理。",
+        description: "按 Plan 形状回显并持久化当前任务计划；重复使用同一 id 表示更新，侧栏可跨轮回放。",
         inputSchema: SerializablePlanSchema,
-        execute: async (_ctx, input) => SerializablePlanSchema.parse(input),
+        execute: async (ctx, input) => {
+            const plan = SerializablePlanSchema.parse(input)
+            try {
+                await upsertAssistantPlan({
+                    userId: ctx.userId,
+                    threadId: ctx.threadId,
+                    plan,
+                })
+            } catch (error) {
+                console.error("[assistant] upsert_plan 落库失败（fail-open）", error)
+            }
+            return plan
+        },
     },
 ]

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest"
+import type { SerializablePlan } from "@/components/tool-ui/plan/schema"
 
-import { settleLiveTask, type AssistantLiveTask } from "./AssistantTaskRail"
+import {
+  pickPersistedTaskForRail,
+  resolveRailTask,
+  settleLiveTask,
+  type AssistantLiveTask,
+} from "./AssistantTaskRail"
 
 function sampleTask(overrides?: Partial<AssistantLiveTask>): AssistantLiveTask {
   return {
@@ -14,6 +20,24 @@ function sampleTask(overrides?: Partial<AssistantLiveTask>): AssistantLiveTask {
     ],
     ...overrides,
   }
+}
+
+const incompletePlan: SerializablePlan = {
+  id: "p-old",
+  title: "旧计划",
+  todos: [
+    { id: "a", label: "A", status: "completed" },
+    { id: "b", label: "B", status: "pending" },
+  ],
+}
+
+const completePlan: SerializablePlan = {
+  id: "p-done",
+  title: "已完成",
+  todos: [
+    { id: "a", label: "A", status: "completed" },
+    { id: "b", label: "B", status: "cancelled" },
+  ],
 }
 
 describe("settleLiveTask", () => {
@@ -43,5 +67,46 @@ describe("settleLiveTask", () => {
       "cancelled",
       "cancelled",
     ])
+  })
+})
+
+describe("pickPersistedTaskForRail", () => {
+  it("跳过全完成计划，取最新未完成", () => {
+    const task = pickPersistedTaskForRail([completePlan, incompletePlan])
+    expect(task?.id).toBe("p-old")
+    expect(task?.title).toBe("旧计划")
+  })
+
+  it("全部完成时返回 null", () => {
+    expect(pickPersistedTaskForRail([completePlan])).toBeNull()
+  })
+})
+
+describe("resolveRailTask", () => {
+  it("live 优先于 persisted", () => {
+    const live = sampleTask({ id: "live" })
+    const persisted = sampleTask({ id: "persisted" })
+    expect(resolveRailTask({
+      liveTask: live,
+      persistedTask: persisted,
+      sawLiveThisMount: true,
+    })?.id).toBe("live")
+  })
+
+  it("本轮无 live 时冷启动回落 persisted", () => {
+    const persisted = sampleTask({ id: "persisted" })
+    expect(resolveRailTask({
+      liveTask: null,
+      persistedTask: persisted,
+      sawLiveThisMount: false,
+    })?.id).toBe("persisted")
+  })
+
+  it("本轮曾有 live 后不再回落 persisted", () => {
+    expect(resolveRailTask({
+      liveTask: null,
+      persistedTask: sampleTask({ id: "persisted" }),
+      sawLiveThisMount: true,
+    })).toBeNull()
   })
 })

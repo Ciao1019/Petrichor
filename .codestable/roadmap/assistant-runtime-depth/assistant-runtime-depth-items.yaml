@@ -1,0 +1,63 @@
+roadmap: assistant-runtime-depth
+created: 2026-07-10
+
+items:
+  - slug: agent-plan-persist
+    description: Plan 落库 + thread 回放 + 侧栏冷启动
+    depends_on: []
+    status: in-progress
+    feature: 2026-07-10-agent-plan-persist
+    minimal_loop: true
+    notes: 契约 4.1；侧栏壳已有，补持久化
+
+  - slug: agent-context-window-v2
+    description: 动态最近窗口与 ContextPack.windowPolicy
+    depends_on: []
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 契约 4.3；下限仍 ≥6；无向量也可交付
+
+  - slug: agent-resilience-playbook
+    description: 失败分类、换招/降级文案、circuit_open
+    depends_on: []
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 契约 4.2；不自动代执行其他工具
+
+  - slug: agent-context-vector-recall
+    description: 历史消息向量召回注入 ContextPack
+    depends_on:
+      - agent-context-window-v2
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 契约 4.3；无 embedding 配置时跳过
+
+  - slug: agent-subagent-depth-limit
+    description: spawn depth/maxDepth，允许有限再委派
+    depends_on: []
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 契约 4.4；默认 maxDepth=1
+
+  - slug: agent-subagent-write
+    description: spawn_write_subagent，写意图经主对话确认
+    depends_on:
+      - agent-subagent-depth-limit
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 契约 4.4；子代理不直接执行 dangerous
+
+  - slug: agent-multi-agent-fanout
+    description: 同 run 并行 ≤3 只读子代理并由主 Agent 汇总
+    depends_on:
+      - agent-subagent-depth-limit
+      - agent-context-window-v2
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 契约 4.4；无团队 DSL
