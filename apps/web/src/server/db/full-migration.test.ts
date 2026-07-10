@@ -69,4 +69,21 @@ describe("buildInitialMigrationSql", () => {
         expect(sql).not.toContain("create table if not exists petrichor_ai_model_config_binding")
         expect(sql).not.toContain("create table if not exists petrichor_sticky_note")
     })
+
+    it("包含站内 Assistant 运行时五张表（chat-first roadmap 契约 4.5）", () => {
+        const sql = buildInitialMigrationSql()
+
+        expect(sql).toContain("create table if not exists petrichor_assistant_thread")
+        expect(sql).toContain("focus_json text")
+        expect(sql).toContain("deleted_at timestamptz")
+        expect(sql).toContain("create table if not exists petrichor_assistant_message")
+        expect(sql).toContain("create table if not exists petrichor_assistant_run")
+        expect(sql).toContain("intent_domains_json text")
+        expect(sql).toContain("error_code text")
+        expect(sql).toContain("create table if not exists petrichor_assistant_step")
+        expect(sql).toContain("step_index integer not null")
+        expect(sql).toContain("duration_ms integer")
+        expect(sql).toContain("create table if not exists petrichor_assistant_artifact")
+        expect(sql).toContain("petrichor_assistant_thread_user_history_idx")
+    })
 })

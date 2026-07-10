@@ -12,6 +12,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { AppSidebar } from '@/components/app-sidebar'
 import { AppBreadcrumb } from '@/components/app-breadcrumb'
 import { TwoFactorEnforcementBanner } from '@/components/account/two-factor-enforcement-banner'
+import { AssistantChatPage } from '@/features/pages/assistant/AssistantChatPage'
 import { KnowledgeBasePage } from '@/features/pages/knowledge/KnowledgeBasePage'
 import { KnowledgeBaseArticleEditorPage } from '@/features/pages/knowledge/KnowledgeBaseArticleEditorPage'
 import { KnowledgeQaPage } from '@/features/pages/knowledge/KnowledgeQaPage'
@@ -138,7 +139,9 @@ function AppThemeScope() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/dashboard" element={<DashboardLayout />}>
-              <Route index element={<DashboardMetricsPage />} />
+              <Route index element={<Navigate to={dashboardRoutes.assistant} replace />} />
+              <Route path="assistant" element={<AssistantChatPage />} />
+              <Route path="metrics" element={<DashboardMetricsPage />} />
               <Route path="account" element={<AccountPage />} />
               <Route path="notifications" element={<NotificationPage />} />
               <Route path="knowledge" element={<KnowledgeBasePage />} />

@@ -1910,3 +1910,49 @@ export const docLibraryApi = {
   threadDeleteMany: (threadIds: string[]) =>
     api.post<{ deleted: string[]; failed: { id: string; reason: string }[] }>("/doc-library/thread/delete-many", { threadIds }),
 }
+
+// 站内 Assistant（chat-first 壳）：形状对齐 src/server/assistant/thread-handlers.ts
+export interface AssistantFocus {
+  knowledgeBaseId?: string | null
+  libraryId?: string | null
+  articleId?: string | null
+  documentId?: string | null
+}
+
+export interface AssistantThreadSummary {
+  id: string
+  title: string
+  focus: AssistantFocus | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AssistantThreadListResponse {
+  items: AssistantThreadSummary[]
+  nextCursor: number | null
+}
+
+export interface AssistantThreadMessage {
+  id: string
+  role: string
+  content: unknown
+  createdAt: string
+}
+
+export interface AssistantThreadDetailResponse {
+  thread: AssistantThreadSummary
+  messages: AssistantThreadMessage[]
+}
+
+export const assistantApi = {
+  threadList: (params: { cursor?: number; limit?: number; q?: string } = {}) =>
+    api.post<AssistantThreadListResponse>("/assistant/thread/list", params),
+  threadDetail: (threadId: string) =>
+    api.post<AssistantThreadDetailResponse>("/assistant/thread/detail", { threadId }),
+  threadCreate: (data: { title?: string | null; focus?: AssistantFocus | null } = {}) =>
+    api.post<{ thread: AssistantThreadSummary }>("/assistant/thread/create", data),
+  threadDelete: (threadId: string) =>
+    api.post<{ ok: true }>("/assistant/thread/delete", { threadId }),
+  threadDeleteMany: (threadIds: string[]) =>
+    api.post<{ deleted: number }>("/assistant/thread/delete-many", { threadIds }),
+}

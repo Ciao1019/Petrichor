@@ -140,6 +140,33 @@ export async function runAgentMemoryDistillation(
         distillCount: (state?.distillCount ?? 0) + 1,
     })
 
+    const ingest = await ingestObservedConversationTurns({ userId, turns })
+    return {
+        status: ingest.status,
+        created: ingest.created,
+        merged: ingest.merged,
+        sampledQuestions,
+    }
+}
+
+/** 供站内 Assistant 等入口复用：对给定对话轮次跑 Observer → 合并 → Reflector → 上限裁剪 */
+export async function ingestObservedConversationTurns(input: {
+    userId: number
+    turns: ConversationTurn[]
+}): Promise<{
+    status: "distilled" | "nothing_to_keep"
+    created: number
+    merged: number
+    sampledQuestions: number
+}> {
+    const { userId, turns } = input
+    const sampledQuestions = turns.filter((turn) => turn.role === "user").length
+    if (turns.length === 0) {
+        return { status: "nothing_to_keep", created: 0, merged: 0, sampledQuestions: 0 }
+    }
+
+    const now = new Date()
+    const db = getDb()
     const completion = await callChatCompletion({
         userId,
         systemPrompt: buildObserverSystemPrompt(),
@@ -151,7 +178,6 @@ export async function runAgentMemoryDistillation(
     }
 
     const mergeResult = await mergeDistilledMemories({ db, userId, distilled: observed, now })
-    // Reflector：观察日志变大时做一次全量重构压缩；失败或不划算会自动跳过，最终仍由硬上限兜底。
     await reflectMemoryLog(db, userId, now)
     await enforceMemoryCap(db, userId)
     return {
@@ -350,15 +376,24 @@ async function enforceMemoryCap(db: Db, userId: number) {
 async function upsertMemoryState(db: Db, input: {
     userId: number
     lastDistilledAt: Date
-    lastMessageId: number
+    lastMessageId?: number
+    lastAssistantMessageId?: number
     distillCount: number
 }) {
+    const [existing] = await db
+        .select()
+        .from(agentMemoryStates)
+        .where(eq(agentMemoryStates.userId, input.userId))
+        .limit(1)
+    const lastMessageId = input.lastMessageId ?? existing?.lastMessageId ?? 0
+    const lastAssistantMessageId = input.lastAssistantMessageId ?? existing?.lastAssistantMessageId ?? 0
     await db
         .insert(agentMemoryStates)
         .values({
             userId: input.userId,
             lastDistilledAt: input.lastDistilledAt,
-            lastMessageId: input.lastMessageId,
+            lastMessageId,
+            lastAssistantMessageId,
             distillCount: input.distillCount,
             updatedAt: input.lastDistilledAt,
         })
@@ -366,7 +401,8 @@ async function upsertMemoryState(db: Db, input: {
             target: agentMemoryStates.userId,
             set: {
                 lastDistilledAt: input.lastDistilledAt,
-                lastMessageId: input.lastMessageId,
+                lastMessageId,
+                lastAssistantMessageId,
                 distillCount: input.distillCount,
                 updatedAt: input.lastDistilledAt,
             },

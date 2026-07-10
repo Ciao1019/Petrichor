@@ -1,0 +1,86 @@
+roadmap: chat-first-universal-agent
+created: 2026-07-10
+
+items:
+  - slug: agent-runtime-core
+    description: 新建 /api/assistant 统一对话与线程，域注册表与意图路由骨架
+    depends_on: []
+    status: done
+    feature: 2026-07-10-agent-runtime-core
+    minimal_loop: false
+    notes: 2026-07-10 验收通过；工具注册表为空集，业务工具归 agent-tools-readonly
+
+  - slug: agent-tools-readonly
+    description: 注册知识库/文档库/系统元信息只读工具
+    depends_on:
+      - agent-runtime-core
+    status: done
+    feature: 2026-07-10-agent-tools-readonly
+    minimal_loop: false
+    notes: 2026-07-10 验收通过；含 upsert_plan（仅输出形状，持久化/展示/韧性归 agent-plan-resilience）
+
+  - slug: agent-chat-shell
+    description: Chat-first 主界面接通统一 API，完成最小闭环演示
+    depends_on:
+      - agent-runtime-core
+      - agent-tools-readonly
+    status: done
+    feature: 2026-07-10-agent-chat-shell
+    minimal_loop: true
+    notes: 2026-07-10 验收通过；Grok UI 基座接通 /api/assistant/*；薄壳方案已纠偏
+
+  - slug: agent-memory-runtime
+    description: 记忆注入全体话并降级记忆主入口为设置
+    depends_on:
+      - agent-runtime-core
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 等 Mastra 运行时纠偏完成后再开
+
+  - slug: agent-plan-resilience
+    description: 可见任务计划与工具失败重试/降级策略
+    depends_on:
+      - agent-chat-shell
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: agent-confirm-write
+    description: 危险确认协议与内容写入类工具
+    depends_on:
+      - agent-chat-shell
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: agent-tools-admin
+    description: 管理面工具域（配置/公开站/Key 等）
+    depends_on:
+      - agent-confirm-write
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: agent-legacy-retire
+    description: 退役旧 QA/记忆入口并移除问答 Wiki 补丁工具
+    depends_on:
+      - agent-chat-shell
+      - agent-memory-runtime
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: agent-subagents-compress
+    description: 二期：子代理与团队、深度上下文压缩
+    depends_on:
+      - agent-plan-resilience
+      - agent-tools-admin
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 非一期门闩

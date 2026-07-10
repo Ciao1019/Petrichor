@@ -2,6 +2,8 @@ export const DASHBOARD_ROOT = "/dashboard"
 
 export const dashboardRoutes = {
     root: DASHBOARD_ROOT,
+    assistant: `${DASHBOARD_ROOT}/assistant`,
+    metrics: `${DASHBOARD_ROOT}/metrics`,
     account: `${DASHBOARD_ROOT}/account`,
     notifications: `${DASHBOARD_ROOT}/notifications`,
     knowledge: `${DASHBOARD_ROOT}/knowledge`,
