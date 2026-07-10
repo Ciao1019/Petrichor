@@ -130,7 +130,9 @@ function HtmlEmbedCard({
                 className="block w-full border-0"
                 height={clampHtmlEmbedHeight(height)}
                 loading="lazy"
-                sandbox="allow-scripts allow-popups"
+                // 站内自托管页面与主站同等可信；缺 allow-same-origin 会让 localStorage
+                // 等 API 抛 SecurityError 打断整个脚本。sandbox 仍拦截顶层跳转与表单。
+                sandbox="allow-same-origin allow-scripts allow-popups"
                 src={src}
                 title={title?.trim() || "自托管 HTML 可视化"}
             />
