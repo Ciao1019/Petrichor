@@ -6,6 +6,8 @@ last_reviewed: 2026-07-10
 implemented_by:
   - 2026-07-10-agent-runtime-core
   - 2026-07-10-agent-tools-readonly
+  - 2026-07-10-agent-chat-shell
+  - 2026-07-10-agent-plan-resilience
 ---
 
 # 站内 Assistant 运行时
@@ -40,7 +42,7 @@ POST /api/assistant/chat（SSE, requireCurrentUser）
 - `petrichor_assistant_thread`：user_id / title / focus_json / **deleted_at（软删）**
 - `petrichor_assistant_message`：thread_id / role / content_json（完整 UIMessage parts，供回放）
 - `petrichor_assistant_run`：status（RUNNING/COMPLETED/FAILED）/ model_config_id / intent_domains_json / error_code；`intent_domains_json` 与本轮工具装载直接使用同一份 `route.domains`
-- `petrichor_assistant_step`：run_id / step_index / tool_name / input_json / output_json / duration_ms；工具成功/失败分别落 `COMPLETED` / `FAILED`
+- `petrichor_assistant_step`：run_id / step_index / tool_name / input_json / output_json / **error_code** / duration_ms；工具成功/失败分别落 `COMPLETED` / `FAILED`
 - `petrichor_assistant_artifact`：`save_answer_artifact` 写入 kind/title/content_json，并关联当前 thread_id/run_id；暂无读取或前端展示入口
 
 与旧 `petrichor_kb_agent_*` / `petrichor_doc_qa_*` 完全独立，不迁移旧数据。
@@ -52,8 +54,10 @@ POST /api/assistant/chat（SSE, requireCurrentUser）
 - `search_knowledge` 的语义支路不可用（SQLite、无 EMBEDDING 配置或服务错误）时静默保留关键词结果，并以 `mode` 标出降级；不得让整次工具调用失败
 - 控制上下文体积：知识树检索片段 `maxContentChars=1600`，知识检索 `limit<=12`，文档检索 `limit<=20`，`read_document` 单次 `limit<=40` chunk
 - 工具内部错误记录 FAILED step，但不把 run 直接判失败；模型仍可改用其他工具或继续给出降级回答
+- **韧性包装**（`tool-resilience.ts`，契约 4.7）：装载 Mastra tools 时包裹 execute——单次超时 30s → `tool_timeout`；同名连续失败 ≥2 → 短路 `tool_retry_exhausted`；成功清零 streak。超时/耗尽只判 step FAILED
+- Plan 可见性：仅消息内 `upsert_plan` → Plan 卡（无 sticky 侧栏、无独立 Plan 表）
 - 流开始前的错误走非流 JSON `{ code, msg, path, timestamp }`（401/400/403/404/409=model_not_configured）；流开始后只标记 run FAILED（error_code：`stream_aborted` / `stream_error`），不回滚已持久化消息；run 不得遗留 RUNNING
 - thread 删除一律软删；list/detail 过滤 `deleted_at`
 - 响应头 `X-Petrichor-Assistant-Thread-Id` / `X-Petrichor-Assistant-Run-Id`（与旧栈 `X-Petrichor-Agent-*` 区分）
 - 问答链路禁止注册 `propose_wiki_patch`；当前 12 个工具名与 roadmap 4.3 锁定表恰好相等
-- 扩展点：模型解析后是记忆注入位（4.6）；注册表是工具域扩展位（4.3）；流回调是韧性策略位（4.7）；工具执行前是确认协议位（4.4）
+- 扩展点：注册表是工具域扩展位（4.3）；韧性策略位已接线（4.7）；工具执行前是确认协议位（4.4）。记忆注入位（4.6）已随产品裁决取消

@@ -1,0 +1,48 @@
+feature: 2026-07-10-agent-plan-resilience
+created: 2026-07-10
+
+steps:
+  - action: "持久化：petrichor_assistant_step 增加 error_code 列；recordAssistantStep 透传；schema/full-migration/增量 SQL"
+    exit_signal: "迁移可重入；单测或手测写入后可读 error_code"
+    status: done
+  - action: "编排：新增 tool-resilience.ts（30s 超时 + 同名连续失败≥2 短路）；接入 loadMastraToolsForDomains；afterToolCall 写入 errorCode/duration"
+    exit_signal: "单测覆盖 timeout / retry_exhausted / 成功清零 streak"
+    status: done
+  - action: "流中断核对 + 系统提示补「工具失败可换招」；修正 per-tool duration"
+    exit_signal: "chat-handler 仍含 stream_aborted；提示含换招纪律"
+    status: done
+  - action: "Plan 可见性回归（仅消息内卡，无 sticky）+ 场景收尾与架构回写"
+    exit_signal: "design 场景 1-5 有证据；runtime-assistant.md 已更新；反向核对通过"
+    status: done
+
+checks:
+  - item: "无新建 Plan 表；无 sticky Plan 侧栏 UI"
+    source: 范围守护
+    status: passed
+  - item: "upsert_plan 工具名与 Plan schema 不变"
+    source: 范围守护
+    status: passed
+  - item: "app/api/agent/** 零 diff；不恢复已删旧 QA/记忆"
+    source: 范围守护
+    status: passed
+  - item: "step.error_code 列存在；tool_timeout / tool_retry_exhausted 可写入"
+    source: 名词契约
+    status: passed
+  - item: "超时阈值 30s；同名连续失败≥2 短路且不执行真实 execute"
+    source: 名词契约
+    status: passed
+  - item: "韧性包装 per-run；COMPLETED 清零 streak；finishRunOnce 幂等"
+    source: 编排骨架
+    status: passed
+  - item: "流中断 run FAILED + stream_aborted；已有 step 保留"
+    source: 流程级约束
+    status: passed
+  - item: "超时仅 step FAILED，不因此直接判整个 run FAILED"
+    source: 流程级约束
+    status: passed
+  - item: "挂载点：error_code 列、tool-resilience、chat 装载/提示；可卸载"
+    source: 挂载点
+    status: passed
+  - item: "场景：Plan 卡、耗尽、超时、流中断、换招成功"
+    source: 验收场景
+    status: passed

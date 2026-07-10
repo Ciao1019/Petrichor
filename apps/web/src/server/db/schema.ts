@@ -868,6 +868,7 @@ export const assistantSteps = pgTable("petrichor_assistant_step", {
     inputJson: text("input_json"),
     outputJson: text("output_json"),
     status: text("status").notNull(),
+    errorCode: text("error_code"),
     durationMs: integer("duration_ms"),
 }, (table) => [
     index("petrichor_assistant_step_run_idx").on(table.runId, table.stepIndex),

@@ -18,6 +18,7 @@ import { assertAssistantFocusOwnership } from "./focus-guard"
 import { routeAssistantIntent } from "./intent-router"
 import "./tools"
 import { loadMastraToolsForDomains } from "./tool-registry"
+import { createToolResilienceController, ToolResilienceError } from "./tool-resilience"
 import {
     assistantFocusSchema,
     assistantIdSchema,
@@ -63,6 +64,7 @@ export function buildAssistantSystemPrompt(domains: AgentDomainId[]): string {
         `本轮路由域：${domains.join(", ")}。只调用本轮实际提供的工具；没有对应写入或管理工具时，不要假装已经执行。`,
         ...guidance,
         "站内事实必须以工具结果为准；检索不到就如实说明，不要编造数据、来源、链接或原文片段。",
+        "若某工具失败或超时，改用其他可用工具或降级说明，不要反复调用同一已失败工具。",
         "只使用中文回答，直接、结构清晰。",
     ].join("\n")
 }
@@ -111,7 +113,8 @@ export async function assistantChat(request: NextRequest) {
             focus,
         }
         // 每轮只装载意图路由命中的域（契约 4.1：禁止一次挂载全站 tools）
-        const tools = loadMastraToolsForDomains(route.domains, toolContext)
+        const resilience = createToolResilienceController()
+        const tools = loadMastraToolsForDomains(route.domains, toolContext, resilience)
         const activeToolNames = Object.keys(tools)
 
         const agent = new Agent({
@@ -144,7 +147,6 @@ export async function assistantChat(request: NextRequest) {
         }
 
         let stepIndex = 0
-        const toolStartedAt = Date.now()
         const modelMessages = await convertToModelMessages(input.messages as UIMessage[])
         const result = await agent.stream(modelMessages as never, {
             maxSteps: 8,
@@ -153,7 +155,12 @@ export async function assistantChat(request: NextRequest) {
             abortSignal: request.signal,
             hooks: {
                 afterToolCall: async ({ toolName, output, error }) => {
-                    const isSuccess = error == null
+                    const meta = resilience.consumeMeta(toolName)
+                    const isSuccess = error == null && meta?.errorCode == null
+                    const errorCode = isSuccess
+                        ? null
+                        : meta?.errorCode
+                            ?? (error instanceof ToolResilienceError ? error.code : "tool_error")
                     await recordAssistantStep({
                         runId: run.id,
                         stepIndex: stepIndex++,
@@ -161,9 +168,13 @@ export async function assistantChat(request: NextRequest) {
                         input: {},
                         output: isSuccess
                             ? output
-                            : { error: error instanceof Error ? error.message : String(error) },
+                            : {
+                                error: error instanceof Error ? error.message : String(error ?? errorCode),
+                                errorCode,
+                            },
                         status: isSuccess ? "COMPLETED" : "FAILED",
-                        durationMs: Math.max(0, Date.now() - toolStartedAt),
+                        errorCode,
+                        durationMs: meta?.durationMs ?? null,
                     })
                 },
             },

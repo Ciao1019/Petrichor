@@ -42,10 +42,10 @@ items:
     description: 可见任务计划与工具失败重试/降级策略
     depends_on:
       - agent-chat-shell
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-07-10-agent-plan-resilience
     minimal_loop: false
-    notes: null
+    notes: 2026-07-10 验收通过；Plan 仅消息内卡；超时 30s；step.error_code + tool-resilience
 
   - slug: agent-confirm-write
     description: 危险确认协议与内容写入类工具

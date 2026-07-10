@@ -1,6 +1,7 @@
 import { tool, type ToolSet } from "ai"
 import { createTool } from "@mastra/core/tools"
 import type { AgentDomainId, AssistantToolContext, AssistantToolRegistration } from "./domain-types"
+import type { ToolResilienceController } from "./tool-resilience"
 
 // 进程内域工具注册表（契约 4.3）。工具由各域 feature 在模块加载时注册；
 // runtime 每轮按意图路由结果装载子集，禁止一次挂载全站 tools。
@@ -34,16 +35,24 @@ export function loadToolsForDomains(domains: AgentDomainId[], ctx: AssistantTool
     return tools
 }
 
-export function loadMastraToolsForDomains(domains: AgentDomainId[], ctx: AssistantToolContext) {
+export function loadMastraToolsForDomains(
+    domains: AgentDomainId[],
+    ctx: AssistantToolContext,
+    resilience?: ToolResilienceController,
+) {
     const wanted = new Set(domains)
     const tools: Record<string, ReturnType<typeof createTool>> = {}
     for (const registration of registry.values()) {
         if (!wanted.has(registration.domain)) continue
-        tools[registration.name] = createTool({
-            id: registration.name,
+        const toolName = registration.name
+        tools[toolName] = createTool({
+            id: toolName,
             description: registration.description,
             inputSchema: registration.inputSchema,
-            execute: async (input: unknown) => await registration.execute(ctx, input),
+            execute: async (input: unknown) => {
+                const run = () => registration.execute(ctx, input)
+                return resilience ? await resilience.run(toolName, run) : await run()
+            },
         })
     }
     return tools
