@@ -1389,12 +1389,12 @@
                 const root = document.documentElement;
                 const btn = document.getElementById("theme-btn");
                 const saved = localStorage.getItem(KEY);
-                const prefersDark = matchMedia("(prefers-color-scheme: dark)").matches;
                 const apply = (dark) => {
                     root.dataset.theme = dark ? "dark" : "light";
                     btn.textContent = dark ? "切换纸张" : "切换黑板";
                 };
-                apply(saved ? saved === "dark" : prefersDark);
+                /* 默认纸张模式，不跟随系统深色；只有显式切过黑板才恢复 */
+                apply(saved === "dark");
                 btn.addEventListener("click", () => {
                     const dark = root.dataset.theme !== "dark";
                     apply(dark);
