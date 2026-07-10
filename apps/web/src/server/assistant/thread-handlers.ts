@@ -1,0 +1,88 @@
+import type { NextRequest } from "next/server"
+import { z } from "zod"
+import { requireCurrentUser } from "@/server/auth/current-user"
+import { ok, readJson, toErrorResponse } from "@/server/http/response"
+import { assertAssistantFocusOwnership } from "./focus-guard"
+import {
+    assistantFocusSchema,
+    assistantIdSchema,
+    assistantThreadDeleteManySchema,
+    assistantThreadListSchema,
+    createAssistantThread,
+    getAssistantThreadDetail,
+    listAssistantThreads,
+    softDeleteAssistantThread,
+    softDeleteAssistantThreads,
+    toAssistantThreadResponse,
+} from "./thread-logic"
+
+const threadIdInputSchema = z.object({
+    threadId: assistantIdSchema,
+})
+
+const threadCreateInputSchema = z.object({
+    title: z.string().trim().max(120).optional().nullable(),
+    focus: assistantFocusSchema.optional().nullable(),
+})
+
+export async function assistantThreadList(request: NextRequest) {
+    try {
+        const user = await requireCurrentUser(request)
+        const input = assistantThreadListSchema.parse(await readJson(request).catch(() => ({})))
+        return ok(await listAssistantThreads({
+            userId: user.id,
+            cursor: input.cursor,
+            limit: input.limit,
+            q: input.q,
+        }))
+    } catch (error) {
+        return toErrorResponse(error, request.nextUrl.pathname)
+    }
+}
+
+export async function assistantThreadDetail(request: NextRequest) {
+    try {
+        const user = await requireCurrentUser(request)
+        const input = threadIdInputSchema.parse(await readJson(request))
+        return ok(await getAssistantThreadDetail({ userId: user.id, threadId: input.threadId }))
+    } catch (error) {
+        return toErrorResponse(error, request.nextUrl.pathname)
+    }
+}
+
+export async function assistantThreadCreate(request: NextRequest) {
+    try {
+        const user = await requireCurrentUser(request)
+        const input = threadCreateInputSchema.parse(await readJson(request).catch(() => ({})))
+        const focus = input.focus ?? null
+        await assertAssistantFocusOwnership(user.id, focus)
+        const thread = await createAssistantThread({
+            userId: user.id,
+            title: input.title ?? null,
+            focus,
+        })
+        return ok({ thread: toAssistantThreadResponse(thread) })
+    } catch (error) {
+        return toErrorResponse(error, request.nextUrl.pathname)
+    }
+}
+
+export async function assistantThreadDelete(request: NextRequest) {
+    try {
+        const user = await requireCurrentUser(request)
+        const input = threadIdInputSchema.parse(await readJson(request))
+        return ok(await softDeleteAssistantThread({ userId: user.id, threadId: input.threadId }))
+    } catch (error) {
+        return toErrorResponse(error, request.nextUrl.pathname)
+    }
+}
+
+export async function assistantThreadDeleteMany(request: NextRequest) {
+    try {
+        const user = await requireCurrentUser(request)
+        const input = assistantThreadDeleteManySchema.parse(await readJson(request))
+        return ok(await softDeleteAssistantThreads(user.id, input.threadIds))
+    } catch (error) {
+        return toErrorResponse(error, request.nextUrl.pathname)
+    }
+}

@@ -814,13 +814,76 @@ export const agentMemories = pgTable("petrichor_agent_memory", {
 ])
 
 // 蒸馏限频状态：每个用户一行，记录上次蒸馏时间与已消费到的消息水位
+// lastMessageId = 旧 KB agent 消息水位；lastAssistantMessageId = 站内 assistant 消息水位
 export const agentMemoryStates = pgTable("petrichor_agent_memory_state", {
     userId: bigint("user_id", { mode: "number" }).primaryKey(),
     lastDistilledAt: timestamp("last_distilled_at", { withTimezone: true }),
     lastMessageId: bigint("last_message_id", { mode: "number" }).notNull().default(0),
+    lastAssistantMessageId: bigint("last_assistant_message_id", { mode: "number" }).notNull().default(0),
     distillCount: integer("distill_count").notNull().default(0),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 })
+
+// 站内统一 Assistant 运行时（chat-first-universal-agent roadmap 契约 4.5）。
+// 与旧 petrichor_kb_agent_* / petrichor_doc_qa_* 独立，不迁移旧数据；thread 为软删（deleted_at）。
+export const assistantThreads = pgTable("petrichor_assistant_thread", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    title: text("title").notNull(),
+    focusJson: text("focus_json"),
+    ...timestamps,
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+}, (table) => [
+    index("petrichor_assistant_thread_user_history_idx").on(table.userId, table.updatedAt, table.id),
+])
+
+export const assistantMessages = pgTable("petrichor_assistant_message", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    threadId: bigint("thread_id", { mode: "number" }).notNull(),
+    role: text("role").notNull(),
+    contentJson: text("content_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+    index("petrichor_assistant_message_thread_order_idx").on(table.threadId, table.createdAt, table.id),
+])
+
+export const assistantRuns = pgTable("petrichor_assistant_run", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    threadId: bigint("thread_id", { mode: "number" }).notNull(),
+    status: text("status").notNull().default("RUNNING"),
+    modelConfigId: bigint("model_config_id", { mode: "number" }),
+    intentDomainsJson: text("intent_domains_json"),
+    errorCode: text("error_code"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+}, (table) => [
+    index("petrichor_assistant_run_thread_idx").on(table.threadId, table.startedAt),
+])
+
+export const assistantSteps = pgTable("petrichor_assistant_step", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    runId: bigint("run_id", { mode: "number" }).notNull(),
+    stepIndex: integer("step_index").notNull(),
+    toolName: text("tool_name").notNull(),
+    inputJson: text("input_json"),
+    outputJson: text("output_json"),
+    status: text("status").notNull(),
+    durationMs: integer("duration_ms"),
+}, (table) => [
+    index("petrichor_assistant_step_run_idx").on(table.runId, table.stepIndex),
+])
+
+export const assistantArtifacts = pgTable("petrichor_assistant_artifact", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    threadId: bigint("thread_id", { mode: "number" }).notNull(),
+    runId: bigint("run_id", { mode: "number" }),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    contentJson: text("content_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+    index("petrichor_assistant_artifact_thread_idx").on(table.threadId, table.createdAt),
+])
 
 export type UserRecord = typeof users.$inferSelect
 export type BetterAuthUserRecord = typeof betterAuthUsers.$inferSelect
@@ -849,3 +912,8 @@ export type KnowledgeBaseImportJobRecord = typeof knowledgeBaseImportJobs.$infer
 export type KnowledgeBaseImportJobPageRecord = typeof knowledgeBaseImportJobPages.$inferSelect
 export type AgentMemoryRecord = typeof agentMemories.$inferSelect
 export type AgentMemoryStateRecord = typeof agentMemoryStates.$inferSelect
+export type AssistantThreadRecord = typeof assistantThreads.$inferSelect
+export type AssistantMessageRecord = typeof assistantMessages.$inferSelect
+export type AssistantRunRecord = typeof assistantRuns.$inferSelect
+export type AssistantStepRecord = typeof assistantSteps.$inferSelect
+export type AssistantArtifactRecord = typeof assistantArtifacts.$inferSelect

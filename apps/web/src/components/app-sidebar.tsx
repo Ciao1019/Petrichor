@@ -3,6 +3,7 @@ import {
   IconBook,
   IconBookmarks,
   IconBrain,
+  IconChartBar,
   IconFileImport,
   IconFiles,
   IconFolders,
@@ -14,6 +15,7 @@ import {
   IconPackage,
   IconPlugConnected,
   IconPalette,
+  IconRobot,
   IconSettings,
   IconSparkles,
   IconUserCircle,
@@ -90,14 +92,20 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       },
       {
         title: "智能应用",
-        url: dashboardRoutes.qa,
+        url: dashboardRoutes.assistant,
         icon: IconSparkles,
         isActive:
+          isDashboardSectionPath(pathname, "assistant") ||
           isDashboardSectionPath(pathname, "qa") ||
           isDashboardSectionPath(pathname, "wiki") ||
           isDashboardSectionPath(pathname, "ai/review") ||
           isDashboardSectionPath(pathname, "agent-memory"),
         items: [
+          {
+            title: "助手",
+            url: dashboardRoutes.assistant,
+            icon: IconRobot,
+          },
           {
             title: "知识问答",
             url: dashboardRoutes.qa,
@@ -145,6 +153,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         url: dashboardRoutes.aiConfig,
         icon: IconSettings,
         isActive: isDashboardSectionPath(pathname, "ai/config"),
+      },
+      {
+        title: "数据概览",
+        url: dashboardRoutes.metrics,
+        icon: IconChartBar,
+        isActive: isDashboardSectionPath(pathname, "metrics"),
       },
     ]
   }, [location.pathname])

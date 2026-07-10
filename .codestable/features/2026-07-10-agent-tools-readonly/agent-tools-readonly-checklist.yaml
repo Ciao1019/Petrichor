@@ -1,0 +1,75 @@
+feature: 2026-07-10-agent-tools-readonly
+created: 2026-07-10
+
+steps:
+  - action: "system 域工具包：list_system_overview（轻量计数+模型就绪）+ show_progress/show_citations/show_data_table/upsert_plan 回显 + save_answer_artifact 落 artifact 表"
+    exit_signal: "单测通过：计数正确、artifact 落行、Plan schema 对齐 tool-ui/plan 组件（completed 等状态）"
+    status: done
+  - action: "knowledge 域工具包：list_knowledge_bases + search_knowledge（组合检索：树/语义/跨库）+ read_knowledge_node（nodeKey|pageKey|articleId 统一寻址）"
+    exit_signal: "单测 + 真实 KB 手测通过，含语义不可用静默降级路径（mode 标注）"
+    status: done
+  - action: "doc_library 域工具包：list_doc_libraries + search_documents（libraryId/documentId/focus 限定）+ read_document（fromIndex 翻页）"
+    exit_signal: "真实文档库手测：命中片段、翻页续读、归属隔离"
+    status: done
+  - action: "接线与提示：intent-router 对 knowledge/doc_library 补 system 辅助域 + chat-handler side-effect import 注册入口 + 域感知系统提示替换「尚未接入工具」句"
+    exit_signal: "单测：focus knowledge → knowledge+system、focus library → doc_library+system、纯 system 不扩域；e2e：系统计数调用 list_system_overview 并落 step，focus 知识问答可调用 show_citations"
+    status: done
+  - action: "场景与错误路径收尾：工具内错误 step FAILED 不断流、跨库检索、引用输出、反向核对项"
+    exit_signal: "design 第 3 节 10 条场景全部有可观察证据；5 条反向核对项零命中"
+    status: done
+
+checks:
+  - item: "grep propose_wiki_patch 于 src/server/assistant 零命中"
+    source: 范围守护
+    status: passed
+  - item: "注册工具名集合与契约 4.3 表恰好相等（12 个不多不少，注册表单测断言）"
+    source: 范围守护
+    status: passed
+  - item: "无 content_write / admin 域注册（grep domain 零命中）"
+    source: 范围守护
+    status: passed
+  - item: "git diff 不含 app/api/agent/**、两条旧 chat 路由、src/components/**、client-app.tsx、dashboard-routes.ts"
+    source: 范围守护
+    status: passed
+  - item: "无新增 app/api/** 路由目录；schema.ts / full-migration.ts 零 diff"
+    source: 范围守护
+    status: passed
+  - item: "12 个工具的 name/domain 与契约 4.3 原样一致；risk：save_answer_artifact=write，其余=read"
+    source: 名词契约
+    status: passed
+  - item: "search_knowledge 入参（query, knowledgeBaseId?）与输出（mode + hits[]）符合 design 2.1 示例；read_knowledge_node 三选一寻址"
+    source: 名词契约
+    status: passed
+  - item: "upsert_plan 输出 Plan：todos[].status ∈ pending/in_progress/completed/cancelled（对齐 tool-ui/plan 组件，拍板 2）"
+    source: 名词契约
+    status: passed
+  - item: "list_system_overview 返回计数 + chatModelReady/embeddingModelReady，不复用 loadDashboardOverview"
+    source: 名词契约
+    status: passed
+  - item: "注册时机=模块加载期自注册，chat-handler side-effect import 挂上；intent-router 集中补齐 system 辅助域，run 落库与工具装载使用同一域集合"
+    source: 编排骨架
+    status: passed
+  - item: "系统提示域感知，替换「尚未接入任何站内工具」句"
+    source: 编排骨架
+    status: passed
+  - item: "工具内部错误 → step FAILED 落库、流不中断、不向客户端抛 5xx"
+    source: 流程级约束
+    status: passed
+  - item: "语义检索不可用时 search_knowledge 静默降级关键词并标 mode，禁止整工具失败"
+    source: 流程级约束
+    status: passed
+  - item: "读取类工具沿用现有 maxContentChars / limit 上限；包装函数保持 userId 归属校验；focus 只作默认范围不放宽权限"
+    source: 流程级约束
+    status: passed
+  - item: "挂载点仅四处：tools/ 注册条目、chat-handler import 接线、系统提示常量、intent-router 辅助域合并；删/还原即完全卸载"
+    source: 挂载点
+    status: passed
+  - item: "场景 1-4：系统计数问答、focus 库内检索+阅读+引用、跨库检索带归属、文档库检索+翻页"
+    source: 验收场景
+    status: passed
+  - item: "场景 5-7：列表工具归属隔离、save_answer_artifact 落行、upsert_plan 形状对齐组件"
+    source: 验收场景
+    status: passed
+  - item: "场景 8-10：语义降级不报错、假 id 工具错误 step FAILED 不断流、run 的 step 工具全属命中域"
+    source: 验收场景
+    status: passed

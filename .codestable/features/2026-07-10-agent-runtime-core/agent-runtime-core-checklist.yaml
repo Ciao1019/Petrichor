@@ -1,0 +1,75 @@
+feature: 2026-07-10-agent-runtime-core
+created: 2026-07-10
+
+steps:
+  - action: "计算节点（纯函数先行）：域工具注册表（registerAssistantTools / loadToolsForDomains）+ 规则版 routeAssistantIntent"
+    exit_signal: "单测通过：空注册表装载、重名注册抛错、默认三读域、写意图含 content_write/admin、focus 影响排序"
+    status: done
+  - action: "持久化底座：petrichor_assistant_* 5 张表（schema.ts + full-migration.ts DDL）+ thread/message/run/step 逻辑函数"
+    exit_signal: "typecheck 绿 + 逻辑单测通过 + 迁移可执行"
+    status: done
+  - action: "编排骨架接通：POST /api/assistant/chat 全 pipeline（鉴权→校验→focus 归属→路由→空工具集→streamText→SSE→持久化）"
+    exit_signal: "本地真实模型一轮对话端到端跑通；thread/message/run 落库；X-Petrichor-Assistant-* 响应头正确"
+    status: done
+  - action: "Thread API：list/detail/create/delete/delete-many 5 条薄路由 + 查询/软删逻辑"
+    exit_signal: "5 条接口逐条验证：list 分页/搜索、detail、create、软删后 list 不出现且 detail 404、delete-many 返回 deleted 数"
+    status: done
+  - action: "错误路径与测试收尾：401/400/403/404/409、abort → run FAILED；补齐验收场景测试"
+    exit_signal: "design 第 3 节 11 条场景全部有可观察证据；反向核对项零命中"
+    status: done
+
+checks:
+  - item: "git diff 不含 app/api/agent/** 任何文件改动"
+    source: 范围守护
+    status: passed
+  - item: "不注册任何业务/UI 工具：loadToolsForDomains 对所有域返回空集；src/server/assistant 内 grep 不到 propose_wiki_patch"
+    source: 范围守护
+    status: passed
+  - item: "/api/kb/agent/chat 与 /api/doc-library/chat 两条旧链路零 diff"
+    source: 范围守护
+    status: passed
+  - item: "无旧表迁移代码：src/server/assistant 内 grep 不到 petrichor_kb_agent / petrichor_doc_qa"
+    source: 范围守护
+    status: passed
+  - item: "无前端改动：client-app.tsx、dashboard-routes.ts 零 diff"
+    source: 范围守护
+    status: passed
+  - item: "5 张 petrichor_assistant_* 表列齐契约 4.5（thread.focus_json/deleted_at、run.intent_domains_json/error_code/model_config_id、step.step_index/tool_name/input_json/output_json/duration_ms）；focus_json 按假设 A 用 text 存 JSON"
+    source: 名词契约
+    status: passed
+  - item: "AgentDomainId / IntentRouteResult / AssistantToolRegistration 类型与契约 4.2/4.3 一致；loadToolsForDomains 按假设 B 追加 ctx 参数"
+    source: 名词契约
+    status: passed
+  - item: "POST /api/assistant/chat 形状齐契约 4.1：threadId/messages/configId/focus 入参、SSE UIMessage 流、X-Petrichor-Assistant-Thread-Id / Run-Id 响应头、401/400/403/404/409 错误映射"
+    source: 名词契约
+    status: passed
+  - item: "thread API 5 条路径与形状齐契约 4.5：list 返回 items+nextCursor、delete-many 返回 { deleted }"
+    source: 名词契约
+    status: passed
+  - item: "每轮先 routeAssistantIntent 再 loadToolsForDomains，禁止一次挂载全站 tools；路由结果落 run.intent_domains_json"
+    source: 编排骨架
+    status: passed
+  - item: "路由 domains 为空时默认 [system, knowledge, doc_library]"
+    source: 编排骨架
+    status: passed
+  - item: "流开始前错误走 toErrorResponse 非流 JSON；流开始后仅标记 run FAILED 不回滚已持久化消息；任何一轮结束 run 不遗留 RUNNING"
+    source: 流程级约束
+    status: passed
+  - item: "user message 先于流持久化；assistant message 在 onEnd 以完整 UIMessage parts 落库；thread 删除为软删（deleted_at）"
+    source: 流程级约束
+    status: passed
+  - item: "挂载点仅三处：app/api/assistant/** 6 条路由、schema.ts+full-migration.ts 的 petrichor_assistant_* 段、src/server/assistant/ 目录；删除三处 feature 完全消失"
+    source: 挂载点
+    status: passed
+  - item: "场景 1-3：新对话流式返回并全落库（run COMPLETED + 默认三域）；threadId 复用不新建；focus 落库"
+    source: 验收场景
+    status: passed
+  - item: "场景 4-5：thread list 分页/搜索返回 items+nextCursor；create/detail/delete/delete-many 全形状；软删后 detail 404"
+    source: 验收场景
+    status: passed
+  - item: "场景 6-10：messages 空 400、他人/不存在 threadId 404、他人 focus 403 且未创建 thread、未登录 401、无 CHAT 配置 409 且未创建 run"
+    source: 验收场景
+    status: passed
+  - item: "场景 11：流中途 abort → run 终态 FAILED，已落库消息保留"
+    source: 验收场景
+    status: passed
