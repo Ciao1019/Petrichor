@@ -51,10 +51,10 @@ items:
     description: 危险确认协议与内容写入类工具
     depends_on:
       - agent-chat-shell
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-07-10-agent-confirm-write
     minimal_loop: false
-    notes: null
+    notes: 2026-07-10 验收通过；确认协议 + 7 工具；危险不对模型暴露
 
   - slug: agent-tools-admin
     description: 管理面工具域（配置/公开站/Key 等）

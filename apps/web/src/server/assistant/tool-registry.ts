@@ -28,6 +28,7 @@ export function loadToolsForDomains(domains: AgentDomainId[], ctx: AssistantTool
     const tools: ToolSet = {}
     for (const registration of registry.values()) {
         if (!wanted.has(registration.domain)) continue
+        if (registration.risk === "dangerous") continue
         tools[registration.name] = tool({
             description: registration.description,
             inputSchema: registration.inputSchema,
@@ -46,6 +47,8 @@ export function loadMastraToolsForDomains(
     const tools: Record<string, ReturnType<typeof createTool>> = {}
     for (const registration of registry.values()) {
         if (!wanted.has(registration.domain)) continue
+        // 危险工具不对模型暴露；仅经确认回传后由 Runtime 按名执行
+        if (registration.risk === "dangerous") continue
         const toolName = registration.name
         tools[toolName] = createTool({
             id: toolName,
@@ -62,6 +65,10 @@ export function loadMastraToolsForDomains(
 
 export function getAssistantToolDomain(name: string): AgentDomainId | null {
     return registry.get(name)?.domain ?? null
+}
+
+export function getAssistantToolRegistration(name: string): AssistantToolRegistration | null {
+    return registry.get(name) ?? null
 }
 
 export function clearAssistantToolRegistryForTests(): void {

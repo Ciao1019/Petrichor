@@ -411,8 +411,8 @@ Plan（upsert_plan 输出，对齐现有 plan schema）:
 6. **agent-confirm-write** — 确认协议 + 内容写工具（建文/改文/移动/分享等）+ 危险白名单
    - 所属模块：Confirmation + Tool Domains
    - 依赖：`agent-chat-shell`（需要确认卡 UI）
-   - 状态：planned
-   - 对应 feature：未启动
+   - 状态：done（2026-07-10 验收；确认协议 + 最小写/危险集；危险不对模型暴露）
+   - 对应 feature：`features/2026-07-10-agent-confirm-write/`
 
 7. **agent-tools-admin** — 管理面工具（AI 配置、公开问答开关、Agent Key 查询/吊销等）
    - 所属模块：Tool Domains
@@ -455,3 +455,5 @@ Plan（upsert_plan 输出，对齐现有 plan schema）:
 - 2026-07-10：**运行时栈纠偏为 Mastra**。用户确认站内通用 Agent 应以 Mastra 为执行层（非 AI SDK `streamText`）。`POST /api/assistant/chat` 改为 `@mastra/core` `Agent` + `@mastra/ai-sdk` `toAISdkStream`；域注册表新增 `loadMastraToolsForDomains`；对外 SSE 仍为 AI SDK UIMessage。存量影响：`agent-runtime-core` / `agent-tools-readonly` 的执行层实现替换，HTTP/表/工具名契约不变；前端壳无需改。
 - 2026-07-10：**取消记忆 + 提前拆旧入口**。用户裁决：站内只保留 `/dashboard/assistant` 对话；删除知识问答、文档问答、公开 `/ask`、Agent 记忆页与蒸馏管道；知识 Wiki 保留；旧会话/记忆表不 DROP。`agent-memory-runtime` → cancelled；`agent-legacy-retire` → done（依赖改为仅 chat-shell）。
 - 2026-07-10：**agent-plan-resilience 完成**。拍板：Plan 仅消息内卡、超时 30s；落地 `tool-resilience` + `step.error_code`；流中断 `stream_aborted` 保留。
+- 2026-07-10：**agent-confirm-write 完成**。确认协议 + content_write 最小写/危险工具；危险不对模型暴露；壳 ApprovalCard。
+- 2026-07-10：**agent-confirm-write 完成**。确认协议 + content_write 最小写/危险工具；危险不对模型暴露；壳 ApprovalCard。
