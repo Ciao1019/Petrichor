@@ -28,6 +28,7 @@ import {
     type KnowledgeBaseWikiPatchRecord,
 } from "@/server/db/schema"
 import { badRequest, notFound } from "@/server/http/response"
+import { scoreSearchFields } from "@/server/kb/search-terms"
 import {
     buildArticleTree,
     embedKnowledgeBaseTreeNodesBestEffort,
@@ -808,42 +809,103 @@ export async function searchWikiPagesAcrossKbs(input: {
     limit?: number
 }) {
     const db = getDb()
-    const rows = await db
-        .select({
-            page: knowledgeBaseWikiPages,
-            kbName: knowledgeBases.name,
-        })
-        .from(knowledgeBaseWikiPages)
-        .innerJoin(knowledgeBases, eq(knowledgeBaseWikiPages.knowledgeBaseId, knowledgeBases.id))
-        .where(eq(knowledgeBaseWikiPages.userId, input.userId))
-        .orderBy(desc(knowledgeBaseWikiPages.updatedAt))
-        .limit(500)
+    const limit = input.limit ?? 10
+    const query = input.query.trim()
+    const [pageRows, articleRows] = await Promise.all([
+        db
+            .select({
+                page: knowledgeBaseWikiPages,
+                kbName: knowledgeBases.name,
+            })
+            .from(knowledgeBaseWikiPages)
+            .innerJoin(knowledgeBases, eq(knowledgeBaseWikiPages.knowledgeBaseId, knowledgeBases.id))
+            .where(eq(knowledgeBaseWikiPages.userId, input.userId))
+            .orderBy(desc(knowledgeBaseWikiPages.updatedAt))
+            .limit(500),
+        db
+            .select({
+                article: knowledgeBaseArticles,
+                kbName: knowledgeBases.name,
+            })
+            .from(knowledgeBaseArticles)
+            .innerJoin(knowledgeBases, eq(knowledgeBaseArticles.knowledgeBaseId, knowledgeBases.id))
+            .where(eq(knowledgeBaseArticles.userId, input.userId))
+            .orderBy(desc(knowledgeBaseArticles.updatedAt))
+            .limit(500),
+    ])
 
-    const terms = input.query.trim().toLowerCase().split(/\s+/).filter(Boolean)
-    const ranked = rows
-        .map(({ page, kbName }) => ({
-            page,
-            kbName,
-            score: scoreWikiPage(page, terms),
-        }))
-        .filter((item) => item.score > 0 || terms.length === 0)
-        .sort((left, right) => right.score - left.score || right.page.updatedAt.getTime() - left.page.updatedAt.getTime())
-        .slice(0, input.limit ?? 10)
+    type CrossHit = {
+        knowledgeBaseId: string
+        knowledgeBaseName: string
+        pageKey: string
+        articleId: string | null
+        href: string | null
+        title: string
+        kind: string
+        summary: string
+        updatedAt: string
+        score: number
+        sortTime: number
+    }
 
-    return ranked.map((item) => {
-        const articleId = extractArticleIdFromPageKey(item.page.pageKey)
-        return {
-            knowledgeBaseId: String(item.page.knowledgeBaseId),
-            knowledgeBaseName: item.kbName,
-            pageKey: item.page.pageKey,
+    const byKey = new Map<string, CrossHit>()
+
+    for (const { page, kbName } of pageRows) {
+        const score = scoreWikiPage(page, query)
+        if (score <= 0 && query) continue
+        const articleId = extractArticleIdFromPageKey(page.pageKey)
+        const key = articleId
+            ? `article:${page.knowledgeBaseId}:${articleId}`
+            : `page:${page.knowledgeBaseId}:${page.pageKey}`
+        const hit: CrossHit = {
+            knowledgeBaseId: String(page.knowledgeBaseId),
+            knowledgeBaseName: kbName,
+            pageKey: page.pageKey,
             articleId,
-            href: sourceArticleHref(item.page.knowledgeBaseId, articleId),
-            title: item.page.title,
-            kind: item.page.kind,
-            summary: item.page.summary || summarizePlainText(item.page.contentMd, 180),
-            updatedAt: formatDate(item.page.updatedAt),
+            href: sourceArticleHref(page.knowledgeBaseId, articleId),
+            title: page.title,
+            kind: page.kind,
+            summary: page.summary || summarizePlainText(page.contentMd, 180),
+            updatedAt: formatDate(page.updatedAt) ?? "",
+            score: score || 1,
+            sortTime: page.updatedAt.getTime(),
         }
-    })
+        const existing = byKey.get(key)
+        if (!existing || hit.score > existing.score) byKey.set(key, hit)
+    }
+
+    // Wiki 未编译或标题只在文章表时，用文章标题/摘要补召回
+    for (const { article, kbName } of articleRows) {
+        const score = scoreSearchFields({
+            title: article.title,
+            summary: article.aiSummary ?? article.publicExcerpt,
+            content: article.contentMd,
+        }, query)
+        if (score <= 0 && query) continue
+        const key = `article:${article.knowledgeBaseId}:${article.id}`
+        const hit: CrossHit = {
+            knowledgeBaseId: String(article.knowledgeBaseId),
+            knowledgeBaseName: kbName,
+            pageKey: `source-${article.id}`,
+            articleId: String(article.id),
+            href: knowledgeBaseArticlePath(String(article.knowledgeBaseId), String(article.id)),
+            title: article.title,
+            kind: "source",
+            summary: article.aiSummary?.trim()
+                || article.publicExcerpt?.trim()
+                || summarizePlainText(article.contentMd, 180),
+            updatedAt: formatDate(article.updatedAt) ?? "",
+            score: score || 1,
+            sortTime: article.updatedAt.getTime(),
+        }
+        const existing = byKey.get(key)
+        if (!existing || hit.score > existing.score) byKey.set(key, hit)
+    }
+
+    return Array.from(byKey.values())
+        .sort((left, right) => right.score - left.score || right.sortTime - left.sortTime)
+        .slice(0, limit)
+        .map(({ score: _score, sortTime: _sortTime, ...hit }) => hit)
 }
 
 function extractArticleIdFromPageKey(pageKey: string): string | null {
@@ -1079,13 +1141,13 @@ export async function searchWikiPagesForAgent(input: {
     limit?: number
 }) {
     const pages = await listWikiPagesRaw(input.userId, input.knowledgeBaseId)
-    const terms = input.query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+    const query = input.query.trim()
     const ranked = pages
         .map((page) => ({
             page,
-            score: scoreWikiPage(page, terms),
+            score: scoreWikiPage(page, query),
         }))
-        .filter((item) => item.score > 0 || terms.length === 0)
+        .filter((item) => item.score > 0 || !query)
         .sort((left, right) => right.score - left.score || right.page.updatedAt.getTime() - left.page.updatedAt.getTime())
         .slice(0, input.limit ?? 8)
 
@@ -1717,10 +1779,13 @@ function splitSentences(markdown: string) {
         .filter(Boolean)
 }
 
-function scoreWikiPage(page: KnowledgeBaseWikiPageRecord, terms: string[]) {
-    if (terms.length === 0) return 1
-    const haystack = `${page.title}\n${page.pageKey}\n${page.summary ?? ""}\n${page.contentMd}`.toLowerCase()
-    return terms.reduce((score, term) => score + (haystack.includes(term) ? 1 : 0), 0)
+function scoreWikiPage(page: KnowledgeBaseWikiPageRecord, query: string) {
+    return scoreSearchFields({
+        title: page.title,
+        summary: page.summary,
+        content: page.contentMd,
+        extra: page.pageKey,
+    }, query)
 }
 
 function buildSimpleUnifiedDiff(oldText: string, newText: string, title: string) {
