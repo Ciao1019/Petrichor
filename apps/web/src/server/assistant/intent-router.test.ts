@@ -25,13 +25,14 @@ describe("routeAssistantIntent", () => {
         expect(result.domains[0]).toBe("content_write")
     })
 
-    it("管理面意图包含 admin", async () => {
+    it("管理面意图包含 admin，并辅助装载 content_write", async () => {
         const result = await routeAssistantIntent({
             userText: "看一下我的模型配置",
             focus: null,
             recentToolNames: [],
         })
         expect(result.domains).toContain("admin")
+        expect(result.domains).toContain("content_write")
     })
 
     it("focus 影响排序：同一问题在不同焦点下首位域不同", async () => {

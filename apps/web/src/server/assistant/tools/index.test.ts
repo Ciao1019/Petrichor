@@ -113,7 +113,7 @@ describe("content_write tool registration", () => {
             "request_user_confirmation",
             "update_article",
         ])
-        expect(allAssistantTools.filter((tool) => tool.risk === "dangerous").map((t) => t.name).sort()).toEqual([
+        expect(allAssistantTools.filter((tool) => tool.risk === "dangerous" && tool.domain === "content_write").map((t) => t.name).sort()).toEqual([
             "delete_article",
             "delete_document",
             "revoke_article_share",

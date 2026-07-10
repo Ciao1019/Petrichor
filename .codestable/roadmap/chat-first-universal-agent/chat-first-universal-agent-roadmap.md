@@ -417,8 +417,8 @@ Plan（upsert_plan 输出，对齐现有 plan schema）:
 7. **agent-tools-admin** — 管理面工具（AI 配置、公开问答开关、Agent Key 查询/吊销等）
    - 所属模块：Tool Domains
    - 依赖：`agent-confirm-write`（写/危险复用确认）
-   - 状态：planned
-   - 对应 feature：未启动
+   - 状态：done（2026-07-10 验收；8 工具；admin→content_write 辅助域）
+   - 对应 feature：`features/2026-07-10-agent-tools-admin/`
 
 8. **agent-legacy-retire** — 下线旧 QA/记忆主入口；移除 agent 侧 `propose_wiki_patch`；侧栏改入口
    - 所属模块：Legacy Retirement
@@ -456,4 +456,4 @@ Plan（upsert_plan 输出，对齐现有 plan schema）:
 - 2026-07-10：**取消记忆 + 提前拆旧入口**。用户裁决：站内只保留 `/dashboard/assistant` 对话；删除知识问答、文档问答、公开 `/ask`、Agent 记忆页与蒸馏管道；知识 Wiki 保留；旧会话/记忆表不 DROP。`agent-memory-runtime` → cancelled；`agent-legacy-retire` → done（依赖改为仅 chat-shell）。
 - 2026-07-10：**agent-plan-resilience 完成**。拍板：Plan 仅消息内卡、超时 30s；落地 `tool-resilience` + `step.error_code`；流中断 `stream_aborted` 保留。
 - 2026-07-10：**agent-confirm-write 完成**。确认协议 + content_write 最小写/危险工具；危险不对模型暴露；壳 ApprovalCard。
-- 2026-07-10：**agent-confirm-write 完成**。确认协议 + content_write 最小写/危险工具；危险不对模型暴露；壳 ApprovalCard。
+- 2026-07-10：**agent-tools-admin 完成**。admin 域 8 工具；路由辅助 content_write；公开问答开关需超管。
