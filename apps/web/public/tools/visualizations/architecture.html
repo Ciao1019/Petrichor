@@ -1,0 +1,1657 @@
+<!doctype html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>一条消息进来，Agent 到底做了什么？ · Petrichor 助手运行时可视化</title>
+        <meta
+            name="description"
+            content="拆开 Petrichor 站内 AI 助手的 Agent 运行时：五域意图路由、上下文折叠与向量召回、按域装配的 30 个工具、三种子代理、危险操作确认闸门、失败降级 playbook 与全量落档。"
+        />
+        <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/lxgwwenkai-regular.css" />
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/lxgwwenkai-bold.css" />
+        <style>
+            :root {
+                --paper: #faf7f0;
+                --paper-alt: #fffdf8;
+                --ink: #35322b;
+                --ink-soft: #6f6a5e;
+                --ink-faint: #a8a191;
+                --line: #cfc8b8;
+                --amber: #d9930d;
+                --blue: #3b6ec9;
+                --teal: #0e9d84;
+                --red: #d64550;
+                --purple: #8958d8;
+                --font-hand: "LXGW WenKai", "Xiaolai SC", "KaiTi", "STKaiti", "AR PL UKai CN", cursive;
+                --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+                --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+                --wobble-a: 255px 15px 225px 15px / 15px 225px 15px 255px;
+                --wobble-b: 15px 225px 15px 255px / 255px 15px 225px 15px;
+            }
+            :root[data-theme="dark"] {
+                --paper: #232830;
+                --paper-alt: #2a303a;
+                --ink: #e9e4d8;
+                --ink-soft: #a8a294;
+                --ink-faint: #7c766a;
+                --line: #4a4f58;
+                --amber: #e8b34b;
+                --blue: #6f9ee8;
+                --teal: #3ec9ad;
+                --red: #e8707a;
+                --purple: #ab8ae8;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+            html {
+                scroll-behavior: smooth;
+            }
+            body {
+                margin: 0;
+                background: var(--paper);
+                color: var(--ink);
+                font-family: var(--font-hand);
+                font-size: 17px;
+                line-height: 1.75;
+                transition: background 0.3s var(--ease), color 0.3s var(--ease);
+            }
+            code {
+                font-family: var(--font-mono);
+                font-size: 0.86em;
+                background: color-mix(in srgb, var(--ink) 7%, transparent);
+                padding: 1px 5px;
+                border-radius: 5px;
+            }
+            .skip-link {
+                position: absolute;
+                left: -9999px;
+                top: 0;
+                background: var(--paper-alt);
+                padding: 8px 14px;
+                z-index: 99;
+            }
+            .skip-link:focus {
+                left: 12px;
+            }
+            .container {
+                max-width: 1080px;
+                margin: 0 auto;
+                padding: 34px 22px 60px;
+            }
+
+            /* ── 入场动画 ─────────────────────────────── */
+            .anim-in {
+                animation: fade-in-up 0.6s var(--ease) both;
+                animation-delay: calc(var(--i, 0) * 0.12s);
+            }
+            @keyframes fade-in-up {
+                from {
+                    opacity: 0;
+                    transform: translateY(14px);
+                }
+                to {
+                    opacity: 1;
+                    transform: none;
+                }
+            }
+
+            /* ── 头部 ─────────────────────────────────── */
+            .header-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                gap: 18px;
+                flex-wrap: wrap;
+            }
+            .eyebrow {
+                margin: 0 0 6px;
+                font-size: 13.5px;
+                letter-spacing: 0.14em;
+                color: var(--ink-faint);
+            }
+            h1 {
+                margin: 0 0 10px;
+                font-size: clamp(28px, 4.6vw, 42px);
+                line-height: 1.25;
+                font-weight: 700;
+            }
+            .subtitle {
+                margin: 0;
+                max-width: 640px;
+                color: var(--ink-soft);
+                font-size: 16.5px;
+            }
+            .header-actions {
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+                padding-top: 6px;
+            }
+            .btn {
+                display: inline-block;
+                font-family: inherit;
+                font-size: 14.5px;
+                color: var(--ink);
+                background: var(--paper-alt);
+                border: 1.6px solid var(--ink);
+                border-radius: var(--wobble-b);
+                padding: 7px 15px;
+                cursor: pointer;
+                text-decoration: none;
+                transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease);
+            }
+            .btn:hover {
+                transform: translateY(-2px) rotate(-0.4deg);
+                box-shadow: 2px 3px 0 color-mix(in srgb, var(--ink) 25%, transparent);
+            }
+            .btn.primary {
+                background: var(--ink);
+                color: var(--paper);
+                border-color: var(--ink);
+            }
+
+            .thesis {
+                display: flex;
+                gap: 18px;
+                align-items: center;
+                flex-wrap: wrap;
+                margin-top: 26px;
+                padding: 18px 22px;
+                border: 1.6px solid var(--ink);
+                border-radius: var(--wobble-a);
+                background: var(--paper-alt);
+            }
+            .thesis-mark {
+                flex: 0 0 auto;
+                width: 58px;
+                height: 58px;
+                display: grid;
+                place-items: center;
+                font-size: 30px;
+                font-weight: 700;
+                color: var(--purple);
+                border: 1.8px solid var(--purple);
+                border-radius: 50% 46% 52% 48% / 48% 52% 46% 54%;
+                transform: rotate(-4deg);
+            }
+            .thesis > div:nth-child(2) {
+                flex: 1 1 340px;
+            }
+            .thesis strong {
+                font-size: 17.5px;
+            }
+            .thesis p {
+                margin: 4px 0 0;
+                color: var(--ink-soft);
+                font-size: 15.5px;
+            }
+            .thesis-path {
+                flex: 0 0 auto;
+                font-family: var(--font-mono);
+                font-size: 13px;
+                color: var(--teal);
+                border: 1.4px dashed var(--teal);
+                border-radius: 12px;
+                padding: 8px 12px;
+                white-space: nowrap;
+            }
+
+            /* ── 分节 ─────────────────────────────────── */
+            section {
+                margin-top: 64px;
+            }
+            .section-head {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-end;
+                gap: 16px;
+                flex-wrap: wrap;
+                margin-bottom: 18px;
+            }
+            .section-head h2 {
+                margin: 0 0 6px;
+                font-size: clamp(22px, 3.2vw, 30px);
+            }
+            .section-head > div > p:last-child {
+                margin: 0;
+                color: var(--ink-soft);
+                font-size: 15.5px;
+                max-width: 680px;
+            }
+            .legend {
+                display: flex;
+                gap: 14px;
+                flex-wrap: wrap;
+                font-size: 13.5px;
+                color: var(--ink-soft);
+            }
+            .legend-item {
+                display: inline-flex;
+                align-items: center;
+                gap: 7px;
+            }
+            .legend-line {
+                display: inline-block;
+                width: 30px;
+                height: 0;
+                border-top: 2px solid var(--ink-soft);
+            }
+            .legend-line.dashed {
+                border-top-style: dashed;
+            }
+
+            /* ── 全景框图 ─────────────────────────────── */
+            .panel,
+            .card,
+            .diagram {
+                border: 1.6px solid var(--ink);
+                border-radius: var(--wobble-a);
+                background: var(--paper-alt);
+            }
+            .stepper {
+                display: flex;
+                gap: 9px;
+                flex-wrap: wrap;
+                margin-bottom: 14px;
+            }
+            .step-btn {
+                font-family: inherit;
+                font-size: 14px;
+                color: var(--ink-soft);
+                background: var(--paper-alt);
+                border: 1.5px solid var(--line);
+                border-radius: var(--wobble-b);
+                padding: 5px 13px;
+                cursor: pointer;
+                transition: all 0.2s var(--ease);
+            }
+            .step-btn .no {
+                font-weight: 700;
+                margin-right: 4px;
+                color: var(--ink-faint);
+            }
+            .step-btn:hover {
+                border-color: var(--ink);
+                color: var(--ink);
+                transform: translateY(-1px);
+            }
+            .step-btn.is-active {
+                border-color: var(--ink);
+                background: var(--ink);
+                color: var(--paper);
+            }
+            .step-btn.is-active .no {
+                color: var(--amber);
+            }
+
+            .diagram-wrap {
+                overflow-x: auto;
+            }
+            .diagram {
+                min-width: 900px;
+                padding: 10px 8px 4px;
+            }
+            .diagram svg {
+                display: block;
+                width: 100%;
+                height: auto;
+            }
+
+            .node {
+                cursor: pointer;
+                outline: none;
+                transition: opacity 0.3s var(--ease);
+            }
+            .node .box {
+                fill: none;
+                stroke: var(--c, var(--ink));
+                stroke-width: 1.8;
+                transition: stroke-width 0.2s var(--ease);
+            }
+            .node .fill {
+                fill: var(--c, var(--ink));
+                opacity: 0.08;
+            }
+            .node:hover .box,
+            .node:focus-visible .box {
+                stroke-width: 3.2;
+            }
+            .node.is-active .box {
+                stroke-width: 3;
+            }
+            .node-label {
+                fill: var(--ink);
+                font-family: var(--font-hand);
+                font-size: 16px;
+                font-weight: 700;
+                text-anchor: middle;
+                pointer-events: none;
+            }
+            .node-sub {
+                fill: var(--ink-soft);
+                font-family: var(--font-hand);
+                font-size: 11.5px;
+                text-anchor: middle;
+                pointer-events: none;
+            }
+            .diagram.has-focus .node.is-dimmed {
+                opacity: 0.22;
+            }
+
+            .edge {
+                transition: opacity 0.3s var(--ease);
+            }
+            .edge .shaft,
+            .edge .arrow {
+                fill: none;
+                stroke: var(--ink-soft);
+                stroke-width: 1.7;
+                stroke-linecap: round;
+                stroke-linejoin: round;
+                transition: stroke 0.2s var(--ease);
+            }
+            .edge.dashed .shaft {
+                stroke-dasharray: 7 6;
+            }
+            .edge-label {
+                fill: var(--ink-soft);
+                font-family: var(--font-hand);
+                font-size: 11.5px;
+                text-anchor: middle;
+                paint-order: stroke;
+                stroke: var(--paper-alt);
+                stroke-width: 5px;
+                stroke-linejoin: round;
+            }
+            .edge.is-active .shaft,
+            .edge.is-active .arrow {
+                stroke: var(--c, var(--blue));
+            }
+            .edge.is-active .shaft {
+                stroke-dasharray: 8 7;
+                animation: flow 0.8s linear infinite;
+            }
+            .edge.is-active .edge-label {
+                fill: var(--ink);
+                font-weight: 700;
+            }
+            .diagram.has-focus .edge.is-dimmed {
+                opacity: 0.14;
+            }
+            @keyframes flow {
+                to {
+                    stroke-dashoffset: -15;
+                }
+            }
+
+            .diagram-note {
+                margin-top: 10px;
+                font-size: 14px;
+                color: var(--ink-soft);
+                min-height: 1.6em;
+            }
+            .step-panel {
+                margin-top: 14px;
+                padding: 16px 20px;
+                border: 1.6px solid var(--ink);
+                border-radius: var(--wobble-b);
+                background: var(--paper-alt);
+            }
+            .step-panel.panel-swap {
+                animation: fade-in-up 0.3s var(--ease) both;
+            }
+            .step-panel .step-title {
+                margin: 0 0 6px;
+                font-size: 17px;
+                font-weight: 700;
+            }
+            .step-panel .step-title .no {
+                color: var(--amber);
+                margin-right: 8px;
+            }
+            .step-panel p {
+                margin: 0;
+                color: var(--ink-soft);
+                font-size: 15.5px;
+            }
+            .tour-controls {
+                display: flex;
+                gap: 10px;
+                align-items: center;
+                flex-wrap: wrap;
+                margin-top: 14px;
+            }
+            .tour-hint {
+                font-size: 13px;
+                color: var(--ink-faint);
+            }
+
+            /* ── 上下文实验室 ─────────────────────────── */
+            .lab-grid {
+                display: grid;
+                grid-template-columns: minmax(300px, 5fr) minmax(280px, 4fr);
+                gap: 16px;
+                align-items: stretch;
+            }
+            @media (max-width: 860px) {
+                .lab-grid {
+                    grid-template-columns: 1fr;
+                }
+            }
+            .lab-panel {
+                padding: 18px 20px;
+            }
+            .lab-panel h3 {
+                margin: 0 0 12px;
+                font-size: 16.5px;
+            }
+            .control {
+                margin-bottom: 14px;
+            }
+            .control label {
+                display: flex;
+                justify-content: space-between;
+                font-size: 14.5px;
+                color: var(--ink-soft);
+                margin-bottom: 4px;
+            }
+            .control output {
+                font-family: var(--font-mono);
+                font-size: 13px;
+                color: var(--ink);
+            }
+            input[type="range"] {
+                width: 100%;
+                accent-color: var(--teal);
+            }
+            .preset-row {
+                display: flex;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
+            .preset-btn {
+                font-family: inherit;
+                font-size: 13.5px;
+                color: var(--ink-soft);
+                background: var(--paper-alt);
+                border: 1.5px solid var(--line);
+                border-radius: var(--wobble-b);
+                padding: 4px 12px;
+                cursor: pointer;
+                transition: all 0.2s var(--ease);
+            }
+            .preset-btn:hover {
+                border-color: var(--ink);
+                color: var(--ink);
+            }
+            .preset-btn.is-active {
+                border-color: var(--teal);
+                color: var(--teal);
+                font-weight: 700;
+            }
+            .readouts {
+                margin-top: 16px;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+            }
+            .readout {
+                border: 1.4px dashed var(--line);
+                border-radius: 12px;
+                padding: 8px 12px;
+            }
+            .readout .k {
+                display: block;
+                font-size: 12px;
+                color: var(--ink-faint);
+                letter-spacing: 0.06em;
+            }
+            .readout .v {
+                font-size: 15px;
+                font-weight: 700;
+                color: var(--c, var(--ink));
+            }
+            .readout .v small {
+                font-weight: 400;
+                font-size: 12px;
+                color: var(--ink-soft);
+            }
+            .msg-strip {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 5px;
+                align-content: flex-start;
+                margin-bottom: 12px;
+                min-height: 96px;
+            }
+            .msg-block {
+                width: 22px;
+                height: 30px;
+                border: 1.5px solid var(--ink-faint);
+                border-radius: 6px 5px 7px 5px;
+                background: transparent;
+                transition: all 0.25s var(--ease);
+            }
+            .msg-block.recent {
+                border-color: var(--teal);
+                background: color-mix(in srgb, var(--teal) 16%, transparent);
+            }
+            .msg-block.folded {
+                border-color: var(--amber);
+                background: repeating-linear-gradient(
+                    -45deg,
+                    color-mix(in srgb, var(--amber) 22%, transparent) 0 3px,
+                    transparent 3px 7px
+                );
+            }
+            .summary-chip {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 13px;
+                color: var(--purple);
+                border: 1.5px solid var(--purple);
+                border-radius: var(--wobble-b);
+                padding: 3px 12px;
+                margin-bottom: 10px;
+                transition: opacity 0.25s var(--ease);
+            }
+            .summary-chip.off {
+                opacity: 0.3;
+                border-style: dashed;
+            }
+            .lab-legend {
+                display: flex;
+                gap: 14px;
+                flex-wrap: wrap;
+                font-size: 12.5px;
+                color: var(--ink-soft);
+            }
+            .lab-legend i {
+                display: inline-block;
+                width: 14px;
+                height: 14px;
+                border-radius: 4px;
+                border: 1.5px solid var(--ink-faint);
+                vertical-align: -2px;
+                margin-right: 5px;
+            }
+            .lab-legend .li-recent i {
+                border-color: var(--teal);
+                background: color-mix(in srgb, var(--teal) 16%, transparent);
+            }
+            .lab-legend .li-folded i {
+                border-color: var(--amber);
+                background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--amber) 22%, transparent) 0 2px, transparent 2px 5px);
+            }
+
+            /* ── 通用卡片 ─────────────────────────────── */
+            .card-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+                gap: 16px;
+            }
+            .card-grid.two-col {
+                grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
+            }
+            .card {
+                padding: 18px 20px;
+            }
+            .card:nth-child(even) {
+                border-radius: var(--wobble-b);
+            }
+            .card h3 {
+                margin: 0 0 10px;
+                font-size: 17.5px;
+            }
+            .card h3 .dot {
+                display: inline-block;
+                width: 11px;
+                height: 11px;
+                border-radius: 50% 42% 55% 45%;
+                background: var(--c, var(--ink));
+                margin-right: 9px;
+                transform: rotate(8deg);
+            }
+            .card h3 code {
+                font-size: 12.5px;
+                font-weight: 400;
+            }
+            .card p,
+            .card li {
+                color: var(--ink-soft);
+                font-size: 15px;
+            }
+            .card p {
+                margin: 0 0 8px;
+            }
+            .card ol,
+            .card ul {
+                margin: 0;
+                padding-left: 22px;
+            }
+            .card li + li {
+                margin-top: 6px;
+            }
+            .kv {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 14px;
+            }
+            .kv td {
+                padding: 6px 4px;
+                border-top: 1.2px dashed var(--line);
+                color: var(--ink-soft);
+                vertical-align: top;
+            }
+            .kv tr:first-child td {
+                border-top: none;
+            }
+            .kv td:first-child {
+                font-family: var(--font-mono);
+                font-size: 12px;
+                color: var(--ink);
+                white-space: nowrap;
+                padding-right: 12px;
+            }
+
+            /* ── 确认闸门流程 ─────────────────────────── */
+            .flow-list {
+                counter-reset: flow;
+                margin: 0;
+                padding: 0;
+                list-style: none;
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+                gap: 12px;
+            }
+            .flow-list li {
+                counter-increment: flow;
+                border: 1.5px solid var(--line);
+                border-radius: var(--wobble-b);
+                padding: 12px 16px 12px 52px;
+                position: relative;
+                font-size: 14.5px;
+                color: var(--ink-soft);
+                background: var(--paper-alt);
+            }
+            .flow-list li:nth-child(odd) {
+                border-radius: var(--wobble-a);
+            }
+            .flow-list li::before {
+                content: counter(flow);
+                position: absolute;
+                left: 14px;
+                top: 12px;
+                width: 26px;
+                height: 26px;
+                display: grid;
+                place-items: center;
+                font-weight: 700;
+                color: var(--red);
+                border: 1.6px solid var(--red);
+                border-radius: 50% 44% 54% 46%;
+                font-size: 14px;
+            }
+            .flow-list li strong {
+                color: var(--ink);
+            }
+
+            /* ── 工具面板 ─────────────────────────────── */
+            .tools-board {
+                padding: 18px 20px;
+            }
+            .tools-board h3 {
+                margin: 0 0 4px;
+                font-size: 17.5px;
+            }
+            .tools-board > p {
+                margin: 0 0 14px;
+                color: var(--ink-soft);
+                font-size: 14.5px;
+            }
+            .tool-domain {
+                display: grid;
+                grid-template-columns: 150px 1fr;
+                gap: 10px;
+                padding: 10px 0;
+                border-top: 1.2px dashed var(--line);
+                align-items: baseline;
+            }
+            .tool-domain:first-of-type {
+                border-top: none;
+            }
+            .tool-domain .dn {
+                font-weight: 700;
+                font-size: 15px;
+            }
+            .tool-domain .dn small {
+                display: block;
+                font-weight: 400;
+                font-family: var(--font-mono);
+                font-size: 11px;
+                color: var(--ink-faint);
+            }
+            .tool-chips {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 7px;
+            }
+            .tool-chip {
+                font-family: var(--font-mono);
+                font-size: 11.5px;
+                padding: 2px 9px;
+                border-radius: var(--wobble-b);
+                border: 1.4px solid var(--tc, var(--teal));
+                color: var(--tc, var(--teal));
+                white-space: nowrap;
+            }
+            .tool-chip.w {
+                --tc: var(--amber);
+            }
+            .tool-chip.d {
+                --tc: var(--red);
+                border-style: dashed;
+            }
+            .tool-chip.s {
+                --tc: var(--purple);
+            }
+            .tool-legend {
+                display: flex;
+                gap: 16px;
+                flex-wrap: wrap;
+                margin-top: 12px;
+                font-size: 12.5px;
+                color: var(--ink-soft);
+            }
+            .tool-legend .tool-chip {
+                margin-right: 4px;
+            }
+            @media (max-width: 640px) {
+                .tool-domain {
+                    grid-template-columns: 1fr;
+                    gap: 4px;
+                }
+            }
+
+            .boundaries {
+                margin-top: 18px;
+                padding: 16px 20px;
+                border: 1.6px solid var(--red);
+                border-radius: var(--wobble-b);
+                background: color-mix(in srgb, var(--red) 4%, var(--paper-alt));
+            }
+            .boundaries h3 {
+                margin: 0 0 8px;
+                font-size: 16.5px;
+                color: var(--red);
+            }
+            .boundaries ul {
+                margin: 0;
+                padding-left: 22px;
+                color: var(--ink-soft);
+                font-size: 15px;
+            }
+            .boundaries li + li {
+                margin-top: 5px;
+            }
+
+            footer {
+                margin-top: 70px;
+                padding-top: 18px;
+                border-top: 1.4px dashed var(--line);
+                display: flex;
+                justify-content: space-between;
+                gap: 14px;
+                flex-wrap: wrap;
+                font-size: 13.5px;
+                color: var(--ink-faint);
+            }
+            kbd {
+                font-family: var(--font-mono);
+                font-size: 11.5px;
+                border: 1.2px solid var(--line);
+                border-bottom-width: 2.4px;
+                border-radius: 6px;
+                padding: 1px 6px;
+                color: var(--ink-soft);
+            }
+
+            @media (max-width: 640px) {
+                body {
+                    font-size: 16px;
+                }
+                .thesis-path {
+                    white-space: normal;
+                }
+            }
+            @media (prefers-reduced-motion: reduce) {
+                .anim-in,
+                .panel-swap {
+                    animation: none;
+                }
+                .edge.is-active .shaft {
+                    animation: none;
+                    stroke-dasharray: none;
+                }
+                html {
+                    scroll-behavior: auto;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <a class="skip-link" href="#main">跳到主要内容</a>
+        <div class="container">
+            <header class="anim-in">
+                <div class="header-row">
+                    <div>
+                        <p class="eyebrow">Petrichor 技术可视化 · Assistant Agent Runtime</p>
+                        <h1>一条消息进来，Agent 到底做了什么？</h1>
+                        <p class="subtitle">
+                            拆开 Petrichor 站内 AI 助手的运行时：五域意图路由、上下文折叠与向量召回、按域装配的
+                            30 个工具、三种子代理、危险操作确认闸门、失败降级 playbook 与全量落档。代码都在
+                            <code>src/server/assistant/</code>。
+                        </p>
+                    </div>
+                    <div class="header-actions" aria-label="页面操作">
+                        <a class="btn" href="https://github.com/Ciao1019/Petrichor" target="_blank" rel="noreferrer">GitHub ↗</a>
+                        <button class="btn" id="theme-btn" type="button">切换黑板</button>
+                        <button class="btn primary" id="restart-btn" type="button">从头走一遍</button>
+                    </div>
+                </div>
+                <div class="thesis">
+                    <div class="thesis-mark" aria-hidden="true">环</div>
+                    <div>
+                        <strong>一句话本质：模型只决定「下一步调用哪个工具」，其余全由运行时接管。</strong>
+                        <p>
+                            上下文怎么省、工具给不给、危险操作何时真正执行、失败之后怎么办——这些不交给模型自觉，
+                            而是写死在运行时里：预算、阈值、白名单、熔断线，全部是常量。
+                        </p>
+                    </div>
+                    <div class="thesis-path">message → route → pack → loop×8 → confirm → persist</div>
+                </div>
+            </header>
+
+            <main id="main" tabindex="-1">
+                <noscript>
+                    <p class="panel" style="margin-top: 24px; padding: 16px 20px">
+                        交互框图需要启用 JavaScript；下面的常量表、子代理规格与工具面板仍可直接阅读。
+                    </p>
+                </noscript>
+
+                <!-- ═══ 01 · 主循环全景 ═══ -->
+                <section id="tour" class="anim-in" style="--i: 1">
+                    <div class="section-head">
+                        <div>
+                            <p class="eyebrow">01 · 主循环全景</p>
+                            <h2>沿一条消息走完一次 Agent 循环</h2>
+                            <p>点步骤或框图节点逐层聚焦；只有当前环节的数据流会流动。每个节点都对应一个真实源文件。</p>
+                        </div>
+                        <div class="legend" aria-label="图例">
+                            <span class="legend-item"><i class="legend-line"></i>本轮主路径</span>
+                            <span class="legend-item"><i class="legend-line dashed"></i>回传 / 旁路</span>
+                        </div>
+                    </div>
+
+                    <div class="stepper" id="stepper" aria-label="Agent 循环步骤"></div>
+
+                    <div class="diagram-wrap">
+                        <div class="diagram" id="diagram">
+                            <svg viewBox="0 0 1000 660" role="img" aria-label="Petrichor 助手运行时框图">
+                                <defs>
+                                    <filter id="rough" x="-4%" y="-4%" width="108%" height="108%">
+                                        <feTurbulence type="fractalNoise" baseFrequency="0.022" numOctaves="2" seed="7" result="n" />
+                                        <feDisplacementMap in="SourceGraphic" in2="n" scale="2.6" />
+                                    </filter>
+                                </defs>
+
+                                <!-- 连线 -->
+                                <g class="edge" data-edge="e1" style="--c: var(--blue)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M205,308 C238,300 240,168 253,133" />
+                                        <path class="arrow" d="M245,141 L254,131 L257,143" />
+                                    </g>
+                                    <text class="edge-label" x="200" y="214">POST /api/assistant/chat</text>
+                                </g>
+                                <g class="edge" data-edge="e2" style="--c: var(--blue)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M342,164 L342,204" />
+                                        <path class="arrow" d="M337,196 L342,206 L347,196" />
+                                    </g>
+                                    <text class="edge-label" x="386" y="188">domains[]</text>
+                                </g>
+                                <g class="edge" data-edge="e3" style="--c: var(--teal)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M342,280 L342,320" />
+                                        <path class="arrow" d="M337,312 L342,322 L347,312" />
+                                    </g>
+                                </g>
+                                <g class="edge" data-edge="e4" style="--c: var(--teal)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M432,366 C460,360 474,332 496,314" />
+                                        <path class="arrow" d="M487,313 L498,312 L491,323" />
+                                    </g>
+                                    <text class="edge-label" x="458" y="350">注入提示词</text>
+                                </g>
+                                <g class="edge" data-edge="e5" style="--c: var(--amber)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M605,164 L605,236" />
+                                        <path class="arrow" d="M600,228 L605,238 L610,228" />
+                                    </g>
+                                    <text class="edge-label" x="646" y="204">按域装配</text>
+                                </g>
+                                <g class="edge" data-edge="e6" style="--c: var(--blue)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M712,282 C748,268 764,190 786,156" />
+                                        <path class="arrow" d="M777,158 L788,153 L785,166" />
+                                    </g>
+                                    <text class="edge-label" x="750" y="224">流式推理</text>
+                                </g>
+                                <g class="edge" data-edge="e7" style="--c: var(--purple)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M600,362 L600,466" />
+                                        <path class="arrow" d="M595,458 L600,468 L605,458" />
+                                    </g>
+                                    <text class="edge-label" x="632" y="418">spawn_*</text>
+                                </g>
+                                <g class="edge" data-edge="e8" style="--c: var(--amber)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M712,330 C748,336 762,362 786,376" />
+                                        <path class="arrow" d="M776,371 L788,377 L776,381" />
+                                    </g>
+                                    <text class="edge-label" x="742" y="342">逐步落档</text>
+                                </g>
+                                <g class="edge dashed" data-edge="e9" style="--c: var(--amber)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M432,394 C570,442 660,436 786,414" />
+                                        <path class="arrow" d="M776,410 L788,413 L777,420" />
+                                    </g>
+                                    <text class="edge-label" x="600" y="452">摘要 · 向量读写</text>
+                                </g>
+                                <g class="edge" data-edge="e10" style="--c: var(--red)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M498,344 C462,372 450,478 434,516" />
+                                        <path class="arrow" d="M434,505 L431,518 L442,514" />
+                                    </g>
+                                    <text class="edge-label" transform="rotate(-90 452 436)" x="452" y="436">危险操作出卡</text>
+                                </g>
+                                <g class="edge dashed" data-edge="e11" style="--c: var(--red)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M253,524 C220,518 178,456 163,395" />
+                                        <path class="arrow" d="M158,406 L162,393 L171,401" />
+                                    </g>
+                                    <text class="edge-label" x="152" y="470">等用户点确认</text>
+                                </g>
+                                <g class="edge dashed" data-edge="e12" style="--c: var(--purple)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M505,358 C460,650 230,655 103,394" />
+                                        <path class="arrow" d="M99,405 L101,391 L111,400" />
+                                    </g>
+                                    <text class="edge-label" x="318" y="608">UI Message 流式回传</text>
+                                </g>
+
+                                <!-- 节点 -->
+                                <g class="node" id="n-browser" data-step="0" tabindex="0" role="button" style="--c: var(--blue)"
+                                    data-tip="前端 useChat 消费 UI Message 流；确认卡也是一个工具 part，用户点击后把 confirmed 写回工具结果，再发起下一轮请求。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="30" y="280" width="175" height="110" rx="12" />
+                                        <rect class="box" x="30" y="280" width="175" height="110" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="117" y="320">浏览器 · useChat</text>
+                                    <text class="node-sub" x="117" y="344">UI Message 流</text>
+                                    <text class="node-sub" x="117" y="361">确认卡渲染 · 压缩状态条</text>
+                                </g>
+
+                                <g class="node" id="n-gateway" data-step="0" tabindex="0" role="button" style="--c: var(--red)"
+                                    data-tip="chat-handler.ts 入口：鉴权、zod 解析、focus 归属校验（403）、建线程、存用户消息、选模型（配置失效报 409）。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="255" y="90" width="175" height="72" rx="12" />
+                                        <rect class="box" x="255" y="90" width="175" height="72" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="342" y="119">入口网关</text>
+                                    <text class="node-sub" x="342" y="142">requireCurrentUser · focus 403</text>
+                                </g>
+
+                                <g class="node" id="n-router" data-step="1" tabindex="0" role="button" style="--c: var(--blue)"
+                                    data-tip="intent-router.ts：五域正则打分 + focus 加权 + 最近工具惯性，返回 { domains, confidence, rationale }，随 run 落库。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="255" y="206" width="175" height="72" rx="12" />
+                                        <rect class="box" x="255" y="206" width="175" height="72" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="342" y="235">intent-router</text>
+                                    <text class="node-sub" x="342" y="258">正则打分 · 零 LLM 调用</text>
+                                </g>
+
+                                <g class="node" id="n-pack" data-step="2" tabindex="0" role="button" style="--c: var(--teal)"
+                                    data-tip="context-pack.ts：动态窗口、增量摘要（≤8000 字）、水位 contextSummaryUntilMessageId；context-recall.ts 负责 pgvector 召回。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="255" y="322" width="175" height="88" rx="12" />
+                                        <rect class="box" x="255" y="322" width="175" height="88" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="342" y="354">ContextPack</text>
+                                    <text class="node-sub" x="342" y="376">窗口 6–20 条 · 增量摘要</text>
+                                    <text class="node-sub" x="342" y="392">向量召回 top4</text>
+                                </g>
+
+                                <g class="node" id="n-registry" data-step="4" tabindex="0" role="button" style="--c: var(--amber)"
+                                    data-tip="tool-registry.ts：进程内注册表，各域模块加载时自注册；每轮只装配命中域的子集，禁止一次挂载全站工具。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="500" y="90" width="210" height="72" rx="12" />
+                                        <rect class="box" x="500" y="90" width="210" height="72" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="605" y="119">工具注册表</text>
+                                    <text class="node-sub" x="605" y="142">30 个工具 · dangerous 不给模型</text>
+                                </g>
+
+                                <g class="node" id="n-agent" data-step="4" tabindex="0" role="button" style="--c: var(--purple)"
+                                    data-tip="chat-handler.ts：Agent 实例每轮新建；afterToolCall 钩子逐步落档；onFinish / onError 收尾 run 状态。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="500" y="240" width="210" height="120" rx="12" />
+                                        <rect class="box" x="500" y="240" width="210" height="120" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="605" y="282">Agent 主循环</text>
+                                    <text class="node-sub" x="605" y="306">maxSteps 8 · temp 0.2</text>
+                                    <text class="node-sub" x="605" y="323">注入检测 0.85 · 100k 限流</text>
+                                </g>
+
+                                <g class="node" id="n-subagents" data-step="5" tabindex="0" role="button" style="--c: var(--purple)"
+                                    data-tip="research-subagent / research-fanout / write-subagent：独立 Agent 实例、独立 resilience，共享 runId 落档（步骤名带 d{depth} 前缀）。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="500" y="470" width="250" height="90" rx="12" />
+                                        <rect class="box" x="500" y="470" width="250" height="90" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="625" y="505">子代理</text>
+                                    <text class="node-sub" x="625" y="528">research ≤2 层 · fanout ×3</text>
+                                    <text class="node-sub" x="625" y="544">write 只出提案</text>
+                                </g>
+
+                                <g class="node" id="n-confirm" data-step="6" tabindex="0" role="button" style="--c: var(--red)"
+                                    data-tip="confirmation.ts：白名单校验 → 用户确认 → 运行时代执行 → patchConfirmationExecutionOutcome 把结果写回工具消息。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="255" y="496" width="175" height="64" rx="12" />
+                                        <rect class="box" x="255" y="496" width="175" height="64" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="342" y="523">确认闸门</text>
+                                    <text class="node-sub" x="342" y="545">request_user_confirmation</text>
+                                </g>
+
+                                <g class="node" id="n-model" data-step="4" tabindex="0" role="button" style="--c: var(--blue)"
+                                    data-tip="用户在后台配置的模型（API Key 加密落库）；主循环与三种子代理各自解密调用同一配置。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="790" y="100" width="185" height="84" rx="12" />
+                                        <rect class="box" x="790" y="100" width="185" height="84" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="882" y="134">模型（用户配置）</text>
+                                    <text class="node-sub" x="882" y="158">OpenAI · Gemini · DeepSeek…</text>
+                                </g>
+
+                                <g class="node" id="n-pg" data-step="7" tabindex="0" role="button" style="--c: var(--amber)"
+                                    data-tip="五张表：assistant_threads（含摘要与水位）/ runs（域与状态）/ steps（工具、errorCode、耗时）/ messages / message_embedding。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="790" y="300" width="185" height="110" rx="12" />
+                                        <rect class="box" x="790" y="300" width="185" height="110" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="882" y="338">Postgres 落档</text>
+                                    <text class="node-sub" x="882" y="362">thread · run · step</text>
+                                    <text class="node-sub" x="882" y="379">message · embedding</text>
+                                </g>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="diagram-note" id="diagram-note">
+                        <strong>交互提示：</strong>悬停节点查看职责与源文件；点击节点跳到对应讲解步骤。
+                    </div>
+
+                    <div class="step-panel" id="step-panel" hidden>
+                        <p class="step-title"><span class="no" id="step-no"></span><span id="step-title"></span></p>
+                        <p id="step-body"></p>
+                    </div>
+
+                    <div class="tour-controls" aria-label="导览控制">
+                        <button class="btn" id="prev-btn" type="button">← 上一步</button>
+                        <button class="btn" id="next-btn" type="button">下一步 →</button>
+                        <button class="btn" id="play-btn" type="button">▶ 自动导览</button>
+                        <span class="tour-hint">键盘：<kbd>←</kbd> <kbd>→</kbd> 切步骤 · <kbd>P</kbd> 播放 · <kbd>Esc</kbd> 退出聚焦</span>
+                    </div>
+                </section>
+
+                <!-- ═══ 02 · 上下文工程实验室 ═══ -->
+                <section id="lab" class="anim-in" style="--i: 2">
+                    <div class="section-head">
+                        <div>
+                            <p class="eyebrow">02 · 上下文工程实验室</p>
+                            <h2>亲手拖一拖：对话变长时上下文如何折叠</h2>
+                            <p>
+                                下面的滑杆完整复刻了 <code>context-pack.ts</code>
+                                里的窗口与触发算法（不是示意，是同一套逻辑）：拖动消息条数、切换消息长度，看窗口如何收缩、折叠何时触发、召回何时激活。
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="lab-grid">
+                        <div class="panel lab-panel">
+                            <h3>模拟一场变长的对话</h3>
+                            <div class="control">
+                                <label for="msg-count">对话消息条数 <output id="msg-count-out">8 条</output></label>
+                                <input type="range" id="msg-count" min="2" max="40" step="1" value="8" />
+                            </div>
+                            <div class="control">
+                                <label>单条消息平均体量</label>
+                                <div class="preset-row" id="avg-presets" role="group" aria-label="消息平均长度">
+                                    <button class="preset-btn" data-avg="800" type="button">短问答 ~0.8k tok</button>
+                                    <button class="preset-btn is-active" data-avg="2500" type="button">日常讨论 ~2.5k tok</button>
+                                    <button class="preset-btn" data-avg="6000" type="button">长文粘贴 ~6k tok</button>
+                                </div>
+                            </div>
+                            <div class="readouts">
+                                <div class="readout" style="--c: var(--teal)">
+                                    <span class="k">最近窗口（原文保留）</span>
+                                    <span class="v" id="ro-window">8 条 <small>fixed</small></span>
+                                </div>
+                                <div class="readout" style="--c: var(--amber)">
+                                    <span class="k">折叠触发</span>
+                                    <span class="v" id="ro-trigger">未触发</span>
+                                </div>
+                                <div class="readout" style="--c: var(--purple)">
+                                    <span class="k">增量摘要</span>
+                                    <span class="v" id="ro-summary">待命</span>
+                                </div>
+                                <div class="readout" style="--c: var(--blue)">
+                                    <span class="k">向量召回（折叠区）</span>
+                                    <span class="v" id="ro-recall">待命</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="panel lab-panel">
+                            <h3 id="strip-title">消息时间线</h3>
+                            <div class="summary-chip off" id="summary-chip">✍ 增量摘要（≤8000 字，8s 超时）</div>
+                            <div class="msg-strip" id="msg-strip" aria-hidden="true"></div>
+                            <div class="lab-legend">
+                                <span class="li-recent"><i></i>窗口内原文</span>
+                                <span class="li-folded"><i></i>折叠 → 摘要 + 可召回</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card-grid" style="margin-top: 16px">
+                        <div class="card" style="--c: var(--teal)">
+                            <h3><span class="dot"></span>常量速查 <code>context-pack.ts</code></h3>
+                            <table class="kv">
+                                <tr><td>100k tokens</td><td>每轮上下文总预算（MAX_CONTEXT_TOKENS）</td></tr>
+                                <tr><td>35%</td><td>最近原文最多占预算比例，得出动态窗口 6–20 条</td></tr>
+                                <tr><td>55% 或 &gt;20 条</td><td>任一命中即触发折叠：token 估算超预算 55%，或落库消息超 20 条</td></tr>
+                                <tr><td>8s / 8000 字</td><td>摘要超时与长度上限；超时不阻塞回答，下轮再试</td></tr>
+                            </table>
+                        </div>
+                        <div class="card" style="--c: var(--blue)">
+                            <h3><span class="dot"></span>常量速查 <code>context-recall.ts</code></h3>
+                            <table class="kv">
+                                <tr><td>top 4 · ≥0.25</td><td>pgvector 余弦相似度召回条数与阈值，排除窗口内消息</td></tr>
+                                <tr><td>16 条/批 · ≤500 字</td><td>折叠区消息按批嵌入，摘录截断后入库</td></tr>
+                                <tr><td>[redacted]</td><td>入库前清洗：sk-*、api_key=、Bearer、确认卡明文一律脱敏</td></tr>
+                                <tr><td>best effort</td><td>无嵌入配置、SQLite 环境或查询失败时静默跳过，绝不拖垮回答</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ═══ 03 · 子代理体系 ═══ -->
+                <section id="subagents" class="anim-in" style="--i: 3">
+                    <div class="section-head">
+                        <div>
+                            <p class="eyebrow">03 · 子代理体系</p>
+                            <h2>三种子代理，三套不一样的约束</h2>
+                            <p>
+                                子代理是独立的 Agent 实例（独立提示词、独立 resilience），但共享主 run 落档，步骤名带
+                                <code>spawn_*/d{depth}</code> 前缀，回放时能看清委派链。共同铁律：<strong>子代理永远碰不到写入与确认工具</strong>。
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="card-grid">
+                        <div class="card" style="--c: var(--purple)">
+                            <h3><span class="dot"></span>研究子代理 <code>spawn_research_subagent</code></h3>
+                            <p>只读深度检索：search → read → 汇总结论 + 引用（citations 必须来自工具结果）。</p>
+                            <table class="kv">
+                                <tr><td>domains</td><td>仅 knowledge / doc_library / system，传入写域直接 400</td></tr>
+                                <tr><td>6 步 / 90s</td><td>maxSteps 与硬超时；超时返回 tool_timeout 而不是挂死主循环</td></tr>
+                                <tr><td>depth ≤ 2</td><td>默认 maxDepth=1 允许一层再委派，硬上限 2；超限返回 subagent_depth_exceeded</td></tr>
+                                <tr><td>提示词分叉</td><td>depth &lt; maxDepth 时才告知「可以再拆」；到顶时明令禁止再 spawn</td></tr>
+                            </table>
+                        </div>
+                        <div class="card" style="--c: var(--blue)">
+                            <h3><span class="dot"></span>并行扇出 <code>spawn_research_fanout</code></h3>
+                            <p>多路独立子问题各派一个研究子代理，<code>Promise.all</code> 并行后聚合。</p>
+                            <table class="kv">
+                                <tr><td>≤ 3 路</td><td>tasks 数量上限，zod 层直接锁死</td></tr>
+                                <tr><td>depth=0 / maxDepth=0</td><td>fanout 工人强制不许再嵌套——防「并行 × 深度」组合爆炸</td></tr>
+                                <tr><td>usage 聚合</td><td>汇总 calls / totalTokens / succeeded / failed，主助手可见成本</td></tr>
+                                <tr><td>部分成功</td><td>有一路成功即 ok；全挂才报 fanout_all_failed</td></tr>
+                            </table>
+                        </div>
+                        <div class="card" style="--c: var(--amber)">
+                            <h3><span class="dot"></span>写规划子代理 <code>spawn_write_subagent</code></h3>
+                            <p>「写意图」先规划后执行：子代理只读检索核实目标，通过独占工具
+                                <code>propose_write_actions</code> 提交提案，自己碰不到数据。</p>
+                            <table class="kv">
+                                <tr><td>提案白名单</td><td>仅 6 个工具可提：create / update / share（write）与 delete_article、revoke_share、delete_document（dangerous）</td></tr>
+                                <tr><td>≤ 8 条 · 去重</td><td>按 toolName+input 去重，白名单外的提案直接丢弃并计数 rejected</td></tr>
+                                <tr><td>risk 标注</td><td>每条提案带 risk；dangerous 项主助手必须转确认闸门，不得直接执行</td></tr>
+                                <tr><td>6 步 / 90s</td><td>与研究子代理同规格；无方案且无提案时报 empty_write_plan</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ═══ 04 · 护栏与落档 ═══ -->
+                <section id="guardrails" class="anim-in" style="--i: 4">
+                    <div class="section-head">
+                        <div>
+                            <p class="eyebrow">04 · 护栏与落档</p>
+                            <h2>危险操作、失败降级与全量回放</h2>
+                            <p>三层防线的共同思路：不指望模型「自觉」，而是让危险路径在结构上走不通。</p>
+                        </div>
+                    </div>
+
+                    <h3 style="margin: 0 0 12px; font-size: 18px">确认闸门：删除类操作的六步旅程 <code>confirmation.ts</code></h3>
+                    <ol class="flow-list">
+                        <li><strong>注册表先扣牌</strong>：装配工具时 risk=dangerous 的工具直接跳过——模型的工具列表里根本没有 delete_*。</li>
+                        <li><strong>模型只能出卡</strong>：想删东西只能调 request_user_confirmation，把目标工具与参数放进 action；toolName 必须命中 7 个白名单（delete_article、revoke_article_share、delete_document、delete_ai_config、update_ai_config_credentials、revoke_agent_api_key、set_public_qa_enabled）。</li>
+                        <li><strong>前端渲染确认卡</strong>：卡片是流里的一个工具 part，带 title / description / destructive 样式。</li>
+                        <li><strong>用户点确认</strong>：前端把 { confirmed: true, confirmationId } 写回该工具 part 的 result，发起下一轮请求。</li>
+                        <li><strong>运行时代执行</strong>：新一轮请求进来，运行时扫描消息找到「confirmed 且没有 executionOutcome」的卡，再次校验白名单与注册表后由运行时亲自执行——不经过模型。</li>
+                        <li><strong>结果写回</strong>：executionOutcome 被 patch 回那条工具消息并记为 step 0，模型看到真实结果后才继续叙述，杜绝「假装已删除」。</li>
+                    </ol>
+
+                    <div class="card-grid two-col" style="margin-top: 18px">
+                        <div class="card" style="--c: var(--red)">
+                            <h3><span class="dot"></span>失败降级 playbook <code>tool-resilience.ts</code></h3>
+                            <p>工具失败不抛异常，而是返回结构化软失败喂给模型，按同名连败次数升级：</p>
+                            <table class="kv">
+                                <tr><td>30s</td><td>单次工具硬超时（Promise.race），超时算一次失败</td></tr>
+                                <tr><td>首败</td><td>tool_degraded · retry_other_tool：「换工具、调参数，或直接回答」</td></tr>
+                                <tr><td>再败</td><td>tool_degraded · answer_without_tool：「停止依赖该工具，基于已有信息回答」</td></tr>
+                                <tr><td>连败 2 次</td><td>tool_circuit_open · 熔断：后续调用直接短路返回，提示词明令不得再调</td></tr>
+                                <tr><td>per-run</td><td>failStreak 随 run 生灭，不跨请求记仇；成功一次即清零</td></tr>
+                            </table>
+                        </div>
+                        <div class="card" style="--c: var(--amber)">
+                            <h3><span class="dot"></span>全量落档 <code>thread-logic.ts</code></h3>
+                            <p>每一步都可回放，也是后续调优提示词与工具的原始数据：</p>
+                            <table class="kv">
+                                <tr><td>thread</td><td>会话 + 上下文摘要 contextSummaryMd 与折叠水位 untilMessageId</td></tr>
+                                <tr><td>run</td><td>一次请求一条：intentDomains、模型配置、COMPLETED / FAILED 与 errorCode</td></tr>
+                                <tr><td>step</td><td>每次工具调用：名称（子代理带 spawn_*/d1 前缀）、输出、errorCode、耗时 ms</td></tr>
+                                <tr><td>message</td><td>用户消息进门即存；助手消息在流结束时剥掉压缩状态 part 后落库</td></tr>
+                                <tr><td>embedding</td><td>折叠区消息的脱敏摘录 + pgvector 向量，唯一键 message_id</td></tr>
+                                <tr><td>响应头</td><td>X-Petrichor-Assistant-Thread-Id / Run-Id，前端与日志可互相对账</td></tr>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="panel tools-board" style="margin-top: 18px">
+                        <h3>工具面板：30 个工具，五个域</h3>
+                        <p>每轮只装配意图命中域的子集；<span style="color: var(--red)">虚线红</span> 的 dangerous 工具永远不出现在模型的工具列表里，只能经确认闸门由运行时执行。</p>
+                        <div class="tool-domain">
+                            <div class="dn">知识库<small>knowledge</small></div>
+                            <div class="tool-chips">
+                                <span class="tool-chip">list_knowledge_bases</span>
+                                <span class="tool-chip">search_knowledge</span>
+                                <span class="tool-chip">read_knowledge_node</span>
+                            </div>
+                        </div>
+                        <div class="tool-domain">
+                            <div class="dn">文档库<small>doc_library</small></div>
+                            <div class="tool-chips">
+                                <span class="tool-chip">list_doc_libraries</span>
+                                <span class="tool-chip">search_documents</span>
+                                <span class="tool-chip">read_document</span>
+                            </div>
+                        </div>
+                        <div class="tool-domain">
+                            <div class="dn">系统<small>system</small></div>
+                            <div class="tool-chips">
+                                <span class="tool-chip">list_system_overview</span>
+                                <span class="tool-chip">show_progress</span>
+                                <span class="tool-chip">show_citations</span>
+                                <span class="tool-chip">show_data_table</span>
+                                <span class="tool-chip">upsert_plan</span>
+                                <span class="tool-chip w">save_answer_artifact</span>
+                                <span class="tool-chip s">spawn_research_subagent</span>
+                                <span class="tool-chip s">spawn_research_fanout</span>
+                            </div>
+                        </div>
+                        <div class="tool-domain">
+                            <div class="dn">内容写入<small>content_write</small></div>
+                            <div class="tool-chips">
+                                <span class="tool-chip w">create_article</span>
+                                <span class="tool-chip w">update_article</span>
+                                <span class="tool-chip w">create_article_share</span>
+                                <span class="tool-chip d">delete_article</span>
+                                <span class="tool-chip d">revoke_article_share</span>
+                                <span class="tool-chip d">delete_document</span>
+                                <span class="tool-chip s">spawn_write_subagent</span>
+                                <span class="tool-chip">request_user_confirmation</span>
+                            </div>
+                        </div>
+                        <div class="tool-domain">
+                            <div class="dn">管理面<small>admin</small></div>
+                            <div class="tool-chips">
+                                <span class="tool-chip">list_ai_configs</span>
+                                <span class="tool-chip">list_agent_api_keys</span>
+                                <span class="tool-chip">get_public_qa_setting</span>
+                                <span class="tool-chip w">set_default_ai_config</span>
+                                <span class="tool-chip d">delete_ai_config</span>
+                                <span class="tool-chip d">update_ai_config_credentials</span>
+                                <span class="tool-chip d">revoke_agent_api_key</span>
+                                <span class="tool-chip d">set_public_qa_enabled</span>
+                            </div>
+                        </div>
+                        <div class="tool-legend">
+                            <span><span class="tool-chip">read</span>只读</span>
+                            <span><span class="tool-chip w">write</span>可直接执行的写入</span>
+                            <span><span class="tool-chip d">dangerous</span>仅经确认闸门执行</span>
+                            <span><span class="tool-chip s">spawn</span>子代理派发</span>
+                        </div>
+                    </div>
+
+                    <div class="boundaries">
+                        <h3>设计边界（known limits）</h3>
+                        <ul>
+                            <li>意图路由是纯正则启发式——省钱且可测，但改写措辞可能路由不中；契约固定返回形状，日后可换小模型实现。</li>
+                            <li>token 估算是「字符数 ÷ 2」的粗估，只用于触发阈值，不做精确计费。</li>
+                            <li>向量召回依赖用户配置了嵌入模型；没配就静默跳过，长对话只能靠摘要兜底。</li>
+                            <li>熔断状态 per-run 隔离：同一会话下一条消息会重新给失败工具机会，这是刻意选择而非遗漏。</li>
+                            <li>危险操作白名单与域/工具形状由 roadmap 契约锁定（<code>chat-first-universal-agent</code> 4.2–4.4），改动需先过 roadmap update。</li>
+                        </ul>
+                    </div>
+                </section>
+            </main>
+
+            <footer>
+                <span>键盘：<kbd>←</kbd> <kbd>→</kbd> 切换全景步骤 · <kbd>P</kbd> 自动导览 · <kbd>Esc</kbd> 退出聚焦</span>
+                <span>常量与流程均取自 src/server/assistant/ 源码 · Apache-2.0</span>
+            </footer>
+        </div>
+
+        <script>
+            "use strict";
+
+            /* ── 主题切换（纸张 ⇄ 黑板） ─────────────── */
+            (function () {
+                const KEY = "petrichor-viz-theme";
+                const root = document.documentElement;
+                const btn = document.getElementById("theme-btn");
+                const saved = localStorage.getItem(KEY);
+                const prefersDark = matchMedia("(prefers-color-scheme: dark)").matches;
+                const apply = (dark) => {
+                    root.dataset.theme = dark ? "dark" : "light";
+                    btn.textContent = dark ? "切换纸张" : "切换黑板";
+                };
+                apply(saved ? saved === "dark" : prefersDark);
+                btn.addEventListener("click", () => {
+                    const dark = root.dataset.theme !== "dark";
+                    apply(dark);
+                    localStorage.setItem(KEY, dark ? "dark" : "light");
+                });
+            })();
+
+            /* ── 01 · 主循环全景：分步聚焦导览 ────────── */
+            const STEPS = [
+                {
+                    short: "进门三件事",
+                    title: "进门三件事：鉴权、校验、认领会话",
+                    body: "requireCurrentUser 从 httpOnly Cookie 恢复会话；zod 解析 { threadId, messages, configId, focus }；focus-guard 逐项校验 focus 指向的知识库 / 文章 / 文档归属，不是本人的实体直接 403。随后 ensureAssistantThread 建或找线程，用户消息立即落库——之后无论流成不成功，输入已经留痕。",
+                    nodes: ["n-browser", "n-gateway"],
+                    edges: ["e1"],
+                },
+                {
+                    short: "意图路由",
+                    title: "意图路由：一次 LLM 都不花的正则打分",
+                    body: "五域正则各自计分：写入动词 +3、管理词 +3、知识库词 +2、文档词 +2、统计词 +2；focus 指着的实体所在域 +4；本会话最近用过的工具按所属域再各 +1。无信号则回退默认只读三域（置信度 0.3）。还有两条补域规则：命中 knowledge / doc_library 自动带上 system（要用引用与进度工具），命中 admin 自动带上 content_write（要用确认工具）。",
+                    nodes: ["n-router"],
+                    edges: ["e2"],
+                },
+                {
+                    short: "上下文折叠",
+                    title: "上下文折叠：窗口收缩 + 增量摘要",
+                    body: "最近窗口动态 6–20 条（原文最多占 35% × 100k 预算）；token 估算超预算 55% 或落库消息超 20 条时，把窗口外旧消息交给压缩器做增量摘要——旧摘要与新折叠段一起压，8 秒超时、上限 8000 字，失败不阻塞本轮回答。前端同步收到 data-context-compress 状态条：「正在整理对话上下文…」。",
+                    nodes: ["n-pack"],
+                    edges: ["e3"],
+                },
+                {
+                    short: "向量召回",
+                    title: "向量召回：折叠掉的旧对话还能被想起来",
+                    body: "被折叠的消息先脱敏（sk-*、api_key=、Bearer、确认卡明文一律 [redacted]），按批 16 条、每条摘录 ≤500 字嵌入 pgvector。用最后一条用户消息做查询，余弦相似度 top 4、阈值 0.25、排除窗口内消息，命中片段连同摘要一起注进系统提示词。整条链路 best effort：没配嵌入模型就静默跳过。",
+                    nodes: ["n-pack", "n-pg"],
+                    edges: ["e9"],
+                },
+                {
+                    short: "装配与循环",
+                    title: "装配与主循环：8 步内解决战斗",
+                    body: "注册表 30 个工具按命中域过滤，risk=dangerous 一律不给模型；每个工具包一层 resilience 外壳（单次 30s 超时）。Agent 主循环 maxSteps=8、temperature=0.2，输入先过 PromptInjectionDetector（阈值 0.85，检测注入 / 越狱 / 系统覆写，命中直接 block）和 TokenLimiter（100k contiguous 裁剪），然后开始「调工具 → 看结果 → 再决策」，全程流式回传。",
+                    nodes: ["n-registry", "n-agent", "n-model"],
+                    edges: ["e4", "e5", "e6"],
+                },
+                {
+                    short: "子代理",
+                    title: "子代理委派：并行给宽度，深度给上限",
+                    body: "研究子代理只读三域、6 步 / 90 秒，默认允许一层再委派、硬上限 2 层，超限直接返回 subagent_depth_exceeded；fanout 最多 3 路 Promise.all 并行，工人强制 depth=0 不再嵌套——防「并行 × 深度」组合爆炸；写子代理只读检索 + propose_write_actions 提案（白名单 6 工具、≤8 条、去重），自己碰不到数据。详见第 03 节。",
+                    nodes: ["n-agent", "n-subagents"],
+                    edges: ["e7"],
+                },
+                {
+                    short: "确认闸门",
+                    title: "确认闸门：删除操作模型说了不算",
+                    body: "删文章、吊销 Key 这类危险工具模型根本拿不到，它只能调 request_user_confirmation 出一张确认卡（action.toolName 必须命中 7 个白名单）。用户点确认后的下一次请求里，运行时扫描消息找到「confirmed 且没有 executionOutcome」的卡，由运行时亲自执行，再把结果 patch 回那条工具消息——模型看到 executionOutcome 才能继续叙述，杜绝「假装已删除」。",
+                    nodes: ["n-agent", "n-confirm", "n-browser"],
+                    edges: ["e10", "e11"],
+                },
+                {
+                    short: "降级与落档",
+                    title: "降级与落档：失败有剧本，过程可回放",
+                    body: "工具失败不抛异常，按同名连败次数出 playbook 软结果喂给模型：换招 → 放弃该工具直接回答 → 连败 2 次熔断（circuit_open，短路返回且明令不得再调）。每次工具调用经 afterToolCall 钩子 recordAssistantStep 落库（工具名带子代理前缀、errorCode、耗时），响应头回传 Thread-Id / Run-Id；流结束时助手消息剥掉压缩状态 part 后持久化。",
+                    nodes: ["n-agent", "n-pg", "n-browser"],
+                    edges: ["e8", "e12"],
+                },
+            ];
+
+            const diagram = document.getElementById("diagram");
+            const stepper = document.getElementById("stepper");
+            const stepPanel = document.getElementById("step-panel");
+            const stepNo = document.getElementById("step-no");
+            const stepTitle = document.getElementById("step-title");
+            const stepBody = document.getElementById("step-body");
+            const note = document.getElementById("diagram-note");
+            const noteDefault = note.innerHTML;
+            const playBtn = document.getElementById("play-btn");
+
+            let current = null;
+            let timer = null;
+
+            STEPS.forEach((s, i) => {
+                const b = document.createElement("button");
+                b.type = "button";
+                b.className = "step-btn";
+                b.innerHTML = '<span class="no">' + (i + 1) + "</span>" + s.short;
+                b.addEventListener("click", () => {
+                    stopPlay();
+                    setStep(current === i ? null : i);
+                });
+                stepper.appendChild(b);
+            });
+            const stepBtns = [...stepper.children];
+
+            function setStep(i) {
+                current = i;
+                const focused = i !== null;
+                diagram.classList.toggle("has-focus", focused);
+                stepBtns.forEach((b, k) => b.classList.toggle("is-active", k === i));
+
+                const activeNodes = focused ? new Set(STEPS[i].nodes) : null;
+                const activeEdges = focused ? new Set(STEPS[i].edges) : null;
+                diagram.querySelectorAll(".node").forEach((n) => {
+                    const on = focused && activeNodes.has(n.id);
+                    n.classList.toggle("is-active", on);
+                    n.classList.toggle("is-dimmed", focused && !on);
+                });
+                diagram.querySelectorAll(".edge").forEach((e) => {
+                    const on = focused && activeEdges.has(e.dataset.edge);
+                    e.classList.toggle("is-active", on);
+                    e.classList.toggle("is-dimmed", focused && !on);
+                });
+
+                if (focused) {
+                    const s = STEPS[i];
+                    stepNo.textContent = "0" + (i + 1);
+                    stepTitle.textContent = s.title;
+                    stepBody.textContent = s.body;
+                    stepPanel.hidden = false;
+                    stepPanel.classList.remove("panel-swap");
+                    void stepPanel.offsetWidth; /* 重新触发切换动画 */
+                    stepPanel.classList.add("panel-swap");
+                } else {
+                    stepPanel.hidden = true;
+                }
+            }
+
+            function move(delta) {
+                stopPlay();
+                const next = current === null ? (delta > 0 ? 0 : STEPS.length - 1) : (current + delta + STEPS.length) % STEPS.length;
+                setStep(next);
+            }
+            document.getElementById("prev-btn").addEventListener("click", () => move(-1));
+            document.getElementById("next-btn").addEventListener("click", () => move(1));
+
+            function startPlay() {
+                if (current === null) setStep(0);
+                playBtn.textContent = "⏸ 暂停";
+                timer = setInterval(() => setStep(current === null ? 0 : (current + 1) % STEPS.length), 4600);
+            }
+            function stopPlay() {
+                if (timer) clearInterval(timer);
+                timer = null;
+                playBtn.textContent = "▶ 自动导览";
+            }
+            playBtn.addEventListener("click", () => (timer ? stopPlay() : startPlay()));
+            document.getElementById("restart-btn").addEventListener("click", () => {
+                stopPlay();
+                document.getElementById("tour").scrollIntoView({ block: "start" });
+                setStep(0);
+                startPlay();
+            });
+            document.addEventListener("visibilitychange", () => {
+                if (document.hidden) stopPlay();
+            });
+
+            diagram.querySelectorAll(".node").forEach((n) => {
+                const activate = () => {
+                    stopPlay();
+                    setStep(Number(n.dataset.step));
+                };
+                n.addEventListener("click", activate);
+                n.addEventListener("keydown", (e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        activate();
+                    }
+                });
+                n.addEventListener("mouseenter", () => {
+                    note.innerHTML = "<strong>" + n.querySelector(".node-label").textContent + "：</strong>" + n.dataset.tip;
+                });
+                n.addEventListener("mouseleave", () => {
+                    note.innerHTML = noteDefault;
+                });
+            });
+
+            document.addEventListener("keydown", (e) => {
+                if (e.target.matches("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey) return;
+                if (e.key === "ArrowRight") move(1);
+                else if (e.key === "ArrowLeft") move(-1);
+                else if (e.key === "p" || e.key === "P") timer ? stopPlay() : startPlay();
+                else if (e.key === "Escape") {
+                    stopPlay();
+                    setStep(null);
+                }
+            });
+
+            /* ── 02 · 上下文实验室：复刻 context-pack.ts 的算法 ── */
+            const TOKEN_BUDGET = 100000;
+            const RECENT_MIN = 6;
+            const RECENT_MAX = 20;
+            const RECENT_RATIO = 0.35;
+            const TRIGGER_RATIO = 0.55;
+            const COUNT_TRIGGER = 20;
+
+            /* 与 resolveRecentWindowPolicy 同构：在 35% 预算内尽量多留原文 */
+            function windowPolicy(n, avg) {
+                if (n <= RECENT_MIN) return { count: n, reason: "fixed" };
+                const recentBudget = Math.floor(TOKEN_BUDGET * RECENT_RATIO);
+                const hardMax = Math.min(RECENT_MAX, n);
+                let count = RECENT_MIN;
+                for (let k = RECENT_MIN + 1; k <= hardMax; k++) {
+                    if (k * avg <= recentBudget) count = k;
+                    else break;
+                }
+                if (count === RECENT_MIN) return { count, reason: "fixed" };
+                if (count === RECENT_MAX) return { count, reason: "turn_budget" };
+                return { count, reason: "token_budget" };
+            }
+
+            const slider = document.getElementById("msg-count");
+            const countOut = document.getElementById("msg-count-out");
+            const strip = document.getElementById("msg-strip");
+            const chip = document.getElementById("summary-chip");
+            const roWindow = document.getElementById("ro-window");
+            const roTrigger = document.getElementById("ro-trigger");
+            const roSummary = document.getElementById("ro-summary");
+            const roRecall = document.getElementById("ro-recall");
+            let avgTokens = 2500;
+
+            function renderLab() {
+                const n = Number(slider.value);
+                const policy = windowPolicy(n, avgTokens);
+                const totalTokens = n * avgTokens;
+                const overTokens = totalTokens > TOKEN_BUDGET * TRIGGER_RATIO;
+                const overCount = n > COUNT_TRIGGER;
+                const needsRefresh = n > policy.count && (overTokens || overCount);
+                const folded = needsRefresh ? n - policy.count : 0;
+                /* 与 maybeRecallSnippets 一致：只要存在窗口外的落库消息即激活，与折叠触发无关 */
+                const recallActive = n > policy.count;
+
+                countOut.textContent = n + " 条 · 约 " + (totalTokens / 1000).toFixed(0) + "k tok";
+                const reasonText = { fixed: "fixed 下限", token_budget: "token_budget", turn_budget: "turn_budget 触顶" }[policy.reason];
+                roWindow.innerHTML = policy.count + " 条 <small>" + reasonText + "</small>";
+                roTrigger.textContent = needsRefresh
+                    ? overTokens && overCount ? "双重触发" : overTokens ? "token 超 55%" : "消息数 > 20"
+                    : "未触发";
+                roSummary.textContent = needsRefresh ? "折叠 " + folded + " 条 → 增量摘要" : "待命";
+                roRecall.textContent = recallActive ? "已激活 · top4 ≥ 0.25" : "待命";
+                chip.classList.toggle("off", !needsRefresh);
+
+                strip.innerHTML = "";
+                for (let i = 0; i < n; i++) {
+                    const b = document.createElement("span");
+                    b.className = "msg-block " + (i < folded ? "folded" : "recent");
+                    strip.appendChild(b);
+                }
+            }
+
+            slider.addEventListener("input", renderLab);
+            document.querySelectorAll("#avg-presets .preset-btn").forEach((btn) => {
+                btn.addEventListener("click", () => {
+                    document.querySelectorAll("#avg-presets .preset-btn").forEach((b) => b.classList.remove("is-active"));
+                    btn.classList.add("is-active");
+                    avgTokens = Number(btn.dataset.avg);
+                    renderLab();
+                });
+            });
+            renderLab();
+        </script>
+    </body>
+</html>

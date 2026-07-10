@@ -5,22 +5,32 @@ import type {
 
 export const EMBED_CARD_TYPE = "embed_card"
 
-export const EMBED_CARD_PROVIDERS = ["tweet", "github", "spotify"] as const
+export const EMBED_CARD_PROVIDERS = ["tweet", "github", "spotify", "html"] as const
 
 export type EmbedCardProvider = (typeof EMBED_CARD_PROVIDERS)[number]
+
+/** 自托管 HTML 可视化 iframe 默认高度（px） */
+export const DEFAULT_HTML_EMBED_HEIGHT = 640
+
+export const MIN_HTML_EMBED_HEIGHT = 200
+export const MAX_HTML_EMBED_HEIGHT = 2400
 
 export type EmbedCardElement = {
     type: typeof EMBED_CARD_TYPE
     provider: EmbedCardProvider
     url?: string
     repo?: string
+    /** html provider：iframe title */
+    title?: string
+    /** html provider：iframe 高度（px） */
+    height?: number
     children: [{ text: "" }]
 }
 
 type DirectiveAttributes = Record<string, string>
 
 const DIRECTIVE_LINE_PATTERN =
-    /^::(?<provider>tweet|github|spotify)\{(?<attributes>[^}]*)\}\s*$/
+    /^::(?<provider>tweet|github|spotify|html)\{(?<attributes>[^}]*)\}\s*$/
 const ATTRIBUTE_PATTERN = /([A-Za-z][\w-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s}]+))/g
 const SUPPORTED_SPOTIFY_TYPES = new Set([
     "album",
@@ -92,12 +102,69 @@ function getDirectiveNode(
         return null
     }
 
+    if (provider === "html") {
+        const src = getHtmlEmbedSrc(url)
+        if (!src) return null
+        const title = sanitizeHtmlEmbedTitle(attributes.title ?? "")
+        const height = (attributes.height ?? "").trim()
+        return {
+            type: EMBED_CARD_TYPE,
+            provider,
+            url: src,
+            ...(title ? { title } : {}),
+            ...(height ? { height: clampHtmlEmbedHeight(height) } : {}),
+            children: [{ text: "" }],
+        }
+    }
+
     return {
         type: EMBED_CARD_TYPE,
         provider,
         url,
         children: [{ text: "" }],
     }
+}
+
+/** 只放行站内相对路径（如 /tools/visualizations/architecture.html），杜绝 iframe 任意外站 */
+export function getHtmlEmbedSrc(url: string): string | null {
+    const trimmed = url.trim()
+    return /^\/(?!\/)\S+$/.test(trimmed) ? trimmed : null
+}
+
+export function clampHtmlEmbedHeight(value: unknown): number {
+    const parsed =
+        typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10)
+    if (!Number.isFinite(parsed)) return DEFAULT_HTML_EMBED_HEIGHT
+    return Math.min(MAX_HTML_EMBED_HEIGHT, Math.max(MIN_HTML_EMBED_HEIGHT, Math.round(parsed)))
+}
+
+/** 去掉会破坏 ::html{...} 单行 directive 语法的字符 */
+function sanitizeHtmlEmbedTitle(value: string): string {
+    return value.replace(/["{}]/g, "").trim()
+}
+
+function getEmbedCardAttributes(
+    node: Partial<EmbedCardElement>
+): DirectiveAttributes | null {
+    if (!node.provider || !isEmbedCardProvider(node.provider)) return null
+
+    if (node.provider === "github") {
+        const repo = normalizeGitHubRepo(node.repo ?? "")
+        return repo ? { provider: node.provider, repo } : null
+    }
+
+    const url = (node.url ?? "").trim()
+    if (!url) return null
+
+    const attributes: DirectiveAttributes = { provider: node.provider, url }
+    if (node.provider === "html") {
+        const title = sanitizeHtmlEmbedTitle(node.title ?? "")
+        if (title) attributes.title = title
+        if (node.height != null) {
+            attributes.height = String(clampHtmlEmbedHeight(node.height))
+        }
+    }
+    return attributes
 }
 
 export function normalizeGitHubRepo(value: string): string | null {
@@ -177,26 +244,22 @@ export function preprocessEmbedDirectives(markdown: string): string {
             const node = getDirectiveNode(provider, attributes)
             if (!node) return line
 
-            const mdxAttributes =
-                node.provider === "github"
-                    ? toMdxAttributes({ provider: node.provider, repo: node.repo ?? "" })
-                    : toMdxAttributes({ provider: node.provider, url: node.url ?? "" })
-            return `<${EMBED_CARD_TYPE} ${mdxAttributes} />`
+            const nodeAttributes = getEmbedCardAttributes(node)
+            if (!nodeAttributes) return line
+            return `<${EMBED_CARD_TYPE} ${toMdxAttributes(nodeAttributes)} />`
         })
         .join("\n")
 }
 
 export function serializeEmbedCardDirective(node: Partial<EmbedCardElement>): string | null {
-    if (!node.provider || !isEmbedCardProvider(node.provider)) return null
+    const attributes = getEmbedCardAttributes(node)
+    if (!attributes) return null
 
-    if (node.provider === "github") {
-        const repo = normalizeGitHubRepo(node.repo ?? "")
-        return repo ? `::github{repo="${repo}"}` : null
-    }
-
-    const url = (node.url ?? "").trim()
-    if (!url) return null
-    return `::${node.provider}{url="${url}"}`
+    const { provider, ...rest } = attributes
+    const body = Object.entries(rest)
+        .map(([name, value]) => `${name}="${value}"`)
+        .join(" ")
+    return `::${provider}{${body}}`
 }
 
 export function postprocessEmbedDirectives(markdown: string): string {
@@ -230,9 +293,10 @@ export const embedCardMarkdownRules: MdRules = {
         },
         serialize(node: EmbedCardElement): MdMdxJsxFlowElement {
             const attributes =
-                node.provider === "github"
+                getEmbedCardAttributes(node) ??
+                (node.provider === "github"
                     ? { provider: node.provider, repo: node.repo ?? "" }
-                    : { provider: node.provider, url: node.url ?? "" }
+                    : { provider: node.provider, url: node.url ?? "" })
             return {
                 type: "mdxJsxFlowElement",
                 name: EMBED_CARD_TYPE,
