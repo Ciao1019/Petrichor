@@ -31,6 +31,7 @@ const LOCKED_TOOL_NAMES = [
     "show_data_table",
     "save_answer_artifact",
     "upsert_plan",
+    "spawn_research_subagent",
 ].sort()
 
 describe("readonly assistant tool registration", () => {
@@ -55,6 +56,7 @@ describe("readonly assistant tool registration", () => {
             "show_citations",
             "show_data_table",
             "show_progress",
+            "spawn_research_subagent",
             "upsert_plan",
         ])
         expect(readonlyAssistantTools.filter((tool) => tool.risk === "write").map((tool) => tool.name))
@@ -87,6 +89,7 @@ describe("assistant domain-aware system prompt", () => {
     it("纯 system 元问题不注入知识库或文档库检索说明", () => {
         const prompt = buildAssistantSystemPrompt(["system"])
         expect(prompt).toContain("list_system_overview")
+        expect(prompt).toContain("spawn_research_subagent")
         expect(prompt).not.toContain("search_knowledge")
         expect(prompt).not.toContain("search_documents")
     })

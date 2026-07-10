@@ -452,6 +452,36 @@ const SaveArtifactToolUI = makeAssistantToolUI({
   },
 })
 
+const SpawnResearchSubagentToolUI = makeAssistantToolUI({
+  toolName: "spawn_research_subagent",
+  render: ({ args, result, status }) => {
+    const input = asRecord(args)
+    const payload = asRecord(result)
+    const goal = typeof input?.goal === "string" ? input.goal : "深度检索"
+    const ok = payload?.ok === true
+    const summary = typeof payload?.summary === "string" ? payload.summary : ""
+    const usage = asRecord(payload?.usage)
+    return (
+      <ToolStatusCard
+        title={`子检索：${goal}`}
+        status={status}
+        icon={<Search className="size-4" />}
+        collapsible
+        defaultOpen={false}
+      >
+        {usage ? (
+          <p className="mb-2 text-[11px] text-muted-foreground">
+            {typeof usage.calls === "number" ? `${usage.calls} 次工具` : null}
+            {typeof usage.totalTokens === "number" ? ` · ${usage.totalTokens} tok` : null}
+            {ok === false ? " · 未完成" : null}
+          </p>
+        ) : null}
+        {summary ? <p className="line-clamp-4 text-sm text-muted-foreground">{summary}</p> : null}
+      </ToolStatusCard>
+    )
+  },
+})
+
 /** 服务端 data-context-compress → assistant-ui DataMessagePart name=context-compress */
 const ContextCompressDataUI = makeAssistantDataUI({
   name: "context-compress",
@@ -1257,6 +1287,7 @@ function QaChatPanel({
       <PlanToolUI />
       <ProgressToolUI />
       <ConfirmationToolUI />
+      <SpawnResearchSubagentToolUI />
       <ContextCompressDataUI />
       <CitationToolUI />
       <DataTableToolUI />

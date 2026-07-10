@@ -508,8 +508,8 @@ output:
 11. **agent-subagents** — 子代理与团队 MVP（`spawn_research_subagent`）
     - 所属模块：Assistant Runtime
     - 依赖：`agent-plan-resilience`, `agent-tools-admin`, `agent-context-compress`（先压缩再嵌套，降低子代理撑爆上下文）
-    - 状态：planned
-    - 对应 feature：未启动
+    - 状态：done（2026-07-10 验收；spawn_research_subagent）
+    - 对应 feature：`features/2026-07-10-agent-subagents/`
     - 契约：第 4.10 节
 
 **最小闭环**：第 3 条 `agent-chat-shell` 做完后，登录用户可在一个对话里问「有多少个知识库」，并检索知识库与文档库内容。
@@ -539,3 +539,4 @@ output:
 - 2026-07-10：**agent-tools-admin 完成**。admin 域 8 工具；路由辅助 content_write；公开问答开关需超管。
 - 2026-07-10：**二期拆分**。`agent-subagents-compress` → dropped；新增 `agent-context-compress`（契约 4.9）与 `agent-subagents`（契约 4.10）；推荐顺序压缩 → 子代理。
 - 2026-07-10：**agent-context-compress 完成**。线程摘要 + 最近 6 条；流内压缩中 UI；TokenLimiter 兜底。
+- 2026-07-10：**agent-subagents 完成**。`spawn_research_subagent` 只读嵌套检索；内层 step 前缀；禁写/再委派。
