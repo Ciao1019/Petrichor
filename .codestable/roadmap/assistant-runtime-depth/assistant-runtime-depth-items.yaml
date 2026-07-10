@@ -47,8 +47,8 @@ items:
     description: spawn_write_subagent，写意图经主对话确认
     depends_on:
       - agent-subagent-depth-limit
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-07-10-agent-subagent-write
     minimal_loop: false
     notes: 契约 4.4；子代理不直接执行 dangerous
 
