@@ -1068,8 +1068,12 @@ create table if not exists petrichor_assistant_step (
     input_json text,
     output_json text,
     status text not null,
+    error_code text,
     duration_ms integer
 );
+
+alter table petrichor_assistant_step
+    add column if not exists error_code text;
 
 create index if not exists petrichor_assistant_step_run_idx
     on petrichor_assistant_step(run_id, step_index);

@@ -180,6 +180,7 @@ export async function recordAssistantStep(input: {
     input: unknown
     output: unknown
     status: "COMPLETED" | "FAILED"
+    errorCode?: string | null
     durationMs: number | null
 }) {
     await getDb().insert(assistantSteps).values({
@@ -189,6 +190,7 @@ export async function recordAssistantStep(input: {
         inputJson: input.input === undefined ? null : JSON.stringify(input.input),
         outputJson: input.output === undefined ? null : JSON.stringify(input.output),
         status: input.status,
+        errorCode: input.errorCode ?? null,
         durationMs: input.durationMs,
     })
 }

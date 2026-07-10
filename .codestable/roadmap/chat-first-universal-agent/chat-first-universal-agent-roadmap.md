@@ -405,8 +405,8 @@ Plan（upsert_plan 输出，对齐现有 plan schema）:
 5. **agent-plan-resilience** — `upsert_plan` 可见任务 + 工具超时/重试耗尽策略
    - 所属模块：Assistant Runtime + Chat Shell
    - 依赖：`agent-chat-shell`（需要 UI 展示计划与失败态）
-   - 状态：planned
-   - 对应 feature：未启动
+   - 状态：done（2026-07-10 验收；Plan 仅消息内卡；超时 30s；step.error_code）
+   - 对应 feature：`features/2026-07-10-agent-plan-resilience/`
 
 6. **agent-confirm-write** — 确认协议 + 内容写工具（建文/改文/移动/分享等）+ 危险白名单
    - 所属模块：Confirmation + Tool Domains
