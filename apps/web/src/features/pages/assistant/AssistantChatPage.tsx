@@ -483,6 +483,31 @@ const SpawnResearchSubagentToolUI = makeAssistantToolUI({
   },
 })
 
+const SpawnWriteSubagentToolUI = makeAssistantToolUI({
+  toolName: "spawn_write_subagent",
+  render: ({ args, result, status }) => {
+    const input = asRecord(args)
+    const payload = asRecord(result)
+    const goal = typeof input?.goal === "string" ? input.goal : "写入规划"
+    const summary = typeof payload?.summary === "string" ? payload.summary : ""
+    const actions = Array.isArray(payload?.proposedActions) ? payload.proposedActions : []
+    return (
+      <ToolStatusCard
+        title={`写子代理：${goal}`}
+        status={status}
+        icon={<Pencil className="size-4" />}
+        collapsible
+        defaultOpen={false}
+      >
+        {actions.length > 0 ? (
+          <p className="mb-2 text-[11px] text-muted-foreground">{actions.length} 条提案</p>
+        ) : null}
+        {summary ? <p className="line-clamp-4 text-sm text-muted-foreground">{summary}</p> : null}
+      </ToolStatusCard>
+    )
+  },
+})
+
 /** 服务端 data-context-compress → assistant-ui DataMessagePart name=context-compress */
 const ContextCompressDataUI = makeAssistantDataUI({
   name: "context-compress",
@@ -1297,6 +1322,7 @@ function QaChatPanel({
       <ProgressToolUI />
       <ConfirmationToolUI />
       <SpawnResearchSubagentToolUI />
+      <SpawnWriteSubagentToolUI />
       <ContextCompressDataUI />
       <CitationToolUI />
       <DataTableToolUI />

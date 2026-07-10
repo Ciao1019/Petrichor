@@ -99,6 +99,8 @@ describe("assistant domain-aware system prompt", () => {
         expect(prompt).toContain("request_user_confirmation")
         expect(prompt).toContain("create_article")
         expect(prompt).toContain("delete_article")
+        expect(prompt).toContain("spawn_write_subagent")
+        expect(prompt).toContain("proposedActions")
     })
 })
 
@@ -114,6 +116,7 @@ describe("content_write tool registration", () => {
             "create_article",
             "create_article_share",
             "request_user_confirmation",
+            "spawn_write_subagent",
             "update_article",
         ])
         expect(allAssistantTools.filter((tool) => tool.risk === "dangerous" && tool.domain === "content_write").map((t) => t.name).sort()).toEqual([
