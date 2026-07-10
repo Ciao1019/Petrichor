@@ -75,6 +75,8 @@ describe("buildInitialMigrationSql", () => {
 
         expect(sql).toContain("create table if not exists petrichor_assistant_thread")
         expect(sql).toContain("focus_json text")
+        expect(sql).toContain("context_summary_md text")
+        expect(sql).toContain("context_summary_until_message_id bigint")
         expect(sql).toContain("deleted_at timestamptz")
         expect(sql).toContain("create table if not exists petrichor_assistant_message")
         expect(sql).toContain("create table if not exists petrichor_assistant_run")

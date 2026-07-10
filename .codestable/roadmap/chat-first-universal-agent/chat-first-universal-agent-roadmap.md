@@ -37,7 +37,7 @@ related_architecture: []
 
 - 不改对外 `/api/agent/**`、MCP、Skill、API Key 接入产品线
 - 不取消知识库、文档库等原有手动操作界面
-- 一期不做子代理与团队、深度上下文压缩（见末条二期 feature）
+- 一期不做子代理与团队、深度上下文压缩（二期已拆为 `agent-context-compress` / `agent-subagents`）
 - 不把公开访客 `/ask` 并入本壳（可另开 roadmap / feature）
 - 不在本 roadmap 接入 Langfuse 等外部 tracing（见观察项）
 
@@ -56,7 +56,7 @@ chat-first-universal-agent
 ### 模块 · Assistant Runtime
 
 - **职责**：提供统一 `/api/assistant/*` 对话与线程；意图路由；按域装载工具；持久化 run/step；基础韧性策略。不负责具体业务 CRUD UI。
-- **承载的子 feature**：`agent-runtime-core`, `agent-plan-resilience`, `agent-subagents-compress`
+- **承载的子 feature**：`agent-runtime-core`, `agent-plan-resilience`, `agent-context-compress`, `agent-subagents`
 - **触碰的现有代码**：吸收并逐步替代 `POST /api/kb/agent/chat`（Mastra）与 `POST /api/doc-library/chat`（AI SDK）两套栈；**站内统一运行时锁定为 Mastra Agent**（对外 SSE 经 `toAISdkStream`）；新建 assistant 模块，不占用 `/api/agent/**`
 
 ### 模块 · Memory
@@ -375,6 +375,73 @@ Plan（upsert_plan 输出，对齐现有 plan schema）:
   /dashboard/ai/**
 ```
 
+### 4.9 深度上下文压缩
+
+**方向**：Assistant Runtime 内部（Chat 流装载前）  
+**形式**：线程级摘要 + 消息窗口策略
+
+```
+表 petrichor_assistant_thread 扩展（本契约允许增量列，不另建表）:
+  context_summary_md text null          // 已折叠历史的中文摘要
+  context_summary_until_message_id bigint null  // 摘要覆盖到的最后一条 message.id（含）
+  context_summary_updated_at timestamptz null
+
+type ContextPack = {
+  summaryMd: string | null              // 注入 system/上下文段；无则 null
+  recentMessages: UIMessage[]           // 未折叠的最近轮次（原始）
+  compressedMessageCount: number        // 已被摘要覆盖的消息条数
+}
+
+function buildContextPack(input: {
+  threadId: number
+  messages: UIMessage[]                 // 本轮客户端提交的 messages
+  tokenBudget: number                   // 与 TokenLimiter 对齐的预算
+}): Promise<ContextPack>
+```
+
+**约束**：
+
+- `TokenLimiterProcessor` 仍保留为硬裁剪兜底；本契约是**语义压缩**（摘要折叠），不是替代硬裁剪
+- 必须保留最近至少 **N=6** 条原始消息（或最近 3 轮 user/assistant）不进摘要，避免丢当前任务细节
+- 摘要失败 / 超时：降级为仅硬裁剪，本轮照常回答，不得阻断对话
+- 摘要写入须带 `user_id` 归属校验；不向客户端单独暴露「压缩 API」（随 chat 内部发生）
+- 禁止把危险确认未决态、API Key 明文写进摘要
+
+### 4.10 子代理与团队
+
+**方向**：主 Agent ↔ 子 Agent（Runtime 内嵌套）  
+**形式**：主对话可调用的委派工具 + step / metadata 可观测
+
+```
+// MVP：单类委派工具（名称锁定）；「团队」= 可并行多次委派，不另建编排引擎
+tool name: spawn_research_subagent
+domain: system
+risk: read
+input:
+  {
+    goal: string                        // 子任务目标（中文）
+    domains: AgentDomainId[]            // 子集，仅允许 knowledge | doc_library | system
+    focus?: Focus | null                // 可继承主对话 focus
+  }
+output:
+  {
+    ok: boolean
+    summary: string                     // 子代理最终结论（给主 Agent 继续用）
+    citations?: Array<{ title, href?, domain?, snippet? }>
+    usage?: { calls: number, totalTokens: number }
+    errorCode?: string | null           // 超时 / 耗尽等，对齐 step.error_code 语义
+  }
+```
+
+**约束**：
+
+- 子代理**不得**装载 `content_write` / `admin`，也不得执行 `risk=dangerous`（确认协议只在主对话）
+- 子代理复用同一用户 `userId` 与模型配置；独立 `maxSteps`（建议 ≤6）与工具超时（复用韧性包装）
+- 子代理每次工具调用须写入当前 run 的 `petrichor_assistant_step`（`tool_name` 可用 `spawn_research_subagent/<inner>` 或等价可区分前缀）
+- 对外 SSE 仍是主对话 UIMessage 流；子代理过程通过 `show_progress` / 侧栏任务或 message metadata `subAgentUsage` 呈现，不新开 HTTP 入口
+- 禁止一次挂载全站 tools；子代理 `domains` 也必须走 `loadMastraToolsForDomains`
+- 「多 Agent 团队编排 DSL / 持久化团队定义」不在本契约；需要时另开 roadmap update
+
 ## 5. 子 feature 清单
 
 1. **agent-runtime-core** — 新建 `/api/assistant/chat` + thread 表/API + 域注册表 + `routeAssistantIntent` 骨架
@@ -426,17 +493,30 @@ Plan（upsert_plan 输出，对齐现有 plan schema）:
    - 状态：done（2026-07-10 提前执行：删站内知识/文档问答、公开 `/ask`、记忆页与蒸馏；Wiki 与 assistant 保留；旧会话表不 DROP）
    - 对应 feature：无独立 design（用户直接拍板执行）
 
-9. **agent-subagents-compress** — 子代理与团队 + 深度上下文压缩（二期）
+9. **agent-subagents-compress** — （已拆分）原「子代理 + 深度压缩」合并条
    - 所属模块：Assistant Runtime
-   - 依赖：`agent-plan-resilience`, `agent-tools-admin`
-   - 状态：planned
+   - 状态：**dropped**（2026-07-10 拆为下列两条，避免单 feature 过大）
    - 对应 feature：未启动
+
+10. **agent-context-compress** — 深度上下文压缩（线程摘要 + 保留最近轮次）
+    - 所属模块：Assistant Runtime
+    - 依赖：`agent-plan-resilience`（复用韧性/超时语义；TokenLimiter 已存在）
+    - 状态：done（2026-07-10 验收；含压缩中 UI）
+    - 对应 feature：`features/2026-07-10-agent-context-compress/`
+    - 契约：第 4.9 节
+
+11. **agent-subagents** — 子代理与团队 MVP（`spawn_research_subagent`）
+    - 所属模块：Assistant Runtime
+    - 依赖：`agent-plan-resilience`, `agent-tools-admin`, `agent-context-compress`（先压缩再嵌套，降低子代理撑爆上下文）
+    - 状态：planned
+    - 对应 feature：未启动
+    - 契约：第 4.10 节
 
 **最小闭环**：第 3 条 `agent-chat-shell` 做完后，登录用户可在一个对话里问「有多少个知识库」，并检索知识库与文档库内容。
 
 ## 6. 排期思路
 
-按技术依赖推进：先 Runtime 与只读工具，再上壳形成最小闭环；规划与韧性补「成熟感」；写入与管理面随后。记忆能力已取消。二期子代理挂尾，不挡一期。
+按技术依赖推进：先 Runtime 与只读工具，再上壳形成最小闭环；规划与韧性补「成熟感」；写入与管理面随后。记忆能力已取消。二期先做上下文压缩，再做子代理（依赖压缩），不挡一期。
 
 技术依赖之外的产品优先级（例如是否提前做 admin）由用户在启动各子 feature 时拍板。
 
@@ -457,3 +537,5 @@ Plan（upsert_plan 输出，对齐现有 plan schema）:
 - 2026-07-10：**agent-plan-resilience 完成**。拍板：Plan 仅消息内卡、超时 30s；落地 `tool-resilience` + `step.error_code`；流中断 `stream_aborted` 保留。
 - 2026-07-10：**agent-confirm-write 完成**。确认协议 + content_write 最小写/危险工具；危险不对模型暴露；壳 ApprovalCard。
 - 2026-07-10：**agent-tools-admin 完成**。admin 域 8 工具；路由辅助 content_write；公开问答开关需超管。
+- 2026-07-10：**二期拆分**。`agent-subagents-compress` → dropped；新增 `agent-context-compress`（契约 4.9）与 `agent-subagents`（契约 4.10）；推荐顺序压缩 → 子代理。
+- 2026-07-10：**agent-context-compress 完成**。线程摘要 + 最近 6 条；流内压缩中 UI；TokenLimiter 兜底。

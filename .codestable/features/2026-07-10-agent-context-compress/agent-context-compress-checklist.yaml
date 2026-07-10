@@ -1,0 +1,39 @@
+feature: 2026-07-10-agent-context-compress
+created: 2026-07-10
+
+steps:
+  - action: "持久化：thread 摘要三列 + 迁移 SQL + full-migration"
+    exit_signal: "schema/SQL 含 context_summary_*；db 单测或 sql 生成含新列"
+    status: done
+  - action: "编排骨架：context-pack 窗口切分与触发判定（可无 LLM）"
+    exit_signal: "单测：短对话不触发；长对话切出 recent=6"
+    status: done
+  - action: "计算节点：摘要 LLM + 增量合并 + 写水位（失败降级）"
+    exit_signal: "单测：失败不抛、水位不变；成功写 summary"
+    status: done
+  - action: "接线：chat-handler 流内 data-context-compress + 注入 instructions；壳渲染压缩中 UI；落库剥离临时 part"
+    exit_signal: "流先发 running；壳可见文案；persist 不含 running part"
+    status: done
+  - action: "架构回写 runtime-assistant.md"
+    exit_signal: "文档含 ContextPack / 双层压缩 / UI part"
+    status: done
+
+checks:
+  - item: "无独立压缩 HTTP API"
+    source: 明确不做
+    status: passed
+  - item: "TokenLimiter 仍注册"
+    source: 验收
+    status: passed
+  - item: "最近窗口 ≥6 条原始消息"
+    source: 契约 4.9
+    status: passed
+  - item: "摘要失败不阻断对话"
+    source: 验收
+    status: passed
+  - item: "压缩中 UI 可见且不永久落库 running"
+    source: 验收
+    status: passed
+  - item: "不改 /api/agent/**"
+    source: 范围守护
+    status: passed

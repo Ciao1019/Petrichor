@@ -31,7 +31,9 @@
 | 6 | `agent-confirm-write` | 确认协议 + 内容写入 |
 | 7 | `agent-tools-admin` | 管理面工具 |
 | 8 | `agent-legacy-retire` | 拆旧 QA / 记忆入口 |
-| 9 | `agent-subagents-compress` | 二期；非一期门闩 |
+| 9 | `agent-subagents-compress` | **dropped**（拆为 10/11） |
+| 10 | `agent-context-compress` | 二期：深度上下文压缩 |
+| 11 | `agent-subagents` | 二期：子代理 MVP（依赖压缩） |
 
 技术依赖外的优先级由用户口头指定时，仍不得违反 `depends_on`。
 

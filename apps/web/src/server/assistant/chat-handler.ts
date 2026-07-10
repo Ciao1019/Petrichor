@@ -24,6 +24,14 @@ import {
     findPendingConfirmationExecution,
     patchConfirmationExecutionOutcome,
 } from "./confirmation"
+import {
+    buildContextPack,
+    buildInstructionsWithContextSummary,
+    CONTEXT_COMPRESS_PART_TYPE,
+    inspectContextCompressNeed,
+    stripContextCompressParts,
+    type ContextCompressPartData,
+} from "./context-pack"
 import { loadMastraToolsForDomains } from "./tool-registry"
 import { createToolResilienceController, ToolResilienceError } from "./tool-resilience"
 import {
@@ -44,7 +52,7 @@ const chatRequestSchema = z.object({
     focus: assistantFocusSchema.optional().nullable(),
 })
 
-const MAX_CONTEXT_TOKENS = 100_000
+export const MAX_CONTEXT_TOKENS = 100_000
 
 type AgentModelConfig = ConstructorParameters<typeof Agent>[0]["model"]
 type ProcessorModel = ConstructorParameters<typeof PromptInjectionDetector>[0]["model"]
@@ -89,7 +97,6 @@ export async function assistantChat(request: NextRequest) {
         const input = chatRequestSchema.parse(await request.json())
         const focus = input.focus ?? null
 
-        // 契约 4.1：焦点实体归属校验先于建 thread，403 时不留脏数据
         await assertAssistantFocusOwnership(user.id, focus)
 
         const lastUserText = extractLastUserText(input.messages)
@@ -126,7 +133,6 @@ export async function assistantChat(request: NextRequest) {
             runId: run.id,
             focus,
         }
-        // 每轮只装载意图路由命中的域（契约 4.1：禁止一次挂载全站 tools）
         const resilience = createToolResilienceController()
         const tools = loadMastraToolsForDomains(route.domains, toolContext, resilience)
         const activeToolNames = Object.keys(tools)
@@ -171,37 +177,6 @@ export async function assistantChat(request: NextRequest) {
             }
         }
 
-        const agent = new Agent({
-            id: "petrichor-assistant",
-            name: "Petrichor Assistant",
-            description: "In-site universal assistant for system overview, knowledge bases, and document libraries.",
-            model: model as unknown as AgentModelConfig,
-            instructions: buildAssistantSystemPrompt(route.domains),
-            tools,
-            // Vitest mock 模型未实现 doGenerate；注入检测会额外 generate，测试环境只保留 token 裁剪
-            inputProcessors: process.env.VITEST
-                ? [new TokenLimiterProcessor({ limit: MAX_CONTEXT_TOKENS, trimMode: "contiguous" })]
-                : [
-                    new PromptInjectionDetector({
-                        model: model as unknown as ProcessorModel,
-                        strategy: "block",
-                        threshold: 0.85,
-                        detectionTypes: ["injection", "jailbreak", "system-override"],
-                        lastMessageOnly: true,
-                        // DeepSeek 等不支持 json_schema；改用 prompt 注入 JSON，避免检测请求 400
-                        ...(needsJsonPromptInjectionForStructuredOutput({
-                            protocol: config.protocol as AiProtocol,
-                            baseUrl: config.baseUrl ?? "",
-                            model: config.model,
-                            name: config.name,
-                        })
-                            ? { structuredOutputOptions: { jsonPromptInjection: true } }
-                            : {}),
-                    }),
-                    new TokenLimiterProcessor({ limit: MAX_CONTEXT_TOKENS, trimMode: "contiguous" }),
-                ],
-        })
-
         let runFinalized = false
         const finishRunOnce = async (status: "COMPLETED" | "FAILED", errorCode?: string) => {
             if (runFinalized) return
@@ -210,58 +185,132 @@ export async function assistantChat(request: NextRequest) {
         }
 
         let stepIndex = pendingConfirmation ? 1 : 0
-        const modelMessages = await convertToModelMessages(messagesForModel as UIMessage[])
-        const result = await agent.stream(modelMessages as never, {
-            maxSteps: 8,
-            modelSettings: { temperature: 0.2 },
-            activeTools: activeToolNames,
-            abortSignal: request.signal,
-            hooks: {
-                afterToolCall: async ({ toolName, output, error }) => {
-                    const meta = resilience.consumeMeta(toolName)
-                    const isSuccess = error == null && meta?.errorCode == null
-                    const errorCode = isSuccess
-                        ? null
-                        : meta?.errorCode
-                            ?? (error instanceof ToolResilienceError ? error.code : "tool_error")
-                    await recordAssistantStep({
-                        runId: run.id,
-                        stepIndex: stepIndex++,
-                        toolName,
-                        input: {},
-                        output: isSuccess
-                            ? output
-                            : {
-                                error: error instanceof Error ? error.message : String(error ?? errorCode),
-                                errorCode,
-                            },
-                        status: isSuccess ? "COMPLETED" : "FAILED",
-                        errorCode,
-                        durationMs: meta?.durationMs ?? null,
-                    })
-                },
-            },
-            onFinish: async (event) => {
-                const error = event.error
-                await finishRunOnce(
-                    error ? "FAILED" : "COMPLETED",
-                    error ? "stream_error" : undefined,
-                )
-            },
-            onError: async () => {
-                await finishRunOnce("FAILED", "stream_error")
-            },
-        })
-
-        const mastraUiStream = toAISdkStream(result, {
-            from: "agent",
-            version: "v6",
-        })
 
         return createUIMessageStreamResponse({
             stream: createUIMessageStream<UIMessage>({
                 originalMessages: input.messages as UIMessage[],
                 execute: async ({ writer }) => {
+                    const compressId = "context-compress"
+                    const writeCompress = (data: ContextCompressPartData) => {
+                        writer.write({
+                            type: CONTEXT_COMPRESS_PART_TYPE,
+                            id: compressId,
+                            data,
+                        } as UIMessageChunk)
+                    }
+
+                    const need = await inspectContextCompressNeed({
+                        userId: user.id,
+                        threadId: thread.id,
+                        messages: messagesForModel as UIMessage[],
+                        tokenBudget: MAX_CONTEXT_TOKENS,
+                    })
+                    if (need.needsRefresh) {
+                        writeCompress({
+                            status: "running",
+                            label: "正在整理对话上下文…",
+                        })
+                    }
+
+                    const pack = await buildContextPack({
+                        userId: user.id,
+                        threadId: thread.id,
+                        messages: messagesForModel as UIMessage[],
+                        tokenBudget: MAX_CONTEXT_TOKENS,
+                        configId: config.id,
+                        signal: request.signal,
+                    })
+
+                    if (need.needsRefresh) {
+                        writeCompress({
+                            status: pack.status === "done" ? "done" : pack.status === "failed" ? "failed" : "skipped",
+                            label: pack.status === "done"
+                                ? "上下文已整理"
+                                : pack.status === "failed"
+                                    ? "上下文整理未完成，继续回答"
+                                    : "无需整理上下文",
+                        })
+                    }
+
+                    const agent = new Agent({
+                        id: "petrichor-assistant",
+                        name: "Petrichor Assistant",
+                        description: "In-site universal assistant for system overview, knowledge bases, and document libraries.",
+                        model: model as unknown as AgentModelConfig,
+                        instructions: buildInstructionsWithContextSummary(
+                            buildAssistantSystemPrompt(route.domains),
+                            pack.summaryMd,
+                        ),
+                        tools,
+                        inputProcessors: process.env.VITEST
+                            ? [new TokenLimiterProcessor({ limit: MAX_CONTEXT_TOKENS, trimMode: "contiguous" })]
+                            : [
+                                new PromptInjectionDetector({
+                                    model: model as unknown as ProcessorModel,
+                                    strategy: "block",
+                                    threshold: 0.85,
+                                    detectionTypes: ["injection", "jailbreak", "system-override"],
+                                    lastMessageOnly: true,
+                                    ...(needsJsonPromptInjectionForStructuredOutput({
+                                        protocol: config.protocol as AiProtocol,
+                                        baseUrl: config.baseUrl ?? "",
+                                        model: config.model,
+                                        name: config.name,
+                                    })
+                                        ? { structuredOutputOptions: { jsonPromptInjection: true } }
+                                        : {}),
+                                }),
+                                new TokenLimiterProcessor({ limit: MAX_CONTEXT_TOKENS, trimMode: "contiguous" }),
+                            ],
+                    })
+
+                    const modelMessages = await convertToModelMessages(pack.recentMessages)
+                    const result = await agent.stream(modelMessages as never, {
+                        maxSteps: 8,
+                        modelSettings: { temperature: 0.2 },
+                        activeTools: activeToolNames,
+                        abortSignal: request.signal,
+                        hooks: {
+                            afterToolCall: async ({ toolName, output, error }) => {
+                                const meta = resilience.consumeMeta(toolName)
+                                const isSuccess = error == null && meta?.errorCode == null
+                                const errorCode = isSuccess
+                                    ? null
+                                    : meta?.errorCode
+                                        ?? (error instanceof ToolResilienceError ? error.code : "tool_error")
+                                await recordAssistantStep({
+                                    runId: run.id,
+                                    stepIndex: stepIndex++,
+                                    toolName,
+                                    input: {},
+                                    output: isSuccess
+                                        ? output
+                                        : {
+                                            error: error instanceof Error ? error.message : String(error ?? errorCode),
+                                            errorCode,
+                                        },
+                                    status: isSuccess ? "COMPLETED" : "FAILED",
+                                    errorCode,
+                                    durationMs: meta?.durationMs ?? null,
+                                })
+                            },
+                        },
+                        onFinish: async (event) => {
+                            const error = event.error
+                            await finishRunOnce(
+                                error ? "FAILED" : "COMPLETED",
+                                error ? "stream_error" : undefined,
+                            )
+                        },
+                        onError: async () => {
+                            await finishRunOnce("FAILED", "stream_error")
+                        },
+                    })
+
+                    const mastraUiStream = toAISdkStream(result, {
+                        from: "agent",
+                        version: "v6",
+                    })
                     const reader = mastraUiStream.getReader()
                     try {
                         while (true) {
@@ -277,11 +326,12 @@ export async function assistantChat(request: NextRequest) {
                     }
                 },
                 onEnd: async ({ responseMessage }) => {
+                    const parts = stripContextCompressParts(responseMessage.parts)
                     await persistAssistantMessage({
                         userId: user.id,
                         threadId: thread.id,
                         role: "assistant",
-                        content: { parts: responseMessage.parts },
+                        content: { parts },
                     })
                 },
             }),
@@ -295,8 +345,6 @@ export async function assistantChat(request: NextRequest) {
     }
 }
 
-// 契约 4.1：模型未配置 → 409 model_not_configured。
-// createChatLanguageModel 对配置缺失/不可用抛 400/404，在 assistant 入口统一转译为 409，不改动共享层语义。
 async function resolveAssistantModel(userId: number, configId: number | null) {
     try {
         return await createChatLanguageModel({ userId, configId })
