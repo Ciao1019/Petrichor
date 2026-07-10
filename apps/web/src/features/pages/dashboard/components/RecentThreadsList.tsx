@@ -11,13 +11,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { dashboardRoutes } from "@/lib/dashboard-routes"
-import type { KnowledgeBaseAgentThreadResponse } from "@/lib/api"
+import type { AssistantThreadSummary } from "@/lib/api"
 
 type RecentThreadsListProps = {
-  threads: KnowledgeBaseAgentThreadResponse[]
+  threads: AssistantThreadSummary[]
   loading?: boolean
 }
 
@@ -42,14 +41,14 @@ export function RecentThreadsList({ threads, loading }: RecentThreadsListProps) 
   return (
     <Card className="@container/card">
       <CardHeader>
-        <CardTitle>最近问答</CardTitle>
-        <CardDescription>你最近发起的知识库问答</CardDescription>
+        <CardTitle>最近对话</CardTitle>
+        <CardDescription>你最近在助手里发起的对话</CardDescription>
         <CardAction>
           <Button
             variant="ghost"
             size="sm"
             className="text-muted-foreground"
-            onClick={() => navigate(dashboardRoutes.qa)}
+            onClick={() => navigate(dashboardRoutes.assistant)}
           >
             全部
             <ArrowRight className="size-3.5" />
@@ -64,14 +63,14 @@ export function RecentThreadsList({ threads, loading }: RecentThreadsListProps) 
         ) : threads.length === 0 ? (
           <div className="text-muted-foreground flex h-[180px] flex-col items-center justify-center gap-2 text-sm">
             <MessageCircle className="size-6 opacity-40" />
-            还没有问答记录
+            还没有对话记录
           </div>
         ) : (
           threads.map((thread) => (
             <button
               key={thread.id}
               type="button"
-              onClick={() => navigate(dashboardRoutes.qa)}
+              onClick={() => navigate(dashboardRoutes.assistant)}
               className="hover:bg-accent/60 group flex items-center gap-3 rounded-md px-2 py-2 text-left transition-colors"
             >
               <span className="bg-primary/10 text-primary flex size-8 shrink-0 items-center justify-center rounded-md">
@@ -81,17 +80,8 @@ export function RecentThreadsList({ threads, loading }: RecentThreadsListProps) 
                 <span className="block truncate text-sm font-medium">
                   {thread.title || "未命名对话"}
                 </span>
-                <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                  {thread.knowledgeBaseName ? (
-                    <Badge variant="secondary" className="h-4 px-1.5 text-[10px] font-normal">
-                      {thread.knowledgeBaseName}
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="h-4 px-1.5 text-[10px] font-normal">
-                      跨库
-                    </Badge>
-                  )}
-                  <span className="tabular-nums">{relativeTime(thread.updatedAt ?? thread.createdAt)}</span>
+                <span className="text-muted-foreground text-xs tabular-nums">
+                  {relativeTime(thread.updatedAt ?? thread.createdAt)}
                 </span>
               </span>
               <ArrowRight className="text-muted-foreground size-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />

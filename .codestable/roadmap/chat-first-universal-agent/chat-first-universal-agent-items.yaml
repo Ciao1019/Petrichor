@@ -33,10 +33,10 @@ items:
     description: 记忆注入全体话并降级记忆主入口为设置
     depends_on:
       - agent-runtime-core
-    status: planned
+    status: cancelled
     feature: null
     minimal_loop: false
-    notes: 等 Mastra 运行时纠偏完成后再开
+    notes: 2026-07-10 用户裁决取消——记忆/蒸馏整段下线，不再实现
 
   - slug: agent-plan-resilience
     description: 可见任务计划与工具失败重试/降级策略
@@ -69,11 +69,10 @@ items:
     description: 退役旧 QA/记忆入口并移除问答 Wiki 补丁工具
     depends_on:
       - agent-chat-shell
-      - agent-memory-runtime
-    status: planned
+    status: done
     feature: null
     minimal_loop: false
-    notes: null
+    notes: 2026-07-10 提前执行——删站内知识/文档问答、公开 /ask、记忆页与蒸馏；Wiki 与 assistant 保留；旧会话表不 DROP
 
   - slug: agent-subagents-compress
     description: 二期：子代理与团队、深度上下文压缩

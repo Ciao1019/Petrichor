@@ -1,35 +1,18 @@
 import { and, asc, eq } from "drizzle-orm"
 import type { NextRequest } from "next/server"
 import { requireCurrentUser } from "@/server/auth/current-user"
-import { resolveChatConfig, resolveModelContextWindow } from "@/server/ai/generation"
+import { resolveModelContextWindow } from "@/server/ai/generation"
 import { getDb } from "@/server/db/client"
 import { aiModelConfigs } from "@/server/db/schema"
-import { badRequest, ok, readJson, toErrorResponse } from "@/server/http/response"
+import { ok, readJson, toErrorResponse } from "@/server/http/response"
 import {
-    agentArtifactCreateInputSchema,
-    agentThreadCreateInputSchema,
-    agentThreadInputSchema,
     applyWikiPatch,
-    createAgentArtifact,
-    createAgentThread,
-    deleteAgentThread,
-    deleteAgentThreads,
     ingestKnowledgeBaseWiki,
-    listAgentArtifacts,
-    listAgentThreads,
-    listAllAgentThreads,
     listUserKnowledgeBases,
     listWikiPages,
     listWikiPatches,
-    loadAgentThreadDetail,
     loadWikiDashboard,
     loadWikiPageDetail,
-    parseAgentThreadScope,
-    qaThreadCreateInputSchema,
-    qaThreadDeleteInputSchema,
-    qaThreadDeleteManyInputSchema,
-    qaThreadDetailInputSchema,
-    qaThreadListInputSchema,
     rejectWikiPatch,
     runWikiLint,
     wikiIngestInputSchema,
@@ -132,120 +115,6 @@ export async function wikiLint(request: NextRequest) {
     return withUser(request, async (user) => {
         const input = wikiIngestInputSchema.pick({ knowledgeBaseId: true }).parse(await readJson(request))
         return ok(await runWikiLint(user.id, input.knowledgeBaseId))
-    })
-}
-
-export async function agentThreadList(request: NextRequest) {
-    return withUser(request, async (user) => {
-        const input = wikiIngestInputSchema.pick({ knowledgeBaseId: true }).parse(await readJson(request))
-        return ok({
-            knowledgeBaseId: String(input.knowledgeBaseId),
-            threads: await listAgentThreads(user.id, input.knowledgeBaseId),
-        })
-    })
-}
-
-export async function agentThreadCreate(request: NextRequest) {
-    return withUser(request, async (user) => {
-        const input = agentThreadCreateInputSchema.parse(await readJson(request))
-        const thread = await createAgentThread({
-            userId: user.id,
-            knowledgeBaseId: input.knowledgeBaseId,
-            title: input.title,
-        })
-        return ok({
-            id: String(thread.id),
-            knowledgeBaseId: thread.knowledgeBaseId == null ? null : String(thread.knowledgeBaseId),
-            title: thread.title,
-            status: thread.status,
-        })
-    })
-}
-
-export async function agentThreadDetail(request: NextRequest) {
-    return withUser(request, async (user) => {
-        const input = agentThreadInputSchema.required({ threadId: true }).parse(await readJson(request))
-        return ok(await loadAgentThreadDetail(user.id, input.threadId, input.knowledgeBaseId))
-    })
-}
-
-export async function agentArtifactList(request: NextRequest) {
-    return withUser(request, async (user) => {
-        const input = agentThreadInputSchema.parse(await readJson(request))
-        return ok({
-            knowledgeBaseId: String(input.knowledgeBaseId),
-            artifacts: await listAgentArtifacts(user.id, input.knowledgeBaseId, input.threadId),
-        })
-    })
-}
-
-export async function agentArtifactCreate(request: NextRequest) {
-    return withUser(request, async (user) => {
-        const input = agentArtifactCreateInputSchema.parse(await readJson(request))
-        return ok(await createAgentArtifact({
-            userId: user.id,
-            knowledgeBaseId: input.knowledgeBaseId,
-            threadId: input.threadId,
-            runId: input.runId ?? null,
-            artifactType: input.artifactType,
-            title: input.title,
-            contentMd: input.contentMd,
-            payload: input.payload,
-        }))
-    })
-}
-
-export async function qaThreadList(request: NextRequest) {
-    return withUser(request, async (user) => {
-        const raw = await readJson(request)
-        const input = qaThreadListInputSchema.parse(raw ?? {})
-        const scope = parseAgentThreadScope(input.scope)
-        if (scope === null) throw badRequest("无效的 scope 参数")
-        const result = await listAllAgentThreads(user.id, {
-            cursor: input.cursor,
-            limit: input.limit,
-            query: input.q,
-            scope,
-        })
-        return ok(result)
-    })
-}
-
-export async function qaThreadDetail(request: NextRequest) {
-    return withUser(request, async (user) => {
-        const input = qaThreadDetailInputSchema.parse(await readJson(request))
-        return ok(await loadAgentThreadDetail(user.id, input.threadId))
-    })
-}
-
-export async function qaThreadCreate(request: NextRequest) {
-    return withUser(request, async (user) => {
-        const input = qaThreadCreateInputSchema.parse(await readJson(request))
-        const thread = await createAgentThread({
-            userId: user.id,
-            knowledgeBaseId: input.knowledgeBaseId ?? null,
-            title: input.title,
-        })
-        return ok({
-            id: String(thread.id),
-            knowledgeBaseId: thread.knowledgeBaseId == null ? null : String(thread.knowledgeBaseId),
-            title: thread.title,
-            status: thread.status,
-        })
-    })
-}
-
-export async function qaThreadDelete(request: NextRequest) {
-    return withUser(request, async (user) => {
-        const input = qaThreadDeleteInputSchema.parse(await readJson(request))
-        return ok(await deleteAgentThread(user.id, input.threadId))
-    })
-}
-
-export async function qaThreadDeleteMany(request: NextRequest) {
-    return withUser(request, async (user) => {
-        const input = qaThreadDeleteManyInputSchema.parse(await readJson(request))
-        return ok(await deleteAgentThreads(user.id, input.threadIds))
     })
 }
 

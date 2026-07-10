@@ -2,7 +2,6 @@ import * as React from "react"
 import {
   IconBook,
   IconBookmarks,
-  IconBrain,
   IconChartBar,
   IconFileImport,
   IconFiles,
@@ -10,8 +9,6 @@ import {
   IconHistory,
   IconKey,
   IconListDetails,
-  IconMessageChatbot,
-  IconMessages,
   IconPackage,
   IconPlugConnected,
   IconPalette,
@@ -55,11 +52,7 @@ function matchImportJobs(pathname: string) {
 }
 
 function matchDocLibraryList(pathname: string) {
-  return isDashboardSectionPath(pathname, "doc-library") && !matchDocLibraryQa(pathname)
-}
-
-function matchDocLibraryQa(pathname: string) {
-  return pathname === dashboardRoutes.docLibraryQa
+  return isDashboardSectionPath(pathname, "doc-library")
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
@@ -96,20 +89,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         icon: IconSparkles,
         isActive:
           isDashboardSectionPath(pathname, "assistant") ||
-          isDashboardSectionPath(pathname, "qa") ||
           isDashboardSectionPath(pathname, "wiki") ||
-          isDashboardSectionPath(pathname, "ai/review") ||
-          isDashboardSectionPath(pathname, "agent-memory"),
+          isDashboardSectionPath(pathname, "ai/review"),
         items: [
           {
             title: "助手",
             url: dashboardRoutes.assistant,
             icon: IconRobot,
-          },
-          {
-            title: "知识问答",
-            url: dashboardRoutes.qa,
-            icon: IconMessageChatbot,
           },
           {
             title: "知识 Wiki",
@@ -120,11 +106,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             title: "AI 回顾",
             url: dashboardRoutes.aiReview,
             icon: IconHistory,
-          },
-          {
-            title: "Agent 记忆",
-            url: dashboardRoutes.agentMemory,
-            icon: IconBrain,
           },
         ],
       },
@@ -139,12 +120,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             url: dashboardRoutes.docLibrary,
             icon: IconFiles,
             match: matchDocLibraryList,
-          },
-          {
-            title: "文档问答",
-            url: dashboardRoutes.docLibraryQa,
-            icon: IconMessages,
-            match: matchDocLibraryQa,
           },
         ],
       },

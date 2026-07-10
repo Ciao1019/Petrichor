@@ -1,13 +1,13 @@
-import { and, desc, eq, gte, sql } from "drizzle-orm"
+import { and, desc, eq, gte, isNull, sql } from "drizzle-orm"
 import { getDb, isSqliteDatabase } from "@/server/db/client"
 import {
     agentCallLogs,
-    knowledgeBaseAgentThreads,
+    assistantThreads,
     knowledgeBaseArticleTags,
     knowledgeBaseArticles,
     knowledgeBases,
 } from "@/server/db/schema"
-import { listAllAgentThreads, toAgentThreadResponse } from "@/server/kb/wiki-agent-logic"
+import { listAssistantThreads, toAssistantThreadResponse } from "@/server/assistant/thread-logic"
 
 const HEATMAP_DAYS = 365
 const TREND_DAYS = 30
@@ -51,7 +51,7 @@ export type DashboardOverview = {
         knowledgeBases: DashboardDistributionItem[]
         tags: DashboardDistributionItem[]
     }
-    recentThreads: ReturnType<typeof toAgentThreadResponse>[]
+    recentThreads: ReturnType<typeof toAssistantThreadResponse>[]
 }
 
 function formatUtcDay(date: Date) {
@@ -99,8 +99,8 @@ export async function loadDashboardOverview(userId: number): Promise<DashboardOv
         ? sql<string>`strftime('%Y-%m-%d', ${knowledgeBaseArticles.createdAt} / 1000, 'unixepoch')`
         : sql<string>`to_char(${knowledgeBaseArticles.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`
     const threadDay = sqlite
-        ? sql<string>`strftime('%Y-%m-%d', ${knowledgeBaseAgentThreads.createdAt} / 1000, 'unixepoch')`
-        : sql<string>`to_char(${knowledgeBaseAgentThreads.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`
+        ? sql<string>`strftime('%Y-%m-%d', ${assistantThreads.createdAt} / 1000, 'unixepoch')`
+        : sql<string>`to_char(${assistantThreads.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`
     const callDay = sqlite
         ? sql<string>`strftime('%Y-%m-%d', ${agentCallLogs.createdAt} / 1000, 'unixepoch')`
         : sql<string>`to_char(${agentCallLogs.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`
@@ -127,8 +127,12 @@ export async function loadDashboardOverview(userId: number): Promise<DashboardOv
             .groupBy(articleDay),
         db
             .select({ day: threadDay, count: countAll })
-            .from(knowledgeBaseAgentThreads)
-            .where(and(eq(knowledgeBaseAgentThreads.userId, userId), gte(knowledgeBaseAgentThreads.createdAt, heatmapStart)))
+            .from(assistantThreads)
+            .where(and(
+                eq(assistantThreads.userId, userId),
+                isNull(assistantThreads.deletedAt),
+                gte(assistantThreads.createdAt, heatmapStart),
+            ))
             .groupBy(threadDay),
         db
             .select({ day: callDay, count: countAll })
@@ -141,8 +145,8 @@ export async function loadDashboardOverview(userId: number): Promise<DashboardOv
             .where(eq(knowledgeBaseArticles.userId, userId)),
         db
             .select({ value: countAll })
-            .from(knowledgeBaseAgentThreads)
-            .where(eq(knowledgeBaseAgentThreads.userId, userId)),
+            .from(assistantThreads)
+            .where(and(eq(assistantThreads.userId, userId), isNull(assistantThreads.deletedAt))),
         db
             .select({ value: countAll })
             .from(knowledgeBases)
@@ -169,7 +173,7 @@ export async function loadDashboardOverview(userId: number): Promise<DashboardOv
             .groupBy(knowledgeBaseArticleTags.tag)
             .orderBy(desc(sql`count(*)`))
             .limit(8),
-        listAllAgentThreads(userId, { limit: 6 }),
+        listAssistantThreads({ userId, limit: 6 }),
     ])
 
     const articleMap = toCountMap(articleDaily)
@@ -222,6 +226,6 @@ export async function loadDashboardOverview(userId: number): Promise<DashboardOv
                 count: Number(row.count) || 0,
             })),
         },
-        recentThreads: recent.threads,
+        recentThreads: recent.items,
     }
 }
