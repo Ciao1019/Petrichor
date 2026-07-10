@@ -13,6 +13,7 @@ implemented_by:
   - 2026-07-10-agent-context-compress
   - 2026-07-10-agent-subagents
   - 2026-07-10-agent-plan-persist
+  - 2026-07-10-agent-context-window-v2
 ---
 
 # 站内 Assistant 运行时
@@ -34,7 +35,7 @@ POST /api/assistant/chat（SSE, requireCurrentUser）
 - **域工具注册表**：`risk=dangerous` 不对模型暴露，确认后 Runtime 按名执行。
 - **content_write**：建文/改文/开分享 + 删文/撤分享/删文档（确认）。
 - **admin**（`tools/admin.ts`）：`list_ai_configs` / `list_agent_api_keys` / `get_public_qa_setting` / `set_default_ai_config`；危险：`delete_ai_config` / `update_ai_config_credentials` / `revoke_agent_api_key` / `set_public_qa_enabled`（超管）。
-- **上下文压缩**（`context-pack.ts`）：线程级 `context_summary_*`；保留最近 6 条原文；`TokenLimiterProcessor` 硬裁剪兜底；壳展示「正在整理对话上下文…」。
+- **上下文压缩**（`context-pack.ts`）：线程级 `context_summary_*`；动态最近窗口 `windowPolicy`（下限 6、上限 20，按 token 预算扩张）；`TokenLimiterProcessor` 硬裁剪兜底；壳展示「正在整理对话上下文…」。
 - **子代理**（`tools/research-subagent.ts`）：`spawn_research_subagent` 嵌套只读 Agent（maxSteps≤6）；内层 step 前缀 `spawn_research_subagent/`；禁止写/危险/再委派。
 - **意图路由**：规则打分；admin 辅助装载 content_write。
 - **壳**：任务侧栏 + 消息内确认卡。
