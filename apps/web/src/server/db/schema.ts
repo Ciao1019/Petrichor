@@ -831,6 +831,9 @@ export const assistantThreads = pgTable("petrichor_assistant_thread", {
     userId: bigint("user_id", { mode: "number" }).notNull(),
     title: text("title").notNull(),
     focusJson: text("focus_json"),
+    contextSummaryMd: text("context_summary_md"),
+    contextSummaryUntilMessageId: bigint("context_summary_until_message_id", { mode: "number" }),
+    contextSummaryUpdatedAt: timestamp("context_summary_updated_at", { withTimezone: true }),
     ...timestamps,
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [

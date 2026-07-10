@@ -9,6 +9,7 @@ import {
   ComposerPrimitive,
   ErrorPrimitive,
   makeAssistantToolUI,
+  makeAssistantDataUI,
   MessagePrimitive,
   SuggestionPrimitive,
   ThreadPrimitive,
@@ -448,6 +449,19 @@ const SaveArtifactToolUI = makeAssistantToolUI({
         </div>
       </ToolStatusCard>
     )
+  },
+})
+
+/** 服务端 data-context-compress → assistant-ui DataMessagePart name=context-compress */
+const ContextCompressDataUI = makeAssistantDataUI({
+  name: "context-compress",
+  render: ({ data }) => {
+    const payload = asRecord(data)
+    if (payload?.status !== "running") return null
+    const label = typeof payload.label === "string" && payload.label.trim()
+      ? payload.label.trim()
+      : "正在整理对话上下文…"
+    return <QaPreparing label={label} />
   },
 })
 
@@ -1243,6 +1257,7 @@ function QaChatPanel({
       <PlanToolUI />
       <ProgressToolUI />
       <ConfirmationToolUI />
+      <ContextCompressDataUI />
       <CitationToolUI />
       <DataTableToolUI />
       <ListSystemOverviewToolUI />
@@ -2018,13 +2033,13 @@ function AssistantMessageBubble() {
         <AuiIf
           condition={(s) =>
             s.thread.isRunning &&
-            // 本条助手消息还没有任何可见内容（首字 / 工具调用 / 推理）时显示
-            !s.message.parts.some(
-              (part) =>
-                (part.type === "text" && part.text.trim().length > 0) ||
-                part.type === "tool-call" ||
-                part.type === "reasoning",
-            )
+            // 本条助手消息还没有任何可见内容（首字 / 工具调用 / 推理 / 压缩中）时显示默认准备态
+            !s.message.parts.some((part) => {
+              if (part.type === "text" && "text" in part && String(part.text).trim().length > 0) return true
+              if (part.type === "tool-call" || part.type === "reasoning") return true
+              if (part.type === "data" && "name" in part && part.name === "context-compress") return true
+              return false
+            })
           }
         >
           <QaPreparing />
@@ -2536,7 +2551,8 @@ function sanitizeUIMessagePart(part: unknown): Record<string, unknown> | null {
   if (type === "source-url" || type === "source-document" || type === "file") {
     return record
   }
-  // 自定义 data-* part（如跨库检索进度 data-deep-research）：原样保留 type/id/data，供刷新后重放卡片。
+  // 自定义 data-* part（如 data-context-compress）：原样保留 type/id/data，供刷新后重放；
+  // 落库前服务端会剥离 running 压缩态，历史里通常只剩 done/skipped（壳不渲染）。
   if (type.startsWith("data-")) {
     return record
   }

@@ -1027,6 +1027,9 @@ create table if not exists petrichor_assistant_thread (
     user_id bigint not null,
     title text not null,
     focus_json text,
+    context_summary_md text,
+    context_summary_until_message_id bigint,
+    context_summary_updated_at timestamptz,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     deleted_at timestamptz
