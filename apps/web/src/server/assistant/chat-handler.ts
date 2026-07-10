@@ -19,6 +19,11 @@ import type { AgentDomainId, AssistantToolContext } from "./domain-types"
 import { assertAssistantFocusOwnership } from "./focus-guard"
 import { routeAssistantIntent } from "./intent-router"
 import "./tools"
+import {
+    executeConfirmedDangerousAction,
+    findPendingConfirmationExecution,
+    patchConfirmationExecutionOutcome,
+} from "./confirmation"
 import { loadMastraToolsForDomains } from "./tool-registry"
 import { createToolResilienceController, ToolResilienceError } from "./tool-resilience"
 import {
@@ -59,6 +64,9 @@ export function buildAssistantSystemPrompt(domains: AgentDomainId[]): string {
     }
     if (activeDomains.has("system") && (activeDomains.has("knowledge") || activeDomains.has("doc_library"))) {
         guidance.push("最终答案必须基于工具返回内容，并调用 show_citations 给出引用；href、title、domain、snippet 必须直接来自检索/读取结果，不得改写或编造。")
+    }
+    if (activeDomains.has("content_write")) {
+        guidance.push("内容写入使用 create_article / update_article / create_article_share。删除文章、撤销分享、删除文档属于危险操作：必须调用 request_user_confirmation（action.toolName 填 delete_article / revoke_article_share / delete_document），禁止假装已删除。用户确认后运行时会执行并在工具结果里给出 executionOutcome。")
     }
 
     return [
@@ -119,6 +127,46 @@ export async function assistantChat(request: NextRequest) {
         const tools = loadMastraToolsForDomains(route.domains, toolContext, resilience)
         const activeToolNames = Object.keys(tools)
 
+        let messagesForModel = input.messages as unknown[]
+        const pendingConfirmation = findPendingConfirmationExecution(messagesForModel)
+        if (pendingConfirmation) {
+            try {
+                const outcome = await executeConfirmedDangerousAction(toolContext, pendingConfirmation.action)
+                messagesForModel = patchConfirmationExecutionOutcome(
+                    messagesForModel,
+                    pendingConfirmation.confirmationId,
+                    outcome,
+                )
+                await recordAssistantStep({
+                    runId: run.id,
+                    stepIndex: 0,
+                    toolName: pendingConfirmation.action.toolName,
+                    input: pendingConfirmation.action.input,
+                    output: outcome,
+                    status: "COMPLETED",
+                    errorCode: null,
+                    durationMs: null,
+                })
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error)
+                messagesForModel = patchConfirmationExecutionOutcome(
+                    messagesForModel,
+                    pendingConfirmation.confirmationId,
+                    { error: message },
+                )
+                await recordAssistantStep({
+                    runId: run.id,
+                    stepIndex: 0,
+                    toolName: pendingConfirmation.action.toolName,
+                    input: pendingConfirmation.action.input,
+                    output: { error: message },
+                    status: "FAILED",
+                    errorCode: "tool_error",
+                    durationMs: null,
+                })
+            }
+        }
+
         const agent = new Agent({
             id: "petrichor-assistant",
             name: "Petrichor Assistant",
@@ -157,8 +205,8 @@ export async function assistantChat(request: NextRequest) {
             await finishAssistantRun({ runId: run.id, status, errorCode })
         }
 
-        let stepIndex = 0
-        const modelMessages = await convertToModelMessages(input.messages as UIMessage[])
+        let stepIndex = pendingConfirmation ? 1 : 0
+        const modelMessages = await convertToModelMessages(messagesForModel as UIMessage[])
         const result = await agent.stream(modelMessages as never, {
             maxSteps: 8,
             modelSettings: { temperature: 0.2 },

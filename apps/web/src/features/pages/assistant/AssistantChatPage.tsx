@@ -61,6 +61,7 @@ import { safeParseSerializableCitation } from "@/components/tool-ui/citation/sch
 import { DataTable } from "@/components/tool-ui/data-table"
 import { safeParseSerializableDataTable } from "@/components/tool-ui/data-table/schema"
 import { AssistantTaskRail, TASK_TOOL_NAMES } from "@/features/pages/assistant/AssistantTaskRail"
+import { ApprovalCard } from "@/components/tool-ui/approval-card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -153,6 +154,58 @@ const ProgressToolUI = makeAssistantToolUI({
   toolName: "show_progress",
   render: () => null,
 })
+
+const ConfirmationToolUI = makeAssistantToolUI({
+  toolName: "request_user_confirmation",
+  render: (props) => <ConfirmationToolRender {...props} />,
+})
+
+function ConfirmationToolRender({
+  args,
+  result,
+  status,
+  addResult,
+}: {
+  args: unknown
+  result?: unknown
+  status?: ToolCallMessagePartStatus
+  addResult: (result: unknown) => void
+}) {
+  const payload = asRecord(result) ?? asRecord(args)
+  const confirmationId = typeof payload?.id === "string" ? payload.id : null
+  const title = typeof payload?.title === "string" ? payload.title : "请确认操作"
+  const description = typeof payload?.description === "string" ? payload.description : undefined
+  const confirmLabel = typeof payload?.confirmLabel === "string" ? payload.confirmLabel : "确认"
+  const cancelLabel = typeof payload?.cancelLabel === "string" ? payload.cancelLabel : "取消"
+  const variant = payload?.variant === "destructive" ? "destructive" : "default"
+  const decision = asRecord(result)
+  const confirmed = typeof decision?.confirmed === "boolean" ? decision.confirmed : null
+  const choice = confirmed === true ? "approved" as const : confirmed === false ? "denied" as const : undefined
+
+  if (!confirmationId) {
+    return <ToolStatusCard title="等待确认" status={status} />
+  }
+
+  return (
+    <ApprovalCard
+      id={confirmationId}
+      title={title}
+      description={description}
+      variant={variant}
+      confirmLabel={confirmLabel}
+      cancelLabel={cancelLabel}
+      choice={choice}
+      onConfirm={() => {
+        if (choice != null) return
+        addResult({ confirmed: true, confirmationId })
+      }}
+      onCancel={() => {
+        if (choice != null) return
+        addResult({ confirmed: false, confirmationId, cancelled: true })
+      }}
+    />
+  )
+}
 
 const CitationToolUI = makeAssistantToolUI({
   toolName: "show_citations",
@@ -1189,6 +1242,7 @@ function QaChatPanel({
     <AssistantRuntimeProvider runtime={runtime}>
       <PlanToolUI />
       <ProgressToolUI />
+      <ConfirmationToolUI />
       <CitationToolUI />
       <DataTableToolUI />
       <ListSystemOverviewToolUI />

@@ -9,7 +9,7 @@ import {
     clearAssistantToolRegistryForTests,
     loadToolsForDomains,
 } from "../tool-registry"
-import { readonlyAssistantTools, registerReadonlyAssistantTools } from "."
+import { readonlyAssistantTools, registerReadonlyAssistantTools, registerAllAssistantTools, allAssistantTools } from "."
 
 const ctx: AssistantToolContext = {
     userId: 1,
@@ -86,5 +86,34 @@ describe("assistant domain-aware system prompt", () => {
         expect(prompt).toContain("list_system_overview")
         expect(prompt).not.toContain("search_knowledge")
         expect(prompt).not.toContain("search_documents")
+    })
+
+    it("content_write 提示含确认纪律", () => {
+        const prompt = buildAssistantSystemPrompt(["content_write", "system"])
+        expect(prompt).toContain("request_user_confirmation")
+        expect(prompt).toContain("create_article")
+        expect(prompt).toContain("delete_article")
+    })
+})
+
+describe("content_write tool registration", () => {
+    beforeEach(() => {
+        clearAssistantToolRegistryForTests()
+        registerAllAssistantTools()
+    })
+
+    it("content_write 装载含确认与写工具，不含危险工具名", () => {
+        const names = Object.keys(loadToolsForDomains(["content_write"], ctx)).sort()
+        expect(names).toEqual([
+            "create_article",
+            "create_article_share",
+            "request_user_confirmation",
+            "update_article",
+        ])
+        expect(allAssistantTools.filter((tool) => tool.risk === "dangerous").map((t) => t.name).sort()).toEqual([
+            "delete_article",
+            "delete_document",
+            "revoke_article_share",
+        ])
     })
 })
