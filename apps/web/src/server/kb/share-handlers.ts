@@ -23,7 +23,10 @@ import {
     buildArticlePath,
     buildPublicArticleMetadata,
     buildPublicArticleContentHash,
+    buildPublicShareInternalLink,
     buildPublicShareRepostAttribution,
+    isInternalSitePath,
+    validatePublicShareInternalLinkInput,
     parseShareExpiresAt,
     resolvePublicHomepageShareStatus,
     resolvePublicArticleToc,
@@ -127,6 +130,10 @@ export async function createArticleShare(request: NextRequest) {
         const { articleId } = validateShareArticleIdInput(raw)
         const expiresAt = parseShareExpiresAt(raw.expiresAt)
         const repostAttribution = validatePublicShareRepostAttributionInput(raw)
+        const internalLink = validatePublicShareInternalLinkInput(raw)
+        if (repostAttribution.isRepost && internalLink.internalUrl) {
+            throw badRequest("内部链接和转载只能开启一个")
+        }
         validateSharePassword(String(raw.accessPassword ?? ""))
         await requireOwner(user.id, articleId)
 
@@ -152,6 +159,7 @@ export async function createArticleShare(request: NextRequest) {
             expiresAt,
             passwordHash,
             ...repostAttribution,
+            ...internalLink,
             revokedAt: null,
             updatedAt: new Date(),
         }
@@ -227,6 +235,7 @@ export async function articleShareInfo(request: NextRequest) {
                 hasPassword: false,
                 expiresAt: null,
                 ...buildPublicShareRepostAttribution(null),
+                ...buildPublicShareInternalLink(null),
                 pinOrder: null,
                 isPinned: false,
                 updatedAt: null,
@@ -240,6 +249,7 @@ export async function articleShareInfo(request: NextRequest) {
             hasPassword: Boolean(share.passwordHash?.trim()),
             expiresAt: formatDateOrNull(share.expiresAt),
             ...buildPublicShareRepostAttribution(share),
+            ...buildPublicShareInternalLink(share),
             pinOrder: share.pinOrder ?? null,
             isPinned: share.pinOrder != null,
             updatedAt: formatDateOrNull(share.updatedAt),
@@ -368,6 +378,7 @@ async function loadPublicArticleSearchResponse(input: { keyword: string; limit: 
             isRepost: knowledgeBaseArticleShares.isRepost,
             originalUrl: knowledgeBaseArticleShares.originalUrl,
             originalAuthorName: knowledgeBaseArticleShares.originalAuthorName,
+            internalUrl: knowledgeBaseArticleShares.internalUrl,
             pinOrder: knowledgeBaseArticleShares.pinOrder,
             enabled: knowledgeBaseArticleShares.enabled,
             revokedAt: knowledgeBaseArticleShares.revokedAt,
@@ -417,6 +428,8 @@ async function loadPublicArticleSearchResponse(input: { keyword: string; limit: 
         const aiSummaryExcerpt = buildArticleAiSummaryExcerpt({
             summary: row.aiSummary,
         })
+        const repost = buildPublicShareRepostAttribution(row)
+        const internalLink = buildPublicShareInternalLink(row)
         return [{
             articleId: String(row.articleId),
             shareCode: row.shareCode,
@@ -425,11 +438,12 @@ async function loadPublicArticleSearchResponse(input: { keyword: string; limit: 
             updatedAt: formatDate(row.updatedAt),
             readingMinutes: resolveReadingMinutes(row.readingMinutes, fallback?.readingMinutes),
             tags: tagsByArticle.get(row.articleId) ?? [],
-            href: `/p/${row.shareCode}`,
+            href: resolvePublicArticleHref(row.shareCode, internalLink.internalUrl),
             expired: status.expired,
             expiresAt: formatDateOrNull(row.expiresAt),
             hasPassword: status.hasPassword,
-            isRepost: buildPublicShareRepostAttribution(row).isRepost,
+            isRepost: repost.isRepost,
+            isInternalLink: internalLink.internalUrl != null,
             isPinned: row.pinOrder != null,
             pinOrder: row.pinOrder ?? null,
             score: row.score,
@@ -443,6 +457,14 @@ async function loadPublicArticleSearchResponse(input: { keyword: string; limit: 
         items,
         hasMore: items.length === input.limit,
     }
+}
+
+/** 配置了内部链接时列表直跳站内页面（如自托管 HTML 可视化），否则进文章详情页 */
+function resolvePublicArticleHref(shareCode: string, internalUrl: string | null) {
+    if (internalUrl && isInternalSitePath(internalUrl)) {
+        return internalUrl
+    }
+    return `/p/${shareCode}`
 }
 
 function escapeLikePattern(value: string) {
@@ -466,6 +488,7 @@ export async function loadPublicArticleListResponse() {
             isRepost: knowledgeBaseArticleShares.isRepost,
             originalUrl: knowledgeBaseArticleShares.originalUrl,
             originalAuthorName: knowledgeBaseArticleShares.originalAuthorName,
+            internalUrl: knowledgeBaseArticleShares.internalUrl,
             pinOrder: knowledgeBaseArticleShares.pinOrder,
             enabled: knowledgeBaseArticleShares.enabled,
             revokedAt: knowledgeBaseArticleShares.revokedAt,
@@ -501,6 +524,8 @@ export async function loadPublicArticleListResponse() {
             const aiSummaryExcerpt = buildArticleAiSummaryExcerpt({
                 summary: row.aiSummary,
             })
+            const repost = buildPublicShareRepostAttribution(row)
+            const internalLink = buildPublicShareInternalLink(row)
             return [{
                 articleId: String(row.articleId),
                 shareCode: row.shareCode,
@@ -509,11 +534,12 @@ export async function loadPublicArticleListResponse() {
                 updatedAt: formatDate(row.updatedAt),
                 readingMinutes: resolveReadingMinutes(row.readingMinutes, fallback?.readingMinutes),
                 tags: tagsByArticle.get(row.articleId) ?? [],
-                href: `/p/${row.shareCode}`,
+                href: resolvePublicArticleHref(row.shareCode, internalLink.internalUrl),
                 expired: status.expired,
                 expiresAt: formatDateOrNull(row.expiresAt),
                 hasPassword: status.hasPassword,
-                isRepost: buildPublicShareRepostAttribution(row).isRepost,
+                isRepost: repost.isRepost,
+                isInternalLink: internalLink.internalUrl != null,
                 isPinned: row.pinOrder != null,
                 pinOrder: row.pinOrder ?? null,
             }]
@@ -654,6 +680,7 @@ function buildShareCreateResponse(articleId: number, share: KnowledgeBaseArticle
         hasPassword: Boolean(share.passwordHash?.trim()),
         expiresAt: formatDateOrNull(share.expiresAt),
         ...buildPublicShareRepostAttribution(share),
+        ...buildPublicShareInternalLink(share),
         updatedAt: formatDateOrNull(share.updatedAt),
     }
 }

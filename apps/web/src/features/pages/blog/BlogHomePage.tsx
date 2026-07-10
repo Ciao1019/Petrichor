@@ -44,6 +44,7 @@ const articleIndexCopy = {
     retry: "重新加载",
     empty: "文章正在整理中。",
     repost: "转载",
+    internalLink: "内部链接",
     pinnedSection: "置顶",
     expired: "已过期",
     passwordRequired: "需要访问密码",
@@ -111,12 +112,13 @@ function formatArticleDate(value: string) {
     return `${year}-${month}-${day}`
 }
 
-function isInternalPublicHref(href: string) {
-    return href.startsWith("/") && !href.startsWith("//")
+/** 仅文章详情页走 SPA 路由；其余内链（如转载直跳的自托管 HTML）需要整页加载 */
+function isSpaArticleHref(href: string) {
+    return href.startsWith("/p/")
 }
 
 function ArticleStatusBadges({ article, copy }: { article: HomepageArticle; copy: ArticleIndexCopy }) {
-    if (!article.isRepost && !article.expired && !article.hasPassword) {
+    if (!article.isRepost && !article.isInternalLink && !article.expired && !article.hasPassword) {
         return null
     }
 
@@ -125,6 +127,11 @@ function ArticleStatusBadges({ article, copy }: { article: HomepageArticle; copy
             {article.isRepost ? (
                 <span className="retypeset-status-tag" title={copy.repost}>
                     {copy.repost}
+                </span>
+            ) : null}
+            {article.isInternalLink ? (
+                <span className="retypeset-status-tag" title={copy.internalLink}>
+                    {copy.internalLink}
                 </span>
             ) : null}
             {article.expired ? (
@@ -156,13 +163,16 @@ function ArticleListItem({ article, copy }: { article: HomepageArticle; copy: Ar
         if (article.expired || article.hasPassword || !article.shareCode) {
             return
         }
+        if (!article.href || !isSpaArticleHref(article.href)) {
+            return
+        }
         void publicArticleShareApi.prefetchDetail(article.shareCode)
-    }, [article.expired, article.hasPassword, article.shareCode])
+    }, [article.expired, article.hasPassword, article.href, article.shareCode])
 
     return (
         <li className="mb-[1.375rem] lg:mb-10">
             <h3 className="retypeset-post-heading inline">
-                {article.href && isInternalPublicHref(article.href) ? (
+                {article.href && isSpaArticleHref(article.href) ? (
                     <Link
                         className={linkClassName}
                         to={article.href}
