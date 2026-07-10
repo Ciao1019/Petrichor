@@ -12,6 +12,7 @@ implemented_by:
   - 2026-07-10-agent-tools-admin
   - 2026-07-10-agent-context-compress
   - 2026-07-10-agent-subagents
+  - 2026-07-10-agent-plan-persist
 ---
 
 # 站内 Assistant 运行时
@@ -40,7 +41,7 @@ POST /api/assistant/chat（SSE, requireCurrentUser）
 
 ## 数据与状态
 
-5 张 `petrichor_assistant_*` 表；thread 含上下文摘要三列；确认态落消息 tool parts，不另建表。
+6 张 `petrichor_assistant_*` 表（含 `petrichor_assistant_plan`）；thread 含上下文摘要三列；确认态落消息 tool parts，不另建表。`upsert_plan` 落库后 `thread/detail` 返回 `plans[]`，侧栏 live 优先、无 live 时冷启动未完成 Plan。
 
 ## 已知约束
 

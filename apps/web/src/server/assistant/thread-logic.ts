@@ -10,6 +10,7 @@ import {
 } from "@/server/db/schema"
 import { notFound } from "@/server/http/response"
 import type { AgentDomainId, AssistantFocus } from "./domain-types"
+import { listActiveAssistantPlans } from "./plan-store"
 
 export const assistantIdSchema = z.union([z.string(), z.number()]).transform((value, ctx) => {
     const raw = String(value).trim()
@@ -256,6 +257,10 @@ export async function getAssistantThreadDetail(input: { userId: number; threadId
             content: parseJsonValue(message.contentJson),
             createdAt: message.createdAt.toISOString(),
         })),
+        plans: await listActiveAssistantPlans({
+            userId: input.userId,
+            threadId: thread.id,
+        }),
     }
 }
 

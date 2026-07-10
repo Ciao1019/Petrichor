@@ -1864,9 +1864,23 @@ export interface AssistantThreadMessage {
   createdAt: string
 }
 
+export interface AssistantPersistedPlan {
+  id: string
+  title: string
+  description?: string
+  todos: Array<{
+    id: string
+    label: string
+    status: "pending" | "in_progress" | "completed" | "cancelled"
+    description?: string
+  }>
+  maxVisibleTodos?: number
+}
+
 export interface AssistantThreadDetailResponse {
   thread: AssistantThreadSummary
   messages: AssistantThreadMessage[]
+  plans?: AssistantPersistedPlan[]
 }
 
 export const assistantApi = {
