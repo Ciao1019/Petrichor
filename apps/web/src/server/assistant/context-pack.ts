@@ -4,12 +4,26 @@ import { callChatCompletion } from "@/server/ai/generation"
 import { getDb } from "@/server/db/client"
 import { assistantMessages, assistantThreads } from "@/server/db/schema"
 
-/** 契约 4.9：保留最近至少 6 条原始消息 */
-export const CONTEXT_RECENT_MESSAGE_COUNT = 6
+/** 契约 4.3：最近窗口下限 */
+export const CONTEXT_RECENT_MESSAGE_MIN = 6
+/** @deprecated 使用 CONTEXT_RECENT_MESSAGE_MIN；保留别名兼容旧测试/调用 */
+export const CONTEXT_RECENT_MESSAGE_COUNT = CONTEXT_RECENT_MESSAGE_MIN
+/** 条数上限：触顶后 reason=turn_budget */
+export const CONTEXT_RECENT_MESSAGE_MAX = 20
+/** 最近原文占用的 token 预算比例（相对本轮 tokenBudget） */
+export const CONTEXT_RECENT_TOKEN_RATIO = 0.35
+
 export const CONTEXT_COMPRESS_PART_TYPE = "data-context-compress"
 export const CONTEXT_SUMMARY_TIMEOUT_MS = 8_000
 const MESSAGE_COUNT_TRIGGER = 20
 const TOKEN_BUDGET_RATIO = 0.55
+
+export type ContextWindowPolicyReason = "fixed" | "token_budget" | "turn_budget"
+
+export type ContextWindowPolicy = {
+    recentCount: number
+    reason: ContextWindowPolicyReason
+}
 
 export type ContextPack = {
     summaryMd: string | null
@@ -17,6 +31,7 @@ export type ContextPack = {
     compressedMessageCount: number
     refreshed: boolean
     status: "skipped" | "done" | "failed"
+    windowPolicy: ContextWindowPolicy
 }
 
 export type ContextCompressPartData = {
@@ -30,27 +45,64 @@ export function estimateMessageTokens(messages: unknown[]): number {
     return Math.ceil(raw.length / 2)
 }
 
+/**
+ * 动态最近窗口：下限 MIN，上限 MAX；在 recent token 预算内尽量多留原文。
+ */
+export function resolveRecentWindowPolicy(input: {
+    messages: unknown[]
+    tokenBudget: number
+}): ContextWindowPolicy {
+    const total = input.messages.length
+    if (total <= CONTEXT_RECENT_MESSAGE_MIN) {
+        return { recentCount: total, reason: "fixed" }
+    }
+
+    const recentBudget = Math.max(1, Math.floor(input.tokenBudget * CONTEXT_RECENT_TOKEN_RATIO))
+    const hardMax = Math.min(CONTEXT_RECENT_MESSAGE_MAX, total)
+
+    let count = CONTEXT_RECENT_MESSAGE_MIN
+    for (let n = CONTEXT_RECENT_MESSAGE_MIN + 1; n <= hardMax; n++) {
+        const slice = input.messages.slice(-n)
+        if (estimateMessageTokens(slice) <= recentBudget) {
+            count = n
+        } else {
+            break
+        }
+    }
+
+    if (count === CONTEXT_RECENT_MESSAGE_MIN) {
+        return { recentCount: count, reason: "fixed" }
+    }
+    if (count === CONTEXT_RECENT_MESSAGE_MAX) {
+        return { recentCount: count, reason: "turn_budget" }
+    }
+    return { recentCount: count, reason: "token_budget" }
+}
+
 export function shouldRefreshContextSummary(input: {
     messages: unknown[]
     tokenBudget: number
     persistedMessageCount: number
+    recentCount?: number
 }): boolean {
-    if (input.messages.length <= CONTEXT_RECENT_MESSAGE_COUNT) return false
+    const recentCount = input.recentCount ?? CONTEXT_RECENT_MESSAGE_MIN
+    if (input.messages.length <= recentCount) return false
     const overTokens = estimateMessageTokens(input.messages) > input.tokenBudget * TOKEN_BUDGET_RATIO
     const overCount = input.persistedMessageCount > MESSAGE_COUNT_TRIGGER
     return overTokens || overCount
 }
 
-export function splitRecentMessages<T>(messages: T[], recentCount = CONTEXT_RECENT_MESSAGE_COUNT): {
+export function splitRecentMessages<T>(messages: T[], recentCount = CONTEXT_RECENT_MESSAGE_MIN): {
     foldable: T[]
     recent: T[]
 } {
-    if (messages.length <= recentCount) {
+    const keep = Math.max(0, recentCount)
+    if (messages.length <= keep) {
         return { foldable: [], recent: messages }
     }
     return {
-        foldable: messages.slice(0, -recentCount),
-        recent: messages.slice(-recentCount),
+        foldable: messages.slice(0, -keep),
+        recent: messages.slice(-keep),
     }
 }
 
@@ -112,7 +164,11 @@ export async function inspectContextCompressNeed(input: {
     messages: UIMessage[]
     tokenBudget: number
 }): Promise<{ needsRefresh: boolean; existingSummary: string | null }> {
-    const { foldable } = splitRecentMessages(input.messages)
+    const windowPolicy = resolveRecentWindowPolicy({
+        messages: input.messages,
+        tokenBudget: input.tokenBudget,
+    })
+    const { foldable } = splitRecentMessages(input.messages, windowPolicy.recentCount)
     const [thread] = await getDb()
         .select({
             contextSummaryMd: assistantThreads.contextSummaryMd,
@@ -130,6 +186,7 @@ export async function inspectContextCompressNeed(input: {
         messages: input.messages,
         tokenBudget: input.tokenBudget,
         persistedMessageCount: persistedCount,
+        recentCount: windowPolicy.recentCount,
     }) && foldable.length > 0
     return { needsRefresh, existingSummary }
 }
@@ -142,7 +199,11 @@ export async function buildContextPack(input: {
     configId?: number | null
     signal?: AbortSignal
 }): Promise<ContextPack> {
-    const { foldable, recent } = splitRecentMessages(input.messages)
+    const windowPolicy = resolveRecentWindowPolicy({
+        messages: input.messages,
+        tokenBudget: input.tokenBudget,
+    })
+    const { foldable, recent } = splitRecentMessages(input.messages, windowPolicy.recentCount)
     const [thread] = await getDb()
         .select()
         .from(assistantThreads)
@@ -159,6 +220,7 @@ export async function buildContextPack(input: {
         messages: input.messages,
         tokenBudget: input.tokenBudget,
         persistedMessageCount: persistedCount,
+        recentCount: windowPolicy.recentCount,
     }) && foldable.length > 0
 
     if (!needsRefresh) {
@@ -170,6 +232,7 @@ export async function buildContextPack(input: {
                 : 0,
             refreshed: false,
             status: "skipped",
+            windowPolicy,
         }
     }
 
@@ -202,6 +265,7 @@ export async function buildContextPack(input: {
             compressedMessageCount: foldable.length,
             refreshed: true,
             status: "done",
+            windowPolicy,
         }
     } catch {
         return {
@@ -212,6 +276,7 @@ export async function buildContextPack(input: {
                 : 0,
             refreshed: false,
             status: "failed",
+            windowPolicy,
         }
     }
 }

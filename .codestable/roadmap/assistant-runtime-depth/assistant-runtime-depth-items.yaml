@@ -5,7 +5,7 @@ items:
   - slug: agent-plan-persist
     description: Plan 落库 + thread 回放 + 侧栏冷启动
     depends_on: []
-    status: in-progress
+    status: done
     feature: 2026-07-10-agent-plan-persist
     minimal_loop: true
     notes: 契约 4.1；侧栏壳已有，补持久化
@@ -13,8 +13,8 @@ items:
   - slug: agent-context-window-v2
     description: 动态最近窗口与 ContextPack.windowPolicy
     depends_on: []
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-07-10-agent-context-window-v2
     minimal_loop: false
     notes: 契约 4.3；下限仍 ≥6；无向量也可交付
 
