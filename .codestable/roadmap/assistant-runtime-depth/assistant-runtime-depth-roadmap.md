@@ -1,7 +1,7 @@
 ---
 doc_type: roadmap
 slug: assistant-runtime-depth
-status: active
+status: completed
 created: 2026-07-10
 last_reviewed: 2026-07-10
 tags: [agent, assistant, plan, resilience, context, subagent]

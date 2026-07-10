@@ -4,6 +4,7 @@ import { adminAssistantTools } from "./admin"
 import { contentWriteAssistantTools } from "./content-write"
 import { docLibraryAssistantTools } from "./doc-library"
 import { knowledgeAssistantTools } from "./knowledge"
+import { researchFanoutTools } from "./research-fanout"
 import { researchSubagentTools } from "./research-subagent"
 import { systemAssistantTools } from "./system"
 import { writeSubagentTools } from "./write-subagent"
@@ -13,6 +14,7 @@ export const readonlyAssistantTools: AssistantToolRegistration[] = [
     ...docLibraryAssistantTools,
     ...systemAssistantTools,
     ...researchSubagentTools,
+    ...researchFanoutTools,
 ]
 
 export const allAssistantTools: AssistantToolRegistration[] = [

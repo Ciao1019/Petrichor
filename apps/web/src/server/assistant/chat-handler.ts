@@ -63,7 +63,7 @@ export function buildAssistantSystemPrompt(domains: AgentDomainId[]): string {
 
     if (activeDomains.has("system")) {
         guidance.push("系统元信息问题使用 list_system_overview 获取真实计数与模型状态。多步任务用 show_progress 或 upsert_plan 更新进度（界面在侧栏展示，不在消息里重复叙述步骤）；每完成一步应再次调用同一 id 刷新状态。需要保存可复用结果时才使用 save_answer_artifact。")
-        guidance.push("跨库或需要多步检索核验时，可调用 spawn_research_subagent（domains 仅 knowledge/doc_library/system；默认 maxDepth=1 允许一层再委派）；根据其 summary/citations 作答，不要编造来源。")
+        guidance.push("跨库或需要多步检索核验时，可调用 spawn_research_subagent（domains 仅 knowledge/doc_library/system；默认 maxDepth=1 允许一层再委派）；多路独立子问题可用 spawn_research_fanout（tasks≤3）并行后汇总；根据 summary/citations/results 作答，不要编造来源。")
     }
     if (activeDomains.has("knowledge")) {
         guidance.push("知识库问题先调用 search_knowledge 定位内容，再用 read_knowledge_node 深读命中节点；优先沿用 focus 默认范围，必要时才显式跨库检索。")
