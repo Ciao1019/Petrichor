@@ -58,6 +58,7 @@ export function buildAssistantSystemPrompt(domains: AgentDomainId[]): string {
     }
     if (activeDomains.has("knowledge")) {
         guidance.push("知识库问题先调用 search_knowledge 定位内容，再用 read_knowledge_node 深读命中节点；优先沿用 focus 默认范围，必要时才显式跨库检索。")
+        guidance.push("当用户要看图片、架构图、截图或图表，或工具返回的 media 含图片时：在最终答案中直接输出 Markdown 图片 `![说明](src)`，src 必须使用 media.src 原值（通常为 s4key:…），不要只给对象路径、文章链接，也禁止声称「站内上传无法展示」。聊天界面会签名并渲染这些图片。")
     }
     if (activeDomains.has("doc_library")) {
         guidance.push("文档库问题先调用 search_documents 获取带定位的片段；上下文不足时调用 read_document，并用 fromIndex 继续翻页。")
@@ -68,7 +69,6 @@ export function buildAssistantSystemPrompt(domains: AgentDomainId[]): string {
     if (activeDomains.has("content_write")) {
         guidance.push("内容写入使用 create_article / update_article / create_article_share。删除文章、撤销分享、删除文档属于危险操作：必须调用 request_user_confirmation（action.toolName 填 delete_article / revoke_article_share / delete_document），禁止假装已删除。用户确认后运行时会执行并在工具结果里给出 executionOutcome。")
     }
-
     return [
         "你是 Petrichor 的站内助手，以对话方式帮助已登录用户查看和操作系统。",
         `本轮路由域：${domains.join(", ")}。只调用本轮实际提供的工具；没有对应写入或管理工具时，不要假装已经执行。`,

@@ -195,6 +195,7 @@ describe("knowledge assistant tools", () => {
         expect(() => schema.parse({ knowledgeBaseId: 3 })).toThrow()
         expect(() => schema.parse({ knowledgeBaseId: 3, nodeKey: "n", articleId: 1 })).toThrow()
         expect(schema.parse({ knowledgeBaseId: 3, pageKey: "source-1" })).toMatchObject({ pageKey: "source-1" })
+        expect(findTool("read_knowledge_node").description).toContain("media")
         expect(knowledgeAssistantTools.map(({ name, domain, risk }) => ({ name, domain, risk }))).toEqual([
             { name: "list_knowledge_bases", domain: "knowledge", risk: "read" },
             { name: "search_knowledge", domain: "knowledge", risk: "read" },

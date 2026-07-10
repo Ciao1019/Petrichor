@@ -71,6 +71,9 @@ describe("assistant domain-aware system prompt", () => {
         expect(prompt).toContain("read_knowledge_node")
         expect(prompt).toContain("show_citations")
         expect(prompt).toContain("不要编造")
+        expect(prompt).toContain("media.src")
+        expect(prompt).toContain("s4key:")
+        expect(prompt).toContain("站内上传无法展示")
     })
 
     it("doc_library+system 提示支持检索、翻页和引用", () => {
