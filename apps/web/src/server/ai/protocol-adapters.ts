@@ -153,6 +153,32 @@ export function isDeepSeekProtocolContext(context: ProtocolAdapterContext) {
     return isLegacyDeepSeekCompatibleConfig(context)
 }
 
+/**
+ * DeepSeek（含兼容接入）不支持 OpenAI 的 response_format.json_schema。
+ * Mastra 的 PromptInjectionDetector 等结构化检测需改走 jsonPromptInjection。
+ */
+export function needsJsonPromptInjectionForStructuredOutput(context: Pick<ProtocolAdapterContext, "protocol" | "baseUrl" | "model" | "name">) {
+    if (isDeepSeekProtocolContext({
+        protocol: context.protocol,
+        baseUrl: context.baseUrl,
+        model: context.model,
+        name: context.name,
+        options: {
+            maxTokens: null,
+            temperature: null,
+            deepSeekThinking: null,
+            disableDeepSeekThinkingForTools: true,
+        },
+    })) {
+        return true
+    }
+    // SiliconFlow 上的 DeepSeek 模型同样拒绝 json_schema
+    if (context.protocol === "SILICONFLOW" && context.model.toLowerCase().includes("deepseek")) {
+        return true
+    }
+    return false
+}
+
 function isChatCompletionsRequest(resource: Parameters<typeof fetch>[0]) {
     const url = getFetchUrl(resource)
     return url.includes("/chat/completions")

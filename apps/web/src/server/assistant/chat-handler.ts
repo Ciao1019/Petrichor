@@ -12,6 +12,8 @@ import { PromptInjectionDetector, TokenLimiterProcessor } from "@mastra/core/pro
 import { z } from "zod"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { createChatLanguageModel } from "@/server/ai/generation"
+import { needsJsonPromptInjectionForStructuredOutput } from "@/server/ai/protocol-adapters"
+import type { AiProtocol } from "@/server/ai/config-logic"
 import { HttpError, toErrorResponse } from "@/server/http/response"
 import type { AgentDomainId, AssistantToolContext } from "./domain-types"
 import { assertAssistantFocusOwnership } from "./focus-guard"
@@ -134,6 +136,15 @@ export async function assistantChat(request: NextRequest) {
                         threshold: 0.85,
                         detectionTypes: ["injection", "jailbreak", "system-override"],
                         lastMessageOnly: true,
+                        // DeepSeek 等不支持 json_schema；改用 prompt 注入 JSON，避免检测请求 400
+                        ...(needsJsonPromptInjectionForStructuredOutput({
+                            protocol: config.protocol as AiProtocol,
+                            baseUrl: config.baseUrl ?? "",
+                            model: config.model,
+                            name: config.name,
+                        })
+                            ? { structuredOutputOptions: { jsonPromptInjection: true } }
+                            : {}),
                     }),
                     new TokenLimiterProcessor({ limit: MAX_CONTEXT_TOKENS, trimMode: "contiguous" }),
                 ],

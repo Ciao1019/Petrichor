@@ -58,12 +58,17 @@ describe("loadToolsForDomains", () => {
 })
 
 describe("registerAssistantTools", () => {
-    it("同名重复注册抛错", () => {
-        registerAssistantTools([makeRegistration()])
-        expect(() => registerAssistantTools([makeRegistration()])).toThrow(/重名/)
+    it("同一次调用内同名抛错", () => {
+        expect(() => registerAssistantTools([makeRegistration(), makeRegistration()])).toThrow(/重名/)
     })
 
-    it("同一引用重复注册幂等（模块热重载场景）", () => {
+    it("跨次调用同名覆盖（HMR：tools 模块重载后对象引用会变）", () => {
+        registerAssistantTools([makeRegistration({ description: "旧" })])
+        expect(() => registerAssistantTools([makeRegistration({ description: "新" })])).not.toThrow()
+        expect(getAssistantToolDomain("list_knowledge_bases")).toBe("knowledge")
+    })
+
+    it("同一引用重复注册幂等", () => {
         const registration = makeRegistration()
         registerAssistantTools([registration])
         expect(() => registerAssistantTools([registration])).not.toThrow()

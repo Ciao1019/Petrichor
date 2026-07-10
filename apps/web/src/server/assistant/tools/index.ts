@@ -11,9 +11,7 @@ export const readonlyAssistantTools: AssistantToolRegistration[] = [
 ]
 
 export function registerReadonlyAssistantTools(): void {
-    registerAssistantTools(knowledgeAssistantTools)
-    registerAssistantTools(docLibraryAssistantTools)
-    registerAssistantTools(systemAssistantTools)
+    registerAssistantTools(readonlyAssistantTools)
 }
 
 registerReadonlyAssistantTools()
