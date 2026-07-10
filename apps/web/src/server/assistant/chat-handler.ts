@@ -242,6 +242,7 @@ export async function assistantChat(request: NextRequest) {
                         instructions: buildInstructionsWithContextSummary(
                             buildAssistantSystemPrompt(route.domains),
                             pack.summaryMd,
+                            pack.recalledSnippets,
                         ),
                         tools,
                         inputProcessors: process.env.VITEST
