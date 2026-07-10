@@ -6,11 +6,14 @@ import {
     estimateReadingMinutes,
     buildArticlePath,
     parseShareExpiresAt,
+    buildPublicShareInternalLink,
     buildPublicShareRepostAttribution,
+    isInternalSitePath,
     resolvePublicArticleToc,
     resolvePublicHomepageShareStatus,
     validateArticleSearchInput,
     validatePublicShareDetailInput,
+    validatePublicShareInternalLinkInput,
     validatePublicShareRepostAttributionInput,
     validateShareArticleIdInput,
     validateSharePassword,
@@ -96,6 +99,33 @@ describe("kb share/search logic", () => {
                 originalUrl: null,
                 originalAuthorName: null,
             })
+    })
+
+    it("校验公开分享内部链接字段", () => {
+        expect(validatePublicShareInternalLinkInput({ isInternalLink: false, internalUrl: "/tools/x.html" }))
+            .toEqual({ internalUrl: null })
+
+        expect(validatePublicShareInternalLinkInput({
+            isInternalLink: true,
+            internalUrl: " /tools/visualizations/architecture.html ",
+        })).toEqual({ internalUrl: "/tools/visualizations/architecture.html" })
+
+        expect(() => validatePublicShareInternalLinkInput({ isInternalLink: true, internalUrl: "" }))
+            .toThrow("请填写内部链接")
+        expect(() => validatePublicShareInternalLinkInput({ isInternalLink: true, internalUrl: "https://example.com/x" }))
+            .toThrow("内部链接必须是以 / 开头的站内路径")
+        expect(() => validatePublicShareInternalLinkInput({ isInternalLink: true, internalUrl: "//evil.com/x" }))
+            .toThrow("内部链接必须是以 / 开头的站内路径")
+
+        expect(isInternalSitePath("/tools/visualizations/architecture.html")).toBe(true)
+        expect(isInternalSitePath("//evil.com")).toBe(false)
+        expect(isInternalSitePath("tools/x.html")).toBe(false)
+
+        expect(buildPublicShareInternalLink({ internalUrl: " /tools/x.html " }))
+            .toEqual({ internalUrl: "/tools/x.html" })
+        expect(buildPublicShareInternalLink({ internalUrl: "https://example.com" }))
+            .toEqual({ internalUrl: null })
+        expect(buildPublicShareInternalLink(null)).toEqual({ internalUrl: null })
     })
 
     it("生成 Go 兼容的文章路径", () => {

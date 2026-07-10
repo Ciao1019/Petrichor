@@ -277,6 +277,8 @@ export const knowledgeBaseArticleShares = pgTable("petrichor_kb_article_share", 
     isRepost: boolean("is_repost").notNull().default(false),
     originalUrl: text("original_url"),
     originalAuthorName: text("original_author_name"),
+    /** 内部链接：非空时列表点击直跳该站内路径；与转载互斥 */
+    internalUrl: text("internal_url"),
     pinOrder: integer("pin_order"),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     ...timestamps,

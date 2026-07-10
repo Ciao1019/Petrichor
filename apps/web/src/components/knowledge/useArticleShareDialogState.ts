@@ -6,6 +6,7 @@ import {
   buildShareState,
   DEFAULT_PIN_ORDER,
   isValidHttpUrl,
+  isValidInternalSitePath,
   OTP_LENGTH,
   resolveAxiosErrorMessage,
   safeOrigin,
@@ -67,6 +68,8 @@ export function useArticleShareDialogState({ open, articleId }: UseArticleShareD
   const [isRepost, setIsRepost] = React.useState(false)
   const [originalUrl, setOriginalUrl] = React.useState("")
   const [originalAuthorName, setOriginalAuthorName] = React.useState("")
+  const [isInternalLink, setIsInternalLink] = React.useState(false)
+  const [internalUrl, setInternalUrl] = React.useState("")
   const [isPinned, setIsPinned] = React.useState(false)
   const [pinOrder, setPinOrder] = React.useState<number>(DEFAULT_PIN_ORDER)
 
@@ -102,6 +105,8 @@ export function useArticleShareDialogState({ open, articleId }: UseArticleShareD
         setIsRepost(next.isRepost)
         setOriginalUrl(next.originalUrl)
         setOriginalAuthorName(next.originalAuthorName)
+        setIsInternalLink(next.isInternalLink)
+        setInternalUrl(next.internalUrl)
         setIsPinned(next.isPinned)
         setPinOrder(next.pinOrder ?? DEFAULT_PIN_ORDER)
       })
@@ -134,12 +139,27 @@ export function useArticleShareDialogState({ open, articleId }: UseArticleShareD
     setEditingPassword(true)
   }, [hasPassword])
 
+  // 内部链接和转载互斥：开启一个自动关掉另一个
   const setIsRepostChecked = React.useCallback((checked: boolean) => {
     setIsRepost(checked)
-    if (!checked) {
+    if (checked) {
+      setIsInternalLink(false)
+      setInternalUrl("")
+      return
+    }
+    setOriginalUrl("")
+    setOriginalAuthorName("")
+  }, [])
+
+  const setIsInternalLinkChecked = React.useCallback((checked: boolean) => {
+    setIsInternalLink(checked)
+    if (checked) {
+      setIsRepost(false)
       setOriginalUrl("")
       setOriginalAuthorName("")
+      return
     }
+    setInternalUrl("")
   }, [])
 
   const saveShareSettings = React.useCallback(async (successText: string) => {
@@ -179,6 +199,18 @@ export function useArticleShareDialogState({ open, articleId }: UseArticleShareD
       }
     }
 
+    const normalizedInternalUrl = internalUrl.trim()
+    if (isInternalLink) {
+      if (!normalizedInternalUrl) {
+        toast("请填写内部链接")
+        return false
+      }
+      if (!isValidInternalSitePath(normalizedInternalUrl)) {
+        toast("内部链接必须是以 / 开头的站内路径")
+        return false
+      }
+    }
+
     setSubmitting(true)
     try {
       const res = await knowledgeBaseArticleShareApi.create({
@@ -189,6 +221,8 @@ export function useArticleShareDialogState({ open, articleId }: UseArticleShareD
         isRepost,
         originalUrl: isRepost ? normalizedOriginalUrl : null,
         originalAuthorName: isRepost ? normalizedOriginalAuthorName : null,
+        isInternalLink,
+        internalUrl: isInternalLink ? normalizedInternalUrl : null,
       })
       const next = buildShareState(res.data)
       setShareCode(next.shareCode)
@@ -201,6 +235,8 @@ export function useArticleShareDialogState({ open, articleId }: UseArticleShareD
       setIsRepost(next.isRepost)
       setOriginalUrl(next.originalUrl)
       setOriginalAuthorName(next.originalAuthorName)
+      setIsInternalLink(next.isInternalLink)
+      setInternalUrl(next.internalUrl)
       toast(successText)
       return true
     } catch (e: unknown) {
@@ -209,7 +245,7 @@ export function useArticleShareDialogState({ open, articleId }: UseArticleShareD
     } finally {
       setSubmitting(false)
     }
-  }, [articleId, editingPassword, enableExpire, expireDate, hasPassword, isRepost, originalAuthorName, originalUrl, password, usePassword])
+  }, [articleId, editingPassword, enableExpire, expireDate, hasPassword, internalUrl, isInternalLink, isRepost, originalAuthorName, originalUrl, password, usePassword])
 
   const revokeShare = React.useCallback(async () => {
     if (!articleId) {
@@ -229,6 +265,8 @@ export function useArticleShareDialogState({ open, articleId }: UseArticleShareD
       setIsRepost(false)
       setOriginalUrl("")
       setOriginalAuthorName("")
+      setIsInternalLink(false)
+      setInternalUrl("")
       setIsPinned(false)
       setPinOrder(DEFAULT_PIN_ORDER)
       toast("已撤销分享")
@@ -287,6 +325,8 @@ export function useArticleShareDialogState({ open, articleId }: UseArticleShareD
     isRepost,
     originalUrl,
     originalAuthorName,
+    isInternalLink,
+    internalUrl,
     isPinned,
     pinOrder,
     shareUrl,
@@ -295,10 +335,12 @@ export function useArticleShareDialogState({ open, articleId }: UseArticleShareD
     setExpireDate,
     setUsePasswordChecked,
     setIsRepostChecked,
+    setIsInternalLinkChecked,
     setEditingPassword,
     setPassword,
     setOriginalUrl,
     setOriginalAuthorName,
+    setInternalUrl,
     setIsPinned,
     setPinOrder,
     saveShareSettings,

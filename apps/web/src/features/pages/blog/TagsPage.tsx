@@ -44,6 +44,7 @@ const tagsPageCopy = {
     readArticleLabel: (title: string) => `阅读文章：${title}`,
     readingTime: (minutes: number) => `${minutes} min`,
     repost: "转载",
+    internalLink: "内部链接",
     expired: "已过期",
     passwordRequired: "需要访问密码",
     expiredTitle: (date: string | null) => (date ? `已过期：${date}` : "已过期"),
@@ -54,8 +55,9 @@ function formatTagDate(value: string) {
     return datePart || value
 }
 
-function isInternalPublicHref(href: string) {
-    return href.startsWith("/") && !href.startsWith("//")
+/** 仅文章详情页走 SPA 路由；其余内链（如转载直跳的自托管 HTML）需要整页加载 */
+function isSpaArticleHref(href: string) {
+    return href.startsWith("/p/")
 }
 
 function resolveArticleListError(error: unknown) {
@@ -113,7 +115,7 @@ function TagPill({
 }
 
 function ArticleStatusBadges({ article }: { article: PublicArticleListItem }) {
-    if (!article.isRepost && !article.expired && !article.hasPassword) {
+    if (!article.isRepost && !article.isInternalLink && !article.expired && !article.hasPassword) {
         return null
     }
 
@@ -122,6 +124,11 @@ function ArticleStatusBadges({ article }: { article: PublicArticleListItem }) {
             {article.isRepost ? (
                 <span className="retypeset-status-tag" title={tagsPageCopy.repost}>
                     {tagsPageCopy.repost}
+                </span>
+            ) : null}
+            {article.isInternalLink ? (
+                <span className="retypeset-status-tag" title={tagsPageCopy.internalLink}>
+                    {tagsPageCopy.internalLink}
                 </span>
             ) : null}
             {article.expired ? (
@@ -153,14 +160,17 @@ function TagArticleItem({ article }: { article: PublicArticleListItem }) {
         if (article.expired || article.hasPassword || !article.shareCode) {
             return
         }
+        if (!article.href || !isSpaArticleHref(article.href)) {
+            return
+        }
 
         void publicArticleShareApi.prefetchDetail(article.shareCode)
-    }, [article.expired, article.hasPassword, article.shareCode])
+    }, [article.expired, article.hasPassword, article.href, article.shareCode])
 
     return (
         <li className="mb-[1.375rem] lg:mb-[1.75rem]">
             <h3 className="inline text-[1.06rem] font-medium leading-relaxed lg:text-[1.125rem]">
-                {article.href && isInternalPublicHref(article.href) ? (
+                {article.href && isSpaArticleHref(article.href) ? (
                     <Link
                         className={linkClassName}
                         to={article.href}

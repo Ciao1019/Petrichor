@@ -11,6 +11,8 @@ export type ShareStateSnapshot = {
   isRepost: boolean
   originalUrl: string
   originalAuthorName: string
+  isInternalLink: boolean
+  internalUrl: string
   isPinned: boolean
   pinOrder: number | null
 }
@@ -57,6 +59,11 @@ export function isValidHttpUrl(value: string): boolean {
   }
 }
 
+/** 站内路径（如 /tools/visualizations/architecture.html） */
+export function isValidInternalSitePath(value: string): boolean {
+  return /^\/(?!\/)\S+$/.test(value.trim())
+}
+
 export function buildShareState(info: ArticleShareInfoResponse | ArticleShareCreateResponse): ShareStateSnapshot {
   const code = "shareCode" in info && info.shareCode ? info.shareCode : null
   const enabled = Boolean(info.enabled)
@@ -68,6 +75,8 @@ export function buildShareState(info: ArticleShareInfoResponse | ArticleShareCre
   const originalUrl = info.originalUrl?.trim() || ""
   const originalAuthorName = info.originalAuthorName?.trim() || ""
   const isRepost = Boolean(info.isRepost && originalUrl && originalAuthorName)
+  const internalUrl = info.internalUrl?.trim() || ""
+  const isInternalLink = Boolean(internalUrl)
   const pinOrder = "pinOrder" in info && typeof info.pinOrder === "number" ? info.pinOrder : null
   const isPinned = pinOrder != null
 
@@ -80,6 +89,8 @@ export function buildShareState(info: ArticleShareInfoResponse | ArticleShareCre
     isRepost,
     originalUrl: isRepost ? originalUrl : "",
     originalAuthorName: isRepost ? originalAuthorName : "",
+    isInternalLink,
+    internalUrl,
     isPinned,
     pinOrder,
   }

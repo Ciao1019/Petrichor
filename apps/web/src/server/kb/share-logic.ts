@@ -208,6 +208,50 @@ export function validatePublicShareRepostAttributionInput(raw: unknown): PublicS
     }
 }
 
+/** 站内路径（如 /tools/visualizations/architecture.html） */
+export function isInternalSitePath(value: string): boolean {
+    return /^\/(?!\/)\S+$/.test(value.trim())
+}
+
+export interface PublicShareInternalLink {
+    internalUrl: string | null
+}
+
+export interface PublicShareInternalLinkState {
+    internalUrl?: string | null
+}
+
+/**
+ * 内部链接：列表点击直跳站内页面（如自托管 HTML 可视化）。
+ * 与转载互斥，由调用方在两者都校验后做互斥检查。
+ */
+export function validatePublicShareInternalLinkInput(raw: unknown): PublicShareInternalLink {
+    const value = raw && typeof raw === "object" ? raw as Record<string, unknown> : {}
+    if (value.isInternalLink !== true) {
+        return { internalUrl: null }
+    }
+
+    const internalUrl = String(value.internalUrl ?? "").trim()
+    if (!internalUrl) {
+        throw badRequest("请填写内部链接")
+    }
+    if (internalUrl.length > maxOriginalUrlLength) {
+        throw badRequest(`内部链接长度不能超过 ${maxOriginalUrlLength}`)
+    }
+    if (!isInternalSitePath(internalUrl)) {
+        throw badRequest("内部链接必须是以 / 开头的站内路径")
+    }
+    return { internalUrl }
+}
+
+export function buildPublicShareInternalLink(share: PublicShareInternalLinkState | null | undefined): PublicShareInternalLink {
+    const internalUrl = share?.internalUrl?.trim() || null
+    if (!internalUrl || !isInternalSitePath(internalUrl)) {
+        return { internalUrl: null }
+    }
+    return { internalUrl }
+}
+
 export function buildPublicShareRepostAttribution(share: PublicShareRepostAttributionState | null | undefined): PublicShareRepostAttribution {
     const originalUrl = share?.originalUrl?.trim() || null
     const originalAuthorName = share?.originalAuthorName?.trim() || null

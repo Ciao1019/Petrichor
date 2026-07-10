@@ -652,6 +652,8 @@ export interface ArticleShareCreateRequest {
   isRepost?: boolean | null
   originalUrl?: string | null
   originalAuthorName?: string | null
+  isInternalLink?: boolean | null
+  internalUrl?: string | null
 }
 
 export interface ArticleShareCreateResponse {
@@ -663,6 +665,7 @@ export interface ArticleShareCreateResponse {
   isRepost: boolean
   originalUrl?: string | null
   originalAuthorName?: string | null
+  internalUrl?: string | null
   updatedAt?: string | null
 }
 
@@ -689,6 +692,7 @@ export interface ArticleShareInfoResponse {
   isRepost: boolean
   originalUrl?: string | null
   originalAuthorName?: string | null
+  internalUrl?: string | null
   pinOrder?: number | null
   isPinned?: boolean
   updatedAt?: string | null
@@ -1297,6 +1301,7 @@ export interface PublicArticleListItem {
   expiresAt?: string | null
   hasPassword: boolean
   isRepost: boolean
+  isInternalLink?: boolean
   isPinned?: boolean
   pinOrder?: number | null
 }

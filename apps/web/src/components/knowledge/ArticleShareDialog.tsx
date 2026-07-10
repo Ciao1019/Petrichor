@@ -51,6 +51,7 @@ export function ArticleShareDialog({ open, onOpenChange, articleId }: ArticleSha
   const otpId = "share-dialog-password-otp"
   const originalUrlId = "share-dialog-original-url"
   const originalAuthorNameId = "share-dialog-original-author-name"
+  const internalUrlId = "share-dialog-internal-url"
   const {
     loadingInfo,
     submitting,
@@ -66,6 +67,8 @@ export function ArticleShareDialog({ open, onOpenChange, articleId }: ArticleSha
     isRepost,
     originalUrl,
     originalAuthorName,
+    isInternalLink,
+    internalUrl,
     isPinned,
     pinOrder,
     shareUrl,
@@ -74,10 +77,12 @@ export function ArticleShareDialog({ open, onOpenChange, articleId }: ArticleSha
     setExpireDate,
     setUsePasswordChecked,
     setIsRepostChecked,
+    setIsInternalLinkChecked,
     setEditingPassword,
     setPassword,
     setOriginalUrl,
     setOriginalAuthorName,
+    setInternalUrl,
     setIsPinned,
     setPinOrder,
     saveShareSettings,
@@ -169,6 +174,31 @@ export function ArticleShareDialog({ open, onOpenChange, articleId }: ArticleSha
                   placeholder="作者名称"
                 />
               </div>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="space-y-3 rounded-md border p-3">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="share-internal-link-switch">内部链接</Label>
+            <Switch
+              id="share-internal-link-switch"
+              checked={isInternalLink}
+              onCheckedChange={(value) => setIsInternalLinkChecked(Boolean(value))}
+            />
+          </div>
+          {isInternalLink ? (
+            <div className="space-y-2">
+              <Label htmlFor={internalUrlId}>站内路径</Label>
+              <Input
+                id={internalUrlId}
+                value={internalUrl}
+                onChange={(event) => setInternalUrl(event.target.value)}
+                placeholder="/tools/visualizations/architecture.html"
+              />
+              <p className="text-xs text-muted-foreground">
+                开启后文章列表点击标题直接跳转到该站内页面；与转载互斥。
+              </p>
             </div>
           ) : null}
         </div>

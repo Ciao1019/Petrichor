@@ -135,7 +135,13 @@ export function BlogSearchDialog({ open, onOpenChange }: Props) {
 
   const handleSelect = (item: PublicArticleSearchItem) => {
     onOpenChange(false)
-    if (item.href) navigate(item.href)
+    if (!item.href) return
+    if (item.href.startsWith("/p/")) {
+      navigate(item.href)
+      return
+    }
+    // 转载直跳的站内静态页（如自托管 HTML）不在 SPA 路由内，需要整页加载
+    window.location.assign(item.href)
   }
 
   return (
@@ -192,6 +198,11 @@ export function BlogSearchDialog({ open, onOpenChange }: Props) {
                         {item.isRepost ? (
                           <span className="bg-muted text-muted-foreground ml-2 rounded px-1.5 py-0.5 align-middle text-[0.65rem]">
                             转载
+                          </span>
+                        ) : null}
+                        {item.isInternalLink ? (
+                          <span className="bg-muted text-muted-foreground ml-2 rounded px-1.5 py-0.5 align-middle text-[0.65rem]">
+                            内部链接
                           </span>
                         ) : null}
                         {item.expired ? (
