@@ -21,7 +21,7 @@ import type { DashboardTrendPoint } from "@/lib/api"
 
 const chartConfig = {
   article: { label: "文章", color: "var(--chart-1)" },
-  qa: { label: "问答", color: "var(--chart-2)" },
+  qa: { label: "助手", color: "var(--chart-2)" },
   agent: { label: "Agent", color: "var(--chart-3)" },
 } satisfies ChartConfig
 
@@ -43,7 +43,7 @@ export function ActivityTrendChart({ data, loading }: ActivityTrendChartProps) {
     <Card className="@container/card">
       <CardHeader>
         <CardTitle>活动趋势</CardTitle>
-        <CardDescription>近 30 天文章、问答与 Agent 调用</CardDescription>
+        <CardDescription>近 30 天文章、助手对话与 Agent 调用</CardDescription>
       </CardHeader>
       <CardContent className="px-2 sm:px-6">
         {loading ? (

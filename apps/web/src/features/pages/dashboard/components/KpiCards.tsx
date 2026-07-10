@@ -18,7 +18,7 @@ type KpiItem = {
 
 const ITEMS: KpiItem[] = [
   { key: "articles", label: "文章总数", icon: FileText },
-  { key: "qaThreads", label: "问答记录", icon: MessagesSquare },
+  { key: "qaThreads", label: "助手对话", icon: MessagesSquare },
   { key: "knowledgeBases", label: "知识库", icon: Library },
   { key: "activity7d", label: "近 7 天活跃", icon: Activity },
 ]

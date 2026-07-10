@@ -38,7 +38,7 @@ export function DashboardMetricsPage() {
     <div className="@container/main flex flex-1 flex-col gap-4 p-4 md:gap-6 md:p-6">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">概览</h1>
-        <p className="text-muted-foreground text-sm">你的知识库与问答活动一览</p>
+        <p className="text-muted-foreground text-sm">你的知识库与助手活动一览</p>
       </div>
 
       <KpiCards kpis={overview?.kpis} loading={loading} />

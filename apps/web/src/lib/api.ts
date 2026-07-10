@@ -967,29 +967,6 @@ export const knowledgeBaseWikiAgentApi = {
     api.post<KnowledgeBaseWikiPatchResponse>("/kb/wiki/patch/reject", { knowledgeBaseId, patchId }),
   lint: (knowledgeBaseId: string) =>
     api.post<KnowledgeBaseWikiLintResponse>("/kb/wiki/lint", { knowledgeBaseId }),
-  threads: (knowledgeBaseId: string) =>
-    api.post<{ knowledgeBaseId: string; threads: KnowledgeBaseAgentThreadResponse[] }>("/kb/agent/thread/list", { knowledgeBaseId }),
-  createThread: (knowledgeBaseId: string, title?: string) =>
-    api.post<{ id: string; knowledgeBaseId: string; title: string; status: string }>("/kb/agent/thread/create", {
-      knowledgeBaseId,
-      ...(title ? { title } : {}),
-    }),
-  threadDetail: (knowledgeBaseId: string, threadId: string) =>
-    api.post<KnowledgeBaseAgentThreadDetailResponse>("/kb/agent/thread/detail", { knowledgeBaseId, threadId }),
-  artifacts: (knowledgeBaseId: string, threadId?: string | null) =>
-    api.post<{ knowledgeBaseId: string; artifacts: KnowledgeBaseAgentArtifactResponse[] }>("/kb/agent/artifact/list", {
-      knowledgeBaseId,
-      ...(threadId ? { threadId } : {}),
-    }),
-  createArtifact: (data: {
-    knowledgeBaseId: string
-    threadId: string
-    runId?: string | null
-    artifactType: string
-    title: string
-    contentMd?: string | null
-    payload?: unknown
-  }) => api.post<KnowledgeBaseAgentArtifactResponse>("/kb/agent/artifact/create", data),
 }
 
 export interface KnowledgeBaseQaModelOption {
@@ -1026,16 +1003,6 @@ export interface KnowledgeBaseQaThreadDeleteManyResponse {
 }
 
 export const knowledgeBaseQaApi = {
-  threadList: (params: KnowledgeBaseQaThreadListParams = {}) =>
-    api.post<KnowledgeBaseQaThreadListResponse>("/kb/qa/thread/list", params),
-  threadDetail: (threadId: string) =>
-    api.post<KnowledgeBaseAgentThreadDetailResponse>("/kb/qa/thread/detail", { threadId }),
-  threadDelete: (threadId: string) =>
-    api.post<{ id: string }>("/kb/qa/thread/delete", { threadId }),
-  threadDeleteMany: (threadIds: string[]) =>
-    api.post<KnowledgeBaseQaThreadDeleteManyResponse>("/kb/qa/thread/delete-many", { threadIds }),
-  createThread: (data: { knowledgeBaseId?: string | null; title?: string }) =>
-    api.post<{ id: string; knowledgeBaseId: string | null; title: string; status: string }>("/kb/qa/thread/create", data),
   knowledgeBaseList: () =>
     api.post<{ knowledgeBases: KnowledgeBaseQaSummary[] }>("/kb/qa/knowledge-base/list", {}),
   modelInfo: () =>
@@ -1276,39 +1243,6 @@ export const aiReviewApi = {
     api.post<TableDataInfo<AiReviewListItem>>("/ai/review/list", data),
   periodOptions: () =>
     api.post<AiReviewPeriodOptionsResponse>("/ai/review/period-options", {}),
-}
-
-export type AgentMemoryKind = "PREFERENCE" | "TOPIC" | "FACT"
-
-export interface AgentMemoryItem {
-  id: string
-  kind: AgentMemoryKind
-  content: string
-  evidenceCount: number
-  lastSeenAt: string
-  createdAt: string
-}
-
-export interface AgentMemoryListResponse {
-  items: AgentMemoryItem[]
-  state: {
-    lastDistilledAt: string | null
-    distillCount: number
-    pendingMessageCount: number
-  }
-}
-
-export interface AgentMemoryDistillResponse {
-  status: "distilled" | "skipped" | "no_new_messages" | "nothing_to_keep"
-  created: number
-  merged: number
-  sampledQuestions: number
-}
-
-export const agentMemoryApi = {
-  list: () => api.post<AgentMemoryListResponse>("/kb/agent/memory/list", {}),
-  delete: (memoryId: string) => api.post<{ memoryId: string; deleted: boolean }>("/kb/agent/memory/delete", { memoryId }),
-  distill: () => api.post<AgentMemoryDistillResponse>("/kb/agent/memory/distill", {}),
 }
 
 export const notificationApi = {
@@ -1732,11 +1666,11 @@ export interface DashboardOverviewResponse {
     knowledgeBases: DashboardDistributionItem[]
     tags: DashboardDistributionItem[]
   }
-  recentThreads: KnowledgeBaseAgentThreadResponse[]
+  recentThreads: AssistantThreadSummary[]
 }
 
 export const dashboardApi = {
-  /** 加载仪表盘总览：KPI、活动热力图、趋势、分布与最近问答 */
+  /** 加载仪表盘总览：KPI、活动热力图、趋势、分布与最近助手对话 */
   overview: () => api.post<DashboardOverviewResponse>("/dashboard/overview", {}),
 }
 
@@ -1900,15 +1834,6 @@ export const docLibraryApi = {
   registerDocument: (data: DocDocumentRegisterRequest) => api.post<{ id: string }>("/doc-library/document/register", data),
   documentDetail: (id: string) => api.post<{ document: DocDocumentDetail }>("/doc-library/document/detail", { id }),
   deleteDocument: (id: string) => api.post<DocDeleteResponse>("/doc-library/document/delete", { id }),
-
-  modelInfo: () => api.post<DocQaModelInfo>("/doc-library/model-info", {}),
-  threadList: (params: DocQaThreadListParams) =>
-    api.post<{ threads: DocQaThreadResponse[]; nextCursor: number | null }>("/doc-library/thread/list", params),
-  threadDetail: (threadId: string) =>
-    api.post<{ thread: DocQaThreadResponse; messages: DocQaThreadMessage[] }>("/doc-library/thread/detail", { threadId }),
-  threadDelete: (threadId: string) => api.post<{ id: string }>("/doc-library/thread/delete", { threadId }),
-  threadDeleteMany: (threadIds: string[]) =>
-    api.post<{ deleted: string[]; failed: { id: string; reason: string }[] }>("/doc-library/thread/delete-many", { threadIds }),
 }
 
 // 站内 Assistant（chat-first 壳）：形状对齐 src/server/assistant/thread-handlers.ts

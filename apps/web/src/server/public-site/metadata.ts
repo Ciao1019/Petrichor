@@ -85,14 +85,6 @@ export function buildStaticPublicPageMetadata(pathname: string): Metadata {
         })
     }
 
-    if (pathname === "/ask") {
-        return buildPublicMetadata({
-            title: "AI 问答",
-            description: "向 AI 提问，基于 Petrichor 公开文章实时检索作答。",
-            pathname,
-        })
-    }
-
     if (pathname === "/projects") {
         return buildPublicMetadata({
             title: "开源项目",
@@ -155,9 +147,6 @@ export function resolvePublicRouteMetadata(
     }
     if (firstSegment === "about" && pathSegments.length === 1) {
         return buildStaticPublicPageMetadata("/about")
-    }
-    if (firstSegment === "ask" && pathSegments.length === 1) {
-        return buildStaticPublicPageMetadata("/ask")
     }
     if (firstSegment === "projects" && pathSegments.length === 1) {
         return buildStaticPublicPageMetadata("/projects")

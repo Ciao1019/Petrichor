@@ -15,10 +15,8 @@ import { TwoFactorEnforcementBanner } from '@/components/account/two-factor-enfo
 import { AssistantChatPage } from '@/features/pages/assistant/AssistantChatPage'
 import { KnowledgeBasePage } from '@/features/pages/knowledge/KnowledgeBasePage'
 import { KnowledgeBaseArticleEditorPage } from '@/features/pages/knowledge/KnowledgeBaseArticleEditorPage'
-import { KnowledgeQaPage } from '@/features/pages/knowledge/KnowledgeQaPage'
 import { DocLibraryListPage } from '@/features/pages/doc-library/DocLibraryListPage'
 import { DocLibraryBrowsePage } from '@/features/pages/doc-library/DocLibraryBrowsePage'
-import { DocLibraryQaPage } from '@/features/pages/doc-library/DocLibraryQaPage'
 import { KnowledgeWikiPage } from '@/features/pages/knowledge/KnowledgeWikiPage'
 import { KnowledgeBaseArticleMindMapPage } from '@/features/pages/knowledge/KnowledgeBaseArticleMindMapPage'
 import { KnowledgeBaseTreePage } from '@/features/pages/knowledge/KnowledgeBaseTreePage'
@@ -26,7 +24,6 @@ import { DocumentImportJobsPage } from '@/features/pages/knowledge/DocumentImpor
 import { DocumentImportJobDetailPage } from '@/features/pages/knowledge/DocumentImportJobDetailPage'
 import { AiModelConfigPage } from '@/features/pages/ai/AiModelConfigPage'
 import { AiReviewPage } from '@/features/pages/ai/AiReviewPage'
-import { AgentMemoryPage } from '@/features/pages/memory/AgentMemoryPage'
 import { AgentKeysPage } from '@/features/pages/agent/AgentKeysPage'
 import { AgentCallLogsPage } from '@/features/pages/agent/AgentCallLogsPage'
 import { AgentSkillPage } from '@/features/pages/agent/AgentSkillPage'
@@ -35,7 +32,6 @@ import { BlogHomePage } from '@/features/pages/blog/BlogHomePage'
 import { TagsPage } from '@/features/pages/blog/TagsPage'
 import { AboutPage } from '@/features/pages/about/AboutPage'
 import { ProjectsPage } from '@/features/pages/projects/ProjectsPage'
-import { PublicQaPage } from '@/features/pages/ask/PublicQaPage'
 import { AccountPage } from '@/features/pages/account/AccountPage'
 import { DashboardMetricsPage } from '@/features/pages/dashboard/DashboardMetricsPage'
 import { PublicArticlePage } from '@/features/pages/public/PublicArticlePage'
@@ -119,7 +115,6 @@ function AppThemeScope() {
               <>
                 <Route path="/" element={<RedirectToDashboard />} />
                 <Route path="/tags" element={<RedirectToDashboard />} />
-                <Route path="/ask" element={<RedirectToDashboard />} />
                 <Route path="/about" element={<RedirectToDashboard />} />
                 <Route path="/projects" element={<RedirectToDashboard />} />
                 <Route path="/p/:shareCode" element={<RedirectToDashboard />} />
@@ -129,7 +124,6 @@ function AppThemeScope() {
               <>
                 <Route path="/" element={<BlogHomePage />} />
                 <Route path="/tags" element={<TagsPage />} />
-                <Route path="/ask" element={<PublicQaPage />} />
                 <Route path="/about" element={<AboutPage />} />
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/p/:shareCode" element={<PublicArticlePage />} />
@@ -149,9 +143,7 @@ function AppThemeScope() {
               <Route path="knowledge/:knowledgeBaseId/imports" element={<DocumentImportJobsPage />} />
               <Route path="imports" element={<DocumentImportJobsPage />} />
               <Route path="imports/:jobId" element={<DocumentImportJobDetailPage />} />
-              <Route path="qa" element={<KnowledgeQaPage />} />
               <Route path="doc-library" element={<DocLibraryListPage />} />
-              <Route path="doc-library/qa" element={<DocLibraryQaPage />} />
               <Route path="doc-library/:libraryId" element={<DocLibraryBrowsePage />} />
               <Route path="wiki" element={<KnowledgeWikiPage />} />
               <Route path="knowledge/:knowledgeBaseId/articles/:articleId" element={<KnowledgeBaseArticleEditorPage />} />
@@ -162,7 +154,6 @@ function AppThemeScope() {
               <Route path="admin/appearance" element={<SiteAppearanceConfigPage />} />
               <Route path="ai/config" element={<AiModelConfigPage />} />
               <Route path="ai/review" element={<AiReviewPage />} />
-              <Route path="agent-memory" element={<AgentMemoryPage />} />
               <Route path="agent" element={<AgentKeysPage />} />
               <Route path="agent/keys" element={<AgentKeysPage />} />
               <Route path="agent/logs" element={<AgentCallLogsPage />} />

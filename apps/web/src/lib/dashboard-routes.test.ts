@@ -20,7 +20,8 @@ describe("dashboard routes", () => {
             knowledge: "/dashboard/knowledge",
             adminUsers: "/dashboard/admin/users",
             aiConfig: "/dashboard/ai/config",
-            qa: "/dashboard/qa",
+            assistant: "/dashboard/assistant",
+            metrics: "/dashboard/metrics",
         })
     })
 

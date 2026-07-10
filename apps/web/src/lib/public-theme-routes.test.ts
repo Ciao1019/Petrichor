@@ -8,7 +8,7 @@ describe("public theme routes", () => {
     expect(isPublicLightThemePath("/tags")).toBe(true)
     expect(isPublicLightThemePath("/tags/")).toBe(true)
     expect(isPublicLightThemePath("/about")).toBe(true)
-    expect(isPublicLightThemePath("/ask")).toBe(true)
+    expect(isPublicLightThemePath("/projects")).toBe(true)
     expect(isPublicLightThemePath("/p/shareCode123")).toBe(true)
   })
 

@@ -392,14 +392,14 @@ Plan（upsert_plan 输出，对齐现有 plan schema）:
 3. **agent-chat-shell** — Chat-first 主界面接通统一 API（线程侧栏、焦点、基础 Tool UI）
    - 所属模块：Chat Shell
    - 依赖：`agent-runtime-core`, `agent-tools-readonly`
-   - 状态：planned
-   - 对应 feature：未启动
+   - 状态：done（2026-07-10 验收）
+   - 对应 feature：`features/2026-07-10-agent-chat-shell/`
    - 备注：最小闭环
 
 4. **agent-memory-runtime** — 记忆注入全体话 + 蒸馏；记忆管理降级为设置/抽屉
    - 所属模块：Memory
    - 依赖：`agent-runtime-core`（需要统一 chat 钩子）
-   - 状态：planned
+   - 状态：**cancelled**（2026-07-10 用户裁决：记忆/蒸馏整段下线）
    - 对应 feature：未启动
 
 5. **agent-plan-resilience** — `upsert_plan` 可见任务 + 工具超时/重试耗尽策略
@@ -422,9 +422,9 @@ Plan（upsert_plan 输出，对齐现有 plan schema）:
 
 8. **agent-legacy-retire** — 下线旧 QA/记忆主入口；移除 agent 侧 `propose_wiki_patch`；侧栏改入口
    - 所属模块：Legacy Retirement
-   - 依赖：`agent-chat-shell`, `agent-memory-runtime`（主路径与记忆降级就绪后再拆旧入口）
-   - 状态：planned
-   - 对应 feature：未启动
+   - 依赖：`agent-chat-shell`（记忆条已取消，不再依赖）
+   - 状态：done（2026-07-10 提前执行：删站内知识/文档问答、公开 `/ask`、记忆页与蒸馏；Wiki 与 assistant 保留；旧会话表不 DROP）
+   - 对应 feature：无独立 design（用户直接拍板执行）
 
 9. **agent-subagents-compress** — 子代理与团队 + 深度上下文压缩（二期）
    - 所属模块：Assistant Runtime
@@ -436,20 +436,21 @@ Plan（upsert_plan 输出，对齐现有 plan schema）:
 
 ## 6. 排期思路
 
-按技术依赖推进：先 Runtime 与只读工具，再上壳形成最小闭环；记忆、规划与韧性补「成熟感」；写入与管理面随后；旧入口最后拆，避免用户无主路径时被重定向。二期子代理挂尾，不挡一期。
+按技术依赖推进：先 Runtime 与只读工具，再上壳形成最小闭环；规划与韧性补「成熟感」；写入与管理面随后。记忆能力已取消。二期子代理挂尾，不挡一期。
 
-技术依赖之外的产品优先级（例如是否提前做 admin、是否更早拆 legacy）由用户在启动各子 feature 时拍板。
+技术依赖之外的产品优先级（例如是否提前做 admin）由用户在启动各子 feature 时拍板。
 
 ## 7. 观察项
 
-- 仓库 CodeStable 骨架仍不完整（缺 `architecture/` 等）；本 roadmap 落盘不顺手补 arch，落地后由 `cs-feat-accept` / `cs-arch` 回写现状
-- 旧 KB / Doc thread 是否提供只读浏览入口：未定；默认不迁入新表
+- 旧 KB / Doc thread 表保留不 DROP，应用层已停用；是否提供只读归档浏览：未定
 - Langfuse / 统一 tracing：建议另开，不塞进韧性最低条
 - 文档库向量检索对齐知识库：非本愿景门闩；若只读检索体验不足可另开 feature
-- Wiki 页上的补丁审批 UI 是否整页删除：本 roadmap 只要求问答链路不再提出补丁；Wiki 页存量能力另定
+- Wiki 页上的补丁审批 UI 是否整页删除：问答链路已不再提出补丁；Wiki 页存量审批另定
+- 公开 `/ask` 已下线，后续若重开需另开 feature
 
 ## 8. 变更日志
 
 - 2026-07-10：第 4.7 节 Plan schema `todos[].status` 的 `"done"` 修正为 `"completed"`（单词级笔误：该节自称对齐现有 plan schema，而现有组件 `tool-ui/plan/plan.tsx` 实际用 `completed`；用户拍板以组件为准，不改组件）。存量影响：`agent-runtime-core`（done）未触及 Plan schema，不受影响；`agent-tools-readonly`（in-progress，本修正的发起方）与后续 `agent-plan-resilience` / `agent-chat-shell` 按修正后契约实现。
 - 2026-07-10：第 4.2 节新增只读辅助域约束：路由命中 `knowledge` / `doc_library` 时同时加入 `system`，且 run 落库与工具装载使用同一域集合。理由：`show_progress` / `show_citations` / `show_data_table` / `upsert_plan` / `save_answer_artifact` 均锁在 `system` 域，否则带 focus 的知识库或文档库问答无法调用引用等 UI 工具；该规则仍不自动加入 `content_write` / `admin`。存量影响：`agent-runtime-core`（done）的 `intent-router` 行为需按新约束调整；`agent-tools-readonly`（in-progress）步骤 4 依赖本补丁完成接线与验证。
 - 2026-07-10：**运行时栈纠偏为 Mastra**。用户确认站内通用 Agent 应以 Mastra 为执行层（非 AI SDK `streamText`）。`POST /api/assistant/chat` 改为 `@mastra/core` `Agent` + `@mastra/ai-sdk` `toAISdkStream`；域注册表新增 `loadMastraToolsForDomains`；对外 SSE 仍为 AI SDK UIMessage。存量影响：`agent-runtime-core` / `agent-tools-readonly` 的执行层实现替换，HTTP/表/工具名契约不变；前端壳无需改。
+- 2026-07-10：**取消记忆 + 提前拆旧入口**。用户裁决：站内只保留 `/dashboard/assistant` 对话；删除知识问答、文档问答、公开 `/ask`、Agent 记忆页与蒸馏管道；知识 Wiki 保留；旧会话/记忆表不 DROP。`agent-memory-runtime` → cancelled；`agent-legacy-retire` → done（依赖改为仅 chat-shell）。
