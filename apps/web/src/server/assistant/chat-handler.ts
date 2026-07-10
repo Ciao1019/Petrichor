@@ -69,6 +69,10 @@ export function buildAssistantSystemPrompt(domains: AgentDomainId[]): string {
     if (activeDomains.has("content_write")) {
         guidance.push("内容写入使用 create_article / update_article / create_article_share。删除文章、撤销分享、删除文档属于危险操作：必须调用 request_user_confirmation（action.toolName 填 delete_article / revoke_article_share / delete_document），禁止假装已删除。用户确认后运行时会执行并在工具结果里给出 executionOutcome。")
     }
+    if (activeDomains.has("admin")) {
+        guidance.push("管理面：用 list_ai_configs / list_agent_api_keys / get_public_qa_setting 查询；set_default_ai_config 可直接执行。删除配置、更新 API Key、吊销 Agent Key、改公开问答开关属于危险操作：必须 request_user_confirmation（action.toolName 填 delete_ai_config / update_ai_config_credentials / revoke_agent_api_key / set_public_qa_enabled）。公开问答开关仅超级管理员可改。")
+    }
+
     return [
         "你是 Petrichor 的站内助手，以对话方式帮助已登录用户查看和操作系统。",
         `本轮路由域：${domains.join(", ")}。只调用本轮实际提供的工具；没有对应写入或管理工具时，不要假装已经执行。`,

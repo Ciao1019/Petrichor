@@ -51,13 +51,20 @@ export async function routeAssistantIntent(input: {
         return { domains: [...DEFAULT_READ_DOMAINS], confidence: 0.3, rationale: "no-signal:default-read-domains" }
     }
     return {
-        domains: withSystemAuxiliaryDomain(domains),
+        domains: withAuxiliaryDomains(domains),
         confidence: Math.min(0.9, 0.5 + signals.length * 0.1),
         rationale: signals.join(","),
     }
 }
 
-function withSystemAuxiliaryDomain(domains: AgentDomainId[]): AgentDomainId[] {
-    const needsSystem = domains.includes("knowledge") || domains.includes("doc_library")
-    return needsSystem && !domains.includes("system") ? [...domains, "system"] : domains
+/** knowledge/doc_library → 补 system；admin → 补 content_write（确认工具） */
+function withAuxiliaryDomains(domains: AgentDomainId[]): AgentDomainId[] {
+    let next = domains
+    if ((next.includes("knowledge") || next.includes("doc_library")) && !next.includes("system")) {
+        next = [...next, "system"]
+    }
+    if (next.includes("admin") && !next.includes("content_write")) {
+        next = [...next, "content_write"]
+    }
+    return next
 }

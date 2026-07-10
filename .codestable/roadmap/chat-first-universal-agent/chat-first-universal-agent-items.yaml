@@ -60,10 +60,10 @@ items:
     description: 管理面工具域（配置/公开站/Key 等）
     depends_on:
       - agent-confirm-write
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-07-10-agent-tools-admin
     minimal_loop: false
-    notes: null
+    notes: 2026-07-10 验收通过；8 工具；admin 辅助 content_write；超管公开问答开关
 
   - slug: agent-legacy-retire
     description: 退役旧 QA/记忆入口并移除问答 Wiki 补丁工具

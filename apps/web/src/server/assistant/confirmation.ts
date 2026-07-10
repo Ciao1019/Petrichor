@@ -22,6 +22,10 @@ export const DANGEROUS_TOOL_WHITELIST: Record<string, DangerousActionName> = {
     delete_article: "article.delete",
     revoke_article_share: "share.revoke",
     delete_document: "document.delete",
+    delete_ai_config: "ai_config.delete",
+    update_ai_config_credentials: "ai_config.update_credentials",
+    revoke_agent_api_key: "agent_api_key.revoke",
+    set_public_qa_enabled: "public_qa.disable",
 }
 
 export const confirmationActionSchema = z.object({
