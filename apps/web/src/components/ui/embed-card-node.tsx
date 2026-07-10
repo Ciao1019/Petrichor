@@ -2,15 +2,7 @@
 
 import * as React from "react"
 import { Tweet } from "react-tweet"
-import {
-    ExternalLinkIcon,
-    GithubIcon,
-    GitForkIcon,
-    Maximize2Icon,
-    Minimize2Icon,
-    ScaleIcon,
-    StarIcon,
-} from "lucide-react"
+import { ExternalLinkIcon, GithubIcon, GitForkIcon, ScaleIcon, StarIcon } from "lucide-react"
 import type { PlateElementProps } from "platejs/react"
 import { PlateElement } from "platejs/react"
 
@@ -129,75 +121,20 @@ function HtmlEmbedCard({
     url?: string
 }) {
     const src = url ? getHtmlEmbedSrc(url) : null
-    const [expanded, setExpanded] = React.useState(false)
-
-    React.useEffect(() => {
-        if (!expanded) return
-
-        const onKeyDown = (event: KeyboardEvent) => {
-            if (event.key === "Escape") setExpanded(false)
-        }
-        document.addEventListener("keydown", onKeyDown)
-        const previousOverflow = document.body.style.overflow
-        document.body.style.overflow = "hidden"
-        return () => {
-            document.removeEventListener("keydown", onKeyDown)
-            document.body.style.overflow = previousOverflow
-        }
-    }, [expanded])
-
     if (!src) return <InvalidEmbedCard label="HTML" />
 
-    const label = title?.trim() || "HTML 可视化"
-
     return (
-        <div
-            className={cn(
-                "not-prose my-3 w-full overflow-hidden border bg-card",
-                expanded
-                    ? "fixed inset-0 z-50 my-0 flex flex-col rounded-none"
-                    : "rounded-lg"
-            )}
-        >
-            <div
-                className="flex shrink-0 items-center justify-between gap-2 border-b bg-muted/40 px-3 py-1.5"
-                onMouseDown={(event) => event.preventDefault()}
-            >
-                <span className="truncate text-xs text-muted-foreground">{label}</span>
-                <div className="flex items-center gap-0.5">
-                    <a
-                        className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                        href={src}
-                        rel="noreferrer"
-                        target="_blank"
-                        title="在新标签页打开"
-                    >
-                        <ExternalLinkIcon className="size-3.5" />
-                    </a>
-                    <button
-                        className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                        onClick={() => setExpanded((value) => !value)}
-                        title={expanded ? "退出全屏（Esc）" : "全屏查看"}
-                        type="button"
-                    >
-                        {expanded ? (
-                            <Minimize2Icon className="size-3.5" />
-                        ) : (
-                            <Maximize2Icon className="size-3.5" />
-                        )}
-                    </button>
-                </div>
-            </div>
+        <div className="not-prose my-3 w-full overflow-hidden rounded-lg border bg-card">
             <iframe
                 allow="fullscreen"
-                className={cn("block w-full border-0", expanded && "h-full flex-1")}
-                height={expanded ? undefined : clampHtmlEmbedHeight(height)}
+                className="block w-full border-0"
+                height={clampHtmlEmbedHeight(height)}
                 loading="lazy"
                 // 站内自托管页面与主站同等可信；缺 allow-same-origin 会让 localStorage
                 // 等 API 抛 SecurityError 打断整个脚本。sandbox 仍拦截顶层跳转与表单。
                 sandbox="allow-same-origin allow-scripts allow-popups"
                 src={src}
-                title={label}
+                title={title?.trim() || "自托管 HTML 可视化"}
             />
         </div>
     )
