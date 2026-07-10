@@ -62,6 +62,7 @@ const WRITE_SUBAGENT_DOMAINS: AgentDomainId[] = ["knowledge", "doc_library", "sy
 const BLOCKED_WRITE_SUBAGENT_TOOLS = new Set([
     SPAWN_WRITE_SUBAGENT,
     SPAWN_RESEARCH_SUBAGENT,
+    "spawn_research_fanout",
     "save_answer_artifact",
     "upsert_plan",
     "request_user_confirmation",

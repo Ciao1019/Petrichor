@@ -32,6 +32,7 @@ const LOCKED_TOOL_NAMES = [
     "save_answer_artifact",
     "upsert_plan",
     "spawn_research_subagent",
+    "spawn_research_fanout",
 ].sort()
 
 describe("readonly assistant tool registration", () => {
@@ -56,6 +57,7 @@ describe("readonly assistant tool registration", () => {
             "show_citations",
             "show_data_table",
             "show_progress",
+            "spawn_research_fanout",
             "spawn_research_subagent",
             "upsert_plan",
         ])
@@ -90,6 +92,7 @@ describe("assistant domain-aware system prompt", () => {
         const prompt = buildAssistantSystemPrompt(["system"])
         expect(prompt).toContain("list_system_overview")
         expect(prompt).toContain("spawn_research_subagent")
+        expect(prompt).toContain("spawn_research_fanout")
         expect(prompt).not.toContain("search_knowledge")
         expect(prompt).not.toContain("search_documents")
     })

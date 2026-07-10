@@ -23,6 +23,7 @@ const READ_ONLY_DOMAINS = new Set<AgentDomainId>(["knowledge", "doc_library", "s
 /** 子代理默认禁止：再委派（可由 allowRespawn 放开）、写产物、改计划、确认卡 */
 const BLOCKED_SUBAGENT_TOOLS = new Set([
     SPAWN_RESEARCH_SUBAGENT,
+    "spawn_research_fanout",
     "spawn_write_subagent",
     "save_answer_artifact",
     "upsert_plan",

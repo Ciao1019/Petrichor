@@ -57,7 +57,7 @@ items:
     depends_on:
       - agent-subagent-depth-limit
       - agent-context-window-v2
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-07-10-agent-multi-agent-fanout
     minimal_loop: false
     notes: 契约 4.4；无团队 DSL

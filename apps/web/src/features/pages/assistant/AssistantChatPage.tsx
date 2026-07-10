@@ -508,6 +508,46 @@ const SpawnWriteSubagentToolUI = makeAssistantToolUI({
   },
 })
 
+const SpawnResearchFanoutToolUI = makeAssistantToolUI({
+  toolName: "spawn_research_fanout",
+  render: ({ args, result, status }) => {
+    const input = asRecord(args)
+    const payload = asRecord(result)
+    const tasks = Array.isArray(input?.tasks) ? input.tasks : []
+    const results = Array.isArray(payload?.results) ? payload.results : []
+    const usage = asRecord(payload?.usage)
+    return (
+      <ToolStatusCard
+        title={`并行子检索：${tasks.length || results.length || "?"} 路`}
+        status={status}
+        icon={<ListTree className="size-4" />}
+        collapsible
+        defaultOpen={false}
+      >
+        {usage ? (
+          <p className="mb-2 text-[11px] text-muted-foreground">
+            {typeof usage.succeeded === "number" && typeof usage.tasks === "number"
+              ? `${usage.succeeded}/${usage.tasks} 成功`
+              : null}
+            {typeof usage.totalTokens === "number" ? ` · ${usage.totalTokens} tok` : null}
+          </p>
+        ) : null}
+        <ul className="space-y-1 text-sm text-muted-foreground">
+          {results.slice(0, 3).map((item, index) => {
+            const row = asRecord(item)
+            const summary = typeof row?.summary === "string" ? row.summary : ""
+            return (
+              <li key={index} className="line-clamp-2">
+                {index + 1}. {summary || (row?.ok === false ? "失败" : "…")}
+              </li>
+            )
+          })}
+        </ul>
+      </ToolStatusCard>
+    )
+  },
+})
+
 /** 服务端 data-context-compress → assistant-ui DataMessagePart name=context-compress */
 const ContextCompressDataUI = makeAssistantDataUI({
   name: "context-compress",
@@ -1322,6 +1362,7 @@ function QaChatPanel({
       <ProgressToolUI />
       <ConfirmationToolUI />
       <SpawnResearchSubagentToolUI />
+      <SpawnResearchFanoutToolUI />
       <SpawnWriteSubagentToolUI />
       <ContextCompressDataUI />
       <CitationToolUI />
