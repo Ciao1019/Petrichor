@@ -28,6 +28,10 @@ export type AssistantToolContext = {
     threadId: number
     runId: number
     focus: AssistantFocus | null
+    /** 当前执行中的研究子代理深度；主助手未设置 */
+    spawnDepth?: number
+    /** 本轮委派链允许的最大 depth */
+    spawnMaxDepth?: number
 }
 
 export type AssistantToolRegistration = {

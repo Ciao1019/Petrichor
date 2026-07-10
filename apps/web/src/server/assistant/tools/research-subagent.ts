@@ -13,10 +13,14 @@ import { assistantFocusSchema, recordAssistantStep } from "../thread-logic"
 export const SUBAGENT_MAX_STEPS = 6
 export const SUBAGENT_TIMEOUT_MS = 90_000
 export const SPAWN_RESEARCH_SUBAGENT = "spawn_research_subagent"
+/** 契约 4.4：默认只允许一层再委派 */
+export const SUBAGENT_DEFAULT_MAX_DEPTH = 1
+/** 契约锁定硬上限 */
+export const SUBAGENT_ABSOLUTE_MAX_DEPTH = 2
 
 const READ_ONLY_DOMAINS = new Set<AgentDomainId>(["knowledge", "doc_library", "system"])
 
-/** 子代理禁止再委派、写产物、改计划、确认卡 */
+/** 子代理默认禁止：再委派（可由 allowRespawn 放开）、写产物、改计划、确认卡 */
 const BLOCKED_SUBAGENT_TOOLS = new Set([
     SPAWN_RESEARCH_SUBAGENT,
     "save_answer_artifact",
@@ -35,6 +39,8 @@ const spawnSchema = z.object({
     goal: z.string().trim().min(1).max(2000),
     domains: z.array(z.enum(["knowledge", "doc_library", "system", "content_write", "admin"])).min(1).max(3),
     focus: assistantFocusSchema.optional().nullable(),
+    depth: z.number().int().min(0).max(SUBAGENT_ABSOLUTE_MAX_DEPTH).optional(),
+    maxDepth: z.number().int().min(0).max(SUBAGENT_ABSOLUTE_MAX_DEPTH).optional(),
 })
 
 export const spawnResearchInputSchema = spawnSchema
@@ -44,7 +50,30 @@ export type SpawnResearchResult = {
     summary: string
     citations?: Array<{ title: string; href?: string; domain?: string; snippet?: string }>
     usage?: { calls: number; totalTokens: number }
+    depth?: number
+    maxDepth?: number
     errorCode?: string | null
+}
+
+export type SpawnDepthPolicy = {
+    depth: number
+    maxDepth: number
+}
+
+export function resolveSpawnDepthPolicy(
+    ctx: Pick<AssistantToolContext, "spawnDepth" | "spawnMaxDepth">,
+    input: { depth?: number; maxDepth?: number },
+): SpawnDepthPolicy {
+    const maxDepth = Math.min(
+        input.maxDepth ?? ctx.spawnMaxDepth ?? SUBAGENT_DEFAULT_MAX_DEPTH,
+        SUBAGENT_ABSOLUTE_MAX_DEPTH,
+    )
+    const depth = typeof input.depth === "number"
+        ? input.depth
+        : typeof ctx.spawnDepth === "number"
+            ? ctx.spawnDepth + 1
+            : 0
+    return { depth, maxDepth }
 }
 
 export function sanitizeResearchDomains(domains: string[]): AgentDomainId[] {
@@ -55,17 +84,36 @@ export function sanitizeResearchDomains(domains: string[]): AgentDomainId[] {
     return next
 }
 
-export function filterSubagentToolNames(toolNames: string[]): string[] {
-    return toolNames.filter((name) => !BLOCKED_SUBAGENT_TOOLS.has(name))
+export function filterSubagentToolNames(
+    toolNames: string[],
+    options?: { allowRespawn?: boolean },
+): string[] {
+    return toolNames.filter((name) => {
+        if (name === SPAWN_RESEARCH_SUBAGENT) return Boolean(options?.allowRespawn)
+        return !BLOCKED_SUBAGENT_TOOLS.has(name)
+    })
 }
 
-function buildSubagentInstructions(goal: string): string {
-    return [
+export function buildSubagentStepPrefix(depth: number): string {
+    return depth > 0
+        ? `${SPAWN_RESEARCH_SUBAGENT}/d${depth}`
+        : SPAWN_RESEARCH_SUBAGENT
+}
+
+function buildSubagentInstructions(goal: string, depth: number, maxDepth: number): string {
+    const lines = [
         "你是 Petrichor 站内只读研究子代理。只通过工具检索与阅读，汇总给主助手。",
         "禁止声称已写入、删除或改配置；没有的工具不要假装调用。",
         "优先 search → read；最终用中文给出简洁结论，并尽量调用 show_citations（href 必须来自工具结果）。",
         `本轮目标：${goal}`,
-    ].join("\n")
+        `委派深度：depth=${depth}，maxDepth=${maxDepth}。`,
+    ]
+    if (depth < maxDepth) {
+        lines.push("若目标可再拆成独立只读子任务，可再次调用 spawn_research_subagent；不要无意义嵌套。")
+    } else {
+        lines.push("已达再委派上限，不要尝试再次 spawn_research_subagent。")
+    }
+    return lines.join("\n")
 }
 
 export async function spawnResearchSubagent(
@@ -76,8 +124,22 @@ export async function spawnResearchSubagent(
     if (input.domains.some((d) => d === "content_write" || d === "admin")) {
         throw badRequest("子代理 domains 仅允许 knowledge / doc_library / system")
     }
+    const { depth, maxDepth } = resolveSpawnDepthPolicy(ctx, input)
+    if (depth > maxDepth) {
+        return {
+            ok: false,
+            summary: `子代理深度超限：depth=${depth} > maxDepth=${maxDepth}，请由上层汇总或降低嵌套。`,
+            usage: { calls: 0, totalTokens: 0 },
+            depth,
+            maxDepth,
+            errorCode: "subagent_depth_exceeded",
+        }
+    }
+
     const domains = sanitizeResearchDomains(input.domains)
     const focus = (input.focus ?? ctx.focus) as AssistantFocus | null
+    const allowRespawn = depth < maxDepth
+    const stepPrefix = buildSubagentStepPrefix(depth)
 
     const [run] = await getDb()
         .select({ modelConfigId: assistantRuns.modelConfigId })
@@ -91,10 +153,12 @@ export async function spawnResearchSubagent(
         threadId: ctx.threadId,
         runId: ctx.runId,
         focus,
+        spawnDepth: depth,
+        spawnMaxDepth: maxDepth,
     }
     const allTools = loadMastraToolsForDomains(domains, subCtx, resilience)
     const tools: typeof allTools = {}
-    for (const name of filterSubagentToolNames(Object.keys(allTools))) {
+    for (const name of filterSubagentToolNames(Object.keys(allTools), { allowRespawn })) {
         tools[name] = allTools[name]!
     }
 
@@ -112,7 +176,7 @@ export async function spawnResearchSubagent(
             name: "Petrichor Research Subagent",
             description: "Read-only research subagent for knowledge and document libraries.",
             model: model as never,
-            instructions: buildSubagentInstructions(input.goal),
+            instructions: buildSubagentInstructions(input.goal, depth, maxDepth),
             tools,
         })
 
@@ -143,7 +207,7 @@ export async function spawnResearchSubagent(
                         await recordAssistantStep({
                             runId: ctx.runId,
                             stepIndex: stepIndex++,
-                            toolName: `${SPAWN_RESEARCH_SUBAGENT}/${toolName}`,
+                            toolName: `${stepPrefix}/${toolName}`,
                             input: {},
                             output: isSuccess
                                 ? toolOutput
@@ -172,6 +236,8 @@ export async function spawnResearchSubagent(
             summary: summary || "子代理未产出可读结论",
             ...(citations.length > 0 ? { citations } : {}),
             usage: { calls: toolCalls, totalTokens },
+            depth,
+            maxDepth,
             errorCode: summary ? null : "empty_summary",
         }
     } catch (error) {
@@ -181,6 +247,8 @@ export async function spawnResearchSubagent(
             ok: false,
             summary: `子代理失败：${message}`,
             usage: { calls: toolCalls, totalTokens: 0 },
+            depth,
+            maxDepth,
             errorCode,
         }
     }
@@ -243,7 +311,8 @@ export const researchSubagentTools: AssistantToolRegistration[] = [
         name: SPAWN_RESEARCH_SUBAGENT,
         domain: "system",
         risk: "read",
-        description: "派生子代理做只读深度检索（可跨知识库/文档库）。传入 goal 与 domains（仅 knowledge/doc_library/system）。返回 summary 与可选 citations；主助手据此作答，勿重复编造来源。",
+        description:
+            "派生子代理做只读深度检索（可跨知识库/文档库）。传入 goal 与 domains（仅 knowledge/doc_library/system）；可选 depth/maxDepth（默认 maxDepth=1，允许一层再委派，硬上限 2）。返回 summary 与可选 citations；主助手据此作答，勿重复编造来源。",
         inputSchema: spawnSchema,
         execute: async (ctx, input) => await spawnResearchSubagent(ctx, input),
     },
