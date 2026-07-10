@@ -14,6 +14,7 @@ implemented_by:
   - 2026-07-10-agent-subagents
   - 2026-07-10-agent-plan-persist
   - 2026-07-10-agent-context-window-v2
+  - 2026-07-10-agent-resilience-playbook
 ---
 
 # 站内 Assistant 运行时
@@ -39,6 +40,7 @@ POST /api/assistant/chat（SSE, requireCurrentUser）
 - **子代理**（`tools/research-subagent.ts`）：`spawn_research_subagent` 嵌套只读 Agent（maxSteps≤6）；内层 step 前缀 `spawn_research_subagent/`；禁止写/危险/再委派。
 - **意图路由**：规则打分；admin 辅助装载 content_write。
 - **壳**：任务侧栏 + 消息内确认卡。
+- **韧性 Playbook**（`tool-resilience.ts`）：超时 30s；失败 soft-return `tool_degraded` / 熔断 `tool_circuit_open` 与换招文案；不自动代执行其他工具。
 
 ## 数据与状态
 

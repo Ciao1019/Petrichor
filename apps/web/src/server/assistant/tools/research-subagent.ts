@@ -7,7 +7,7 @@ import { assistantRuns, assistantSteps } from "@/server/db/schema"
 import { badRequest } from "@/server/http/response"
 import type { AgentDomainId, AssistantFocus, AssistantToolContext, AssistantToolRegistration } from "../domain-types"
 import { loadMastraToolsForDomains } from "../tool-registry"
-import { createToolResilienceController, ToolResilienceError } from "../tool-resilience"
+import { createToolResilienceController, ToolResilienceError, isPlaybookToolResult } from "../tool-resilience"
 import { assistantFocusSchema, recordAssistantStep } from "../thread-logic"
 
 export const SUBAGENT_MAX_STEPS = 6
@@ -133,10 +133,12 @@ export async function spawnResearchSubagent(
                     }) => {
                         toolCalls += 1
                         const meta = resilience.consumeMeta(toolName)
-                        const isSuccess = error == null && meta?.errorCode == null
+                        const playbook = isPlaybookToolResult(toolOutput) ? toolOutput : null
+                        const isSuccess = error == null && meta?.errorCode == null && !playbook
                         const errorCode = isSuccess
                             ? null
                             : meta?.errorCode
+                                ?? playbook?.errorCode
                                 ?? (error instanceof ToolResilienceError ? error.code : "tool_error")
                         await recordAssistantStep({
                             runId: ctx.runId,
@@ -145,7 +147,7 @@ export async function spawnResearchSubagent(
                             input: {},
                             output: isSuccess
                                 ? toolOutput
-                                : {
+                                : playbook ?? {
                                     error: error instanceof Error ? error.message : String(error ?? errorCode),
                                     errorCode,
                                 },

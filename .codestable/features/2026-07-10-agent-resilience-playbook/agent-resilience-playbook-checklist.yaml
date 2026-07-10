@@ -1,0 +1,30 @@
+feature: 2026-07-10-agent-resilience-playbook
+created: 2026-07-10
+
+steps:
+  - action: "decideToolFailure + soft return 接入 controller"
+    exit_signal: "单测覆盖 degraded / circuit_open / 超时 / 清零"
+    status: done
+  - action: "系统提示 + step 输出兼容 playbook 结果"
+    exit_signal: "提示含 playbook；afterToolCall 能记下 errorCode"
+    status: done
+  - action: "架构一句 + 定向测试通过"
+    exit_signal: "vitest tool-resilience 通过"
+    status: done
+
+checks:
+  - item: "error_code 含 tool_degraded / tool_circuit_open"
+    source: 名词契约
+    status: done
+  - item: "decideToolFailure 三 action"
+    source: 名词契约
+    status: done
+  - item: "失败 soft return，不自动代执行"
+    source: 编排骨架
+    status: done
+  - item: "超时仍 30s；不动确认/dangerous"
+    source: 范围守护
+    status: done
+  - item: "验收 1–5"
+    source: 验收场景
+    status: done

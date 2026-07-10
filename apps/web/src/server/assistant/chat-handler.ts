@@ -33,7 +33,7 @@ import {
     type ContextCompressPartData,
 } from "./context-pack"
 import { loadMastraToolsForDomains } from "./tool-registry"
-import { createToolResilienceController, ToolResilienceError } from "./tool-resilience"
+import { createToolResilienceController, ToolResilienceError, isPlaybookToolResult } from "./tool-resilience"
 import {
     assistantFocusSchema,
     assistantIdSchema,
@@ -87,6 +87,7 @@ export function buildAssistantSystemPrompt(domains: AgentDomainId[]): string {
         `本轮路由域：${domains.join(", ")}。只调用本轮实际提供的工具；没有对应写入或管理工具时，不要假装已经执行。`,
         ...guidance,
         "站内事实必须以工具结果为准；检索不到就如实说明，不要编造数据、来源、链接或原文片段。",
+        "若工具返回 ok:false 且带 errorCode（tool_degraded / tool_circuit_open）与 message，按其中 action 换招或直接回答；已熔断的工具不要再调用。",
         "若某工具失败或超时，改用其他可用工具或降级说明，不要反复调用同一已失败工具。",
         "只使用中文回答，直接、结构清晰。",
     ].join("\n")
@@ -274,10 +275,12 @@ export async function assistantChat(request: NextRequest) {
                         hooks: {
                             afterToolCall: async ({ toolName, output, error }) => {
                                 const meta = resilience.consumeMeta(toolName)
-                                const isSuccess = error == null && meta?.errorCode == null
+                                const playbook = isPlaybookToolResult(output) ? output : null
+                                const isSuccess = error == null && meta?.errorCode == null && !playbook
                                 const errorCode = isSuccess
                                     ? null
                                     : meta?.errorCode
+                                        ?? playbook?.errorCode
                                         ?? (error instanceof ToolResilienceError ? error.code : "tool_error")
                                 await recordAssistantStep({
                                     runId: run.id,
@@ -286,7 +289,7 @@ export async function assistantChat(request: NextRequest) {
                                     input: {},
                                     output: isSuccess
                                         ? output
-                                        : {
+                                        : playbook ?? {
                                             error: error instanceof Error ? error.message : String(error ?? errorCode),
                                             errorCode,
                                         },
