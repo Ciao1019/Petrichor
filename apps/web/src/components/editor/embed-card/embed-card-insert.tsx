@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { GithubIcon, MusicIcon, TwitterIcon } from "lucide-react"
+import { AppWindowIcon, GithubIcon, MusicIcon, TwitterIcon } from "lucide-react"
 import { useEditorRef } from "platejs/react"
 import { toast } from "sonner"
 
@@ -9,6 +9,7 @@ import {
     EMBED_CARD_TYPE,
     type EmbedCardElement,
     type EmbedCardProvider,
+    getHtmlEmbedSrc,
     getSpotifyEmbedUrl,
     getTweetId,
     normalizeGitHubRepo,
@@ -72,9 +73,17 @@ export const EMBED_PROVIDER_CONFIG: Record<EmbedCardProvider, EmbedProviderConfi
             return url && getSpotifyEmbedUrl(url) ? url : null
         },
     },
+    html: {
+        field: "url",
+        icon: <AppWindowIcon />,
+        label: "HTML 可视化",
+        placeholder: "/tools/visualizations/architecture.html",
+        title: "插入自托管 HTML 可视化",
+        normalize: (value) => getHtmlEmbedSrc(value),
+    },
 }
 
-export const EMBED_PROVIDER_ORDER: EmbedCardProvider[] = ["github", "tweet", "spotify"]
+export const EMBED_PROVIDER_ORDER: EmbedCardProvider[] = ["github", "tweet", "spotify", "html"]
 
 // ---------------------------------------------------------------------------
 // 模块级 store：与 AI 助手一致，避开浮动工具栏 / portal 的 context 传播问题

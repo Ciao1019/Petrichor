@@ -8,7 +8,9 @@ import { PlateElement } from "platejs/react"
 
 import {
     type EmbedCardElement as TEmbedCardElement,
+    clampHtmlEmbedHeight,
     getGitHubRepoUrl,
+    getHtmlEmbedSrc,
     getSpotifyEmbedHeight,
     getSpotifyEmbedUrl,
     getTweetId,
@@ -104,6 +106,33 @@ function SpotifyEmbedCard({ url }: { url?: string }) {
                 loading="lazy"
                 src={embedUrl}
                 title="Spotify embed"
+            />
+        </div>
+    )
+}
+
+function HtmlEmbedCard({
+    height,
+    title,
+    url,
+}: {
+    height?: number
+    title?: string
+    url?: string
+}) {
+    const src = url ? getHtmlEmbedSrc(url) : null
+    if (!src) return <InvalidEmbedCard label="HTML" />
+
+    return (
+        <div className="not-prose my-3 w-full overflow-hidden rounded-lg border bg-card">
+            <iframe
+                allow="fullscreen"
+                className="block w-full border-0"
+                height={clampHtmlEmbedHeight(height)}
+                loading="lazy"
+                sandbox="allow-scripts allow-popups"
+                src={src}
+                title={title?.trim() || "自托管 HTML 可视化"}
             />
         </div>
     )
@@ -216,7 +245,7 @@ function GitHubEmbedCard({ repo }: { repo?: string }) {
 }
 
 export function EmbedCardElement(props: PlateElementProps<TEmbedCardElement>) {
-    const { provider, repo, url } = props.element
+    const { height, provider, repo, title, url } = props.element
 
     return (
         <PlateElement className="py-2.5" {...props}>
@@ -228,6 +257,8 @@ export function EmbedCardElement(props: PlateElementProps<TEmbedCardElement>) {
                     <GitHubEmbedCard repo={repo} />
                 ) : provider === "spotify" ? (
                     <SpotifyEmbedCard url={url} />
+                ) : provider === "html" ? (
+                    <HtmlEmbedCard height={height} title={title} url={url} />
                 ) : (
                     <InvalidEmbedCard label="嵌入" />
                 )}

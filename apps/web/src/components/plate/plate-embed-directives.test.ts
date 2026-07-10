@@ -5,8 +5,13 @@ import { describe, expect, it } from "vitest"
 import { MarkdownKit } from "@/components/editor/plugins/markdown-kit"
 
 import {
+    DEFAULT_HTML_EMBED_HEIGHT,
     EMBED_CARD_TYPE,
+    MAX_HTML_EMBED_HEIGHT,
+    MIN_HTML_EMBED_HEIGHT,
+    clampHtmlEmbedHeight,
     embedCardMarkdownRules,
+    getHtmlEmbedSrc,
     getSpotifyEmbedUrl,
     getTweetId,
     postprocessEmbedDirectives,
@@ -51,6 +56,86 @@ describe("Plate embed directives", () => {
         ).toBe(
             '<embed_card provider="spotify" url="https://open.spotify.com/track/0HYAsQwJIO6FLqpyTeD3l6" />'
         )
+    })
+
+    it("将 html directive 预处理为 MDX 节点并保留 title/height", () => {
+        expect(
+            preprocessEmbedDirectives(
+                '::html{url="/tools/visualizations/architecture.html" title="架构图" height="720"}'
+            )
+        ).toBe(
+            '<embed_card provider="html" url="/tools/visualizations/architecture.html" title="架构图" height="720" />'
+        )
+
+        expect(
+            preprocessEmbedDirectives('::html{url="/tools/visualizations/architecture.html"}')
+        ).toBe('<embed_card provider="html" url="/tools/visualizations/architecture.html" />')
+    })
+
+    it("拒绝非站内相对路径的 html directive", () => {
+        expect(preprocessEmbedDirectives('::html{url="https://evil.example.com"}')).toBe(
+            '::html{url="https://evil.example.com"}'
+        )
+        expect(preprocessEmbedDirectives('::html{url="//evil.example.com/x.html"}')).toBe(
+            '::html{url="//evil.example.com/x.html"}'
+        )
+
+        expect(getHtmlEmbedSrc("/tools/visualizations/architecture.html")).toBe(
+            "/tools/visualizations/architecture.html"
+        )
+        expect(getHtmlEmbedSrc("https://example.com/x.html")).toBeNull()
+        expect(getHtmlEmbedSrc("//example.com/x.html")).toBeNull()
+        expect(getHtmlEmbedSrc("tools/x.html")).toBeNull()
+        expect(getHtmlEmbedSrc("javascript:alert(1)")).toBeNull()
+    })
+
+    it("将 html 高度收敛到允许区间", () => {
+        expect(clampHtmlEmbedHeight("720")).toBe(720)
+        expect(clampHtmlEmbedHeight(undefined)).toBe(DEFAULT_HTML_EMBED_HEIGHT)
+        expect(clampHtmlEmbedHeight("abc")).toBe(DEFAULT_HTML_EMBED_HEIGHT)
+        expect(clampHtmlEmbedHeight(1)).toBe(MIN_HTML_EMBED_HEIGHT)
+        expect(clampHtmlEmbedHeight(99_999)).toBe(MAX_HTML_EMBED_HEIGHT)
+    })
+
+    it("html 节点在 Markdown 序列化时恢复为双冒号语法", () => {
+        expect(
+            serializeEmbedCardDirective({
+                provider: "html",
+                url: "/tools/visualizations/architecture.html",
+                title: "架构图",
+                height: 99_999,
+            })
+        ).toBe(
+            `::html{url="/tools/visualizations/architecture.html" title="架构图" height="${MAX_HTML_EMBED_HEIGHT}"}`
+        )
+
+        expect(
+            postprocessEmbedDirectives(
+                '<embed_card provider="html" url="/tools/visualizations/architecture.html" title="架构图" height="720" />'
+            )
+        ).toBe(
+            '::html{url="/tools/visualizations/architecture.html" title="架构图" height="720"}'
+        )
+    })
+
+    it("html directive 在 Markdown 反序列化时创建带 title/height 的节点", () => {
+        const editor = createEditor()
+
+        expect(
+            editor.getApi(MarkdownPlugin).markdown.deserialize(
+                preprocessEmbedDirectives(
+                    '::html{url="/tools/visualizations/architecture.html" title="架构图" height="720"}'
+                )
+            )
+        ).toMatchObject([
+            {
+                type: EMBED_CARD_TYPE,
+                provider: "html",
+                url: "/tools/visualizations/architecture.html",
+                title: "架构图",
+                height: 720,
+            },
+        ])
     })
 
     it("忽略缺少必要参数的 directive，保留原始文本", () => {
