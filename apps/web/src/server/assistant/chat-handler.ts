@@ -83,6 +83,7 @@ export function buildAssistantSystemPrompt(domains: AgentDomainId[]): string {
     }
     if (activeDomains.has("knowledge")) {
         guidance.push("图片/图表：答案中直接输出 Markdown 图片，src 用 media.src 原值（常为 s4key:…），禁止声称无法展示。")
+        guidance.push("计数与清单优先 list_system_overview / list_knowledge_bases；跨库内容检索优先一次 search_knowledge（不传 knowledgeBaseId），不要对每个库重复同类 query。")
     }
     if (activeDomains.has("system") && (activeDomains.has("knowledge") || activeDomains.has("doc_library"))) {
         guidance.push("最终答案基于工具结果，并调用 show_citations；引用字段不得改写或编造。")

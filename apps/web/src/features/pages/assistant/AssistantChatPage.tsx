@@ -63,6 +63,10 @@ import { safeParseSerializableCitation } from "@/components/tool-ui/citation/sch
 import { DataTable } from "@/components/tool-ui/data-table"
 import { safeParseSerializableDataTable } from "@/components/tool-ui/data-table/schema"
 import { AssistantTaskRail, TASK_TOOL_NAMES } from "@/features/pages/assistant/AssistantTaskRail"
+import {
+  SearchDocumentsToolUI,
+  SearchKnowledgeToolUI,
+} from "@/features/pages/assistant/search-tool-ui"
 import { ApprovalCard } from "@/components/tool-ui/approval-card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -296,28 +300,6 @@ const DataTableToolUI = makeAssistantToolUI({
   },
 })
 
-function HitRows({ rows }: { rows: Record<string, unknown>[] }) {
-  if (rows.length === 0) return null
-  return (
-    <div className="space-y-1.5">
-      {rows.slice(0, 8).map((row, index) => {
-        const badge = row.knowledgeBaseName ?? row.fileName ?? row.locator ?? row.kind ?? row.mode
-        return (
-          <div key={String(row.chunkId ?? row.nodeKey ?? row.pageKey ?? row.id ?? index)} className="rounded-md border bg-background px-3 py-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-sm font-medium">{String(row.title ?? "未命名")}</span>
-              {badge != null ? <Badge variant="outline" className="shrink-0 text-[10px]">{String(badge)}</Badge> : null}
-            </div>
-            {typeof row.snippet === "string" && row.snippet ? (
-              <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{row.snippet}</p>
-            ) : null}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
 const ListSystemOverviewToolUI = makeAssistantToolUI({
   toolName: "list_system_overview",
   render: ({ result, status }) => {
@@ -369,35 +351,6 @@ const ListDocLibrariesToolUI = makeAssistantToolUI({
             <Badge key={String(row.id ?? index)} variant="secondary" className="font-normal">{String(row.name ?? "未命名")}</Badge>
           ))}
         </div>
-      </ToolStatusCard>
-    )
-  },
-})
-
-const SearchKnowledgeToolUI = makeAssistantToolUI({
-  toolName: "search_knowledge",
-  render: ({ result, args, status }) => {
-    const payload = asRecord(result)
-    const rows = asRows(result, "hits")
-    const query = String(asRecord(args)?.query ?? payload?.query ?? "")
-    return (
-      <ToolStatusCard title={query ? `检索知识：${query}` : "检索知识"} status={status} icon={<Search className="size-4" />} collapsible defaultOpen={false}>
-        {payload?.mode ? <p className="mb-2 text-[11px] text-muted-foreground">模式 {String(payload.mode)}</p> : null}
-        <HitRows rows={rows} />
-      </ToolStatusCard>
-    )
-  },
-})
-
-const SearchDocumentsToolUI = makeAssistantToolUI({
-  toolName: "search_documents",
-  render: ({ result, args, status }) => {
-    const payload = asRecord(result)
-    const rows = asRows(result, "hits")
-    const query = String(asRecord(args)?.query ?? payload?.query ?? "")
-    return (
-      <ToolStatusCard title={query ? `检索文档：${query}` : "检索文档"} status={status} icon={<Search className="size-4" />} collapsible defaultOpen={false}>
-        <HitRows rows={rows} />
       </ToolStatusCard>
     )
   },
@@ -2241,7 +2194,7 @@ function AssistantMessageBubble() {
               if (part.type === "tool-call") {
                 if (TASK_TOOL_NAMES.has(part.toolName)) return null
                 return (
-                  <div className="not-prose my-3">
+                  <div className="not-prose my-3 empty:my-0 empty:hidden">
                     {part.toolUI ?? <ToolFallback {...part} />}
                   </div>
                 )

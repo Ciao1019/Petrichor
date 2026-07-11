@@ -63,6 +63,7 @@ describe("knowledge assistant tools", () => {
     })
 
     it("有 focus 时组合树/语义检索，去重后返回可引用 dashboard href", async () => {
+        wikiMocks.listUserKnowledgeBases.mockResolvedValue([{ id: "3", name: "产品", description: null }])
         treeMocks.retrieveTreeNodesForAgent.mockResolvedValue([
             treeHit("node-1", "21", "部署"),
         ])
@@ -80,6 +81,7 @@ describe("knowledge assistant tools", () => {
         expect(result).toEqual({
             mode: "tree+semantic",
             knowledgeBaseId: "3",
+            knowledgeBaseName: "产品",
             hits: [
                 expect.objectContaining({
                     nodeKey: "node-1",

@@ -122,9 +122,13 @@ export async function searchKnowledge(
         }
     }
 
+    const owned = await listUserKnowledgeBases(ctx.userId)
+    const knowledgeBaseName = owned.find((item) => item.id === String(knowledgeBaseId))?.name ?? null
+
     return {
         mode: semanticAvailable ? "tree+semantic" as const : "tree" as const,
         knowledgeBaseId: String(knowledgeBaseId),
+        knowledgeBaseName,
         hits: Array.from(mergedHits.values()).slice(0, limit),
     }
 }
@@ -183,7 +187,7 @@ export const knowledgeAssistantTools: AssistantToolRegistration[] = [
         name: "search_knowledge",
         domain: "knowledge",
         risk: "read",
-        description: "检索知识内容：有 knowledgeBaseId（或 focus 默认库）时组合树检索与语义检索；无库范围时跨知识库模糊检索（支持中文近邻标题，不必精确全名）。",
+        description: "检索知识内容：有 knowledgeBaseId（或 focus 默认库）时组合树检索与语义检索；无库范围时跨知识库模糊检索（支持中文近邻标题，不必精确全名）。计数/清单类问题请用 list_system_overview 或 list_knowledge_bases，不要对每个库重复同类 search；跨库内容检索优先一次不传 knowledgeBaseId。",
         inputSchema: searchKnowledgeSchema,
         execute: async (ctx, input) => await searchKnowledge(ctx, searchKnowledgeSchema.parse(input)),
     },
