@@ -32,6 +32,7 @@ import { BlogHomePage } from '@/features/pages/blog/BlogHomePage'
 import { TagsPage } from '@/features/pages/blog/TagsPage'
 import { AboutPage } from '@/features/pages/about/AboutPage'
 import { ProjectsPage } from '@/features/pages/projects/ProjectsPage'
+import { PublicQaPage } from '@/features/pages/ask/PublicQaPage'
 import { AccountPage } from '@/features/pages/account/AccountPage'
 import { DashboardMetricsPage } from '@/features/pages/dashboard/DashboardMetricsPage'
 import { PublicArticlePage } from '@/features/pages/public/PublicArticlePage'
@@ -115,6 +116,7 @@ function AppThemeScope() {
               <>
                 <Route path="/" element={<RedirectToDashboard />} />
                 <Route path="/tags" element={<RedirectToDashboard />} />
+                <Route path="/ask" element={<RedirectToDashboard />} />
                 <Route path="/about" element={<RedirectToDashboard />} />
                 <Route path="/projects" element={<RedirectToDashboard />} />
                 <Route path="/p/:shareCode" element={<RedirectToDashboard />} />
@@ -124,6 +126,7 @@ function AppThemeScope() {
               <>
                 <Route path="/" element={<BlogHomePage />} />
                 <Route path="/tags" element={<TagsPage />} />
+                <Route path="/ask" element={<PublicQaPage />} />
                 <Route path="/about" element={<AboutPage />} />
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/p/:shareCode" element={<PublicArticlePage />} />
