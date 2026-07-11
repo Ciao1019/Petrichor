@@ -1,12 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { Github, Search } from "lucide-react"
+import { Github, MessageCircleQuestion, Search } from "lucide-react"
 import { Link } from "react-router-dom"
 
 import { BlogSearchDialog, useBlogSearchHotkey } from "@/components/blog-search-dialog"
 
-export type RetypesetSiteActiveSection = "articles" | "tags" | "projects" | "about"
+export type RetypesetSiteActiveSection = "articles" | "tags" | "ask" | "projects" | "about"
 type RetypesetSiteNavSection = RetypesetSiteActiveSection
 type RetypesetSiteNavItem = {
     section: RetypesetSiteNavSection
@@ -28,6 +28,7 @@ const retypesetSiteCopy = {
     navLabel: "站点导航",
     navPosts: "文章",
     navTags: "标签",
+    navAsk: "问答",
     navProjects: "项目",
     navAbout: "关于",
     searchTrigger: "搜索文章",
@@ -152,6 +153,16 @@ export function RetypesetSiteNav({
                         <Search className="size-4" aria-hidden="true" />
                         <span className="sr-only">{retypesetSiteCopy.searchTrigger}</span>
                     </button>
+                    <Link
+                        to="/ask"
+                        aria-label={retypesetSiteCopy.navAsk}
+                        aria-current={activeSection === "ask" ? "page" : undefined}
+                        title={retypesetSiteCopy.navAsk}
+                        className={`${activeSection === "ask" ? "retypeset-c-primary" : "retypeset-c-secondary"} inline-flex size-7 cursor-pointer items-center justify-center rounded-full transition-colors`}
+                    >
+                        <MessageCircleQuestion className="size-4" aria-hidden="true" />
+                        <span className="sr-only">{retypesetSiteCopy.navAsk}</span>
+                    </Link>
                     <a
                         href={RETYPESET_SITE_GITHUB_HREF}
                         target="_blank"
