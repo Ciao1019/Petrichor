@@ -1,5 +1,6 @@
 "use client"
 
+import { useMemo } from "react"
 import {
   makeAssistantToolUI,
   useAuiState,
@@ -18,6 +19,11 @@ type ClusterMember = {
   args: Record<string, unknown> | null
   result: unknown
   status?: ToolCallMessagePartStatus
+}
+
+type ClusterSnapshot = {
+  isLeader: boolean
+  members: ClusterMember[]
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -83,9 +89,10 @@ function HitRows({ rows }: { rows: Record<string, unknown>[] }) {
   )
 }
 
-function useScopeNameMap(kind: SearchKind) {
-  return useAuiState((state) => {
-    const map = new Map<string, string>()
+/** useAuiState 的 getSnapshot 必须引用稳定；对象/Map 每次新建会触发无限重渲染白屏。 */
+function useScopeNameMap(kind: SearchKind): Map<string, string> {
+  const snapshot = useAuiState((state) => {
+    const entries: Array<[string, string]> = []
     const listTool = kind === "knowledge" ? "list_knowledge_bases" : "list_doc_libraries"
     for (const part of state.message.parts) {
       if (part.type !== "tool-call" || part.toolName !== listTool) continue
@@ -96,22 +103,24 @@ function useScopeNameMap(kind: SearchKind) {
         const id = row.id
         const name = row.name
         if (id != null && typeof name === "string" && name.trim()) {
-          map.set(String(id), name.trim())
+          entries.push([String(id), name.trim()])
         }
       }
     }
-    return map
+    entries.sort((a, b) => a[0].localeCompare(b[0]))
+    return JSON.stringify(entries)
   })
+  return useMemo(() => new Map(JSON.parse(snapshot) as Array<[string, string]>), [snapshot])
 }
 
-function useSearchCluster(toolName: string, toolCallId: string) {
-  return useAuiState((state) => {
+function useSearchCluster(toolName: string, toolCallId: string): ClusterSnapshot {
+  const snapshot = useAuiState((state) => {
     const parts = state.message.parts
     const myIndex = parts.findIndex(
       (part) => part.type === "tool-call" && part.toolCallId === toolCallId,
     )
     if (myIndex < 0) {
-      return { isLeader: true, members: [] as ClusterMember[] }
+      return JSON.stringify({ isLeader: true, members: [] as ClusterMember[] })
     }
 
     let start = myIndex
@@ -150,11 +159,12 @@ function useSearchCluster(toolName: string, toolCallId: string) {
     }
 
     const leader = parts[start]
-    return {
+    return JSON.stringify({
       isLeader: leader?.type === "tool-call" && leader.toolCallId === toolCallId,
       members,
-    }
+    })
   })
+  return useMemo(() => JSON.parse(snapshot) as ClusterSnapshot, [snapshot])
 }
 
 function resolveScopeLabel(
