@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gt, isNull, or, sql } from "drizzle-orm"
 import { getDb } from "@/server/db/client"
 import {
     knowledgeBaseArticleShares,
@@ -29,6 +29,7 @@ export type PublicArticleScope = Map<number, PublicArticleRef>
 /**
  * SQL 层可见性：永久分享已启用、未撤销、无密码、未过期。
  * 应用层仍用 resolvePublicHomepageShareStatus 再滤一遍，双保险。
+ * 注意：expiresAt 比较必须用 drizzle gt()，不要把 Date 插进 sql``（postgres.js 会炸）。
  */
 export function publicShareVisibilitySql(now = new Date()) {
     return and(
@@ -40,7 +41,7 @@ export function publicShareVisibilitySql(now = new Date()) {
         )`,
         or(
             isNull(knowledgeBaseArticleShares.expiresAt),
-            sql`${knowledgeBaseArticleShares.expiresAt} > ${now}`,
+            gt(knowledgeBaseArticleShares.expiresAt, now),
         ),
     )
 }
