@@ -3,6 +3,7 @@ import {
     convertToModelMessages,
     createUIMessageStream,
     createUIMessageStreamResponse,
+    type LanguageModel,
     type UIMessage,
     type UIMessageChunk,
 } from "ai"
@@ -17,6 +18,16 @@ import type { AiProtocol } from "@/server/ai/config-logic"
 import { HttpError, toErrorResponse } from "@/server/http/response"
 import type { AgentDomainId, AssistantToolContext } from "./domain-types"
 import { assertAssistantFocusOwnership } from "./focus-guard"
+import {
+    dedupeIntentRouteParts,
+    domainsEqual,
+    INTENT_ROUTE_PART_TYPE,
+    needsIntentLlm,
+    routeAssistantIntentWithLlm,
+    toIntentRoutePartData,
+    type IntentRoutePartData,
+    type IntentRouteUiResult,
+} from "./intent-llm"
 import { routeAssistantIntent } from "./intent-router"
 import "./tools"
 import {
@@ -33,6 +44,7 @@ import {
     type ContextCompressPartData,
 } from "./context-pack"
 import { loadMastraToolsForDomains } from "./tool-registry"
+import { resolveAssistantSkills } from "./skills"
 import { createToolResilienceController, ToolResilienceError, isPlaybookToolResult } from "./tool-resilience"
 import {
     assistantFocusSchema,
@@ -43,6 +55,7 @@ import {
     listRecentToolNames,
     persistAssistantMessage,
     recordAssistantStep,
+    updateAssistantRunIntent,
 } from "./thread-logic"
 
 const chatRequestSchema = z.object({
@@ -62,25 +75,20 @@ export function buildAssistantSystemPrompt(domains: AgentDomainId[]): string {
     const guidance: string[] = []
 
     if (activeDomains.has("system")) {
-        guidance.push("系统元信息问题使用 list_system_overview 获取真实计数与模型状态。多步任务用 show_progress 或 upsert_plan 更新进度（界面在侧栏展示，不在消息里重复叙述步骤）；每完成一步应再次调用同一 id 刷新状态。需要保存可复用结果时才使用 save_answer_artifact。")
-        guidance.push("跨库或需要多步检索核验时，可调用 spawn_research_subagent（domains 仅 knowledge/doc_library/system；默认 maxDepth=1 允许一层再委派）；多路独立子问题可用 spawn_research_fanout（tasks≤3）并行后汇总；根据 summary/citations/results 作答，不要编造来源。")
+        guidance.push("系统元信息用 list_system_overview。多步任务用 show_progress / upsert_plan（侧栏展示，正文不重复罗列）。可复用结果才用 save_answer_artifact。")
+        guidance.push("跨库或多步核验可用 spawn_research_subagent；多路子问题用 spawn_research_fanout（tasks≤3）。根据 summary/citations/results 作答，不编造来源。")
+    }
+    if (activeDomains.has("knowledge") || activeDomains.has("doc_library") || activeDomains.has("content_write") || activeDomains.has("admin")) {
+        guidance.push("复杂业务步骤先用 skill 工具加载对应 playbook（knowledge-qa / doc-library-qa / article-write / admin-ops），再按 playbook 调用本轮工具。")
     }
     if (activeDomains.has("knowledge")) {
-        guidance.push("知识库问题先调用 search_knowledge 定位内容，再用 read_knowledge_node 深读命中节点；优先沿用 focus 默认范围，必要时才显式跨库检索。")
-        guidance.push("当用户要看图片、架构图、截图或图表，或工具返回的 media 含图片时：在最终答案中直接输出 Markdown 图片 `![说明](src)`，src 必须使用 media.src 原值（通常为 s4key:…），不要只给对象路径、文章链接，也禁止声称「站内上传无法展示」。聊天界面会签名并渲染这些图片。")
-    }
-    if (activeDomains.has("doc_library")) {
-        guidance.push("文档库问题先调用 search_documents 获取带定位的片段；上下文不足时调用 read_document，并用 fromIndex 继续翻页。")
+        guidance.push("图片/图表：答案中直接输出 Markdown 图片，src 用 media.src 原值（常为 s4key:…），禁止声称无法展示。")
     }
     if (activeDomains.has("system") && (activeDomains.has("knowledge") || activeDomains.has("doc_library"))) {
-        guidance.push("最终答案必须基于工具返回内容，并调用 show_citations 给出引用；href、title、domain、snippet 必须直接来自检索/读取结果，不得改写或编造。")
+        guidance.push("最终答案基于工具结果，并调用 show_citations；引用字段不得改写或编造。")
     }
-    if (activeDomains.has("content_write")) {
-        guidance.push("内容写入使用 create_article / update_article / create_article_share。删除文章、撤销分享、删除文档属于危险操作：必须调用 request_user_confirmation（action.toolName 填 delete_article / revoke_article_share / delete_document），禁止假装已删除。用户确认后运行时会执行并在工具结果里给出 executionOutcome。")
-        guidance.push("复杂写入可先 spawn_write_subagent 规划：根据其 summary/proposedActions 执行；risk=dangerous 的提案必须走 request_user_confirmation，不要让子代理直接改数据。")
-    }
-    if (activeDomains.has("admin")) {
-        guidance.push("管理面：用 list_ai_configs / list_agent_api_keys / get_public_qa_setting 查询；set_default_ai_config 可直接执行。删除配置、更新 API Key、吊销 Agent Key、改公开问答开关属于危险操作：必须 request_user_confirmation（action.toolName 填 delete_ai_config / update_ai_config_credentials / revoke_agent_api_key / set_public_qa_enabled）。公开问答开关仅超级管理员可改。")
+    if (activeDomains.has("content_write") || activeDomains.has("admin")) {
+        guidance.push("危险操作必须 request_user_confirmation，禁止假装已执行。")
     }
 
     return [
@@ -123,11 +131,12 @@ export async function assistantChat(request: NextRequest) {
         const { model, config } = await resolveAssistantModel(user.id, input.configId ?? null)
 
         const recentToolNames = await listRecentToolNames(thread.id)
-        const route = await routeAssistantIntent({ userText: lastUserText, focus, recentToolNames })
+        // 先规则占位，保证响应头立刻有 Run-Id；stream 内低置信度 LLM 可覆盖并回写
+        const rulesRoute = await routeAssistantIntent({ userText: lastUserText, focus, recentToolNames })
         const run = await createAssistantRun({
             threadId: thread.id,
             modelConfigId: config.id,
-            intentDomains: route.domains,
+            intentDomains: rulesRoute.domains,
         })
 
         const toolContext: AssistantToolContext = {
@@ -137,8 +146,6 @@ export async function assistantChat(request: NextRequest) {
             focus,
         }
         const resilience = createToolResilienceController()
-        const tools = loadMastraToolsForDomains(route.domains, toolContext, resilience)
-        const activeToolNames = Object.keys(tools)
 
         let messagesForModel = input.messages as unknown[]
         const pendingConfirmation = findPendingConfirmationExecution(messagesForModel)
@@ -193,6 +200,42 @@ export async function assistantChat(request: NextRequest) {
             stream: createUIMessageStream<UIMessage>({
                 originalMessages: input.messages as UIMessage[],
                 execute: async ({ writer }) => {
+                    const intentId = "intent-route"
+                    const writeIntent = (data: IntentRoutePartData, transient = false) => {
+                        writer.write({
+                            type: INTENT_ROUTE_PART_TYPE,
+                            id: intentId,
+                            data,
+                            ...(transient ? { transient: true } : {}),
+                        } as UIMessageChunk)
+                    }
+
+                    // running 用 transient，避免与 done 在 id 合并失败时各占一条 part（UI 会双份芯片）
+                    if (needsIntentLlm(rulesRoute)) {
+                        writeIntent({ status: "running", label: "正在识别意图…" }, true)
+                    }
+
+                    const finalRoute: IntentRouteUiResult = await routeAssistantIntentWithLlm({
+                        userText: lastUserText,
+                        focus,
+                        recentToolNames,
+                        model: model as LanguageModel,
+                        signal: request.signal,
+                        rulesRoute,
+                    })
+                    writeIntent(toIntentRoutePartData(finalRoute, "done"))
+
+                    if (!domainsEqual(finalRoute.domains, rulesRoute.domains)) {
+                        await updateAssistantRunIntent({
+                            runId: run.id,
+                            intentDomains: finalRoute.domains,
+                        })
+                    }
+
+                    const tools = loadMastraToolsForDomains(finalRoute.domains, toolContext, resilience)
+                    const activeToolNames = Object.keys(tools)
+                    const skills = resolveAssistantSkills(finalRoute.domains)
+
                     const compressId = "context-compress"
                     const writeCompress = (data: ContextCompressPartData) => {
                         writer.write({
@@ -241,11 +284,12 @@ export async function assistantChat(request: NextRequest) {
                         description: "In-site universal assistant for system overview, knowledge bases, and document libraries.",
                         model: model as unknown as AgentModelConfig,
                         instructions: buildInstructionsWithContextSummary(
-                            buildAssistantSystemPrompt(route.domains),
+                            buildAssistantSystemPrompt(finalRoute.domains),
                             pack.summaryMd,
                             pack.recalledSnippets,
                         ),
                         tools,
+                        skills,
                         inputProcessors: process.env.VITEST
                             ? [new TokenLimiterProcessor({ limit: MAX_CONTEXT_TOKENS, trimMode: "contiguous" })]
                             : [
@@ -332,7 +376,7 @@ export async function assistantChat(request: NextRequest) {
                     }
                 },
                 onEnd: async ({ responseMessage }) => {
-                    const parts = stripContextCompressParts(responseMessage.parts)
+                    const parts = dedupeIntentRouteParts(stripContextCompressParts(responseMessage.parts))
                     await persistAssistantMessage({
                         userId: user.id,
                         threadId: thread.id,

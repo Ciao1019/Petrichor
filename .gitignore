@@ -57,3 +57,4 @@ npm-debug.log*
 !apps/**/.env.example
 .env.local
 .env.*.local
+.data/

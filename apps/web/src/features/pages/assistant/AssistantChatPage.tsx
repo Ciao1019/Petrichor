@@ -30,6 +30,7 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleAlert,
+  Compass,
   Copy,
   FileText,
   Gauge,
@@ -559,6 +560,75 @@ const ContextCompressDataUI = makeAssistantDataUI({
       : "正在整理对话上下文…"
     return <QaPreparing label={label} />
   },
+})
+
+const INTENT_DOMAIN_LABELS: Record<string, string> = {
+  knowledge: "知识库",
+  doc_library: "文档库",
+  system: "系统",
+  content_write: "内容写入",
+  admin: "管理",
+}
+
+function IntentRouteChips({ data }: { data: unknown }) {
+  // 同一条消息若出现多条 intent-route（流式 id 未合并 / 历史脏数据），只展示最后一条
+  const isLastIntentPart = useAuiState((s) => {
+    if (s.part.type !== "data" || !("name" in s.part) || s.part.name !== "intent-route") return true
+    let lastIndex = -1
+    for (let index = 0; index < s.message.parts.length; index += 1) {
+      const part = s.message.parts[index]
+      if (part.type === "data" && "name" in part && part.name === "intent-route") lastIndex = index
+    }
+    if (lastIndex < 0) return true
+    const myIndex = s.message.parts.indexOf(s.part)
+    return myIndex < 0 ? false : myIndex === lastIndex
+  })
+
+  const payload = asRecord(data)
+  if (!isLastIntentPart || !payload) return null
+  if (payload.status === "running") {
+    const label = typeof payload.label === "string" && payload.label.trim()
+      ? payload.label.trim()
+      : "正在识别意图…"
+    return <QaPreparing label={label} />
+  }
+  if (payload.status !== "done") return null
+
+  const domains = Array.isArray(payload.domains)
+    ? payload.domains.filter((d): d is string => typeof d === "string")
+    : []
+  const fallbackLabel = typeof payload.label === "string" ? payload.label.trim() : ""
+  // 来源 / 置信度 / rationale 仅供审计，不对用户展示
+  if (domains.length === 0 && !fallbackLabel) return null
+
+  return (
+    <div
+      className="mb-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
+      role="status"
+      aria-label={fallbackLabel || "意图路由"}
+    >
+      <span className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 font-medium text-foreground/80">
+        <Compass className="size-3 opacity-70" aria-hidden />
+        意图
+      </span>
+      {domains.length > 0 ? domains.map((domain) => (
+        <span
+          key={domain}
+          className="rounded-md border border-border/50 bg-background/80 px-1.5 py-0.5 text-foreground/75"
+        >
+          {INTENT_DOMAIN_LABELS[domain] ?? domain}
+        </span>
+      )) : (
+        <span className="text-foreground/75">{fallbackLabel}</span>
+      )}
+    </div>
+  )
+}
+
+/** 服务端 data-intent-route → 常驻意图芯片（done 落库保留，刷新仍可见） */
+const IntentRouteDataUI = makeAssistantDataUI({
+  name: "intent-route",
+  render: IntentRouteChips,
 })
 
 function asRows(value: unknown, nestedKey?: string): Record<string, unknown>[] {
@@ -1365,6 +1435,7 @@ function QaChatPanel({
       <SpawnResearchFanoutToolUI />
       <SpawnWriteSubagentToolUI />
       <ContextCompressDataUI />
+      <IntentRouteDataUI />
       <CitationToolUI />
       <DataTableToolUI />
       <ListSystemOverviewToolUI />
@@ -1579,14 +1650,18 @@ function GrokComposer({
         </div>
       </div>
       {contextWindow ? (
-        <div className="mx-2 mt-1.5 flex items-center justify-between gap-3 text-[11px] text-[#9a9a9a] dark:text-[#6b6b6b]">
-          <BottomModelSelector
-            modelInfo={modelInfo}
-            selectedConfigId={selectedConfigId}
-            availableModels={availableModels}
-            onChange={onConfigChange}
-          />
-          <ComposerContextBar contextWindow={contextWindow} />
+        <div className="mx-2 mt-1.5 flex min-h-6 items-center justify-between gap-3 text-[11px] leading-none text-[#9a9a9a] dark:text-[#6b6b6b]">
+          <div className="min-w-0 flex-1">
+            <BottomModelSelector
+              modelInfo={modelInfo}
+              selectedConfigId={selectedConfigId}
+              availableModels={availableModels}
+              onChange={onConfigChange}
+            />
+          </div>
+          <div className="flex shrink-0 items-center">
+            <ComposerContextBar contextWindow={contextWindow} />
+          </div>
         </div>
       ) : null}
     </ComposerPrimitive.Root>
@@ -1596,7 +1671,14 @@ function GrokComposer({
 function ComposerContextBar({ contextWindow }: { contextWindow: number }) {
   const messages = useAuiState((s) => s.thread.messages)
   const usage = React.useMemo(() => extractLatestAssistantUsage(messages), [messages])
-  return <ContextDisplay.Bar modelContextWindow={contextWindow} side="top" usage={usage} />
+  return (
+    <ContextDisplay.Bar
+      className="h-6 px-0 py-0"
+      modelContextWindow={contextWindow}
+      side="top"
+      usage={usage}
+    />
+  )
 }
 
 function extractLatestAssistantUsage(messages: unknown): ThreadTokenUsage | undefined {
@@ -2136,24 +2218,22 @@ function UserMessageBubble() {
   )
 }
 
+function AssistantPreparingStatus() {
+  const label = useAuiState((s) => {
+    const hasIntentDone = s.message.parts.some((part) => {
+      if (part.type !== "data" || !("name" in part) || part.name !== "intent-route") return false
+      const data = part.data
+      return typeof data === "object" && data != null && "status" in data && (data as { status?: unknown }).status === "done"
+    })
+    return hasIntentDone ? "正在思考与检索…" : "准备响应中"
+  })
+  return <QaPreparing label={label} />
+}
+
 function AssistantMessageBubble() {
   return (
     <div className="flex flex-col items-start">
       <div className="w-full max-w-none">
-        <AuiIf
-          condition={(s) =>
-            s.thread.isRunning &&
-            // 本条助手消息还没有任何可见内容（首字 / 工具调用 / 推理 / 压缩中）时显示默认准备态
-            !s.message.parts.some((part) => {
-              if (part.type === "text" && "text" in part && String(part.text).trim().length > 0) return true
-              if (part.type === "tool-call" || part.type === "reasoning") return true
-              if (part.type === "data" && "name" in part && part.name === "context-compress") return true
-              return false
-            })
-          }
-        >
-          <QaPreparing />
-        </AuiIf>
         <div className="wrap-break-word">
           <MessagePrimitive.Parts>
             {({ part }) => {
@@ -2166,10 +2246,26 @@ function AssistantMessageBubble() {
                   </div>
                 )
               }
+              // 显式走 dataRendererUI；返回 <></> 抑制 DefaultPartFallback，避免与注册 UI 叠两层
+              if (part.type === "data") return part.dataRendererUI ?? <></>
               return null
             }}
           </MessagePrimitive.Parts>
         </div>
+        <AuiIf
+          condition={(s) =>
+            s.thread.isRunning &&
+            // 意图芯片只是元信息，不算「已有回答」；无正文/工具/推理/压缩中时仍显示 loading
+            !s.message.parts.some((part) => {
+              if (part.type === "text" && "text" in part && String(part.text).trim().length > 0) return true
+              if (part.type === "tool-call" || part.type === "reasoning") return true
+              if (part.type === "data" && "name" in part && part.name === "context-compress") return true
+              return false
+            })
+          }
+        >
+          <AssistantPreparingStatus />
+        </AuiIf>
         <MessagePrimitive.Error>
           <ErrorPrimitive.Root className="mt-2 rounded-md border border-destructive bg-destructive/10 p-3 text-destructive text-sm dark:bg-destructive/5 dark:text-red-200">
             <ErrorPrimitive.Message className="line-clamp-2" />
@@ -2629,7 +2725,14 @@ function extractPersistedParts(content: unknown) {
   const sanitized = parts
     .map((part) => sanitizeUIMessagePart(part))
     .filter((part): part is Record<string, unknown> => part != null)
-  return sanitized.length > 0 ? sanitized : null
+  if (sanitized.length === 0) return null
+  // 历史消息若残留多条 data-intent-route，只保留最后一条
+  let lastIntentIndex = -1
+  for (let index = 0; index < sanitized.length; index += 1) {
+    if (sanitized[index]?.type === "data-intent-route") lastIntentIndex = index
+  }
+  if (lastIntentIndex < 0) return sanitized
+  return sanitized.filter((part, index) => part.type !== "data-intent-route" || index === lastIntentIndex)
 }
 
 function sanitizeUIMessagePart(part: unknown): Record<string, unknown> | null {
@@ -2661,8 +2764,8 @@ function sanitizeUIMessagePart(part: unknown): Record<string, unknown> | null {
   if (type === "source-url" || type === "source-document" || type === "file") {
     return record
   }
-  // 自定义 data-* part（如 data-context-compress）：原样保留 type/id/data，供刷新后重放；
-  // 落库前服务端会剥离 running 压缩态，历史里通常只剩 done/skipped（壳不渲染）。
+  // 自定义 data-* part（如 data-context-compress / data-intent-route）：原样保留 type/id/data，供刷新后重放。
+  // context-compress 落库前会剥离；intent-route 的 done 态保留以便常驻展示。
   if (type.startsWith("data-")) {
     return record
   }

@@ -17,10 +17,14 @@ export type AssistantFocus = {
     documentId?: string | null
 }
 
+export type IntentRouteSource = "rules" | "llm"
+
 export type IntentRouteResult = {
     domains: AgentDomainId[]
     confidence: number
     rationale?: string
+    /** 路由来源；规则路径默认 rules，LLM 覆盖后为 llm */
+    source?: IntentRouteSource
 }
 
 export type AssistantToolContext = {
