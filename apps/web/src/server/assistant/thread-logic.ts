@@ -159,6 +159,19 @@ export async function createAssistantRun(input: {
     return created!
 }
 
+/** LLM 覆盖意图后回写 run 的域快照，保持审计与工具装载一致 */
+export async function updateAssistantRunIntent(input: {
+    runId: number
+    intentDomains: AgentDomainId[]
+}) {
+    await getDb()
+        .update(assistantRuns)
+        .set({
+            intentDomainsJson: JSON.stringify(input.intentDomains),
+        })
+        .where(eq(assistantRuns.id, input.runId))
+}
+
 export async function finishAssistantRun(input: {
     runId: number
     status: "COMPLETED" | "FAILED"

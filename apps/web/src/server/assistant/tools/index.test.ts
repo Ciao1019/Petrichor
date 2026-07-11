@@ -69,41 +69,35 @@ describe("readonly assistant tool registration", () => {
 })
 
 describe("assistant domain-aware system prompt", () => {
-    it("knowledge+system 提示先检索再阅读并调用引用工具", () => {
+    it("knowledge+system 提示引用纪律、图片与 skill 引导", () => {
         const prompt = buildAssistantSystemPrompt(["knowledge", "system"])
-        expect(prompt).toContain("search_knowledge")
-        expect(prompt).toContain("read_knowledge_node")
+        expect(prompt).toContain("knowledge-qa")
         expect(prompt).toContain("show_citations")
         expect(prompt).toContain("不要编造")
-        expect(prompt).toContain("media.src")
         expect(prompt).toContain("s4key:")
-        expect(prompt).toContain("站内上传无法展示")
+        expect(prompt).toContain("list_system_overview")
     })
 
-    it("doc_library+system 提示支持检索、翻页和引用", () => {
+    it("doc_library+system 提示引用纪律与文档 skill", () => {
         const prompt = buildAssistantSystemPrompt(["doc_library", "system"])
-        expect(prompt).toContain("search_documents")
-        expect(prompt).toContain("read_document")
-        expect(prompt).toContain("fromIndex")
+        expect(prompt).toContain("doc-library-qa")
         expect(prompt).toContain("show_citations")
+        expect(prompt).toContain("list_system_overview")
     })
 
-    it("纯 system 元问题不注入知识库或文档库检索说明", () => {
+    it("纯 system 元问题不注入业务 skill 名", () => {
         const prompt = buildAssistantSystemPrompt(["system"])
         expect(prompt).toContain("list_system_overview")
         expect(prompt).toContain("spawn_research_subagent")
         expect(prompt).toContain("spawn_research_fanout")
-        expect(prompt).not.toContain("search_knowledge")
-        expect(prompt).not.toContain("search_documents")
+        expect(prompt).not.toContain("knowledge-qa")
+        expect(prompt).not.toContain("doc-library-qa")
     })
 
-    it("content_write 提示含确认纪律", () => {
+    it("content_write 提示含确认纪律与写入 skill", () => {
         const prompt = buildAssistantSystemPrompt(["content_write", "system"])
         expect(prompt).toContain("request_user_confirmation")
-        expect(prompt).toContain("create_article")
-        expect(prompt).toContain("delete_article")
-        expect(prompt).toContain("spawn_write_subagent")
-        expect(prompt).toContain("proposedActions")
+        expect(prompt).toContain("article-write")
     })
 })
 

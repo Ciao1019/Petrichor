@@ -61,11 +61,11 @@ describe("admin assistant tools", () => {
         await expect(deleteTool.execute(ctx, { configId: 1 })).rejects.toThrow(/request_user_confirmation/)
     })
 
-    it("admin 提示含确认纪律", () => {
+    it("admin 提示含确认纪律与管理 skill", () => {
         const prompt = buildAssistantSystemPrompt(["admin", "content_write", "system"])
-        expect(prompt).toContain("list_ai_configs")
+        expect(prompt).toContain("admin-ops")
+        expect(prompt).toContain("article-write")
         expect(prompt).toContain("request_user_confirmation")
-        expect(prompt).toContain("set_public_qa_enabled")
     })
 
     it("默认只读三域不含 admin", () => {

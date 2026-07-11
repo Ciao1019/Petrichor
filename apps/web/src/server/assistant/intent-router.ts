@@ -58,7 +58,7 @@ export async function routeAssistantIntent(input: {
 }
 
 /** knowledge/doc_library → 补 system；admin → 补 content_write（确认工具） */
-function withAuxiliaryDomains(domains: AgentDomainId[]): AgentDomainId[] {
+export function withAuxiliaryDomains(domains: AgentDomainId[]): AgentDomainId[] {
     let next = domains
     if ((next.includes("knowledge") || next.includes("doc_library")) && !next.includes("system")) {
         next = [...next, "system"]
