@@ -9,11 +9,12 @@ const knowledgeQa = createSkill({
 ## 知识库问答流程
 
 1. 优先沿用当前 focus 的知识库范围；用户明确要求跨库时再放开。
-2. 先调用 search_knowledge 定位节点；根据 hits 再调用 read_knowledge_node 深读。
-3. 最终答案必须基于工具返回内容；调用 show_citations，href/title/domain/snippet 直接来自检索/读取结果，禁止编造。
-4. 需要图片时，在答案中用 Markdown \`![说明](src)\`，src 使用 media.src 原值（常为 s4key:…）。
-5. 检索不到就如实说明，不要编造原文。
-6. 多步任务用 show_progress 或 upsert_plan 更新侧栏进度，不要在正文重复罗列步骤。
+2. 问「有多少知识库/文章」等计数或清单：优先 list_system_overview / list_knowledge_bases，不要对每个库调用 search_knowledge。
+3. 查内容：先调用 search_knowledge 定位节点；跨库时优先一次不传 knowledgeBaseId；根据 hits 再调用 read_knowledge_node 深读。
+4. 最终答案必须基于工具返回内容；调用 show_citations，href/title/domain/snippet 直接来自检索/读取结果，禁止编造。
+5. 需要图片时，在答案中用 Markdown \`![说明](src)\`，src 使用 media.src 原值（常为 s4key:…）。
+6. 检索不到就如实说明，不要编造原文。
+7. 多步任务用 show_progress 或 upsert_plan 更新侧栏进度，不要在正文重复罗列步骤。
 `.trim(),
 })
 
@@ -25,11 +26,12 @@ const docLibraryQa = createSkill({
 ## 文档库问答流程
 
 1. 优先沿用当前 focus 的文档库范围。
-2. 先调用 search_documents 获取带定位的片段。
-3. 上下文不足时调用 read_document，并用 fromIndex 继续翻页。
-4. 最终答案基于工具结果；调用 show_citations，字段直接来自检索/读取结果。
-5. 需要结构化展示时可用 show_data_table；不要编造单元格数据。
-6. 多步任务用 show_progress / upsert_plan 更新侧栏进度。
+2. 问「有多少文档/文档库」等计数或清单：优先 list_system_overview / list_doc_libraries，不要对每个库重复同类 search_documents。
+3. 查内容：先调用 search_documents 获取带定位的片段。
+4. 上下文不足时调用 read_document，并用 fromIndex 继续翻页。
+5. 最终答案基于工具结果；调用 show_citations，字段直接来自检索/读取结果。
+6. 需要结构化展示时可用 show_data_table；不要编造单元格数据。
+7. 多步任务用 show_progress / upsert_plan 更新侧栏进度。
 `.trim(),
 })
 

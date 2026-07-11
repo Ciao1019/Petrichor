@@ -76,6 +76,7 @@ describe("assistant domain-aware system prompt", () => {
         expect(prompt).toContain("不要编造")
         expect(prompt).toContain("s4key:")
         expect(prompt).toContain("list_system_overview")
+        expect(prompt).toContain("不要对每个库重复同类 query")
     })
 
     it("doc_library+system 提示引用纪律与文档 skill", () => {

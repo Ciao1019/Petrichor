@@ -27,4 +27,11 @@ describe("resolveAssistantSkills", () => {
             expect(skill.description.toLowerCase()).toContain("use")
         }
     })
+
+    it("knowledge skill 引导计数走 list、跨库单次 search", () => {
+        const [skill] = resolveAssistantSkills(["knowledge"])
+        expect(skill.instructions).toContain("list_knowledge_bases")
+        expect(skill.instructions).toContain("不要对每个库调用 search_knowledge")
+        expect(skill.instructions).toContain("不传 knowledgeBaseId")
+    })
 })
