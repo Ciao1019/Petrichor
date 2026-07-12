@@ -2,7 +2,6 @@ import { eq } from "drizzle-orm"
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/server/auth/better-auth"
 import { appendBetterAuthCookies } from "@/server/auth/better-auth-response"
-import { isDesktopAuthEnabled } from "@/server/auth/desktop-user"
 import { getDb } from "@/server/db/client"
 import { authSessions } from "@/server/db/schema"
 import { clearSessionCookie, getSessionToken, hashSessionToken } from "@/server/auth/session"
@@ -10,10 +9,6 @@ import { toErrorResponse } from "@/server/http/response"
 
 export async function POST(request: NextRequest) {
     try {
-        if (isDesktopAuthEnabled()) {
-            return NextResponse.json({})
-        }
-
         const token = getSessionToken(request)
         if (token) {
             await getDb()
