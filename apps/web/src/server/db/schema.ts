@@ -19,7 +19,6 @@ import {
 
 const useSqliteSchema =
     process.env.PETRICHOR_DB_DIALECT === "sqlite" ||
-    process.env.PETRICHOR_DESKTOP === "true" ||
     process.env.DATABASE_URL?.startsWith("file:")
 
 const pgTable = (useSqliteSchema ? sqliteTable : pgPgTable) as typeof pgPgTable

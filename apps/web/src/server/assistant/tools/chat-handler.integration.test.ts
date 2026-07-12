@@ -92,7 +92,6 @@ async function loadRunEvidence(response: Response) {
 
 describe.runIf(runIntegration)("assistant chat handler integration", () => {
     beforeAll(async () => {
-        process.env.PETRICHOR_DESKTOP = "true"
         process.env.PETRICHOR_DB_DIALECT = "sqlite"
         process.env.DATABASE_URL = `file:/tmp/petrichor-agent-tools-handler-${process.pid}-${Date.now()}.sqlite`
         process.env.SESSION_SECRET = "01234567890123456789012345678901"
