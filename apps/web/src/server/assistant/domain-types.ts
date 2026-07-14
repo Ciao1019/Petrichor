@@ -10,11 +10,19 @@ export type AgentDomainId =
     | "content_write"
     | "admin"
 
+/** 旁路人格标识（脱离业务的独立 skill 运行时）。目前仅倪海厦。 */
+export type AssistantPersona = "nihaixia"
+
 export type AssistantFocus = {
     knowledgeBaseId?: string | null
     libraryId?: string | null
     articleId?: string | null
     documentId?: string | null
+    /**
+     * 旁路人格：选中后走独立 skill 运行时，完全脱离站内业务，
+     * 忽略上面的业务范围字段（不做归属校验、不装载业务域工具/技能）。
+     */
+    persona?: AssistantPersona | null
 }
 
 export type IntentRouteSource = "rules" | "llm"

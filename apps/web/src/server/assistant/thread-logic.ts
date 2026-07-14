@@ -29,6 +29,8 @@ export const assistantFocusSchema = z.object({
     libraryId: focusIdSchema,
     articleId: focusIdSchema,
     documentId: focusIdSchema,
+    // 旁路人格（脱离业务）：与上面的业务范围互斥，选中后走独立 skill 运行时
+    persona: z.enum(["nihaixia"]).nullable().optional(),
 })
 
 export const assistantThreadListSchema = z.object({
