@@ -1847,6 +1847,8 @@ export interface AssistantFocus {
   libraryId?: string | null
   articleId?: string | null
   documentId?: string | null
+  /** 旁路人格（脱离业务）：与业务范围互斥，选中后走独立 skill 运行时 */
+  persona?: "nihaixia" | null
 }
 
 export interface AssistantThreadSummary {
