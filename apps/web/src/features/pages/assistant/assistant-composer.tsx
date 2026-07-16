@@ -17,6 +17,7 @@ import {
 } from "lucide-react"
 
 import { ContextDisplay } from "@/components/assistant-ui/context-display"
+import { useThreadTokenUsage } from "@assistant-ui/react-ai-sdk"
 import {
   Command,
   CommandEmpty,
@@ -48,7 +49,6 @@ import { cn } from "@/lib/utils"
 
 import {
   type AssistantFocusSelection,
-  extractLatestAssistantUsage,
   formatContextWindow,
 } from "./assistant-message-utils"
 
@@ -162,8 +162,7 @@ export function GrokComposer({
 }
 
 export function ComposerContextBar({ contextWindow }: { contextWindow: number }) {
-  const messages = useAuiState((s) => s.thread.messages)
-  const usage = React.useMemo(() => extractLatestAssistantUsage(messages), [messages])
+  const usage = useThreadTokenUsage()
   return (
     <ContextDisplay.Bar
       className="h-6 px-0 py-0"

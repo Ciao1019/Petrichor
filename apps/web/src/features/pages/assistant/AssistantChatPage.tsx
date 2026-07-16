@@ -1206,9 +1206,75 @@ function AssistantMessageBubble() {
 function MessageTimingDisplay() {
   const liveTiming = useMessageTiming()
   const messageMetadata = useAuiState((s) => s.message.metadata)
+  const messageId = useAuiState((s) => s.message.id)
+  const isRunning = useAuiState((s) => s.thread.isRunning)
+  const textLength = useAuiState((s) => {
+    if (s.message.role !== "assistant") return 0
+    let len = 0
+    for (const part of s.message.content) {
+      if (part.type === "text" && typeof part.text === "string") len += part.text.length
+    }
+    return len
+  })
+  // assistant-ui converter 用 WeakMap 按 message 对象缓存；timing 后写入时消息身份不变会吃掉 metadata.timing。
+  // 这里在组件内自算，保证本轮结束后悬停能看到耗时/速率。
+  const trackRef = React.useRef<{
+    messageId: string
+    startTime: number
+    lastContentLength: number
+    totalChunks: number
+    firstTokenTime?: number
+  } | null>(null)
+  const [localTiming, setLocalTiming] = React.useState<{
+    firstTokenTime?: number
+    totalStreamTime: number
+    tokensPerSecond?: number
+    totalChunks: number
+  } | null>(null)
+
+  React.useEffect(() => {
+    if (isRunning) {
+      if (!trackRef.current || trackRef.current.messageId !== messageId) {
+        trackRef.current = {
+          messageId,
+          startTime: Date.now(),
+          lastContentLength: 0,
+          totalChunks: 0,
+        }
+        setLocalTiming(null)
+      }
+      const track = trackRef.current
+      if (textLength > track.lastContentLength) {
+        if (track.firstTokenTime === undefined) {
+          track.firstTokenTime = Date.now() - track.startTime
+        }
+        track.totalChunks += 1
+        track.lastContentLength = textLength
+      }
+      return
+    }
+    if (!trackRef.current || trackRef.current.messageId !== messageId) return
+    const track = trackRef.current
+    const totalStreamTime = Date.now() - track.startTime
+    const tokenCount = Math.ceil(track.lastContentLength / 4)
+    setLocalTiming({
+      totalStreamTime,
+      totalChunks: track.totalChunks,
+      ...(track.firstTokenTime !== undefined ? { firstTokenTime: track.firstTokenTime } : {}),
+      ...(totalStreamTime > 0 && tokenCount > 0
+        ? { tokensPerSecond: tokenCount / (totalStreamTime / 1000) }
+        : {}),
+    })
+    trackRef.current = null
+  }, [isRunning, messageId, textLength])
+
   const persistedTiming = React.useMemo(() => readPersistedTiming(messageMetadata), [messageMetadata])
   const subAgentUsage = React.useMemo(() => readSubAgentUsage(messageMetadata), [messageMetadata])
-  const timing = liveTiming?.totalStreamTime ? liveTiming : persistedTiming
+  const timing = localTiming?.totalStreamTime
+    ? localTiming
+    : liveTiming?.totalStreamTime
+      ? liveTiming
+      : persistedTiming
   if (!timing?.totalStreamTime) return null
 
   const totalTimeText = formatStreamTime(timing.totalStreamTime)

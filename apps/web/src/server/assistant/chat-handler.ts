@@ -47,6 +47,7 @@ import { loadMastraToolsForDomains } from "./tool-registry"
 import { resolveAssistantSkills } from "./skills"
 import { buildAssistantSystemPrompt } from "./system-prompt"
 import { createToolResilienceController, ToolResilienceError, isPlaybookToolResult } from "./tool-resilience"
+import { flattenAssistantUsage } from "./usage-meta"
 import {
     assistantFocusSchema,
     assistantIdSchema,
@@ -174,6 +175,7 @@ export async function assistantChat(request: NextRequest) {
         }
 
         let stepIndex = pendingConfirmation ? 1 : 0
+        let streamStartedAt: number | undefined
 
         return createUIMessageStreamResponse({
             stream: createUIMessageStream<UIMessage>({
@@ -285,6 +287,7 @@ export async function assistantChat(request: NextRequest) {
                     })
 
                     const modelMessages = await convertToModelMessages(pack.recentMessages)
+                    streamStartedAt = Date.now()
                     const result = await agent.stream(modelMessages as never, {
                         maxSteps: 8,
                         modelSettings: { temperature: 0.2 },
@@ -332,6 +335,15 @@ export async function assistantChat(request: NextRequest) {
                     const mastraUiStream = toAISdkStream(result, {
                         from: "agent",
                         version: "v6",
+                        // finish 上的 totalUsage 转 UI chunk 时会被剥掉；经 messageMetadata 注入 custom.usage
+                        messageMetadata: ({ part }) => {
+                            if (!part || typeof part !== "object") return undefined
+                            const record = part as { type?: unknown; totalUsage?: unknown; usage?: unknown }
+                            if (record.type !== "finish") return undefined
+                            const usage = flattenAssistantUsage(record.totalUsage ?? record.usage)
+                            if (!usage) return undefined
+                            return { custom: { usage } }
+                        },
                     })
                     const reader = mastraUiStream.getReader()
                     try {
@@ -349,11 +361,31 @@ export async function assistantChat(request: NextRequest) {
                 },
                 onEnd: async ({ responseMessage }) => {
                     const parts = dedupeIntentRouteParts(stripContextCompressParts(responseMessage.parts))
+                    const metadata = (responseMessage as { metadata?: unknown }).metadata
+                    const metaRecord = typeof metadata === "object" && metadata !== null
+                        ? metadata as Record<string, unknown>
+                        : null
+                    const custom = typeof metaRecord?.custom === "object" && metaRecord.custom !== null
+                        ? metaRecord.custom as Record<string, unknown>
+                        : null
+                    const usage = flattenAssistantUsage(custom?.usage ?? metaRecord?.usage)
+                    const totalStreamTime = typeof streamStartedAt === "number"
+                        ? Math.max(0, Date.now() - streamStartedAt)
+                        : undefined
+                    const outputTokens = usage?.outputTokens
+                    const tokensPerSecond = totalStreamTime && totalStreamTime > 0 && outputTokens != null && outputTokens > 0
+                        ? outputTokens / (totalStreamTime / 1000)
+                        : undefined
                     await persistAssistantMessage({
                         userId: user.id,
                         threadId: thread.id,
                         role: "assistant",
-                        content: { parts },
+                        content: {
+                            parts,
+                            ...(usage ? { usage } : {}),
+                            ...(totalStreamTime != null ? { totalStreamTime } : {}),
+                            ...(tokensPerSecond != null ? { tokensPerSecond } : {}),
+                        },
                     })
                 },
             }),
