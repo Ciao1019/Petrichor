@@ -23,3 +23,5 @@
 ### 环境变量与凭证
 
 ### 其他
+
+- Assistant 危险确认票据表：`docs/migrations/2026-07-16-assistant-confirmation-ticket.sql`；未跑迁移则确认危险操作会失败

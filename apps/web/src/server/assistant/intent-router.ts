@@ -13,6 +13,8 @@ const DOMAIN_PATTERNS: Array<{ domain: AgentDomainId; pattern: RegExp; weight: n
 ]
 
 const FOCUS_DOMAIN_BOOST = 4
+/** 主意图域上限（辅助域另计），避免一次装载全站非 dangerous 工具 */
+export const MAX_PRIMARY_INTENT_DOMAINS = 2
 
 export async function routeAssistantIntent(input: {
     userText: string
@@ -45,6 +47,8 @@ export async function routeAssistantIntent(input: {
 
     const domains = [...scores.entries()]
         .sort((a, b) => b[1] - a[1])
+        // 禁止一次挂载全站：只取得分最高的主域，再由辅助域规则补齐
+        .slice(0, MAX_PRIMARY_INTENT_DOMAINS)
         .map(([domain]) => domain)
 
     if (domains.length === 0) {

@@ -6,7 +6,7 @@ import {
     type IntentRouteResult,
     type IntentRouteSource,
 } from "./domain-types"
-import { routeAssistantIntent, withAuxiliaryDomains } from "./intent-router"
+import { routeAssistantIntent, withAuxiliaryDomains, MAX_PRIMARY_INTENT_DOMAINS } from "./intent-router"
 
 export const INTENT_LLM_CONFIDENCE_THRESHOLD = 0.5
 export const INTENT_LLM_TIMEOUT_MS = 5_000
@@ -29,7 +29,7 @@ export const DOMAIN_LABELS: Record<AgentDomainId, string> = {
 }
 
 const intentLlmSchema = z.object({
-    domains: z.array(z.enum(AGENT_DOMAIN_IDS)).min(1),
+    domains: z.array(z.enum(AGENT_DOMAIN_IDS)).min(1).max(MAX_PRIMARY_INTENT_DOMAINS),
     confidence: z.number().min(0).max(1),
     rationale: z.string().trim().min(1).max(80),
 })
@@ -183,7 +183,7 @@ export async function classifyIntentWithLlm(input: {
         ].join("\n"),
     })
 
-    const domains = withAuxiliaryDomains(result.object.domains)
+    const domains = withAuxiliaryDomains(result.object.domains.slice(0, MAX_PRIMARY_INTENT_DOMAINS))
     return {
         domains,
         confidence: result.object.confidence,

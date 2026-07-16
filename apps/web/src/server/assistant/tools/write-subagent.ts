@@ -1,14 +1,8 @@
-import { desc, eq } from "drizzle-orm"
 import { createTool } from "@mastra/core/tools"
-import { Agent } from "@mastra/core/agent"
 import { z } from "zod"
-import { createChatLanguageModel } from "@/server/ai/generation"
-import { getDb } from "@/server/db/client"
-import { assistantRuns, assistantSteps } from "@/server/db/schema"
 import type { AgentDomainId, AssistantFocus, AssistantToolContext, AssistantToolRegistration } from "../domain-types"
-import { loadMastraToolsForDomains } from "../tool-registry"
-import { createToolResilienceController, ToolResilienceError, isPlaybookToolResult } from "../tool-resilience"
-import { assistantFocusSchema, recordAssistantStep } from "../thread-logic"
+import { assistantFocusSchema } from "../thread-logic"
+import { readNestedTotalTokens, runNestedAgentGenerate } from "./nested-agent"
 import { SPAWN_RESEARCH_SUBAGENT } from "./research-subagent"
 
 export const SPAWN_WRITE_SUBAGENT = "spawn_write_subagent"
@@ -156,90 +150,32 @@ export async function spawnWriteSubagent(
     const focus = (input.focus ?? ctx.focus) as AssistantFocus | null
     const proposalBucket = { actions: [...seedActions] as ProposedWriteAction[] }
 
-    const [run] = await getDb()
-        .select({ modelConfigId: assistantRuns.modelConfigId })
-        .from(assistantRuns)
-        .where(eq(assistantRuns.id, ctx.runId))
-        .limit(1)
-
-    const resilience = createToolResilienceController()
     const subCtx: AssistantToolContext = {
         userId: ctx.userId,
         threadId: ctx.threadId,
         runId: ctx.runId,
         focus,
     }
-    const allTools = loadMastraToolsForDomains(WRITE_SUBAGENT_DOMAINS, subCtx, resilience)
-    const tools: Record<string, ReturnType<typeof createTool>> = {}
-    for (const name of filterWriteSubagentToolNames(Object.keys(allTools))) {
-        tools[name] = allTools[name]!
-    }
-    tools[PROPOSE_WRITE_ACTIONS] = createProposeWriteActionsTool(proposalBucket)
-
-    let stepIndex = await nextStepIndex(ctx.runId)
-    let toolCalls = 0
 
     try {
-        const { model } = await createChatLanguageModel({
-            userId: ctx.userId,
-            configId: run?.modelConfigId ?? null,
-        })
-
-        const agent = new Agent({
-            id: "petrichor-write-subagent",
-            name: "Petrichor Write Subagent",
+        const { output, toolCalls } = await runNestedAgentGenerate({
+            ctx: subCtx,
+            agentId: "petrichor-write-subagent",
+            agentName: "Petrichor Write Subagent",
             description: "Read-only planner for content write intents; proposes actions for the main agent.",
-            model: model as never,
             instructions: buildWriteSubagentInstructions(input.goal, seedActions),
-            tools,
+            domains: WRITE_SUBAGENT_DOMAINS,
+            filterToolNames: filterWriteSubagentToolNames,
+            augmentTools: (tools) => {
+                tools[PROPOSE_WRITE_ACTIONS] = createProposeWriteActionsTool(proposalBucket)
+                return tools
+            },
+            prompt: input.goal,
+            maxSteps: WRITE_SUBAGENT_MAX_STEPS,
+            timeoutMs: WRITE_SUBAGENT_TIMEOUT_MS,
+            stepPrefix: SPAWN_WRITE_SUBAGENT,
+            timeoutErrorTag: "write_subagent_timeout",
         })
-
-        const output = await Promise.race([
-            agent.generate(input.goal, {
-                maxSteps: WRITE_SUBAGENT_MAX_STEPS,
-                modelSettings: { temperature: 0.2 },
-                activeTools: Object.keys(tools),
-                hooks: {
-                    afterToolCall: async ({
-                        toolName,
-                        output: toolOutput,
-                        error,
-                    }: {
-                        toolName: string
-                        output: unknown
-                        error?: unknown
-                    }) => {
-                        toolCalls += 1
-                        const meta = resilience.consumeMeta(toolName)
-                        const playbook = isPlaybookToolResult(toolOutput) ? toolOutput : null
-                        const isSuccess = error == null && meta?.errorCode == null && !playbook
-                        const errorCode = isSuccess
-                            ? null
-                            : meta?.errorCode
-                                ?? playbook?.errorCode
-                                ?? (error instanceof ToolResilienceError ? error.code : "tool_error")
-                        await recordAssistantStep({
-                            runId: ctx.runId,
-                            stepIndex: stepIndex++,
-                            toolName: `${SPAWN_WRITE_SUBAGENT}/${toolName}`,
-                            input: {},
-                            output: isSuccess
-                                ? toolOutput
-                                : playbook ?? {
-                                    error: error instanceof Error ? error.message : String(error ?? errorCode),
-                                    errorCode,
-                                },
-                            status: isSuccess ? "COMPLETED" : "FAILED",
-                            errorCode,
-                            durationMs: meta?.durationMs ?? null,
-                        })
-                    },
-                },
-            } as never),
-            new Promise<never>((_, reject) => {
-                setTimeout(() => reject(new Error("write_subagent_timeout")), WRITE_SUBAGENT_TIMEOUT_MS)
-            }),
-        ])
 
         const summary = typeof output.text === "string" ? output.text.trim() : ""
         const proposedActions = proposalBucket.actions
@@ -249,7 +185,7 @@ export async function spawnWriteSubagent(
             ok,
             summary: summary || (proposedActions.length > 0 ? "已生成写入提案，请主助手执行或确认。" : "写子代理未产出方案"),
             proposedActions,
-            usage: { calls: toolCalls, totalTokens: readTotalTokens(output) },
+            usage: { calls: toolCalls, totalTokens: readNestedTotalTokens(output) },
             errorCode: ok ? null : "empty_write_plan",
         }
     } catch (error) {
@@ -259,35 +195,10 @@ export async function spawnWriteSubagent(
             ok: false,
             summary: `写子代理失败：${message}`,
             proposedActions: proposalBucket.actions,
-            usage: { calls: toolCalls, totalTokens: 0 },
+            usage: { calls: 0, totalTokens: 0 },
             errorCode,
         }
     }
-}
-
-async function nextStepIndex(runId: number) {
-    const [row] = await getDb()
-        .select({ stepIndex: assistantSteps.stepIndex })
-        .from(assistantSteps)
-        .where(eq(assistantSteps.runId, runId))
-        .orderBy(desc(assistantSteps.stepIndex))
-        .limit(1)
-    return (row?.stepIndex ?? -1) + 1
-}
-
-function readTotalTokens(output: { totalUsage?: unknown; usage?: unknown }): number {
-    const total = asRecord(output.totalUsage)
-    if (typeof total?.totalTokens === "number") return total.totalTokens
-    if (typeof total?.total === "number") return total.total
-    const usage = asRecord(output.usage)
-    if (typeof usage?.totalTokens === "number") return usage.totalTokens
-    return 0
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-    return typeof value === "object" && value !== null && !Array.isArray(value)
-        ? value as Record<string, unknown>
-        : null
 }
 
 export const writeSubagentTools: AssistantToolRegistration[] = [

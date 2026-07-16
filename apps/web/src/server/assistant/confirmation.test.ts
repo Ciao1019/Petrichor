@@ -1,5 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { z } from "zod"
+
+vi.mock("./confirmation-store", () => ({
+    issueAssistantConfirmation: vi.fn(async () => undefined),
+    consumeAssistantConfirmation: vi.fn(),
+}))
 
 import {
     assertConfirmationAction,
@@ -9,6 +14,7 @@ import {
     isDangerousToolName,
     patchConfirmationExecutionOutcome,
 } from "./confirmation"
+import { issueAssistantConfirmation } from "./confirmation-store"
 import type { AssistantToolContext, AssistantToolRegistration } from "./domain-types"
 import {
     clearAssistantToolRegistryForTests,
@@ -18,6 +24,7 @@ import {
 } from "./tool-registry"
 
 const ctx: AssistantToolContext = { userId: 1, threadId: 2, runId: 3, focus: null }
+const issueMock = vi.mocked(issueAssistantConfirmation)
 
 function makeDangerous(name: string, execute: AssistantToolRegistration["execute"]): AssistantToolRegistration {
     return {
@@ -32,6 +39,7 @@ function makeDangerous(name: string, execute: AssistantToolRegistration["execute
 
 beforeEach(() => {
     clearAssistantToolRegistryForTests()
+    issueMock.mockClear()
 })
 
 describe("confirmation protocol", () => {
@@ -84,7 +92,7 @@ describe("confirmation protocol", () => {
         expect(() => assertConfirmationAction({ toolName: "create_article", input: {} })).toThrow(/未知危险工具/)
     })
 
-    it("从消息中找出待执行确认，并回写 executionOutcome", () => {
+    it("从消息中只提取 confirmationId，不暴露客户端 action", () => {
         const messages = [{
             role: "assistant",
             parts: [{
@@ -99,33 +107,36 @@ describe("confirmation protocol", () => {
                 result: { confirmed: true, confirmationId: "c1" },
             }],
         }]
-        expect(findPendingConfirmationExecution(messages)).toEqual({
-            confirmationId: "c1",
-            action: { toolName: "delete_article", input: { articleId: "3" } },
-        })
+        expect(findPendingConfirmationExecution(messages)).toEqual({ confirmationId: "c1" })
         const patched = patchConfirmationExecutionOutcome(messages, "c1", { deleted: true })
         expect(findPendingConfirmationExecution(patched)).toBeNull()
-        expect((patched[0] as { parts: { result: { executionOutcome: unknown } }[] }).parts[0].result.executionOutcome)
-            .toEqual({ deleted: true })
     })
 
-    it("request_user_confirmation 校验 action 白名单", async () => {
+    it("request_user_confirmation 校验白名单并签发服务端票据", async () => {
         registerAssistantTools([
             buildRequestUserConfirmationTool(),
             makeDangerous("delete_article", async () => ({ deleted: true })),
         ])
         const tool = buildRequestUserConfirmationTool()
-        await expect(tool.execute(ctx, {
+        const result = await tool.execute(ctx, {
             id: "c2",
-            title: "删",
+            title: "删除",
             risk: "dangerous",
-            action: { toolName: "delete_article", input: { articleId: 1 } },
-        })).resolves.toMatchObject({ id: "c2" })
+            action: { toolName: "delete_article", input: { articleId: "1" } },
+        })
+        expect(result).toMatchObject({ id: "c2" })
+        expect(issueMock).toHaveBeenCalledWith({
+            confirmationKey: "c2",
+            userId: 1,
+            threadId: 2,
+            toolName: "delete_article",
+            actionInput: { articleId: "1" },
+        })
         await expect(tool.execute(ctx, {
             id: "c3",
             title: "坏",
             risk: "dangerous",
-            action: { toolName: "not_a_tool", input: {} },
+            action: { toolName: "create_article", input: {} },
         })).rejects.toThrow(/未知危险工具/)
     })
 })

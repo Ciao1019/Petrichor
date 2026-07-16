@@ -45,7 +45,7 @@ export type ToolCallMeta = {
 }
 
 export type ToolResilienceController = {
-    run: <T>(toolName: string, execute: () => Promise<T>) => Promise<T | PlaybookToolResult>
+    run: <T>(toolName: string, execute: (signal: AbortSignal) => Promise<T>) => Promise<T | PlaybookToolResult>
     consumeMeta: (toolName: string) => ToolCallMeta | null
 }
 
@@ -164,16 +164,18 @@ function resolveErrorCode(error: unknown): ToolResilienceErrorCode {
 }
 
 async function raceWithTimeout<T>(
-    execute: () => Promise<T>,
+    execute: (signal: AbortSignal) => Promise<T>,
     timeoutMs: number,
     toolName: string,
 ): Promise<T> {
+    const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
         return await Promise.race([
-            execute(),
+            execute(controller.signal),
             new Promise<T>((_, reject) => {
                 timer = setTimeout(() => {
+                    controller.abort()
                     reject(new ToolResilienceError(
                         "tool_timeout",
                         `工具 ${toolName} 执行超时（${timeoutMs}ms）`,

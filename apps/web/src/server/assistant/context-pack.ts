@@ -1,13 +1,16 @@
-import { and, asc, desc, eq, isNull } from "drizzle-orm"
+import { and, desc, eq, isNull, sql } from "drizzle-orm"
 import type { UIMessage } from "ai"
 import { callChatCompletion } from "@/server/ai/generation"
-import { getDb } from "@/server/db/client"
+import { getDb, isSqliteDatabase } from "@/server/db/client"
 import { assistantMessages, assistantThreads } from "@/server/db/schema"
 import {
     buildInstructionsWithContextExtras,
     recallRelevantHistory,
     type RecalledSnippet,
 } from "./context-recall"
+import { extractMessagePlainText } from "./message-text"
+
+export { extractMessagePlainText } from "./message-text"
 
 /** 契约 4.3：最近窗口下限 */
 export const CONTEXT_RECENT_MESSAGE_MIN = 6
@@ -112,31 +115,6 @@ export function splitRecentMessages<T>(messages: T[], recentCount = CONTEXT_RECE
     }
 }
 
-export function extractMessagePlainText(message: unknown): string {
-    if (!message || typeof message !== "object") return ""
-    const record = message as { role?: unknown; content?: unknown; parts?: unknown }
-    const role = typeof record.role === "string" ? record.role : "unknown"
-    if (typeof record.content === "string" && record.content.trim()) {
-        return `${role}: ${record.content.trim()}`
-    }
-    const parts = Array.isArray(record.parts)
-        ? record.parts
-        : Array.isArray(record.content)
-            ? record.content
-            : []
-    const text = parts
-        .map((part) => {
-            if (!part || typeof part !== "object") return ""
-            const candidate = part as { type?: unknown; text?: unknown }
-            if (candidate.type === "text" && typeof candidate.text === "string") return candidate.text
-            return ""
-        })
-        .filter(Boolean)
-        .join("\n")
-        .trim()
-    return text ? `${role}: ${text}` : ""
-}
-
 export function buildFoldableTranscript(messages: unknown[]): string {
     return messages
         .map(extractMessagePlainText)
@@ -202,6 +180,7 @@ export async function buildContextPack(input: {
     tokenBudget: number
     configId?: number | null
     signal?: AbortSignal
+    onCompressStart?: () => void
 }): Promise<ContextPack> {
     const windowPolicy = resolveRecentWindowPolicy({
         messages: input.messages,
@@ -248,6 +227,8 @@ export async function buildContextPack(input: {
             recalledSnippets,
         }
     }
+
+    input.onCompressStart?.()
 
     try {
         const transcript = buildFoldableTranscript(foldable)
@@ -330,30 +311,33 @@ async function listRecentPersistedMessageIds(threadId: number, recentCount: numb
         .select({ id: assistantMessages.id })
         .from(assistantMessages)
         .where(eq(assistantMessages.threadId, threadId))
-        .orderBy(asc(assistantMessages.createdAt), asc(assistantMessages.id))
-    if (rows.length <= recentCount) return rows.map((row) => row.id)
-    return rows.slice(-recentCount).map((row) => row.id)
+        .orderBy(desc(assistantMessages.createdAt), desc(assistantMessages.id))
+        .limit(Math.max(1, recentCount))
+    return rows.map((row) => row.id).reverse()
 }
 
 async function countThreadMessages(threadId: number) {
-    const rows = await getDb()
-        .select({ id: assistantMessages.id })
+    const countExpr = isSqliteDatabase()
+        ? sql<number>`count(*)`
+        : sql<number>`count(*)::int`
+    const [row] = await getDb()
+        .select({ value: countExpr })
         .from(assistantMessages)
         .where(eq(assistantMessages.threadId, threadId))
-        .orderBy(desc(assistantMessages.id))
-        .limit(500)
-    return rows.length
+    return Number(row?.value ?? 0)
 }
 
 /** 水位：排除最近 recentCount 条后的最大 message.id */
 async function findWatermarkMessageId(threadId: number, recentCount: number) {
+    const window = Math.max(1, recentCount) + 1
     const rows = await getDb()
         .select({ id: assistantMessages.id })
         .from(assistantMessages)
         .where(eq(assistantMessages.threadId, threadId))
-        .orderBy(asc(assistantMessages.createdAt), asc(assistantMessages.id))
+        .orderBy(desc(assistantMessages.createdAt), desc(assistantMessages.id))
+        .limit(window)
     if (rows.length <= recentCount) return rows.at(-1)?.id ?? null
-    return rows[rows.length - recentCount - 1]?.id ?? null
+    return rows[recentCount]?.id ?? null
 }
 
 async function summarizeContextWithTimeout(input: {
