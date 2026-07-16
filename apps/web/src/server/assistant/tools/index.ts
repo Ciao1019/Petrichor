@@ -7,12 +7,14 @@ import { knowledgeAssistantTools } from "./knowledge"
 import { researchFanoutTools } from "./research-fanout"
 import { researchSubagentTools } from "./research-subagent"
 import { systemAssistantTools } from "./system"
+import { loadSkillTools } from "./load-skill"
 import { writeSubagentTools } from "./write-subagent"
 
 export const readonlyAssistantTools: AssistantToolRegistration[] = [
     ...knowledgeAssistantTools,
     ...docLibraryAssistantTools,
     ...systemAssistantTools,
+    ...loadSkillTools,
     ...researchSubagentTools,
     ...researchFanoutTools,
 ]

@@ -1,10 +1,16 @@
-import { createSkill, type InlineSkill } from "@mastra/core/skills"
 import type { AgentDomainId } from "../domain-types"
 
-const knowledgeQa = createSkill({
+export type AssistantSkillDefinition = {
+    name: string
+    description: string
+    instructions: string
+    domains: AgentDomainId[]
+}
+
+const knowledgeQa: AssistantSkillDefinition = {
     name: "knowledge-qa",
-    description:
-        "Use when the user asks about knowledge bases, wiki/articles, or needs citations. 用户查知识库、核对文章事实、要引用时使用。",
+    description: "知识库/文章问答与引用",
+    domains: ["knowledge"],
     instructions: `
 ## 知识库问答流程
 
@@ -16,12 +22,12 @@ const knowledgeQa = createSkill({
 6. 检索不到就如实说明，不要编造原文。
 7. 多步任务用 show_progress 或 upsert_plan 更新侧栏进度，不要在正文重复罗列步骤。
 `.trim(),
-})
+}
 
-const docLibraryQa = createSkill({
+const docLibraryQa: AssistantSkillDefinition = {
     name: "doc-library-qa",
-    description:
-        "Use when the user asks about document libraries, PDFs, or file excerpts. 用户查文档库、要文档片段定位时使用。",
+    description: "文档库检索与片段定位",
+    domains: ["doc_library"],
     instructions: `
 ## 文档库问答流程
 
@@ -33,29 +39,31 @@ const docLibraryQa = createSkill({
 6. 需要结构化展示时可用 show_data_table；不要编造单元格数据。
 7. 多步任务用 show_progress / upsert_plan 更新侧栏进度。
 `.trim(),
-})
+}
 
-const articleWrite = createSkill({
+const articleWrite: AssistantSkillDefinition = {
     name: "article-write",
-    description:
-        "Use when creating/updating/moving/deleting articles or managing share links. 用户写改/移动文章、分享或危险删除时使用。",
+    description: "写改/移动文章、分享与危险删除",
+    domains: ["content_write"],
     instructions: `
 ## 内容写入流程
 
 1. 普通写入用 create_article / update_article / create_article_share。
-2. 跨知识库或同库内移动文章用 move_article（必填 targetKnowledgeBaseId；parentId 不传则放到目标库根目录）。
-3. 复杂写入可先 spawn_write_subagent 规划；根据 summary/proposedActions 执行。
-4. 删除文章、撤销分享、删除文档属于危险操作：
+2. 大段改写正文前先 preview_article_update 看 diff，再 update_article 落库。
+3. 跨知识库或同库内移动文章用 move_article（必填 targetKnowledgeBaseId；parentId 不传则放到目标库根目录）。
+4. 复杂写入可先 spawn_write_subagent 规划；根据 summary/proposedActions 执行。
+5. 删除文章、撤销分享、删除文档属于危险操作：
    - 必须调用 request_user_confirmation（action.toolName 填 delete_article / revoke_article_share / delete_document）
    - 禁止假装已删除；等用户确认后运行时会给出 executionOutcome。
-5. 不要让子代理直接执行 risk=dangerous 的写操作。
+6. 两步及以上写改必须 upsert_plan，每完成一步更新 status。
+7. 不要让子代理直接执行 risk=dangerous 的写操作。
 `.trim(),
-})
+}
 
-const adminOps = createSkill({
+const adminOps: AssistantSkillDefinition = {
     name: "admin-ops",
-    description:
-        "Use when managing AI configs, agent API keys, or public QA settings. 用户查看或修改模型配置/密钥/公开问答时使用。",
+    description: "模型配置 / API Key / 公开问答",
+    domains: ["admin"],
     instructions: `
 ## 管理面流程
 
@@ -68,27 +76,40 @@ const adminOps = createSkill({
    - set_public_qa_enabled
 4. 公开问答开关仅超级管理员可改；权限不足时如实说明。
 `.trim(),
-})
-
-const DOMAIN_SKILLS: Partial<Record<AgentDomainId, InlineSkill[]>> = {
-    knowledge: [knowledgeQa],
-    doc_library: [docLibraryQa],
-    content_write: [articleWrite],
-    admin: [adminOps],
 }
 
-/** 按本轮路由域挂载相关 playbook；system 域不单独挂 skill（进度/引用由 system prompt + 工具承担） */
-export function resolveAssistantSkills(domains: AgentDomainId[]): InlineSkill[] {
+export const ASSISTANT_SKILLS: AssistantSkillDefinition[] = [
+    knowledgeQa,
+    docLibraryQa,
+    articleWrite,
+    adminOps,
+]
+
+const SKILL_BY_NAME = new Map(ASSISTANT_SKILLS.map((skill) => [skill.name, skill]))
+
+export function listAssistantSkillCatalog(domains: AgentDomainId[]): Array<{ name: string; description: string }> {
+    const domainSet = new Set(domains)
     const seen = new Set<string>()
-    const skills: InlineSkill[] = []
-    for (const domain of domains) {
-        for (const skill of DOMAIN_SKILLS[domain] ?? []) {
-            if (seen.has(skill.name)) continue
-            seen.add(skill.name)
-            skills.push(skill)
-        }
+    const catalog: Array<{ name: string; description: string }> = []
+    for (const skill of ASSISTANT_SKILLS) {
+        if (seen.has(skill.name)) continue
+        if (!skill.domains.some((domain) => domainSet.has(domain))) continue
+        seen.add(skill.name)
+        catalog.push({ name: skill.name, description: skill.description })
     }
-    return skills
+    return catalog
+}
+
+export function getAssistantSkillBody(name: string): AssistantSkillDefinition | null {
+    return SKILL_BY_NAME.get(name) ?? null
+}
+
+/**
+ * 渐进披露：Agent 不再挂载 InlineSkill 全文；目录写入 system prompt，正文经 load_skill。
+ * 保留函数名以兼容 chat-handler 调用点，始终返回空数组。
+ */
+export function resolveAssistantSkills(_domains: AgentDomainId[]): [] {
+    return []
 }
 
 export const ASSISTANT_SKILL_NAMES = {

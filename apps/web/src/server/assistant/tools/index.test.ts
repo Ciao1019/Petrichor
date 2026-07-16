@@ -26,6 +26,7 @@ const LOCKED_TOOL_NAMES = [
     "search_documents",
     "read_document",
     "list_system_overview",
+    "load_skill",
     "show_progress",
     "show_citations",
     "show_data_table",
@@ -51,6 +52,7 @@ describe("readonly assistant tool registration", () => {
         expect(Object.keys(loadToolsForDomains(["knowledge", "system"], ctx)).sort()).toEqual([
             "list_knowledge_bases",
             "list_system_overview",
+            "load_skill",
             "read_knowledge_node",
             "save_answer_artifact",
             "search_knowledge",
@@ -116,6 +118,7 @@ describe("content_write tool registration", () => {
             "create_article",
             "create_article_share",
             "move_article",
+            "preview_article_update",
             "request_user_confirmation",
             "spawn_write_subagent",
             "update_article",

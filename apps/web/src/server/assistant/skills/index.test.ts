@@ -1,37 +1,38 @@
 import { describe, expect, it } from "vitest"
-import { ASSISTANT_SKILL_NAMES, resolveAssistantSkills } from "./index"
+import {
+    ASSISTANT_SKILL_NAMES,
+    getAssistantSkillBody,
+    listAssistantSkillCatalog,
+    resolveAssistantSkills,
+} from "./index"
 
-describe("resolveAssistantSkills", () => {
-    it("按域过滤并去重", () => {
-        const skills = resolveAssistantSkills(["knowledge", "content_write", "admin", "system"])
-        const names = skills.map((skill) => skill.name)
+describe("assistant skills progressive disclosure", () => {
+    it("resolveAssistantSkills 不再注入全文（目录进 system，正文 load_skill）", () => {
+        expect(resolveAssistantSkills(["knowledge", "content_write", "admin", "system"])).toEqual([])
+        expect(resolveAssistantSkills(["system"])).toEqual([])
+    })
+
+    it("目录按域过滤", () => {
+        const names = listAssistantSkillCatalog(["knowledge", "content_write", "admin"]).map((s) => s.name)
         expect(names).toEqual([
             ASSISTANT_SKILL_NAMES.knowledgeQa,
             ASSISTANT_SKILL_NAMES.articleWrite,
             ASSISTANT_SKILL_NAMES.adminOps,
         ])
+        expect(listAssistantSkillCatalog(["doc_library"]).map((s) => s.name)).toEqual([
+            ASSISTANT_SKILL_NAMES.docLibraryQa,
+        ])
     })
 
-    it("仅 system 时不挂业务 skill", () => {
-        expect(resolveAssistantSkills(["system"])).toEqual([])
-    })
+    it("getAssistantSkillBody 返回可执行 playbook", () => {
+        const knowledge = getAssistantSkillBody(ASSISTANT_SKILL_NAMES.knowledgeQa)
+        expect(knowledge?.instructions).toContain("list_knowledge_bases")
+        expect(knowledge?.instructions).toContain("不要对每个库调用 search_knowledge")
+        expect(knowledge?.instructions).toContain("不传 knowledgeBaseId")
 
-    it("doc_library 挂文档问答 skill", () => {
-        const names = resolveAssistantSkills(["doc_library", "system"]).map((skill) => skill.name)
-        expect(names).toEqual([ASSISTANT_SKILL_NAMES.docLibraryQa])
-    })
-
-    it("每个 skill 含可执行 instructions", () => {
-        for (const skill of resolveAssistantSkills(["knowledge", "doc_library", "content_write", "admin"])) {
-            expect(skill.instructions.length).toBeGreaterThan(40)
-            expect(skill.description.toLowerCase()).toContain("use")
-        }
-    })
-
-    it("knowledge skill 引导计数走 list、跨库单次 search", () => {
-        const [skill] = resolveAssistantSkills(["knowledge"])
-        expect(skill.instructions).toContain("list_knowledge_bases")
-        expect(skill.instructions).toContain("不要对每个库调用 search_knowledge")
-        expect(skill.instructions).toContain("不传 knowledgeBaseId")
+        const article = getAssistantSkillBody(ASSISTANT_SKILL_NAMES.articleWrite)
+        expect(article?.instructions.length).toBeGreaterThan(40)
+        expect(article?.instructions).toContain("move_article")
+        expect(getAssistantSkillBody("nope")).toBeNull()
     })
 })
