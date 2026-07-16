@@ -29,6 +29,7 @@ const BLOCKED_SUBAGENT_TOOLS = new Set([
     "create_article",
     "update_article",
     "create_article_share",
+    "move_article",
     "set_default_ai_config",
     "list_ai_configs",
     "list_agent_api_keys",

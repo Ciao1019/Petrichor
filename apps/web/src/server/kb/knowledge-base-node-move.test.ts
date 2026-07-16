@@ -17,6 +17,12 @@ describe("knowledge base node move helpers", () => {
         expect(moveNodeIdIntoSiblingOrder([1, 2, 3], 2, 99)).toEqual([1, 3, 2])
     })
 
+    it("跨库迁入时按目标下标插入兄弟序列", () => {
+        expect(moveNodeIdIntoSiblingOrder([10, 20, 30], 99, undefined)).toEqual([10, 20, 30, 99])
+        expect(moveNodeIdIntoSiblingOrder([10, 20], 99, 0)).toEqual([99, 10, 20])
+        expect(moveNodeIdIntoSiblingOrder([], 99, undefined)).toEqual([99])
+    })
+
     it("识别目标父级是否在当前文件夹的子树中", () => {
         const nodes = [
             { id: 1, parentId: null },

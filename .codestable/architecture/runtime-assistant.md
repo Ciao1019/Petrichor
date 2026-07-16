@@ -38,7 +38,7 @@ POST /api/assistant/chat（SSE, requireCurrentUser）
 ```
 
 - **域工具注册表**：`risk=dangerous` 不对模型暴露，确认后 Runtime 按名执行。
-- **content_write**：建文/改文/开分享 + 删文/撤分享/删文档（确认）。
+- **content_write**：建文/改文/开分享/移文（含跨库）+ 删文/撤分享/删文档（确认）。
 - **admin**（`tools/admin.ts`）：`list_ai_configs` / `list_agent_api_keys` / `get_public_qa_setting` / `set_default_ai_config`；危险：`delete_ai_config` / `update_ai_config_credentials` / `revoke_agent_api_key` / `set_public_qa_enabled`（超管）。
 - **上下文压缩**（`context-pack.ts`）：线程级 `context_summary_*`；动态最近窗口 `windowPolicy`（下限 6、上限 20，按 token 预算扩张）；可选向量历史召回 `recalledSnippets`（无 EMBEDDING/SQLite 跳过）；`TokenLimiterProcessor` 硬裁剪兜底；壳展示「正在整理对话上下文…」。
 - **子代理**（`tools/research-subagent.ts` / `write-subagent.ts` / `research-fanout.ts`）：只读 `spawn_research_subagent`（depth/maxDepth）；并行 `spawn_research_fanout`（≤3，工人 maxDepth=0）；写意图 `spawn_write_subagent`（提案回主对话确认）；无团队 DSL。
