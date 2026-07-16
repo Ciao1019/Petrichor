@@ -35,7 +35,6 @@ import {
   FileText,
   Gauge,
   Globe2,
-  Leaf,
   Library,
   ListChecks,
   ListTree,
@@ -135,17 +134,14 @@ type AssistantFocusSelection =
   | { kind: "none" }
   | { kind: "knowledge"; knowledgeBaseId: string }
   | { kind: "doc_library"; libraryId: string }
-  | { kind: "persona"; persona: "nihaixia" }
 
 function focusToRequestBody(focus: AssistantFocusSelection): AssistantFocus | null {
   if (focus.kind === "knowledge") return { knowledgeBaseId: focus.knowledgeBaseId }
   if (focus.kind === "doc_library") return { libraryId: focus.libraryId }
-  if (focus.kind === "persona") return { persona: focus.persona }
   return null
 }
 
 function focusFromThread(focus: AssistantFocus | null): AssistantFocusSelection {
-  if (focus?.persona === "nihaixia") return { kind: "persona", persona: "nihaixia" }
   if (focus?.knowledgeBaseId) return { kind: "knowledge", knowledgeBaseId: String(focus.knowledgeBaseId) }
   if (focus?.libraryId) return { kind: "doc_library", libraryId: String(focus.libraryId) }
   return { kind: "none" }
@@ -877,7 +873,6 @@ export function AssistantChatPage() {
         const same =
           current.kind === next.kind &&
           (next.kind === "none" ||
-            next.kind === "persona" ||
             (next.kind === "knowledge" && current.kind === "knowledge" && current.knowledgeBaseId === next.knowledgeBaseId) ||
             (next.kind === "doc_library" && current.kind === "doc_library" && current.libraryId === next.libraryId))
         if (!same) handleNewThread()
@@ -903,9 +898,6 @@ export function AssistantChatPage() {
     }
     if (focusSelection.kind === "doc_library") {
       return docLibraries.find((lib) => lib.id === focusSelection.libraryId)?.name ?? "文档库"
-    }
-    if (focusSelection.kind === "persona") {
-      return "倪海厦"
     }
     return null
   }, [docLibraries, focusSelection, knowledgeBases])
@@ -1369,14 +1361,6 @@ function QaChatPanel({
         { prompt: "帮我定位和「部署 / 回滚」相关的段落。" },
       ]
     }
-    if (focusSelection.kind === "persona") {
-      return [
-        { prompt: "倪海厦如何用六经辨证看待失眠？" },
-        { prompt: "桂枝汤的组成、加减和适应证是什么？" },
-        { prompt: "手脚冰凉、容易累，从倪海厦的角度怎么辨证？" },
-        { prompt: "倪海厦怎么看牛奶和常见饮食？" },
-      ]
-    }
     return [
       { prompt: `请基于「${scopeName ?? "当前知识库"}」总结我可以问哪些问题。` },
       { prompt: "对当前知识库做一次结构化对比分析，并用表格展示。" },
@@ -1462,11 +1446,9 @@ function GrokThread({
   const scopeLabel =
     focusSelection.kind === "none"
       ? "全部资料"
-      : focusSelection.kind === "persona"
-        ? "倪海厦"
-        : focusSelection.kind === "doc_library"
-          ? scopeName ?? "当前文档库"
-          : scopeName ?? "当前知识库"
+      : focusSelection.kind === "doc_library"
+        ? scopeName ?? "当前文档库"
+        : scopeName ?? "当前知识库"
   const composerProps = {
     knowledgeBases,
     docLibraries,
@@ -1705,8 +1687,7 @@ function InlineScopeSelector({
 }) {
   const [open, setOpen] = React.useState(false)
   const isAll = value.kind === "none"
-  const ScopeIcon =
-    value.kind === "persona" ? Leaf : value.kind === "doc_library" ? FileText : isAll ? Globe2 : Library
+  const ScopeIcon = value.kind === "doc_library" ? FileText : isAll ? Globe2 : Library
 
   const triggerRef = React.useRef<HTMLButtonElement | null>(null)
   const innerRef = React.useRef<HTMLDivElement | null>(null)
@@ -1765,13 +1746,7 @@ function InlineScopeSelector({
         )}
         aria-label="选择提问范围"
       >
-        <ScopeIcon
-          className={cn(
-            "size-[18px] shrink-0",
-            isAll && "text-violet-600 dark:text-violet-300",
-            value.kind === "persona" && "text-emerald-600 dark:text-emerald-300",
-          )}
-        />
+        <ScopeIcon className={cn("size-[18px] shrink-0", isAll && "text-violet-600 dark:text-violet-300")} />
         <div
           ref={innerRef}
           className="flex items-center gap-1 overflow-hidden will-change-[max-width,opacity]"
@@ -1798,18 +1773,6 @@ function InlineScopeSelector({
                 <Globe2 className="size-3.5 text-violet-600 dark:text-violet-300" />
                 <span className="flex-1">全部资料</span>
                 {isAll ? <Check className="size-3.5 text-primary" /> : null}
-              </CommandItem>
-              <CommandItem
-                value="nihaixia 倪海厦 中医 经方 六经辨证"
-                onSelect={() => {
-                  onChange({ kind: "persona", persona: "nihaixia" })
-                  setOpen(false)
-                }}
-              >
-                <Leaf className="size-3.5 text-emerald-600 dark:text-emerald-300" />
-                <span className="flex-1">倪海厦</span>
-                <span className="mr-1 text-[10px] text-muted-foreground">中医·经方</span>
-                {value.kind === "persona" ? <Check className="size-3.5 text-primary" /> : null}
               </CommandItem>
             </CommandGroup>
             {knowledgeBases.length > 0 ? (
@@ -2476,11 +2439,6 @@ function ThreadButton({
               <span className="inline-flex shrink-0 items-center gap-0.5 rounded-sm bg-violet-500/10 px-1 py-px font-medium text-violet-600 dark:text-violet-300">
                 <Globe2 className="size-2.5" />
                 全部
-              </span>
-            ) : focus.kind === "persona" ? (
-              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-sm bg-emerald-500/10 px-1 py-px font-medium text-emerald-600 dark:text-emerald-300">
-                <Leaf className="size-2.5" />
-                倪海厦
               </span>
             ) : focus.kind === "doc_library" ? (
               <span className="inline-flex min-w-0 max-w-[120px] shrink items-center gap-0.5 rounded-sm bg-muted px-1 py-px text-muted-foreground">

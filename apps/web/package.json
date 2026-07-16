@@ -13,7 +13,6 @@
     "build": "next build",
     "db:backfill-public-article-metadata": "tsx scripts/backfill-public-article-metadata.ts",
     "db:sql": "tsx scripts/print-initial-migration.ts",
-    "vendor:nihaixia": "tsx scripts/vendor-nihaixia-skill.ts",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
