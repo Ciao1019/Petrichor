@@ -45,7 +45,6 @@ import {
 } from "./context-pack"
 import { loadMastraToolsForDomains } from "./tool-registry"
 import { resolveAssistantSkills } from "./skills"
-import { buildNihaixiaSystemPrompt, buildNihaixiaTools, isNihaixiaFocus, nihaixiaSkill } from "./nihaixia"
 import { createToolResilienceController, ToolResilienceError, isPlaybookToolResult } from "./tool-resilience"
 import {
     assistantFocusSchema,
@@ -132,17 +131,13 @@ export async function assistantChat(request: NextRequest) {
 
         const { model, config } = await resolveAssistantModel(user.id, input.configId ?? null)
 
-        // 倪海厦旁路：完全脱离站内业务，跳过意图路由与业务工具/技能装载
-        const isNihaixia = isNihaixiaFocus(focus)
-        const recentToolNames = isNihaixia ? [] : await listRecentToolNames(thread.id)
+        const recentToolNames = await listRecentToolNames(thread.id)
         // 先规则占位，保证响应头立刻有 Run-Id；stream 内低置信度 LLM 可覆盖并回写
-        const rulesRoute = isNihaixia
-            ? null
-            : await routeAssistantIntent({ userText: lastUserText, focus, recentToolNames })
+        const rulesRoute = await routeAssistantIntent({ userText: lastUserText, focus, recentToolNames })
         const run = await createAssistantRun({
             threadId: thread.id,
             modelConfigId: config.id,
-            intentDomains: rulesRoute?.domains ?? [],
+            intentDomains: rulesRoute.domains,
         })
 
         const toolContext: AssistantToolContext = {
@@ -206,57 +201,41 @@ export async function assistantChat(request: NextRequest) {
             stream: createUIMessageStream<UIMessage>({
                 originalMessages: input.messages as UIMessage[],
                 execute: async ({ writer }) => {
-                    // 倪海厦旁路脱离业务：不做意图路由与业务工具装载；否则走正常意图路由
-                    let tools: ReturnType<typeof loadMastraToolsForDomains>
-                    let skills: ReturnType<typeof resolveAssistantSkills>
-                    let systemPromptBase: string
-                    let maxSteps: number
-                    if (isNihaixia) {
-                        tools = buildNihaixiaTools()
-                        skills = [nihaixiaSkill]
-                        systemPromptBase = buildNihaixiaSystemPrompt()
-                        // grep→read→作答 需要多轮工具调用，放宽步数
-                        maxSteps = 12
-                    } else {
-                        const businessRoute = rulesRoute ?? (await routeAssistantIntent({ userText: lastUserText, focus, recentToolNames }))
-                        const intentId = "intent-route"
-                        const writeIntent = (data: IntentRoutePartData, transient = false) => {
-                            writer.write({
-                                type: INTENT_ROUTE_PART_TYPE,
-                                id: intentId,
-                                data,
-                                ...(transient ? { transient: true } : {}),
-                            } as UIMessageChunk)
-                        }
-
-                        // running 用 transient，避免与 done 在 id 合并失败时各占一条 part（UI 会双份芯片）
-                        if (needsIntentLlm(businessRoute)) {
-                            writeIntent({ status: "running", label: "正在识别意图…" }, true)
-                        }
-
-                        const finalRoute: IntentRouteUiResult = await routeAssistantIntentWithLlm({
-                            userText: lastUserText,
-                            focus,
-                            recentToolNames,
-                            model: model as LanguageModel,
-                            signal: request.signal,
-                            rulesRoute: businessRoute,
-                        })
-                        writeIntent(toIntentRoutePartData(finalRoute, "done"))
-
-                        if (!domainsEqual(finalRoute.domains, businessRoute.domains)) {
-                            await updateAssistantRunIntent({
-                                runId: run.id,
-                                intentDomains: finalRoute.domains,
-                            })
-                        }
-
-                        tools = loadMastraToolsForDomains(finalRoute.domains, toolContext, resilience)
-                        skills = resolveAssistantSkills(finalRoute.domains)
-                        systemPromptBase = buildAssistantSystemPrompt(finalRoute.domains)
-                        maxSteps = 8
+                    const intentId = "intent-route"
+                    const writeIntent = (data: IntentRoutePartData, transient = false) => {
+                        writer.write({
+                            type: INTENT_ROUTE_PART_TYPE,
+                            id: intentId,
+                            data,
+                            ...(transient ? { transient: true } : {}),
+                        } as UIMessageChunk)
                     }
+
+                    // running 用 transient，避免与 done 在 id 合并失败时各占一条 part（UI 会双份芯片）
+                    if (needsIntentLlm(rulesRoute)) {
+                        writeIntent({ status: "running", label: "正在识别意图…" }, true)
+                    }
+
+                    const finalRoute: IntentRouteUiResult = await routeAssistantIntentWithLlm({
+                        userText: lastUserText,
+                        focus,
+                        recentToolNames,
+                        model: model as LanguageModel,
+                        signal: request.signal,
+                        rulesRoute,
+                    })
+                    writeIntent(toIntentRoutePartData(finalRoute, "done"))
+
+                    if (!domainsEqual(finalRoute.domains, rulesRoute.domains)) {
+                        await updateAssistantRunIntent({
+                            runId: run.id,
+                            intentDomains: finalRoute.domains,
+                        })
+                    }
+
+                    const tools = loadMastraToolsForDomains(finalRoute.domains, toolContext, resilience)
                     const activeToolNames = Object.keys(tools)
+                    const skills = resolveAssistantSkills(finalRoute.domains)
 
                     const compressId = "context-compress"
                     const writeCompress = (data: ContextCompressPartData) => {
@@ -306,7 +285,7 @@ export async function assistantChat(request: NextRequest) {
                         description: "In-site universal assistant for system overview, knowledge bases, and document libraries.",
                         model: model as unknown as AgentModelConfig,
                         instructions: buildInstructionsWithContextSummary(
-                            systemPromptBase,
+                            buildAssistantSystemPrompt(finalRoute.domains),
                             pack.summaryMd,
                             pack.recalledSnippets,
                         ),
@@ -336,7 +315,7 @@ export async function assistantChat(request: NextRequest) {
 
                     const modelMessages = await convertToModelMessages(pack.recentMessages)
                     const result = await agent.stream(modelMessages as never, {
-                        maxSteps,
+                        maxSteps: 8,
                         modelSettings: { temperature: 0.2 },
                         activeTools: activeToolNames,
                         abortSignal: request.signal,

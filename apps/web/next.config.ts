@@ -20,12 +20,6 @@ const nextConfig: NextConfig = {
     // 原生 / 非 ESM 可打包模块交给运行时 require，不要打进 server bundle。
     // @ast-grep/napi：Mastra 依赖，Turbopack/webpack 都无法正确打包其原生绑定。
     serverExternalPackages: ["better-sqlite3", "sharp", "@ast-grep/napi"],
-    // 倪海厦技能 vendored 的 markdown 需随 assistant chat 路由一起被 tracing 进函数产物，
-    // 否则 Vercel（未开 standalone）serverless 运行时 fs 读不到。相对 apps/web 根。
-    outputFileTracingIncludes: {
-        "/api/assistant/chat": ["./src/server/assistant/nihaixia/skill/**"],
-        "/api/assistant/**": ["./src/server/assistant/nihaixia/skill/**"],
-    },
     typedRoutes: false,
     // Vercel 上偶发卡在 "Running TypeScript ..." 直到 45min 超时；类型检查交给 CI/本地 typecheck。
     typescript: {
