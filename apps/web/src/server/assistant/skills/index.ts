@@ -38,16 +38,17 @@ const docLibraryQa = createSkill({
 const articleWrite = createSkill({
     name: "article-write",
     description:
-        "Use when creating/updating/deleting articles or managing share links. 用户写改文章、分享或危险删除时使用。",
+        "Use when creating/updating/moving/deleting articles or managing share links. 用户写改/移动文章、分享或危险删除时使用。",
     instructions: `
 ## 内容写入流程
 
 1. 普通写入用 create_article / update_article / create_article_share。
-2. 复杂写入可先 spawn_write_subagent 规划；根据 summary/proposedActions 执行。
-3. 删除文章、撤销分享、删除文档属于危险操作：
+2. 跨知识库或同库内移动文章用 move_article（必填 targetKnowledgeBaseId；parentId 不传则放到目标库根目录）。
+3. 复杂写入可先 spawn_write_subagent 规划；根据 summary/proposedActions 执行。
+4. 删除文章、撤销分享、删除文档属于危险操作：
    - 必须调用 request_user_confirmation（action.toolName 填 delete_article / revoke_article_share / delete_document）
    - 禁止假装已删除；等用户确认后运行时会给出 executionOutcome。
-4. 不要让子代理直接执行 risk=dangerous 的写操作。
+5. 不要让子代理直接执行 risk=dangerous 的写操作。
 `.trim(),
 })
 

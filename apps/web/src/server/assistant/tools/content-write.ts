@@ -10,6 +10,7 @@ import {
 } from "@/server/db/schema"
 import { deleteDocument } from "@/server/doc-library/library-logic"
 import { badRequest, notFound } from "@/server/http/response"
+import { moveArticle } from "@/server/kb/article-move-logic"
 import { buildPublicArticleMetadata } from "@/server/kb/share-logic"
 import { assertKnowledgeBaseOwner } from "@/server/kb/wiki-agent-logic"
 import type { AssistantToolContext, AssistantToolRegistration } from "../domain-types"
@@ -43,6 +44,13 @@ const updateArticleSchema = z.object({
 
 const articleIdSchema = z.object({ articleId: idSchema })
 const documentIdSchema = z.object({ documentId: idSchema })
+
+const moveArticleSchema = z.object({
+    articleId: idSchema,
+    targetKnowledgeBaseId: idSchema,
+    parentId: idSchema.optional().nullable(),
+    targetIndex: z.number().int().min(0).optional(),
+})
 
 function generateShareCode() {
     return `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
@@ -229,6 +237,17 @@ export async function deleteDocumentForAssistant(ctx: AssistantToolContext, raw:
     return await deleteDocument(ctx.userId, input.documentId)
 }
 
+export async function moveArticleForAssistant(ctx: AssistantToolContext, raw: unknown) {
+    const input = moveArticleSchema.parse(raw)
+    return await moveArticle({
+        userId: ctx.userId,
+        articleId: input.articleId,
+        targetKnowledgeBaseId: input.targetKnowledgeBaseId,
+        parentId: input.parentId,
+        targetIndex: input.targetIndex,
+    })
+}
+
 const directDangerousGuard = async () => {
     throw badRequest("危险操作必须先通过 request_user_confirmation，不能直接调用")
 }
@@ -258,6 +277,15 @@ export const contentWriteAssistantTools: AssistantToolRegistration[] = [
         description: "开启文章公开分享链接。",
         inputSchema: articleIdSchema,
         execute: createArticleShareForAssistant,
+    },
+    {
+        name: "move_article",
+        domain: "content_write",
+        risk: "write",
+        description:
+            "移动文章到目标知识库（可跨库）。targetKnowledgeBaseId 为目的库；parentId 不传则放到该库根目录；同库移动也可使用本工具。",
+        inputSchema: moveArticleSchema,
+        execute: moveArticleForAssistant,
     },
     {
         name: "delete_article",

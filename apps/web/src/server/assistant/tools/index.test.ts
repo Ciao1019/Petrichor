@@ -113,6 +113,7 @@ describe("content_write tool registration", () => {
         expect(names).toEqual([
             "create_article",
             "create_article_share",
+            "move_article",
             "request_user_confirmation",
             "spawn_write_subagent",
             "update_article",

@@ -12,6 +12,7 @@ describe("write subagent helpers", () => {
         expect(filterWriteSubagentToolNames([
             "search_knowledge",
             "create_article",
+            "move_article",
             "delete_article",
             SPAWN_WRITE_SUBAGENT,
             SPAWN_RESEARCH_SUBAGENT,
@@ -23,6 +24,7 @@ describe("write subagent helpers", () => {
     it("normalizeProposedWriteActions 只保留白名单并标注 risk", () => {
         expect(normalizeProposedWriteActions([
             { toolName: "create_article", input: { knowledgeBaseId: 1, title: "A" }, reason: "新建" },
+            { toolName: "move_article", input: { articleId: 9, targetKnowledgeBaseId: 2 } },
             { toolName: "delete_article", input: { articleId: 2 } },
             { toolName: "delete_ai_config", input: { configId: 3 } },
             { toolName: "create_article", input: { knowledgeBaseId: 1, title: "A" } },
@@ -31,6 +33,11 @@ describe("write subagent helpers", () => {
                 toolName: "create_article",
                 input: { knowledgeBaseId: 1, title: "A" },
                 reason: "新建",
+                risk: "write",
+            },
+            {
+                toolName: "move_article",
+                input: { articleId: 9, targetKnowledgeBaseId: 2 },
                 risk: "write",
             },
             {
