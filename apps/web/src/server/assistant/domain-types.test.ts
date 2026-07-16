@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { CORE_SESSION_DOMAINS, resolveToolLoadDomains } from "./domain-types"
+import {
+    ASSISTANT_MAX_STEPS_READ,
+    ASSISTANT_MAX_STEPS_WRITE,
+    CORE_SESSION_DOMAINS,
+    resolveAssistantMaxSteps,
+    resolveToolLoadDomains,
+} from "./domain-types"
 
 describe("resolveToolLoadDomains", () => {
     it("无论意图如何都常驻核心域（含 content_write）", () => {
@@ -24,5 +30,13 @@ describe("resolveToolLoadDomains", () => {
             ...CORE_SESSION_DOMAINS,
             "admin",
         ]))
+    })
+})
+
+describe("resolveAssistantMaxSteps", () => {
+    it("纯读意图用 12，含写或 admin 用 20", () => {
+        expect(resolveAssistantMaxSteps(["system", "knowledge"])).toBe(ASSISTANT_MAX_STEPS_READ)
+        expect(resolveAssistantMaxSteps(["content_write", "knowledge"])).toBe(ASSISTANT_MAX_STEPS_WRITE)
+        expect(resolveAssistantMaxSteps(["admin"])).toBe(ASSISTANT_MAX_STEPS_WRITE)
     })
 })

@@ -72,3 +72,41 @@ export function resolveToolLoadDomains(intentDomains: AgentDomainId[]): AgentDom
     }
     return [...next]
 }
+
+/** 纯读意图主循环步数上限 */
+export const ASSISTANT_MAX_STEPS_READ = 12
+/** 含写/管理意图主循环步数上限 */
+export const ASSISTANT_MAX_STEPS_WRITE = 20
+
+/**
+ * 按意图芯片域决定主循环 maxSteps（不用常驻 toolDomains，避免永远写档）。
+ * 意图含 content_write 或 admin → 20，否则 12。
+ */
+export function resolveAssistantMaxSteps(intentDomains: AgentDomainId[]): number {
+    if (intentDomains.includes("content_write") || intentDomains.includes("admin")) {
+        return ASSISTANT_MAX_STEPS_WRITE
+    }
+    return ASSISTANT_MAX_STEPS_READ
+}
+
+export const STEP_BUDGET_PART_TYPE = "data-step-budget"
+
+export type StepBudgetPartData = {
+    status: "warning" | "exhausted"
+    used: number
+    limit: number
+    label: string
+}
+
+/** 落库时去掉 warning（瞬时提示），保留 exhausted 供刷新后继续提示用户续跑 */
+export function stripStepBudgetWarnings(parts: unknown): unknown[] {
+    if (!Array.isArray(parts)) return []
+    return parts.filter((part) => {
+        if (!part || typeof part !== "object") return true
+        const record = part as { type?: unknown; data?: unknown }
+        if (record.type !== STEP_BUDGET_PART_TYPE) return true
+        const data = record.data
+        if (!data || typeof data !== "object") return true
+        return (data as { status?: unknown }).status !== "warning"
+    })
+}

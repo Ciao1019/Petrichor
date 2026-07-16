@@ -26,10 +26,10 @@ import { generateObject } from "ai"
 const generateObjectMock = vi.mocked(generateObject)
 
 describe("intent-llm", () => {
-    it("needsIntentLlm 在阈值以下为 true", () => {
+    it("needsIntentLlm：低置信或 admin 才为 true；纯 content_write 高置信不触发", () => {
         expect(needsIntentLlm({ domains: ["system"], confidence: 0.3 })).toBe(true)
         expect(needsIntentLlm({ domains: ["system"], confidence: INTENT_LLM_CONFIDENCE_THRESHOLD })).toBe(false)
-        // 写域即使高置信也要复核
+        expect(needsIntentLlm({ domains: ["content_write", "knowledge"], confidence: 0.8 })).toBe(false)
         expect(needsIntentLlm({ domains: ["admin", "content_write"], confidence: 0.8 })).toBe(true)
     })
 
@@ -106,28 +106,25 @@ describe("intent-llm", () => {
         expect(result.rationale).toBe("用户在问知识库内容")
     })
 
-    it("写域候选即使高置信也调用 generateObject 复核", async () => {
+    it("高置信 content_write 不调用 generateObject", async () => {
         generateObjectMock.mockClear()
-        generateObjectMock.mockResolvedValueOnce({
-            object: {
-                domains: ["content_write"],
-                confidence: 0.85,
-                rationale: "用户要删除文章",
-            },
-            toJsonResponse: undefined,
-        } as never)
         const result = await routeAssistantIntentWithLlm({
             userText: "帮我删除这篇文章",
             focus: null,
             recentToolNames: [],
             model: {} as LanguageModel,
+            rulesRoute: {
+                domains: ["content_write", "knowledge", "system"],
+                confidence: 0.8,
+                rationale: "text:content_write",
+            },
         })
-        expect(generateObjectMock).toHaveBeenCalled()
-        expect(result.source).toBe("llm")
+        expect(generateObjectMock).not.toHaveBeenCalled()
+        expect(result.source).toBe("rules")
         expect(result.domains).toContain("content_write")
     })
 
-    it("LLM 失败且无写域时回退规则结果", async () => {
+    it("LLM 失败且无 admin 时回退规则结果", async () => {
         generateObjectMock.mockRejectedValueOnce(new Error("boom"))
         const result = await routeAssistantIntentWithLlm({
             userText: "你好",
@@ -140,51 +137,25 @@ describe("intent-llm", () => {
         expect(result.confidence).toBeLessThan(INTENT_LLM_CONFIDENCE_THRESHOLD)
     })
 
-    it("LLM 失败且规则含写域时保留写域", async () => {
+    it("LLM 失败且规则含 admin 时保留 admin", async () => {
         generateObjectMock.mockRejectedValueOnce(new Error("boom"))
         const result = await routeAssistantIntentWithLlm({
-            userText: "帮我删除这篇文章",
+            userText: "看一下我的模型配置",
             focus: null,
             recentToolNames: [],
             model: {} as LanguageModel,
             rulesRoute: {
-                domains: ["content_write", "knowledge", "system"],
+                domains: ["admin", "content_write"],
                 confidence: 0.8,
-                rationale: "text:content_write",
+                rationale: "text:admin",
             },
         })
         expect(result.source).toBe("rules")
-        expect(result.domains).toContain("content_write")
-        expect(result.domains).toContain("knowledge")
-        expect(result.rationale).toContain("write-domain-kept-on-llm-failure")
+        expect(result.domains).toContain("admin")
+        expect(result.rationale).toContain("admin-domain-kept-on-llm-failure")
     })
 
-    it("短确认时 LLM 漏掉写域会并回", async () => {
-        generateObjectMock.mockResolvedValueOnce({
-            object: {
-                domains: ["knowledge", "system"],
-                confidence: 0.7,
-                rationale: "用户在确认",
-            },
-            toJsonResponse: undefined,
-        } as never)
-        const result = await routeAssistantIntentWithLlm({
-            userText: "对的",
-            focus: null,
-            recentToolNames: [],
-            recentIntentDomains: ["content_write", "knowledge", "system"],
-            model: {} as LanguageModel,
-            rulesRoute: {
-                domains: ["content_write", "knowledge", "system"],
-                confidence: 0.8,
-                rationale: "sticky:content_write",
-            },
-        })
-        expect(result.domains).toContain("content_write")
-        expect(result.rationale).toContain("write-domain-kept-from-rules")
-    })
-
-    it("规则命中写域时 LLM 不得剥掉", async () => {
+    it("规则命中 admin 时 LLM 不得剥掉", async () => {
         generateObjectMock.mockResolvedValueOnce({
             object: {
                 domains: ["knowledge"],
@@ -194,18 +165,18 @@ describe("intent-llm", () => {
             toJsonResponse: undefined,
         } as never)
         const result = await routeAssistantIntentWithLlm({
-            userText: "把这篇文章迁移到另一个知识库",
+            userText: "看一下我的模型配置",
             focus: null,
             recentToolNames: [],
             model: {} as LanguageModel,
             rulesRoute: {
-                domains: ["content_write", "knowledge", "system"],
+                domains: ["admin", "content_write"],
                 confidence: 0.8,
-                rationale: "text:content_write",
+                rationale: "text:admin",
             },
         })
-        expect(result.domains).toContain("content_write")
-        expect(result.rationale).toContain("write-domain-kept-from-rules")
+        expect(result.domains).toContain("admin")
+        expect(result.rationale).toContain("admin-domain-kept-from-rules")
     })
 
     it("传入 rulesRoute 时低置信会调 LLM", async () => {

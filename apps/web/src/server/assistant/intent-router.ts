@@ -28,6 +28,10 @@ export function hasWriteDomainCandidate(domains: AgentDomainId[]): boolean {
     return domains.some((domain) => WRITE_INTENT_DOMAINS.has(domain))
 }
 
+export function hasAdminDomainCandidate(domains: AgentDomainId[]): boolean {
+    return domains.includes("admin")
+}
+
 export function extractWriteDomains(domains: AgentDomainId[] | undefined): AgentDomainId[] {
     if (!domains?.length) return []
     return domains.filter((domain) => WRITE_INTENT_DOMAINS.has(domain))
@@ -41,44 +45,41 @@ export function stripWriteDomains(domains: AgentDomainId[]): AgentDomainId[] {
 }
 
 /**
- * 写域粘性：上一轮已激活的写域，本轮继续装载。
- * 根因修复——多轮写入（提议→确认→执行）不能每轮重新过硬门控把工具卸掉。
+ * admin 粘性：上一轮已激活 admin 时本轮继续挂载（admin 仍按意图按需装载）。
+ * content_write 已会话常驻，不再粘性。
  */
-export function withStickyWriteDomains(
+export function withStickyAdminDomain(
     domains: AgentDomainId[],
     recentIntentDomains?: AgentDomainId[],
 ): AgentDomainId[] {
-    const sticky = extractWriteDomains(recentIntentDomains)
-    if (sticky.length === 0) return domains
-    const next = [...domains]
-    for (const domain of sticky) {
-        if (!next.includes(domain)) next.push(domain)
-    }
-    return withAuxiliaryDomains(next)
+    if (!recentIntentDomains?.includes("admin")) return domains
+    if (domains.includes("admin")) return domains
+    return withAuxiliaryDomains([...domains, "admin"])
 }
 
+/** @deprecated 使用 withStickyAdminDomain；保留别名避免外部误用旧名静默失败 */
+export const withStickyWriteDomains = withStickyAdminDomain
+
 /**
- * 规则已命中写域时，LLM 不得剥掉（写域保底）。
- * 危险工具仍不对模型暴露；误挂写域的代价远小于「明明有工具却说没有」。
+ * 规则已命中 admin 时，LLM 不得剥掉（admin 保底）。
+ * content_write 常驻装载，不再做写域保底。
  */
-export function mergeWriteDomainsFromRules(
+export function mergeAdminDomainFromRules(
     llmDomains: AgentDomainId[],
     rulesDomains: AgentDomainId[],
 ): { domains: AgentDomainId[]; kept: boolean } {
-    const writeFromRules = extractWriteDomains(rulesDomains)
-    if (writeFromRules.length === 0) return { domains: llmDomains, kept: false }
-    if (writeFromRules.every((domain) => llmDomains.includes(domain))) {
-        return { domains: llmDomains, kept: false }
-    }
-    const merged = [...llmDomains]
-    for (const domain of writeFromRules) {
-        if (!merged.includes(domain)) merged.unshift(domain)
-    }
+    if (!rulesDomains.includes("admin")) return { domains: llmDomains, kept: false }
+    if (llmDomains.includes("admin")) return { domains: llmDomains, kept: false }
     return {
-        domains: withAuxiliaryDomains(merged.slice(0, MAX_PRIMARY_INTENT_DOMAINS + 2)),
+        domains: withAuxiliaryDomains(
+            (["admin", ...llmDomains] as AgentDomainId[]).slice(0, MAX_PRIMARY_INTENT_DOMAINS + 2),
+        ),
         kept: true,
     }
 }
+
+/** @deprecated 使用 mergeAdminDomainFromRules */
+export const mergeWriteDomainsFromRules = mergeAdminDomainFromRules
 
 export async function routeAssistantIntent(input: {
     userText: string
@@ -117,24 +118,24 @@ export async function routeAssistantIntent(input: {
         .map(([domain]) => domain)
 
     if (primary.length === 0) {
-        // 无文本信号时仍可能粘住上一轮写域（例如用户只回「对的」）
-        const stickyOnly = withStickyWriteDomains([...DEFAULT_READ_DOMAINS], input.recentIntentDomains)
-        const stickyApplied = extractWriteDomains(input.recentIntentDomains).length > 0
-            && hasWriteDomainCandidate(stickyOnly)
+        // 无文本信号时仍可能粘住上一轮 admin（例如多轮管理操作中的短确认）
+        const stickyOnly = withStickyAdminDomain([...DEFAULT_READ_DOMAINS], input.recentIntentDomains)
+        const stickyApplied = hasAdminDomainCandidate(stickyOnly)
+            && Boolean(input.recentIntentDomains?.includes("admin"))
         return {
             domains: stickyOnly,
             confidence: stickyApplied ? 0.7 : 0.3,
             rationale: stickyApplied
-                ? "no-signal:sticky-write-domains"
+                ? "no-signal:sticky-admin-domain"
                 : "no-signal:default-read-domains",
         }
     }
 
-    const domains = withStickyWriteDomains(withAuxiliaryDomains(primary), input.recentIntentDomains)
-    const sticky = extractWriteDomains(input.recentIntentDomains)
+    const domains = withStickyAdminDomain(withAuxiliaryDomains(primary), input.recentIntentDomains)
+    const stickyAdmin = input.recentIntentDomains?.includes("admin") && domains.includes("admin")
     const rationale = [
         signals.join(","),
-        ...(sticky.length > 0 ? [`sticky:${sticky.join("+")}`] : []),
+        ...(stickyAdmin ? ["sticky:admin"] : []),
     ].filter(Boolean).join(",")
 
     return {

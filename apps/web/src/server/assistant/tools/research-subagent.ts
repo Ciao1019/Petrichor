@@ -51,6 +51,7 @@ export type SpawnResearchResult = {
     summary: string
     citations?: Array<{ title: string; href?: string; domain?: string; snippet?: string }>
     usage?: { calls: number; totalTokens: number }
+    steps?: Array<{ toolName: string; ok: boolean; errorCode?: string | null }>
     depth?: number
     maxDepth?: number
     errorCode?: string | null
@@ -152,7 +153,7 @@ export async function spawnResearchSubagent(
     }
 
     try {
-        const { output, toolCalls } = await runNestedAgentGenerate({
+        const { output, toolCalls, steps } = await runNestedAgentGenerate({
             ctx: subCtx,
             agentId: "petrichor-research-subagent",
             agentName: "Petrichor Research Subagent",
@@ -177,6 +178,7 @@ export async function spawnResearchSubagent(
             summary: summary || "子代理未产出可读结论",
             ...(citations.length > 0 ? { citations } : {}),
             usage: { calls: toolCalls, totalTokens },
+            steps,
             depth,
             maxDepth,
             errorCode: summary ? null : "empty_summary",

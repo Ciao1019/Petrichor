@@ -16,6 +16,12 @@ export type NestedAgentGenerateResult = {
     usage?: unknown
 }
 
+export type NestedAgentStepSummary = {
+    toolName: string
+    ok: boolean
+    errorCode?: string | null
+}
+
 export type NestedAgentRunOptions = {
     ctx: AssistantToolContext
     agentId: string
@@ -67,6 +73,7 @@ const asRecord = asNestedRecord
 export async function runNestedAgentGenerate(options: NestedAgentRunOptions): Promise<{
     output: NestedAgentGenerateResult
     toolCalls: number
+    steps: NestedAgentStepSummary[]
 }> {
     const [run] = await getDb()
         .select({ modelConfigId: assistantRuns.modelConfigId })
@@ -86,6 +93,7 @@ export async function runNestedAgentGenerate(options: NestedAgentRunOptions): Pr
 
     let stepIndex = await nextNestedStepIndex(options.ctx.runId)
     let toolCalls = 0
+    const steps: NestedAgentStepSummary[] = []
 
     const { model } = await createChatLanguageModel({
         userId: options.ctx.userId,
@@ -117,10 +125,12 @@ export async function runNestedAgentGenerate(options: NestedAgentRunOptions): Pr
                 hooks: {
                     afterToolCall: async ({
                         toolName,
+                        input: toolInput,
                         output: toolOutput,
                         error,
                     }: {
                         toolName: string
+                        input?: unknown
                         output: unknown
                         error?: unknown
                     }) => {
@@ -133,11 +143,16 @@ export async function runNestedAgentGenerate(options: NestedAgentRunOptions): Pr
                             : meta?.errorCode
                                 ?? playbook?.errorCode
                                 ?? (error instanceof ToolResilienceError ? error.code : "tool_error")
+                        steps.push({
+                            toolName,
+                            ok: isSuccess,
+                            ...(errorCode ? { errorCode } : {}),
+                        })
                         await recordAssistantStep({
                             runId: options.ctx.runId,
                             stepIndex: stepIndex++,
                             toolName: `${options.stepPrefix}/${toolName}`,
-                            input: {},
+                            input: toolInput ?? {},
                             output: isSuccess
                                 ? toolOutput
                                 : playbook ?? {
@@ -162,6 +177,7 @@ export async function runNestedAgentGenerate(options: NestedAgentRunOptions): Pr
         return {
             output: output as NestedAgentGenerateResult,
             toolCalls,
+            steps,
         }
     } finally {
         if (timer) clearTimeout(timer)
