@@ -49,6 +49,7 @@ export type SpawnWriteResult = {
     summary: string
     proposedActions: ProposedWriteAction[]
     usage?: { calls: number; totalTokens: number }
+    steps?: Array<{ toolName: string; ok: boolean; errorCode?: string | null }>
     errorCode?: string | null
 }
 
@@ -160,7 +161,7 @@ export async function spawnWriteSubagent(
     }
 
     try {
-        const { output, toolCalls } = await runNestedAgentGenerate({
+        const { output, toolCalls, steps } = await runNestedAgentGenerate({
             ctx: subCtx,
             agentId: "petrichor-write-subagent",
             agentName: "Petrichor Write Subagent",
@@ -189,6 +190,7 @@ export async function spawnWriteSubagent(
             summary: summary || (proposedActions.length > 0 ? "已生成写入提案，请主助手执行或确认。" : "写子代理未产出方案"),
             proposedActions,
             usage: { calls: toolCalls, totalTokens: readNestedTotalTokens(output) },
+            steps,
             errorCode: ok ? null : "empty_write_plan",
         }
     } catch (error) {

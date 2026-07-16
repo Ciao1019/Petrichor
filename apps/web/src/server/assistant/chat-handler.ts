@@ -16,8 +16,13 @@ import { createChatLanguageModel } from "@/server/ai/generation"
 import { needsJsonPromptInjectionForStructuredOutput } from "@/server/ai/protocol-adapters"
 import type { AiProtocol } from "@/server/ai/config-logic"
 import { HttpError, toErrorResponse } from "@/server/http/response"
-import type { AssistantToolContext } from "./domain-types"
-import { resolveToolLoadDomains } from "./domain-types"
+import type { AssistantToolContext, StepBudgetPartData } from "./domain-types"
+import {
+    resolveAssistantMaxSteps,
+    resolveToolLoadDomains,
+    STEP_BUDGET_PART_TYPE,
+    stripStepBudgetWarnings,
+} from "./domain-types"
 import { assertAssistantFocusOwnership } from "./focus-guard"
 import {
     dedupeIntentRouteParts,
@@ -37,6 +42,7 @@ import {
     patchConfirmationExecutionOutcome,
 } from "./confirmation"
 import { consumeAssistantConfirmation } from "./confirmation-store"
+import { addToolToThreadDangerAllowlist } from "./confirmation-allowlist"
 import {
     buildContextPack,
     buildInstructionsWithContextSummary,
@@ -59,6 +65,7 @@ import {
     listRecentIntentDomains,
     persistAssistantMessage,
     recordAssistantStep,
+    truncateAssistantThreadMessages,
     updateAssistantRunIntent,
 } from "./thread-logic"
 
@@ -95,6 +102,11 @@ export async function assistantChat(request: NextRequest) {
         })
 
         if (shouldPersistUser) {
+            // 编辑重提时客户端会截断后续消息；先对齐删除库中多余历史，再写入本轮 user
+            await truncateAssistantThreadMessages({
+                threadId: thread.id,
+                keepCount: Math.max(0, input.messages.length - 1),
+            })
             await persistAssistantMessage({
                 userId: user.id,
                 threadId: thread.id,
@@ -132,6 +144,8 @@ export async function assistantChat(request: NextRequest) {
 
         let messagesForModel = input.messages as unknown[]
         const pendingConfirmation = findPendingConfirmationExecution(messagesForModel)
+        /** 确认回传且本轮未追加新 user 消息 → 轻量 resume（跳过意图 LLM / 摘要刷新） */
+        const isConfirmationResume = Boolean(pendingConfirmation) && !shouldPersistUser
         if (pendingConfirmation) {
             try {
                 const serverAction = await consumeAssistantConfirmation({
@@ -139,6 +153,13 @@ export async function assistantChat(request: NextRequest) {
                     userId: user.id,
                     threadId: thread.id,
                 })
+                if (pendingConfirmation.allowForThread) {
+                    await addToolToThreadDangerAllowlist({
+                        threadId: thread.id,
+                        userId: user.id,
+                        toolName: serverAction.toolName,
+                    })
+                }
                 const outcome = await executeConfirmedDangerousAction(toolContext, serverAction)
                 messagesForModel = patchConfirmationExecutionOutcome(
                     messagesForModel,
@@ -200,7 +221,7 @@ export async function assistantChat(request: NextRequest) {
                     }
 
                     // running 用 transient，避免与 done 在 id 合并失败时各占一条 part（UI 会双份芯片）
-                    if (needsIntentLlm(rulesRoute)) {
+                    if (!isConfirmationResume && needsIntentLlm(rulesRoute)) {
                         writeIntent({ status: "running", label: "正在识别意图…" }, true)
                     }
 
@@ -213,17 +234,32 @@ export async function assistantChat(request: NextRequest) {
                         } as UIMessageChunk)
                     }
 
+                    const stepBudgetId = "step-budget"
+                    const writeStepBudget = (data: StepBudgetPartData) => {
+                        writer.write({
+                            type: STEP_BUDGET_PART_TYPE,
+                            id: stepBudgetId,
+                            data,
+                        } as UIMessageChunk)
+                    }
+
                     // 意图路由与 context pack 互不依赖，并行以降低首 token 前串行阻塞
                     const [finalRoute, pack] = await Promise.all([
-                        routeAssistantIntentWithLlm({
-                            userText: lastUserText,
-                            focus,
-                            recentToolNames,
-                            recentIntentDomains,
-                            model: model as LanguageModel,
-                            signal: request.signal,
-                            rulesRoute,
-                        }),
+                        isConfirmationResume
+                            ? Promise.resolve({
+                                ...rulesRoute,
+                                source: "rules" as const,
+                                rationale: `${rulesRoute.rationale ?? "rules"};confirmation-resume`,
+                            } satisfies IntentRouteUiResult)
+                            : routeAssistantIntentWithLlm({
+                                userText: lastUserText,
+                                focus,
+                                recentToolNames,
+                                recentIntentDomains,
+                                model: model as LanguageModel,
+                                signal: request.signal,
+                                rulesRoute,
+                            }),
                         buildContextPack({
                             userId: user.id,
                             threadId: thread.id,
@@ -231,6 +267,7 @@ export async function assistantChat(request: NextRequest) {
                             tokenBudget: MAX_CONTEXT_TOKENS,
                             configId: config.id,
                             signal: request.signal,
+                            skipRefresh: isConfirmationResume,
                             onCompressStart: () => {
                                 writeCompress({
                                     status: "running",
@@ -251,6 +288,9 @@ export async function assistantChat(request: NextRequest) {
                     // Claude Code 风格：核心域（含 content_write）常驻；admin 仍按意图按需。
                     // 意图芯片仍展示 finalRoute；实际工具/skill/提示用 toolDomains。
                     const toolDomains = resolveToolLoadDomains(finalRoute.domains)
+                    const maxSteps = resolveAssistantMaxSteps(finalRoute.domains)
+                    let toolCallCount = 0
+                    let stepBudgetWarned = false
                     const tools = loadMastraToolsForDomains(toolDomains, toolContext, resilience)
                     const activeToolNames = Object.keys(tools)
                     const skills = resolveAssistantSkills(toolDomains)
@@ -301,12 +341,22 @@ export async function assistantChat(request: NextRequest) {
                     const modelMessages = await convertToModelMessages(pack.recentMessages)
                     streamStartedAt = Date.now()
                     const result = await agent.stream(modelMessages as never, {
-                        maxSteps: 8,
+                        maxSteps,
                         modelSettings: { temperature: 0.2 },
                         activeTools: activeToolNames,
                         abortSignal: request.signal,
                         hooks: {
-                            afterToolCall: async ({ toolName, output, error }) => {
+                            afterToolCall: async ({ toolName, input: toolInput, output, error }) => {
+                                toolCallCount += 1
+                                if (!stepBudgetWarned && toolCallCount >= maxSteps - 1) {
+                                    stepBudgetWarned = true
+                                    writeStepBudget({
+                                        status: "warning",
+                                        used: toolCallCount,
+                                        limit: maxSteps,
+                                        label: `本轮步数将尽（${toolCallCount}/${maxSteps}），复杂任务可分多轮继续`,
+                                    })
+                                }
                                 const meta = resilience.consumeMeta(toolName)
                                 const playbook = isPlaybookToolResult(output) ? output : null
                                 const isSuccess = error == null && meta?.errorCode == null && !playbook
@@ -319,7 +369,7 @@ export async function assistantChat(request: NextRequest) {
                                     runId: run.id,
                                     stepIndex: stepIndex++,
                                     toolName,
-                                    input: {},
+                                    input: toolInput ?? {},
                                     output: isSuccess
                                         ? output
                                         : playbook ?? {
@@ -333,6 +383,14 @@ export async function assistantChat(request: NextRequest) {
                             },
                         },
                         onFinish: async (event) => {
+                            if (toolCallCount >= maxSteps) {
+                                writeStepBudget({
+                                    status: "exhausted",
+                                    used: toolCallCount,
+                                    limit: maxSteps,
+                                    label: "本轮步数已用尽，可继续发消息接着做",
+                                })
+                            }
                             const error = event.error
                             await finishRunOnce(
                                 error ? "FAILED" : "COMPLETED",
@@ -372,7 +430,9 @@ export async function assistantChat(request: NextRequest) {
                     }
                 },
                 onEnd: async ({ responseMessage }) => {
-                    const parts = dedupeIntentRouteParts(stripContextCompressParts(responseMessage.parts))
+                    const parts = dedupeIntentRouteParts(
+                        stripStepBudgetWarnings(stripContextCompressParts(responseMessage.parts)),
+                    )
                     const metadata = (responseMessage as { metadata?: unknown }).metadata
                     const metaRecord = typeof metadata === "object" && metadata !== null
                         ? metadata as Record<string, unknown>

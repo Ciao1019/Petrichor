@@ -42,15 +42,24 @@ describe("routeAssistantIntent", () => {
         expect(moveArticle.domains).toContain("content_write")
     })
 
-    it("写域粘性：上一轮写域在本轮无写动词时仍保留", async () => {
-        const result = await routeAssistantIntent({
+    it("content_write 不再粘性；admin 粘性仍保留", async () => {
+        const writeOnly = await routeAssistantIntent({
             userText: "对的",
             focus: null,
             recentToolNames: [],
             recentIntentDomains: ["content_write", "knowledge", "system"],
         })
-        expect(result.domains).toContain("content_write")
-        expect(result.rationale).toMatch(/sticky|sticky-write/)
+        expect(writeOnly.domains).not.toContain("content_write")
+        expect(writeOnly.rationale).not.toMatch(/sticky/)
+
+        const adminSticky = await routeAssistantIntent({
+            userText: "对的",
+            focus: null,
+            recentToolNames: [],
+            recentIntentDomains: ["admin", "content_write"],
+        })
+        expect(adminSticky.domains).toContain("admin")
+        expect(adminSticky.rationale).toMatch(/sticky:admin|sticky-admin/)
     })
 
     it("纯问答无粘性时不挂写域", async () => {

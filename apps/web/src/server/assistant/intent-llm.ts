@@ -1,7 +1,14 @@
 import { generateObject, type LanguageModel } from "ai"
 import { z } from "zod"
 import type { AgentDomainId, AssistantFocus, IntentRouteResult, IntentRouteSource } from "./domain-types"
-import { routeAssistantIntent, withAuxiliaryDomains, MAX_PRIMARY_INTENT_DOMAINS, hasWriteDomainCandidate, withStickyWriteDomains, mergeWriteDomainsFromRules } from "./intent-router"
+import {
+    routeAssistantIntent,
+    withAuxiliaryDomains,
+    MAX_PRIMARY_INTENT_DOMAINS,
+    hasAdminDomainCandidate,
+    withStickyAdminDomain,
+    mergeAdminDomainFromRules,
+} from "./intent-router"
 
 export const INTENT_LLM_CONFIDENCE_THRESHOLD = 0.5
 export const INTENT_LLM_TIMEOUT_MS = 5_000
@@ -42,9 +49,12 @@ export type IntentRoutePartData = {
     label: string
 }
 
+/**
+ * 仅低置信度或规则命中 admin 时调用意图 LLM。
+ * content_write 已会话常驻，不再为写域强制复核。
+ */
 export function needsIntentLlm(route: IntentRouteResult): boolean {
-    // 低置信度，或规则已挂写域 → 强制 LLM 复核，减少误挂
-    return route.confidence < INTENT_LLM_CONFIDENCE_THRESHOLD || hasWriteDomainCandidate(route.domains)
+    return route.confidence < INTENT_LLM_CONFIDENCE_THRESHOLD || hasAdminDomainCandidate(route.domains)
 }
 
 export function formatIntentRouteLabel(input: {
@@ -100,7 +110,7 @@ export function dedupeIntentRouteParts(parts: unknown): unknown[] {
 }
 
 /**
- * 规则优先；低置信度时用轻量 generateObject 覆盖。
+ * 规则优先；低置信度或 admin 候选时用轻量 generateObject 覆盖。
  * LLM 失败 / 超时 / abort 时静默回退规则结果，不阻断对话。
  */
 export async function routeAssistantIntentWithLlm(input: {
@@ -121,7 +131,7 @@ export async function routeAssistantIntentWithLlm(input: {
     })
     const finalize = (route: IntentRouteUiResult): IntentRouteUiResult => ({
         ...route,
-        domains: withStickyWriteDomains(route.domains, input.recentIntentDomains),
+        domains: withStickyAdminDomain(route.domains, input.recentIntentDomains),
     })
     const rulesResult = finalize({ ...rules, source: "rules" })
 
@@ -129,7 +139,7 @@ export async function routeAssistantIntentWithLlm(input: {
         return rulesResult
     }
 
-    const rulesHadWrite = hasWriteDomainCandidate(rules.domains)
+    const rulesHadAdmin = hasAdminDomainCandidate(rules.domains)
 
     try {
         const llm = await classifyIntentWithLlm({
@@ -141,26 +151,25 @@ export async function routeAssistantIntentWithLlm(input: {
             model: input.model,
             signal: input.signal,
         })
-        // 规则已命中写域时不允许 LLM 剥掉（写域保底）；再叠加上一轮粘性
-        const merged = mergeWriteDomainsFromRules(llm.domains, rules.domains)
+        // 规则已命中 admin 时不允许 LLM 剥掉；再叠加上一轮 admin 粘性
+        const merged = mergeAdminDomainFromRules(llm.domains, rules.domains)
         return finalize({
             ...llm,
             domains: merged.domains,
             rationale: merged.kept
-                ? `${llm.rationale};write-domain-kept-from-rules`
+                ? `${llm.rationale};admin-domain-kept-from-rules`
                 : llm.rationale,
         })
     } catch (error) {
-        // 写域候选时 LLM 失败 → 信任规则（规则已命中写动词）；纯读域低置信失败仍回退规则
         const message = error instanceof Error ? error.message : String(error)
         console.warn("[assistant/intent-llm] classify failed; falling back to rules", {
-            rulesHadWrite,
+            rulesHadAdmin,
             message,
         })
-        if (rulesHadWrite) {
+        if (rulesHadAdmin) {
             return finalize({
                 ...rulesResult,
-                rationale: `${rules.rationale ?? "rules"};write-domain-kept-on-llm-failure`,
+                rationale: `${rules.rationale ?? "rules"};admin-domain-kept-on-llm-failure`,
             })
         }
         return finalize(rulesResult)
@@ -198,9 +207,10 @@ export async function classifyIntentWithLlm(input: {
             "你是 Petrichor 站内助手的意图分类器。",
             "只输出 JSON，选择本轮需要装载的工具域。",
             "可选域：knowledge（知识库）、doc_library（文档库）、system（系统概览/进度/引用）、content_write（写/改/移动/迁移文章、分享）、admin（模型配置/API Key/公开问答）。",
-            "规则：用户明确要求创建/修改/删除/移动/迁移/分享/改配置时必须含 content_write 或 admin。",
-            "规则：上一轮意图域已含 content_write/admin 时，本轮除非用户明确改聊无关只读话题，否则继续包含对应写域（多轮写入不能中断）。",
+            "规则：用户明确要求改配置/密钥/公开问答开关时必须含 admin。",
+            "规则：上一轮意图域已含 admin 时，本轮除非用户明确改聊无关只读话题，否则继续包含 admin。",
             "规则：知识库或文档库问答通常同时含 system（便于引用与进度）。",
+            "说明：content_write 工具已会话常驻，芯片可标可不标；纯问答不必强行挂 content_write。",
             "rationale 用中文短句说明理由，不超过 80 字。",
             "不要编造域。",
         ].join("\n"),
