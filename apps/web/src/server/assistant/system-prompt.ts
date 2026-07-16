@@ -1,15 +1,18 @@
 import type { AgentDomainId } from "./domain-types"
+import { listAssistantSkillCatalog } from "./skills"
 
 export function buildAssistantSystemPrompt(domains: AgentDomainId[]): string {
     const activeDomains = new Set(domains)
     const guidance: string[] = []
+    const skillCatalog = listAssistantSkillCatalog(domains)
 
     if (activeDomains.has("system")) {
         guidance.push("系统元信息用 list_system_overview。多步任务用 show_progress / upsert_plan（侧栏展示，正文不重复罗列）。可复用结果才用 save_answer_artifact。")
         guidance.push("跨库或多步核验可用 spawn_research_subagent；多路子问题用 spawn_research_fanout（tasks≤3）。根据 summary/citations/results 作答，不编造来源。")
     }
-    if (activeDomains.has("knowledge") || activeDomains.has("doc_library") || activeDomains.has("content_write") || activeDomains.has("admin")) {
-        guidance.push("复杂业务步骤先用 skill 工具加载对应 playbook（knowledge-qa / doc-library-qa / article-write / admin-ops），再按 playbook 调用本轮工具。")
+    if (skillCatalog.length > 0) {
+        const lines = skillCatalog.map((skill) => `- ${skill.name}：${skill.description}`).join("\n")
+        guidance.push(`可用 skill 目录（复杂业务先 load_skill 加载全文，再按 playbook 调工具）：\n${lines}`)
     }
     if (activeDomains.has("knowledge")) {
         guidance.push("图片/图表：答案中直接输出 Markdown 图片，src 用 media.src 原值（常为 s4key:…），禁止声称无法展示。")
@@ -19,8 +22,9 @@ export function buildAssistantSystemPrompt(domains: AgentDomainId[]): string {
         guidance.push("最终答案基于工具结果，并调用 show_citations；引用字段不得改写或编造。")
     }
     if (activeDomains.has("content_write")) {
-        guidance.push("内容写入工具（create/update/move/share 等）已装载；仅在用户明确要求写改/移动/分享时使用，纯问答不要主动改数据。")
-        guidance.push("跨知识库或同库移动文章用 move_article（必填 targetKnowledgeBaseId）。")
+        guidance.push("内容写入工具（create/update/move/share/preview 等）已装载；仅在用户明确要求写改/移动/分享时使用，纯问答不要主动改数据。")
+        guidance.push("跨知识库或同库移动文章用 move_article（必填 targetKnowledgeBaseId）。两步及以上写改必须 upsert_plan 并逐步更新。")
+        guidance.push("大段改写正文先 preview_article_update，再 update_article 落库。")
     }
     if (activeDomains.has("content_write") || activeDomains.has("admin")) {
         guidance.push("危险操作必须 request_user_confirmation，禁止假装已执行。")
