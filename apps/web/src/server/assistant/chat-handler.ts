@@ -50,6 +50,9 @@ import {
     stripContextCompressParts,
     type ContextCompressPartData,
 } from "./context-pack"
+import { isAssistantOperator } from "./operator-gate"
+import { loadOperatorMemoryPromptSection } from "./operator-memory"
+import { listOperatorSkillCatalog } from "./operator-skills"
 import { loadMastraToolsForDomains } from "./tool-registry"
 import { resolveAssistantSkills } from "./skills"
 import { buildAssistantSystemPrompt } from "./system-prompt"
@@ -133,11 +136,13 @@ export async function assistantChat(request: NextRequest) {
             intentDomains: rulesRoute.domains,
         })
 
+        const isOperator = isAssistantOperator({ id: user.id, systemRole: user.systemRole })
         const toolContext: AssistantToolContext = {
             userId: user.id,
             threadId: thread.id,
             runId: run.id,
             focus,
+            systemRole: user.systemRole,
             abortSignal: request.signal,
         }
         const resilience = createToolResilienceController()
@@ -291,7 +296,7 @@ export async function assistantChat(request: NextRequest) {
                     const maxSteps = resolveAssistantMaxSteps(finalRoute.domains)
                     let toolCallCount = 0
                     let stepBudgetWarned = false
-                    const tools = loadMastraToolsForDomains(toolDomains, toolContext, resilience)
+                    const tools = loadMastraToolsForDomains(toolDomains, toolContext, resilience, { isOperator })
                     const activeToolNames = Object.keys(tools)
                     const skills = resolveAssistantSkills(toolDomains)
 
@@ -304,13 +309,30 @@ export async function assistantChat(request: NextRequest) {
                         })
                     }
 
+                    const basePrompt = buildAssistantSystemPrompt(
+                        toolDomains,
+                        isOperator
+                            ? await listOperatorSkillCatalog(
+                                { id: user.id, systemRole: user.systemRole },
+                                toolDomains,
+                            )
+                            : undefined,
+                    )
+                    const memorySection = await loadOperatorMemoryPromptSection(
+                        { id: user.id, systemRole: user.systemRole },
+                        thread.id,
+                    )
+                    const promptWithMemory = memorySection
+                        ? `${memorySection}\n\n${basePrompt}`
+                        : basePrompt
+
                     const agent = new Agent({
                         id: "petrichor-assistant",
                         name: "Petrichor Assistant",
                         description: "In-site universal assistant for system overview, knowledge bases, and document libraries.",
                         model: model as unknown as AgentModelConfig,
                         instructions: buildInstructionsWithContextSummary(
-                            buildAssistantSystemPrompt(toolDomains),
+                            promptWithMemory,
                             pack.summaryMd,
                             pack.recalledSnippets,
                         ),

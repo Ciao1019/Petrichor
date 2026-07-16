@@ -26,6 +26,10 @@ export function notFound(message = "数据不存在") {
     return new HttpError(404, message)
 }
 
+export function conflict(message = "资源冲突") {
+    return new HttpError(409, message)
+}
+
 export function tooManyRequests(message = "请求过于频繁，请稍后再试") {
     return new HttpError(429, message)
 }

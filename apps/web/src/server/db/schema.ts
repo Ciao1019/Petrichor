@@ -837,10 +837,66 @@ export const assistantThreads = pgTable("petrichor_assistant_thread", {
     contextSummaryUpdatedAt: timestamp("context_summary_updated_at", { withTimezone: true }),
     /** 会话级危险工具放行：JSON { toolNames: string[], updatedAt: string } */
     dangerAllowlistJson: text("danger_allowlist_json"),
+    /** 操作员常驻记忆线程冻结快照：{ userProfileMd, agentNotesMd, frozenAt } */
+    operatorMemorySnapshotJson: text("operator_memory_snapshot_json"),
     ...timestamps,
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [
     index("petrichor_assistant_thread_user_history_idx").on(table.userId, table.updatedAt, table.id),
+])
+
+/** 操作员常驻短文记忆（类 USER.md / MEMORY.md）；按 user_id 一行 */
+export const assistantOperatorProfiles = pgTable("petrichor_assistant_operator_profile", {
+    userId: bigint("user_id", { mode: "number" }).primaryKey(),
+    userProfileMd: text("user_profile_md").notNull().default(""),
+    agentNotesMd: text("agent_notes_md").notNull().default(""),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+})
+
+/** 操作员可写 Skills（叠加在内置 playbook 之上） */
+export const assistantOperatorSkills = pgTable("petrichor_assistant_operator_skill", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull(),
+    bodyMd: text("body_md").notNull(),
+    version: integer("version").notNull().default(1),
+    status: text("status").notNull().default("active"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+    uniqueIndex("ux_petrichor_assistant_operator_skill_user_name").on(table.userId, table.name),
+    index("petrichor_assistant_operator_skill_user_idx").on(table.userId, table.status),
+])
+
+export const assistantOperatorSkillPendings = pgTable("petrichor_assistant_operator_skill_pending", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    skillName: text("skill_name").notNull(),
+    action: text("action").notNull(),
+    beforeMd: text("before_md"),
+    afterMd: text("after_md"),
+    description: text("description"),
+    gist: text("gist").notNull(),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+}, (table) => [
+    index("petrichor_assistant_operator_skill_pending_user_idx").on(table.userId, table.status, table.createdAt),
+])
+
+export const assistantOperatorEvolutionProposals = pgTable("petrichor_assistant_operator_evolution_proposal", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    targetType: text("target_type").notNull(),
+    targetName: text("target_name"),
+    beforeMd: text("before_md").notNull(),
+    afterMd: text("after_md").notNull(),
+    rationaleMd: text("rationale_md").notNull(),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+}, (table) => [
+    index("petrichor_assistant_operator_evolution_user_idx").on(table.userId, table.status, table.createdAt),
 ])
 
 export const assistantMessages = pgTable("petrichor_assistant_message", {

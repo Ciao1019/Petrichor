@@ -23,12 +23,18 @@ export function registerAssistantTools(tools: AssistantToolRegistration[]): void
 }
 
 /** @deprecated 运行时已迁 Mastra；保留供单测断言域过滤与 ctx 绑定 */
-export function loadToolsForDomains(domains: AgentDomainId[], ctx: AssistantToolContext): ToolSet {
+export function loadToolsForDomains(
+    domains: AgentDomainId[],
+    ctx: AssistantToolContext,
+    options?: { isOperator?: boolean },
+): ToolSet {
     const wanted = new Set(domains)
+    const isOperator = options?.isOperator === true
     const tools: ToolSet = {}
     for (const registration of registry.values()) {
         if (!wanted.has(registration.domain)) continue
         if (registration.risk === "dangerous") continue
+        if (registration.requiresOperator && !isOperator) continue
         tools[registration.name] = tool({
             description: registration.description,
             inputSchema: registration.inputSchema,
@@ -42,13 +48,16 @@ export function loadMastraToolsForDomains(
     domains: AgentDomainId[],
     ctx: AssistantToolContext,
     resilience?: ToolResilienceController,
+    options?: { isOperator?: boolean },
 ) {
     const wanted = new Set(domains)
+    const isOperator = options?.isOperator === true
     const tools: Record<string, ReturnType<typeof createTool>> = {}
     for (const registration of registry.values()) {
         if (!wanted.has(registration.domain)) continue
         // 危险工具不对模型暴露；仅经确认回传后由 Runtime 按名执行
         if (registration.risk === "dangerous") continue
+        if (registration.requiresOperator && !isOperator) continue
         const toolName = registration.name
         tools[toolName] = createTool({
             id: toolName,

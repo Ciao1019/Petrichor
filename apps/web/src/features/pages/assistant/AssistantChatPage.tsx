@@ -43,6 +43,7 @@ import { Button } from "@/components/ui/button"
 import { QaMarkdownScope, QaMarkdownText, QaPreparing } from "@/features/pages/knowledge/QaMarkdown"
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback"
 import { AssistantTaskRail, TASK_TOOL_NAMES } from "@/features/pages/assistant/AssistantTaskRail"
+import { AssistantOperatorPanel } from "@/features/pages/assistant/AssistantOperatorPanel"
 import {
   SearchDocumentsToolUI,
   SearchKnowledgeToolUI,
@@ -708,7 +709,11 @@ export function AssistantChatPage() {
             <Loader2 className="size-3 animate-spin" />
             加载中
           </div>
-        ) : null}
+        ) : (
+          <div className="absolute right-3 top-3 z-10">
+            <AssistantOperatorPanel />
+          </div>
+        )}
 
         {/* Chat area */}
         <div className="relative min-h-0 flex-1" onPointerDownCapture={hideThreadSidebar}>

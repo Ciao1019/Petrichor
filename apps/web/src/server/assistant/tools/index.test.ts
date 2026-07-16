@@ -130,3 +130,21 @@ describe("content_write tool registration", () => {
         ])
     })
 })
+
+describe("memory_manage operator filter", () => {
+    beforeEach(() => {
+        clearAssistantToolRegistryForTests()
+        registerAllAssistantTools()
+    })
+
+    it("非操作员 system 域不装载 memory_manage；操作员装载", () => {
+        const without = Object.keys(loadToolsForDomains(["system"], ctx)).sort()
+        expect(without).not.toContain("memory_manage")
+        expect(without).not.toContain("search_operator_history")
+        expect(without).not.toContain("skill_manage")
+        const withOp = Object.keys(loadToolsForDomains(["system"], ctx, { isOperator: true })).sort()
+        expect(withOp).toContain("memory_manage")
+        expect(withOp).toContain("search_operator_history")
+        expect(withOp).toContain("skill_manage")
+    })
+})
