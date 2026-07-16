@@ -175,6 +175,7 @@ export async function spawnWriteSubagent(
             timeoutMs: WRITE_SUBAGENT_TIMEOUT_MS,
             stepPrefix: SPAWN_WRITE_SUBAGENT,
             timeoutErrorTag: "write_subagent_timeout",
+            signal: ctx.abortSignal,
         })
 
         const summary = typeof output.text === "string" ? output.text.trim() : ""
@@ -190,10 +191,17 @@ export async function spawnWriteSubagent(
         }
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        const errorCode = message.includes("write_subagent_timeout") ? "tool_timeout" : "tool_error"
+        const aborted = message.includes("aborted")
+            || (error instanceof Error && error.name === "AbortError")
+            || ctx.abortSignal?.aborted
+        const errorCode = aborted
+            ? "aborted"
+            : message.includes("write_subagent_timeout")
+                ? "tool_timeout"
+                : "tool_error"
         return {
             ok: false,
-            summary: `写子代理失败：${message}`,
+            summary: aborted ? "写子代理已取消" : `写子代理失败：${message}`,
             proposedActions: proposalBucket.actions,
             usage: { calls: 0, totalTokens: 0 },
             errorCode,

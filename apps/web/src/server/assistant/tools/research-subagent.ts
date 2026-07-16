@@ -164,6 +164,7 @@ export async function spawnResearchSubagent(
             timeoutMs: SUBAGENT_TIMEOUT_MS,
             stepPrefix,
             timeoutErrorTag: "subagent_timeout",
+            signal: ctx.abortSignal,
         })
 
         const summary = typeof output.text === "string" ? output.text.trim() : ""
@@ -181,10 +182,17 @@ export async function spawnResearchSubagent(
         }
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        const errorCode = message.includes("subagent_timeout") ? "tool_timeout" : "tool_error"
+        const aborted = message.includes("aborted")
+            || (error instanceof Error && error.name === "AbortError")
+            || ctx.abortSignal?.aborted
+        const errorCode = aborted
+            ? "aborted"
+            : message.includes("subagent_timeout")
+                ? "tool_timeout"
+                : "tool_error"
         return {
             ok: false,
-            summary: `子代理失败：${message}`,
+            summary: aborted ? "子代理已取消" : `子代理失败：${message}`,
             usage: { calls: 0, totalTokens: 0 },
             depth,
             maxDepth,

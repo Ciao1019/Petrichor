@@ -95,4 +95,24 @@ describe("research fanout helpers", () => {
         expect(result.ok).toBe(false)
         expect(result.errorCode).toBe("fanout_all_failed")
     })
+
+    it("全部 aborted 时 errorCode=aborted", async () => {
+        spawnMock.mockResolvedValue({
+            ok: false,
+            summary: "子代理已取消",
+            usage: { calls: 0, totalTokens: 0 },
+            errorCode: "aborted",
+        })
+        const result = await spawnResearchFanout(
+            { userId: 1, threadId: 2, runId: 3, focus: null },
+            {
+                tasks: [
+                    { goal: "a", domains: ["system"] },
+                    { goal: "b", domains: ["knowledge"] },
+                ],
+            },
+        )
+        expect(result.ok).toBe(false)
+        expect(result.errorCode).toBe("aborted")
+    })
 })

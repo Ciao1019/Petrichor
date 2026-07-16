@@ -62,6 +62,8 @@ export async function spawnResearchFanout(
     const totalTokens = results.reduce((sum, item) => sum + (item.usage?.totalTokens ?? 0), 0)
     const succeeded = results.filter((item) => item.ok).length
     const failed = results.length - succeeded
+    const allAborted = results.length > 0
+        && results.every((item) => item.errorCode === "aborted")
 
     return {
         ok: succeeded > 0,
@@ -73,7 +75,11 @@ export async function spawnResearchFanout(
             succeeded,
             failed,
         },
-        errorCode: succeeded > 0 ? null : "fanout_all_failed",
+        errorCode: allAborted
+            ? "aborted"
+            : succeeded > 0
+                ? null
+                : "fanout_all_failed",
     }
 }
 

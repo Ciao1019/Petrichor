@@ -25,6 +25,16 @@ describe("routeAssistantIntent", () => {
         expect(result.domains[0]).toBe("content_write")
     })
 
+    it("纯问答不因宽泛动词误挂写域", async () => {
+        const result = await routeAssistantIntent({
+            userText: "分享一下这篇文章主要讲了什么",
+            focus: { knowledgeBaseId: "1" },
+            recentToolNames: [],
+        })
+        expect(result.domains).not.toContain("content_write")
+        expect(result.domains).toContain("knowledge")
+    })
+
     it("管理面意图包含 admin，并辅助装载 content_write", async () => {
         const result = await routeAssistantIntent({
             userText: "看一下我的模型配置",

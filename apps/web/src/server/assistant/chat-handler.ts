@@ -117,6 +117,7 @@ export async function assistantChat(request: NextRequest) {
             threadId: thread.id,
             runId: run.id,
             focus,
+            abortSignal: request.signal,
         }
         const resilience = createToolResilienceController()
 

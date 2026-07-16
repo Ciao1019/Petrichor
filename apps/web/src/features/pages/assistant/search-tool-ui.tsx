@@ -6,11 +6,20 @@ import {
   useAuiState,
   type ToolCallMessagePartStatus,
 } from "@assistant-ui/react"
-import { CheckCircle2, ChevronDown, CircleAlert, Loader2, Search } from "lucide-react"
+import { CheckCircle2, ChevronDown, CircleAlert, ExternalLink, Loader2, Search } from "lucide-react"
+import { useNavigate } from "react-router-dom"
+import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { knowledgeBaseArticleApi } from "@/lib/api"
+import { knowledgeBaseArticlePath } from "@/lib/dashboard-routes"
 import { cn } from "@/lib/utils"
+
+import {
+  parseLegacyDocumentHref,
+  toInternalAppPath,
+} from "./assistant-message-utils"
 
 type SearchKind = "knowledge" | "documents"
 
@@ -61,6 +70,29 @@ function isIncompleteStatus(status?: ToolCallMessagePartStatus) {
 }
 
 function HitRows({ rows }: { rows: Record<string, unknown>[] }) {
+  const navigate = useNavigate()
+
+  const openHref = async (href: string) => {
+    const legacyDocumentId = parseLegacyDocumentHref(href)
+    if (legacyDocumentId) {
+      try {
+        const res = await knowledgeBaseArticleApi.detail(legacyDocumentId)
+        navigate(knowledgeBaseArticlePath(res.data.knowledgeBaseId, res.data.articleId))
+      } catch {
+        toast.error("无法打开检索结果")
+      }
+      return
+    }
+    const internalPath = toInternalAppPath(href)
+    if (internalPath) {
+      navigate(internalPath)
+      return
+    }
+    if (typeof window !== "undefined") {
+      window.open(href, "_blank", "noopener,noreferrer")
+    }
+  }
+
   if (rows.length === 0) {
     return <p className="text-xs text-muted-foreground">无命中</p>
   }
@@ -68,20 +100,39 @@ function HitRows({ rows }: { rows: Record<string, unknown>[] }) {
     <div className="space-y-1.5">
       {rows.slice(0, 8).map((row, index) => {
         const badge = row.knowledgeBaseName ?? row.fileName ?? row.locator ?? row.kind ?? row.mode
-        return (
-          <div
-            key={String(row.chunkId ?? row.nodeKey ?? row.pageKey ?? row.id ?? index)}
-            className="rounded-md border bg-background px-3 py-2"
-          >
+        const href = typeof row.href === "string" && row.href.trim() ? row.href.trim() : null
+        const title = String(row.title ?? "未命名")
+        const body = (
+          <>
             <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-sm font-medium">{String(row.title ?? "未命名")}</span>
-              {badge != null ? (
-                <Badge variant="outline" className="shrink-0 text-[10px]">{String(badge)}</Badge>
-              ) : null}
+              <span className="truncate text-sm font-medium">{title}</span>
+              <span className="flex shrink-0 items-center gap-1">
+                {badge != null ? (
+                  <Badge variant="outline" className="text-[10px]">{String(badge)}</Badge>
+                ) : null}
+                {href ? <ExternalLink className="size-3 opacity-60" aria-hidden /> : null}
+              </span>
             </div>
             {typeof row.snippet === "string" && row.snippet ? (
               <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{row.snippet}</p>
             ) : null}
+          </>
+        )
+        return href ? (
+          <button
+            key={String(row.chunkId ?? row.nodeKey ?? row.pageKey ?? row.id ?? index)}
+            type="button"
+            className="w-full rounded-md border bg-background px-3 py-2 text-left transition-colors hover:bg-muted/40"
+            onClick={() => void openHref(href)}
+          >
+            {body}
+          </button>
+        ) : (
+          <div
+            key={String(row.chunkId ?? row.nodeKey ?? row.pageKey ?? row.id ?? index)}
+            className="rounded-md border bg-background px-3 py-2"
+          >
+            {body}
           </div>
         )
       })}

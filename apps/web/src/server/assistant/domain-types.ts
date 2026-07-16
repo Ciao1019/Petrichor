@@ -36,6 +36,8 @@ export type AssistantToolContext = {
     spawnDepth?: number
     /** 本轮委派链允许的最大 depth */
     spawnMaxDepth?: number
+    /** 本轮 chat 请求 AbortSignal；子代理超时/用户停止时贯通取消 */
+    abortSignal?: AbortSignal
 }
 
 export type AssistantToolRegistration = {
