@@ -77,6 +77,18 @@ describe("routeAssistantIntent", () => {
         expect(result.domains).toEqual(["doc_library", "system"])
     })
 
+    it("多信号命中时主域不超过上限，并仍可补辅助域", async () => {
+        const result = await routeAssistantIntent({
+            userText: "删除知识库文章并看一下我的模型配置和文档 pdf",
+            focus: null,
+            recentToolNames: [],
+        })
+        const unique = new Set(result.domains)
+        expect(unique.size).toBe(result.domains.length)
+        expect(result.domains.length).toBeLessThanOrEqual(4)
+        expect(result.domains).toContain("content_write")
+    })
+
     it("confidence 落在 0..1 区间", async () => {
         const result = await routeAssistantIntent({
             userText: "删除知识库里的文档并更新模型配置统计",

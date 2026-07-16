@@ -31,11 +31,39 @@ export const assistantFocusSchema = z.object({
     documentId: focusIdSchema,
 })
 
+export const ASSISTANT_THREAD_DETAIL_MESSAGE_LIMIT = 200
+
 export const assistantThreadListSchema = z.object({
     cursor: z.number().int().nonnegative().optional(),
     limit: z.number().int().positive().max(100).optional(),
     q: z.string().trim().max(120).optional(),
 })
+
+const SENSITIVE_INPUT_KEYS = new Set([
+    "apikey",
+    "api_key",
+    "password",
+    "secret",
+    "token",
+    "access_token",
+    "refresh_token",
+    "authorization",
+])
+
+export function redactAssistantStepInput(input: unknown): unknown {
+    if (input == null) return input
+    if (Array.isArray(input)) return input.map((item) => redactAssistantStepInput(item))
+    if (typeof input !== "object") return input
+    const next: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+        if (SENSITIVE_INPUT_KEYS.has(key.toLowerCase())) {
+            next[key] = "[redacted]"
+            continue
+        }
+        next[key] = redactAssistantStepInput(value)
+    }
+    return next
+}
 
 export const assistantThreadDeleteManySchema = z.object({
     threadIds: z.array(assistantIdSchema).min(1).max(200),
@@ -197,11 +225,12 @@ export async function recordAssistantStep(input: {
     errorCode?: string | null
     durationMs: number | null
 }) {
+    const safeInput = redactAssistantStepInput(input.input)
     await getDb().insert(assistantSteps).values({
         runId: input.runId,
         stepIndex: input.stepIndex,
         toolName: input.toolName,
-        inputJson: input.input === undefined ? null : JSON.stringify(input.input),
+        inputJson: safeInput === undefined ? null : JSON.stringify(safeInput),
         outputJson: input.output === undefined ? null : JSON.stringify(input.output),
         status: input.status,
         errorCode: input.errorCode ?? null,
@@ -255,13 +284,24 @@ export async function listAssistantThreads(input: {
     }
 }
 
-export async function getAssistantThreadDetail(input: { userId: number; threadId: number }) {
+export async function getAssistantThreadDetail(input: {
+    userId: number
+    threadId: number
+    messageLimit?: number
+}) {
     const thread = await loadAssistantThreadOrThrow(input.userId, input.threadId)
-    const messages = await getDb()
+    const limit = Math.min(
+        Math.max(input.messageLimit ?? ASSISTANT_THREAD_DETAIL_MESSAGE_LIMIT, 1),
+        500,
+    )
+    // 取最近 N 条再按时间正序返回，避免长线程全量 hydrate
+    const recentRows = await getDb()
         .select()
         .from(assistantMessages)
         .where(eq(assistantMessages.threadId, thread.id))
-        .orderBy(asc(assistantMessages.createdAt), asc(assistantMessages.id))
+        .orderBy(desc(assistantMessages.createdAt), desc(assistantMessages.id))
+        .limit(limit)
+    const messages = recentRows.reverse()
     return {
         thread: toAssistantThreadResponse(thread),
         messages: messages.map((message) => ({
@@ -274,6 +314,7 @@ export async function getAssistantThreadDetail(input: { userId: number; threadId
             userId: input.userId,
             threadId: thread.id,
         }),
+        truncated: recentRows.length >= limit,
     }
 }
 

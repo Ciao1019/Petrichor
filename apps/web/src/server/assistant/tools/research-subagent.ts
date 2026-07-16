@@ -1,14 +1,12 @@
-import { desc, eq } from "drizzle-orm"
-import { Agent } from "@mastra/core/agent"
 import { z } from "zod"
-import { createChatLanguageModel } from "@/server/ai/generation"
-import { getDb } from "@/server/db/client"
-import { assistantRuns, assistantSteps } from "@/server/db/schema"
 import { badRequest } from "@/server/http/response"
 import type { AgentDomainId, AssistantFocus, AssistantToolContext, AssistantToolRegistration } from "../domain-types"
-import { loadMastraToolsForDomains } from "../tool-registry"
-import { createToolResilienceController, ToolResilienceError, isPlaybookToolResult } from "../tool-resilience"
-import { assistantFocusSchema, recordAssistantStep } from "../thread-logic"
+import { assistantFocusSchema } from "../thread-logic"
+import {
+    asNestedRecord,
+    readNestedTotalTokens,
+    runNestedAgentGenerate,
+} from "./nested-agent"
 
 export const SUBAGENT_MAX_STEPS = 6
 export const SUBAGENT_TIMEOUT_MS = 90_000
@@ -143,13 +141,6 @@ export async function spawnResearchSubagent(
     const allowRespawn = depth < maxDepth
     const stepPrefix = buildSubagentStepPrefix(depth)
 
-    const [run] = await getDb()
-        .select({ modelConfigId: assistantRuns.modelConfigId })
-        .from(assistantRuns)
-        .where(eq(assistantRuns.id, ctx.runId))
-        .limit(1)
-
-    const resilience = createToolResilienceController()
     const subCtx: AssistantToolContext = {
         userId: ctx.userId,
         threadId: ctx.threadId,
@@ -158,80 +149,26 @@ export async function spawnResearchSubagent(
         spawnDepth: depth,
         spawnMaxDepth: maxDepth,
     }
-    const allTools = loadMastraToolsForDomains(domains, subCtx, resilience)
-    const tools: typeof allTools = {}
-    for (const name of filterSubagentToolNames(Object.keys(allTools), { allowRespawn })) {
-        tools[name] = allTools[name]!
-    }
-
-    let stepIndex = await nextStepIndex(ctx.runId)
-    let toolCalls = 0
 
     try {
-        const { model } = await createChatLanguageModel({
-            userId: ctx.userId,
-            configId: run?.modelConfigId ?? null,
-        })
-
-        const agent = new Agent({
-            id: "petrichor-research-subagent",
-            name: "Petrichor Research Subagent",
+        const { output, toolCalls } = await runNestedAgentGenerate({
+            ctx: subCtx,
+            agentId: "petrichor-research-subagent",
+            agentName: "Petrichor Research Subagent",
             description: "Read-only research subagent for knowledge and document libraries.",
-            model: model as never,
             instructions: buildSubagentInstructions(input.goal, depth, maxDepth),
-            tools,
+            domains,
+            filterToolNames: (names) => filterSubagentToolNames(names, { allowRespawn }),
+            prompt: input.goal,
+            maxSteps: SUBAGENT_MAX_STEPS,
+            timeoutMs: SUBAGENT_TIMEOUT_MS,
+            stepPrefix,
+            timeoutErrorTag: "subagent_timeout",
         })
-
-        const output = await Promise.race([
-            agent.generate(input.goal, {
-                maxSteps: SUBAGENT_MAX_STEPS,
-                modelSettings: { temperature: 0.2 },
-                activeTools: Object.keys(tools),
-                hooks: {
-                    afterToolCall: async ({
-                        toolName,
-                        output: toolOutput,
-                        error,
-                    }: {
-                        toolName: string
-                        output: unknown
-                        error?: unknown
-                    }) => {
-                        toolCalls += 1
-                        const meta = resilience.consumeMeta(toolName)
-                        const playbook = isPlaybookToolResult(toolOutput) ? toolOutput : null
-                        const isSuccess = error == null && meta?.errorCode == null && !playbook
-                        const errorCode = isSuccess
-                            ? null
-                            : meta?.errorCode
-                                ?? playbook?.errorCode
-                                ?? (error instanceof ToolResilienceError ? error.code : "tool_error")
-                        await recordAssistantStep({
-                            runId: ctx.runId,
-                            stepIndex: stepIndex++,
-                            toolName: `${stepPrefix}/${toolName}`,
-                            input: {},
-                            output: isSuccess
-                                ? toolOutput
-                                : playbook ?? {
-                                    error: error instanceof Error ? error.message : String(error ?? errorCode),
-                                    errorCode,
-                                },
-                            status: isSuccess ? "COMPLETED" : "FAILED",
-                            errorCode,
-                            durationMs: meta?.durationMs ?? null,
-                        })
-                    },
-                },
-            } as never),
-            new Promise<never>((_, reject) => {
-                setTimeout(() => reject(new Error("subagent_timeout")), SUBAGENT_TIMEOUT_MS)
-            }),
-        ])
 
         const summary = typeof output.text === "string" ? output.text.trim() : ""
         const citations = extractCitations(output) ?? []
-        const totalTokens = readTotalTokens(output)
+        const totalTokens = readNestedTotalTokens(output)
 
         return {
             ok: Boolean(summary),
@@ -248,7 +185,7 @@ export async function spawnResearchSubagent(
         return {
             ok: false,
             summary: `子代理失败：${message}`,
-            usage: { calls: toolCalls, totalTokens: 0 },
+            usage: { calls: 0, totalTokens: 0 },
             depth,
             maxDepth,
             errorCode,
@@ -256,40 +193,21 @@ export async function spawnResearchSubagent(
     }
 }
 
-async function nextStepIndex(runId: number) {
-    const [row] = await getDb()
-        .select({ stepIndex: assistantSteps.stepIndex })
-        .from(assistantSteps)
-        .where(eq(assistantSteps.runId, runId))
-        .orderBy(desc(assistantSteps.stepIndex))
-        .limit(1)
-    return (row?.stepIndex ?? -1) + 1
-}
-
-function readTotalTokens(output: { totalUsage?: unknown; usage?: unknown }): number {
-    const total = asRecord(output.totalUsage)
-    if (typeof total?.totalTokens === "number") return total.totalTokens
-    if (typeof total?.total === "number") return total.total
-    const usage = asRecord(output.usage)
-    if (typeof usage?.totalTokens === "number") return usage.totalTokens
-    return 0
-}
-
 function extractCitations(output: { toolResults?: unknown }): SpawnResearchResult["citations"] {
     const results = Array.isArray(output.toolResults) ? output.toolResults : []
     const citations: NonNullable<SpawnResearchResult["citations"]> = []
     for (const item of results) {
-        const record = asRecord(item)
+        const record = asNestedRecord(item)
         const toolName = typeof record?.toolName === "string"
             ? record.toolName
             : typeof record?.name === "string"
                 ? record.name
                 : ""
         if (toolName !== "show_citations") continue
-        const payload = asRecord(record?.result) ?? asRecord(record?.output) ?? record
+        const payload = asNestedRecord(record?.result) ?? asNestedRecord(record?.output) ?? record
         const list = Array.isArray(payload?.citations) ? payload.citations : []
         for (const citation of list) {
-            const row = asRecord(citation)
+            const row = asNestedRecord(citation)
             if (!row || typeof row.title !== "string") continue
             citations.push({
                 title: row.title,
@@ -300,12 +218,6 @@ function extractCitations(output: { toolResults?: unknown }): SpawnResearchResul
         }
     }
     return citations
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-    return typeof value === "object" && value !== null && !Array.isArray(value)
-        ? value as Record<string, unknown>
-        : null
 }
 
 export const researchSubagentTools: AssistantToolRegistration[] = [

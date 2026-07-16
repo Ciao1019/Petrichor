@@ -2,6 +2,7 @@ import { asc, eq, sql } from "drizzle-orm"
 import { embedQuery, embedTexts, hasEmbeddingConfig } from "@/server/ai/embedding"
 import { getDb, isSqliteDatabase } from "@/server/db/client"
 import { assistantMessages } from "@/server/db/schema"
+import { extractMessagePlainText } from "./message-text"
 
 export const CONTEXT_RECALL_TOP_K = 4
 export const CONTEXT_RECALL_MIN_SCORE = 0.25
@@ -14,29 +15,9 @@ export type RecalledSnippet = {
     excerpt: string
 }
 
-function extractPlainTextForRecall(message: unknown): string {
-    if (!message || typeof message !== "object") return ""
-    const record = message as { role?: unknown; content?: unknown; parts?: unknown }
-    const role = typeof record.role === "string" ? record.role : "unknown"
-    if (typeof record.content === "string" && record.content.trim()) {
-        return `${role}: ${record.content.trim()}`
-    }
-    const parts = Array.isArray(record.parts)
-        ? record.parts
-        : Array.isArray(record.content)
-            ? record.content
-            : []
-    const text = parts
-        .map((part) => {
-            if (!part || typeof part !== "object") return ""
-            const candidate = part as { type?: unknown; text?: unknown }
-            if (candidate.type === "text" && typeof candidate.text === "string") return candidate.text
-            return ""
-        })
-        .filter(Boolean)
-        .join("\n")
-        .trim()
-    return text ? `${role}: ${text}` : ""
+/** @deprecated 使用 extractMessagePlainText；保留别名兼容 */
+export function extractPlainTextForRecall(message: unknown): string {
+    return extractMessagePlainText(message)
 }
 
 /** 去掉密钥/确认明文等，避免写入召回摘要。 */
@@ -88,10 +69,13 @@ export async function recallRelevantHistory(input: {
     try {
         if (!(await hasEmbeddingConfig(input.userId))) return []
 
-        await ensureThreadMessageEmbeddingsBestEffort({
+        // 热路径只读已有 embedding；缺向量时后台异步补齐，不阻塞本轮召回
+        void ensureThreadMessageEmbeddingsBestEffort({
             userId: input.userId,
             threadId: input.threadId,
             excludeMessageIds: input.excludeMessageIds,
+        }).catch((error) => {
+            console.error("[assistant] background embedding ensure failed", error)
         })
 
         const vector = await embedQuery(input.userId, query.slice(0, 4_000))

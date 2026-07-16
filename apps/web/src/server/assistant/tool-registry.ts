@@ -55,8 +55,8 @@ export function loadMastraToolsForDomains(
             description: registration.description,
             inputSchema: registration.inputSchema,
             execute: async (input: unknown) => {
-                const run = () => registration.execute(ctx, input)
-                return resilience ? await resilience.run(toolName, run) : await run()
+                const run = (_signal: AbortSignal) => registration.execute(ctx, input)
+                return resilience ? await resilience.run(toolName, run) : await run(new AbortController().signal)
             },
         })
     }

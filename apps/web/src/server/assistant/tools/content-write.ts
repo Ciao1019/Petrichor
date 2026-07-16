@@ -189,10 +189,18 @@ export async function deleteArticleForAssistant(ctx: AssistantToolContext, raw: 
     const input = articleIdSchema.parse(raw)
     const article = await requireArticleOwner(ctx.userId, input.articleId)
     const db = getDb()
-    await db.delete(knowledgeBaseArticleTags).where(eq(knowledgeBaseArticleTags.articleId, article.id))
-    await db.delete(knowledgeBaseArticleShares).where(eq(knowledgeBaseArticleShares.articleId, article.id))
-    await db.delete(knowledgeBaseArticles).where(and(eq(knowledgeBaseArticles.id, article.id), eq(knowledgeBaseArticles.userId, ctx.userId)))
-    await db.delete(knowledgeBaseNodes).where(and(eq(knowledgeBaseNodes.id, article.nodeId), eq(knowledgeBaseNodes.userId, ctx.userId)))
+    await db.transaction(async (tx) => {
+        await tx.delete(knowledgeBaseArticleTags).where(eq(knowledgeBaseArticleTags.articleId, article.id))
+        await tx.delete(knowledgeBaseArticleShares).where(eq(knowledgeBaseArticleShares.articleId, article.id))
+        await tx.delete(knowledgeBaseArticles).where(and(
+            eq(knowledgeBaseArticles.id, article.id),
+            eq(knowledgeBaseArticles.userId, ctx.userId),
+        ))
+        await tx.delete(knowledgeBaseNodes).where(and(
+            eq(knowledgeBaseNodes.id, article.nodeId),
+            eq(knowledgeBaseNodes.userId, ctx.userId),
+        ))
+    })
     return { articleId: String(article.id), deleted: true }
 }
 

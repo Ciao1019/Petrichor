@@ -1,23 +1,22 @@
 import { z } from "zod"
 import type { AssistantToolContext, AssistantToolRegistration } from "./domain-types"
 import { getAssistantToolRegistration } from "./tool-registry"
+import { issueAssistantConfirmation } from "./confirmation-store"
 
+/** 仅保留已实现危险工具对应的逻辑名 */
 export const DANGEROUS_ACTION_WHITELIST = [
     "article.delete",
-    "folder.delete",
-    "knowledge_base.delete",
     "document.delete",
-    "document.bulk_delete",
     "share.revoke",
     "ai_config.delete",
     "ai_config.update_credentials",
     "agent_api_key.revoke",
-    "public_qa.disable",
+    "public_qa.set_enabled",
 ] as const
 
 export type DangerousActionName = (typeof DANGEROUS_ACTION_WHITELIST)[number]
 
-/** 本条 content_write 危险工具名 → 契约 4.4 白名单逻辑名 */
+/** 本条 content_write / admin 危险工具名 → 契约白名单逻辑名 */
 export const DANGEROUS_TOOL_WHITELIST: Record<string, DangerousActionName> = {
     delete_article: "article.delete",
     revoke_article_share: "share.revoke",
@@ -25,7 +24,7 @@ export const DANGEROUS_TOOL_WHITELIST: Record<string, DangerousActionName> = {
     delete_ai_config: "ai_config.delete",
     update_ai_config_credentials: "ai_config.update_credentials",
     revoke_agent_api_key: "agent_api_key.revoke",
-    set_public_qa_enabled: "public_qa.disable",
+    set_public_qa_enabled: "public_qa.set_enabled",
 }
 
 export const confirmationActionSchema = z.object({
@@ -106,10 +105,12 @@ function readToolResult(part: Record<string, unknown>): unknown {
     return invocation?.result ?? invocation?.output
 }
 
-/** 从 UIMessage 列表中找出待执行的确认回传（已 confirmed 且尚未带 executionOutcome）。 */
+/**
+ * 从 UIMessage 列表中找出待执行的确认回传（已 confirmed 且尚未带 executionOutcome）。
+ * 仅提取 confirmationId；真正的 action 必须以服务端票据为准。
+ */
 export function findPendingConfirmationExecution(messages: unknown[]): {
     confirmationId: string
-    action: { toolName: string; input: Record<string, unknown> }
 } | null {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
         const message = asRecord(messages[index])
@@ -128,10 +129,7 @@ export function findPendingConfirmationExecution(messages: unknown[]): {
             if (!parsedArgs.success) continue
             if (parsedArgs.data.id !== parsedResult.data.confirmationId) continue
 
-            return {
-                confirmationId: parsedResult.data.confirmationId,
-                action: parsedArgs.data.action,
-            }
+            return { confirmationId: parsedResult.data.confirmationId }
         }
     }
     return null
@@ -168,9 +166,16 @@ export function buildRequestUserConfirmationTool(): AssistantToolRegistration {
         description:
             "对危险操作发起用户确认卡。不要直接调用 delete_* / revoke_*；把目标工具名与参数放进 action，等用户确认后由运行时执行。",
         inputSchema: requestUserConfirmationSchema,
-        execute: async (_ctx, input) => {
+        execute: async (ctx, input) => {
             const parsed = requestUserConfirmationSchema.parse(input)
             assertConfirmationAction(parsed.action)
+            await issueAssistantConfirmation({
+                confirmationKey: parsed.id,
+                userId: ctx.userId,
+                threadId: ctx.threadId,
+                toolName: parsed.action.toolName,
+                actionInput: parsed.action.input,
+            })
             return parsed
         },
     }
