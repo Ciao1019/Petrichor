@@ -6,7 +6,7 @@
         <title>Agent 架构可视化 · Petrichor 助手运行时可视化</title>
         <meta
             name="description"
-            content="拆开 Petrichor 站内 AI 助手的 Agent 运行时：五域意图路由、上下文折叠与向量召回、按域装配的 30 个工具、三种子代理、危险操作确认闸门、失败降级 playbook 与全量落档。"
+            content="拆开 Petrichor 站内 AI 助手的 Agent 运行时：五域意图路由、上下文折叠与向量召回、按域装配的 36 个工具、三种子代理、危险操作确认闸门、失败降级 playbook、操作员四层记忆（常驻短文 · 冻结快照 · 情景检索 · 可写 Skills 与手动进化）与全量落档。"
         />
         <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/lxgwwenkai-regular.css" />
@@ -777,6 +777,119 @@
                     gap: 4px;
                 }
             }
+            .tool-chip.o::before {
+                content: "🔒";
+                font-size: 9px;
+                margin-right: 3px;
+            }
+
+            /* ── 05 · 操作员记忆分层 ─────────────────────── */
+            .mem-stack {
+                display: grid;
+                gap: 14px;
+                margin-top: 6px;
+            }
+            .mem-layer {
+                border: 1.6px solid var(--ink);
+                border-left: 5px solid var(--c, var(--ink));
+                border-radius: var(--wobble-a);
+                background: var(--paper-alt);
+                padding: 15px 20px;
+            }
+            .mem-layer:nth-child(even) {
+                border-radius: var(--wobble-b);
+            }
+            .lyr-head {
+                display: flex;
+                align-items: baseline;
+                gap: 11px;
+                flex-wrap: wrap;
+                margin-bottom: 9px;
+            }
+            .lyr-no {
+                flex: 0 0 auto;
+                width: 25px;
+                height: 25px;
+                display: grid;
+                place-items: center;
+                font-family: var(--font-mono);
+                font-size: 12px;
+                font-weight: 700;
+                color: var(--c, var(--ink));
+                border: 1.5px solid var(--c, var(--ink));
+                border-radius: 50% 44% 54% 46%;
+                transform: rotate(-3deg);
+                align-self: center;
+            }
+            .lyr-head h3 {
+                margin: 0;
+                font-size: 17px;
+            }
+            .lyr-head h3 code {
+                font-size: 12.5px;
+                font-weight: 400;
+            }
+            .lyr-head .lyr-tables {
+                font-family: var(--font-mono);
+                font-size: 11px;
+                color: var(--ink-faint);
+            }
+            .mem-layer > p {
+                margin: 0 0 10px;
+                color: var(--ink-soft);
+                font-size: 15px;
+            }
+            .mem-layer > p strong {
+                color: var(--ink);
+            }
+            .mem-layer .tool-chip {
+                vertical-align: middle;
+            }
+
+            /* 两线程冻结快照对照 */
+            .snap-demo {
+                display: flex;
+                gap: 12px;
+                flex-wrap: wrap;
+                align-items: stretch;
+                margin: 4px 0 2px;
+            }
+            .snap-box {
+                flex: 1 1 190px;
+                border: 1.6px solid var(--c, var(--ink));
+                border-radius: var(--wobble-b);
+                background: color-mix(in srgb, var(--c, var(--ink)) 6%, var(--paper-alt));
+                padding: 11px 14px;
+            }
+            .snap-box .st {
+                margin: 0 0 3px;
+                font-weight: 700;
+                font-size: 14px;
+                color: var(--ink);
+            }
+            .snap-box .ss {
+                margin: 0;
+                font-family: var(--font-mono);
+                font-size: 11px;
+                color: var(--ink-faint);
+            }
+            .snap-box p:last-child {
+                margin: 7px 0 0;
+                font-size: 13px;
+                color: var(--ink-soft);
+            }
+            .snap-arrow {
+                align-self: center;
+                flex: 0 0 auto;
+                font-size: 18px;
+                color: var(--ink-faint);
+            }
+            @media (max-width: 640px) {
+                .snap-arrow {
+                    transform: rotate(90deg);
+                    align-self: center;
+                }
+            }
 
             .boundaries {
                 margin-top: 18px;
@@ -854,7 +967,7 @@
                         <h1>Agent 架构可视化</h1>
                         <p class="subtitle">
                             拆开 Petrichor 站内 AI 助手的运行时：五域意图路由、上下文折叠与向量召回、按域装配的
-                            30 个工具、三种子代理、危险操作确认闸门、失败降级 playbook 与全量落档。代码都在
+                            36 个工具、三种子代理、危险操作确认闸门、失败降级 playbook，以及只给操作员的四层记忆。代码都在
                             <code>src/server/assistant/</code>。
                         </p>
                     </div>
@@ -1046,7 +1159,7 @@
                                         <rect class="box" x="500" y="90" width="210" height="72" rx="12" />
                                     </g>
                                     <text class="node-label" x="605" y="119">工具注册表</text>
-                                    <text class="node-sub" x="605" y="142">30 个工具 · dangerous 不给模型</text>
+                                    <text class="node-sub" x="605" y="142">36 个工具 · dangerous 不给模型</text>
                                 </g>
 
                                 <g class="node" id="n-agent" data-step="4" tabindex="0" role="button" style="--c: var(--purple)"
@@ -1296,8 +1409,8 @@
                     </div>
 
                     <div class="panel tools-board" style="margin-top: 18px">
-                        <h3>工具面板：30 个工具，五个域</h3>
-                        <p>每轮只装配意图命中域的子集；<span style="color: var(--red)">虚线红</span> 的 dangerous 工具永远不出现在模型的工具列表里，只能经确认闸门由运行时执行。</p>
+                        <h3>工具面板：36 个工具，五个域</h3>
+                        <p>每轮只装配意图命中域的子集；<span style="color: var(--red)">虚线红</span> 的 dangerous 工具永远不出现在模型的工具列表里，只能经确认闸门由运行时执行；带 🔒 的 <code>requiresOperator</code> 记忆工具只装给操作员，其余用户完全看不到（详见第 05 节）。</p>
                         <div class="tool-domain">
                             <div class="dn">知识库<small>knowledge</small></div>
                             <div class="tool-chips">
@@ -1322,9 +1435,13 @@
                                 <span class="tool-chip">show_citations</span>
                                 <span class="tool-chip">show_data_table</span>
                                 <span class="tool-chip">upsert_plan</span>
+                                <span class="tool-chip">load_skill</span>
                                 <span class="tool-chip w">save_answer_artifact</span>
                                 <span class="tool-chip s">spawn_research_subagent</span>
                                 <span class="tool-chip s">spawn_research_fanout</span>
+                                <span class="tool-chip o">search_operator_history</span>
+                                <span class="tool-chip w o">memory_manage</span>
+                                <span class="tool-chip w o">skill_manage</span>
                             </div>
                         </div>
                         <div class="tool-domain">
@@ -1332,7 +1449,9 @@
                             <div class="tool-chips">
                                 <span class="tool-chip w">create_article</span>
                                 <span class="tool-chip w">update_article</span>
+                                <span class="tool-chip">preview_article_update</span>
                                 <span class="tool-chip w">create_article_share</span>
+                                <span class="tool-chip w">move_article</span>
                                 <span class="tool-chip d">delete_article</span>
                                 <span class="tool-chip d">revoke_article_share</span>
                                 <span class="tool-chip d">delete_document</span>
@@ -1358,6 +1477,7 @@
                             <span><span class="tool-chip w">write</span>可直接执行的写入</span>
                             <span><span class="tool-chip d">dangerous</span>仅经确认闸门执行</span>
                             <span><span class="tool-chip s">spawn</span>子代理派发</span>
+                            <span><span class="tool-chip o">operator</span>仅操作员装载</span>
                         </div>
                     </div>
 
@@ -1369,6 +1489,148 @@
                             <li>向量召回依赖用户配置了嵌入模型；没配就静默跳过，长对话只能靠摘要兜底。</li>
                             <li>熔断状态 per-run 隔离：同一会话下一条消息会重新给失败工具机会，这是刻意选择而非遗漏。</li>
                             <li>危险操作白名单与域/工具形状由 roadmap 契约锁定（<code>chat-first-universal-agent</code> 4.2–4.4），改动需先过 roadmap update。</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <!-- ═══ 05 · 操作员记忆体系 ═══ -->
+                <section id="memory" class="anim-in" style="--i: 5">
+                    <div class="section-head">
+                        <div>
+                            <p class="eyebrow">05 · 操作员记忆体系</p>
+                            <h2>只给操作员的四层记忆，其余用户完全无感</h2>
+                            <p>
+                                唯一门闩 <code>isAssistantOperator</code>（当前 = 超级管理员，收口在 <code>operator-gate.ts</code>，本栈禁止散落
+                                <code>isSuperAdmin</code>）。非操作员：系统提示里没有记忆段、工具列表里没有 memory / skill 工具，写路径直接
+                                403 <code>assistant_operator_only</code>——四层记忆对普通用户零暴露。
+                            </p>
+                        </div>
+                        <div class="legend" aria-label="图例">
+                            <span class="legend-item">🔒 仅操作员可见的工具</span>
+                        </div>
+                    </div>
+
+                    <div class="mem-stack">
+                        <!-- 层 1 -->
+                        <div class="mem-layer" style="--c: var(--teal)">
+                            <div class="lyr-head">
+                                <span class="lyr-no">1</span>
+                                <h3>常驻短文记忆 <code>operator-memory.ts</code></h3>
+                                <span class="lyr-tables">petrichor_assistant_operator_profile · 按 user_id 一行</span>
+                            </div>
+                            <p>
+                                仿 Hermes 的 <code>USER.md</code> + <code>MEMORY.md</code>：两块 Markdown 短文，每轮拼在系统提示最前，标题锁死为「操作员常驻记忆（本线程冻结快照）」。工具
+                                <span class="tool-chip w o">memory_manage</span> 增删改，<strong>只写持久 profile</strong>。与旧表
+                                <code>petrichor_agent_memory</code>（FACT/TOPIC 蒸馏）不是一套，互不读写。
+                            </p>
+                            <table class="kv">
+                                <tr><td>user_profile_md</td><td>类 USER.md 的用户画像，≤ 1375 字</td></tr>
+                                <tr><td>agent_notes_md</td><td>类 MEMORY.md 的约定与笔记，≤ 2200 字</td></tr>
+                                <tr><td>合计 ≤ 3575</td><td>超上限拒写 <code>memory_limit_exceeded</code>，库内容不变</td></tr>
+                                <tr><td>add / replace / remove</td><td>replace、remove 靠子串命中；未命中 → <code>invalid_patch</code></td></tr>
+                            </table>
+                        </div>
+
+                        <!-- 层 2 -->
+                        <div class="mem-layer" style="--c: var(--blue)">
+                            <div class="lyr-head">
+                                <span class="lyr-no">2</span>
+                                <h3>线程冻结快照 <code>thread.operator_memory_snapshot_json</code></h3>
+                                <span class="lyr-tables">{ userProfileMd, agentNotesMd, frozenAt }</span>
+                            </div>
+                            <p>
+                                关键设计：记忆写入<strong>只影响新线程</strong>。新线程首轮把当时 profile 固化成本线程快照，之后只读；同线程内
+                                <code>memory_manage</code> 改的是持久 profile，本线程快照纹丝不动。幂等：已有快照不再回写覆盖。
+                            </p>
+                            <div class="snap-demo">
+                                <div class="snap-box" style="--c: var(--teal)">
+                                    <p class="st">持久 profile</p>
+                                    <p class="ss">operator_profile 表</p>
+                                    <p>memory_manage 实时改这里</p>
+                                </div>
+                                <span class="snap-arrow" aria-hidden="true">→</span>
+                                <div class="snap-box" style="--c: var(--blue)">
+                                    <p class="st">线程 A · 快照</p>
+                                    <p class="ss">frozenAt = T1</p>
+                                    <p>首轮固化即冻结，后续再问仍读旧内容</p>
+                                </div>
+                                <span class="snap-arrow" aria-hidden="true">→</span>
+                                <div class="snap-box" style="--c: var(--amber)">
+                                    <p class="st">线程 B · 快照</p>
+                                    <p class="ss">frozenAt = T2</p>
+                                    <p>新开线程首轮才看到 T1→T2 的改动</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 层 3 -->
+                        <div class="mem-layer" style="--c: var(--purple)">
+                            <div class="lyr-head">
+                                <span class="lyr-no">3</span>
+                                <h3>跨线程情景检索 <code>operator-episodic.ts</code></h3>
+                                <span class="lyr-tables">petrichor_assistant_message_embedding · 折叠区脱敏摘录</span>
+                            </div>
+                            <p>
+                                想回忆「上次那件事怎么做的」时，模型主动调 <span class="tool-chip o">search_operator_history</span>
+                                跨自己所有线程检索——不是把整段历史塞进上下文，而是按需捞片段。数据源正是第 02 节折叠时脱敏落库的那批向量。
+                            </p>
+                            <table class="kv">
+                                <tr><td>keyword</td><td>Postgres 全文 to_tsvector / plainto_tsquery（simple 配置）</td></tr>
+                                <tr><td>semantic</td><td>pgvector 余弦，需用户配了嵌入模型；没配静默跳过</td></tr>
+                                <tr><td>both（默认）</td><td>两路并行 + 去重合并，semantic 阈值 ≥ 0.25</td></tr>
+                                <tr><td>excludeCurrentThread</td><td>默认排除当前线程；limit ≤ 20；SQLite 环境回退 ilike</td></tr>
+                            </table>
+                        </div>
+
+                        <!-- 层 4 -->
+                        <div class="mem-layer" style="--c: var(--amber)">
+                            <div class="lyr-head">
+                                <span class="lyr-no">4</span>
+                                <h3>可写 Skills 与手动进化 <code>operator-skills.ts · operator-evolution.ts</code></h3>
+                                <span class="lyr-tables">operator_skill · _skill_pending · _evolution_proposal</span>
+                            </div>
+                            <p>
+                                操作员能改运行时自己的 playbook：<span class="tool-chip w o">skill_manage</span>
+                                维护叠加在内置 skill 之上的操作员 skill（同名覆盖内置）；进化则读近期工具轨迹让模型起草改进稿。两条路都<strong>不自动生效</strong>，落到审批队列等人拍板。
+                            </p>
+                            <div class="card-grid two-col" style="margin-top: 12px">
+                                <div class="card" style="--c: var(--amber)">
+                                    <h3><span class="dot"></span>可写 Skills <code>skill_manage</code></h3>
+                                    <table class="kv">
+                                        <tr><td>create / edit / delete</td><td>进 pending 待审批，不即时生效</td></tr>
+                                        <tr><td>patch</td><td>子串小改命中即改，version+1 直接生效</td></tr>
+                                        <tr><td>覆盖内置</td><td>active 操作员 skill 按 name 盖同名内置 playbook</td></tr>
+                                        <tr><td>审批</td><td>approve → 写 active；reject → 丢弃；delete → archived</td></tr>
+                                    </table>
+                                </div>
+                                <div class="card" style="--c: var(--purple)">
+                                    <h3><span class="dot"></span>手动进化 <code>run_evolution</code></h3>
+                                    <table class="kv">
+                                        <tr><td>输入</td><td>当前正文 + 近 20 条 step 轨迹（tool_name / error_code / input）</td></tr>
+                                        <tr><td>产出</td><td>LLM generateObject → afterMd 全文改写 + rationaleMd 理由</td></tr>
+                                        <tr><td>目标</td><td>skill / user_profile / agent_notes 三选一</td></tr>
+                                        <tr><td>accept</td><td>skill 直接 upsert、profile 走 replace；生成失败留带标记草稿</td></tr>
+                                        <tr><td>串行锁</td><td>每用户 busyUsers 串行，重入报 evolution_busy</td></tr>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <p class="diagram-note" style="margin-top: 14px">
+                        壳侧 <code>AssistantOperatorPanel</code> 是两条队列的审批台：待审批 Skills 与进化提案，各自 approve / reject。HTTP
+                        <code>/api/assistant/operator-skills/pending/{list,resolve}</code> 与
+                        <code>/api/assistant/operator-evolution/{list,run,resolve}</code>，全部经 <code>assertAssistantOperator</code> 门闩。
+                    </p>
+
+                    <div class="boundaries">
+                        <h3>记忆的设计边界（known limits）</h3>
+                        <ul>
+                            <li>记忆按 user_id 隔离，多个超管互不共享；门闩当前等价于 <code>isSuperAdmin</code>。</li>
+                            <li>写入永不改本线程冻结快照——「同一线程里看不到刚写的记忆」是刻意行为，不是 bug。</li>
+                            <li>情景检索的 semantic 分支依赖用户配了嵌入模型；没配则只剩关键词 FTS，SQLite 环境进一步退化为 ilike。</li>
+                            <li>进化只在手动触发时跑，没有后台 nudge 自动改记忆；生成失败也只落草稿，绝不擅自合入。</li>
+                            <li>常驻短文有硬字数上限（1375 / 2200 / 合计 3575），塞不下就得先删旧的。</li>
                         </ul>
                     </div>
                 </section>
@@ -1435,7 +1697,7 @@
                 {
                     short: "装配与循环",
                     title: "装配与主循环：8 步内解决战斗",
-                    body: "注册表 30 个工具按命中域过滤，risk=dangerous 一律不给模型；每个工具包一层 resilience 外壳（单次 30s 超时）。Agent 主循环 maxSteps=8、temperature=0.2，输入先过 PromptInjectionDetector（阈值 0.85，检测注入 / 越狱 / 系统覆写，命中直接 block）和 TokenLimiter（100k contiguous 裁剪），然后开始「调工具 → 看结果 → 再决策」，全程流式回传。",
+                    body: "注册表 36 个工具按命中域过滤，risk=dangerous 一律不给模型、requiresOperator 的记忆工具只装给操作员；每个工具包一层 resilience 外壳（单次 30s 超时）。Agent 主循环 maxSteps=8、temperature=0.2，输入先过 PromptInjectionDetector（阈值 0.85，检测注入 / 越狱 / 系统覆写，命中直接 block）和 TokenLimiter（100k contiguous 裁剪），然后开始「调工具 → 看结果 → 再决策」，全程流式回传。",
                     nodes: ["n-registry", "n-agent", "n-model"],
                     edges: ["e4", "e5", "e6"],
                 },
