@@ -2,6 +2,9 @@ import { z } from "zod"
 import type { AssistantToolContext, AssistantToolRegistration } from "./domain-types"
 import { getAssistantToolRegistration } from "./tool-registry"
 import { issueAssistantConfirmation } from "./confirmation-store"
+import {
+    isToolInThreadDangerAllowlist,
+} from "./confirmation-allowlist"
 
 /** 仅保留已实现危险工具对应的逻辑名 */
 export const DANGEROUS_ACTION_WHITELIST = [
@@ -48,6 +51,8 @@ export const confirmationResultSchema = z.object({
     confirmationId: z.string().min(1),
     executionOutcome: z.unknown().optional(),
     cancelled: z.boolean().optional(),
+    /** 确认时勾选「本会话允许同类操作」 */
+    allowForThread: z.boolean().optional(),
 })
 
 export type RequestUserConfirmationInput = z.infer<typeof requestUserConfirmationSchema>
@@ -111,6 +116,7 @@ function readToolResult(part: Record<string, unknown>): unknown {
  */
 export function findPendingConfirmationExecution(messages: unknown[]): {
     confirmationId: string
+    allowForThread: boolean
 } | null {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
         const message = asRecord(messages[index])
@@ -129,7 +135,10 @@ export function findPendingConfirmationExecution(messages: unknown[]): {
             if (!parsedArgs.success) continue
             if (parsedArgs.data.id !== parsedResult.data.confirmationId) continue
 
-            return { confirmationId: parsedResult.data.confirmationId }
+            return {
+                confirmationId: parsedResult.data.confirmationId,
+                allowForThread: parsedResult.data.allowForThread === true,
+            }
         }
     }
     return null
@@ -169,6 +178,24 @@ export function buildRequestUserConfirmationTool(): AssistantToolRegistration {
         execute: async (ctx, input) => {
             const parsed = requestUserConfirmationSchema.parse(input)
             assertConfirmationAction(parsed.action)
+
+            // 会话 allowlist 命中且非 critical → 同轮直接执行，免确认卡
+            const allowlisted = await isToolInThreadDangerAllowlist({
+                threadId: ctx.threadId,
+                userId: ctx.userId,
+                toolName: parsed.action.toolName,
+            })
+            if (allowlisted) {
+                const outcome = await executeConfirmedDangerousAction(ctx, parsed.action)
+                return {
+                    ...parsed,
+                    autoApproved: true,
+                    confirmed: true,
+                    confirmationId: parsed.id,
+                    executionOutcome: outcome,
+                }
+            }
+
             await issueAssistantConfirmation({
                 confirmationKey: parsed.id,
                 userId: ctx.userId,

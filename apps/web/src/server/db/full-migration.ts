@@ -1031,10 +1031,14 @@ create table if not exists petrichor_assistant_thread (
     context_summary_md text,
     context_summary_until_message_id bigint,
     context_summary_updated_at timestamptz,
+    danger_allowlist_json text,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     deleted_at timestamptz
 );
+
+alter table petrichor_assistant_thread
+    add column if not exists danger_allowlist_json text;
 
 create index if not exists petrichor_assistant_thread_user_history_idx
     on petrichor_assistant_thread(user_id, updated_at desc, id desc);
