@@ -284,12 +284,29 @@ export function formatStreamMs(ms: number | undefined) {
 export function readPersistedTiming(metadata: unknown) {
   const root = asRecord(metadata)
   if (!root) return undefined
+  const nestedTiming = asRecord(root.timing)
   const record = asRecord(root.custom) ?? root
-  const totalStreamTime = typeof record.totalStreamTime === "number" ? record.totalStreamTime : undefined
+  const totalStreamTime = typeof record.totalStreamTime === "number"
+    ? record.totalStreamTime
+    : typeof nestedTiming?.totalStreamTime === "number"
+      ? nestedTiming.totalStreamTime
+      : undefined
   if (!totalStreamTime) return undefined
-  const firstTokenTime = typeof record.firstTokenTime === "number" ? record.firstTokenTime : undefined
-  const tokensPerSecond = typeof record.tokensPerSecond === "number" ? record.tokensPerSecond : undefined
-  const totalChunks = typeof record.totalChunks === "number" ? record.totalChunks : 0
+  const firstTokenTime = typeof record.firstTokenTime === "number"
+    ? record.firstTokenTime
+    : typeof nestedTiming?.firstTokenTime === "number"
+      ? nestedTiming.firstTokenTime
+      : undefined
+  const tokensPerSecond = typeof record.tokensPerSecond === "number"
+    ? record.tokensPerSecond
+    : typeof nestedTiming?.tokensPerSecond === "number"
+      ? nestedTiming.tokensPerSecond
+      : undefined
+  const totalChunks = typeof record.totalChunks === "number"
+    ? record.totalChunks
+    : typeof nestedTiming?.totalChunks === "number"
+      ? nestedTiming.totalChunks
+      : 0
   return { firstTokenTime, totalStreamTime, tokensPerSecond, totalChunks }
 }
 
