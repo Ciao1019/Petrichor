@@ -6,7 +6,7 @@ import {
     type IntentRouteResult,
     type IntentRouteSource,
 } from "./domain-types"
-import { routeAssistantIntent, withAuxiliaryDomains, MAX_PRIMARY_INTENT_DOMAINS, hasWriteDomainCandidate, stripWriteDomains } from "./intent-router"
+import { routeAssistantIntent, withAuxiliaryDomains, MAX_PRIMARY_INTENT_DOMAINS, hasWriteDomainCandidate } from "./intent-router"
 
 export const INTENT_LLM_CONFIDENCE_THRESHOLD = 0.5
 export const INTENT_LLM_TIMEOUT_MS = 5_000
@@ -140,14 +140,17 @@ export async function routeAssistantIntentWithLlm(input: {
             signal: input.signal,
         })
         return llm
-    } catch {
-        // 写域候选时 LLM 失败 → 偏安全去掉写域；纯读域低置信失败仍回退规则
+    } catch (error) {
+        // 写域候选时 LLM 失败 → 信任规则（规则已命中写动词）；纯读域低置信失败仍回退规则
+        const message = error instanceof Error ? error.message : String(error)
+        console.warn("[assistant/intent-llm] classify failed; falling back to rules", {
+            rulesHadWrite,
+            message,
+        })
         if (rulesHadWrite) {
             return {
-                domains: stripWriteDomains(rules.domains),
-                confidence: Math.min(rules.confidence, 0.45),
-                rationale: `${rules.rationale ?? "rules"};write-domain-stripped-on-llm-failure`,
-                source: "rules",
+                ...rulesResult,
+                rationale: `${rules.rationale ?? "rules"};write-domain-kept-on-llm-failure`,
             }
         }
         return rulesResult

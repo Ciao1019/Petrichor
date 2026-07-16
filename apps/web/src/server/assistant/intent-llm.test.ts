@@ -140,7 +140,7 @@ describe("intent-llm", () => {
         expect(result.confidence).toBeLessThan(INTENT_LLM_CONFIDENCE_THRESHOLD)
     })
 
-    it("LLM 失败且规则含写域时去掉写域", async () => {
+    it("LLM 失败且规则含写域时保留写域", async () => {
         generateObjectMock.mockRejectedValueOnce(new Error("boom"))
         const result = await routeAssistantIntentWithLlm({
             userText: "帮我删除这篇文章",
@@ -154,9 +154,9 @@ describe("intent-llm", () => {
             },
         })
         expect(result.source).toBe("rules")
-        expect(result.domains).not.toContain("content_write")
-        expect(result.domains).not.toContain("admin")
-        expect(result.rationale).toContain("write-domain-stripped-on-llm-failure")
+        expect(result.domains).toContain("content_write")
+        expect(result.domains).toContain("knowledge")
+        expect(result.rationale).toContain("write-domain-kept-on-llm-failure")
     })
 
     it("传入 rulesRoute 时低置信会调 LLM", async () => {
