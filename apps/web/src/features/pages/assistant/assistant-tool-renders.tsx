@@ -4,6 +4,7 @@ import * as React from "react"
 import {
   makeAssistantDataUI,
   makeAssistantToolUI,
+  ComposerPrimitive,
   useAuiState,
   type ToolCallMessagePartStatus,
 } from "@assistant-ui/react"
@@ -21,6 +22,7 @@ import {
   Pencil,
   Search,
   Sparkles,
+  Square,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -31,6 +33,7 @@ import { DataTable } from "@/components/tool-ui/data-table"
 import { safeParseSerializableDataTable } from "@/components/tool-ui/data-table/schema"
 import { ApprovalCard } from "@/components/tool-ui/approval-card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { knowledgeBaseArticleApi } from "@/lib/api"
 import { knowledgeBaseArticlePath } from "@/lib/dashboard-routes"
@@ -43,6 +46,43 @@ import {
   toInternalAppPath,
   toolStatusLabel,
 } from "./assistant-message-utils"
+
+const SUBAGENT_BUDGET_LABEL = "最多 6 步 · 超时 90s"
+const FANOUT_BUDGET_LABEL = "最多 3 路并行 · 每路 6 步 / 90s"
+
+function isSpawnRunning(status?: ToolCallMessagePartStatus) {
+  return status?.type === "running" || status?.type === "incomplete"
+}
+
+function SpawnBudgetBar({
+  label,
+  status,
+  errorCode,
+}: {
+  label: string
+  status?: ToolCallMessagePartStatus
+  errorCode?: string | null
+}) {
+  const running = isSpawnRunning(status)
+  return (
+    <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+      <span className="inline-flex items-center gap-1">
+        <Gauge className="size-3 opacity-70" aria-hidden />
+        {running ? `进行中 · ${label}` : label}
+        {errorCode === "aborted" ? " · 已取消" : null}
+        {errorCode === "tool_timeout" ? " · 已超时" : null}
+      </span>
+      {running ? (
+        <ComposerPrimitive.Cancel asChild>
+          <Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2 text-[11px]">
+            <Square className="size-3 fill-current" />
+            停止
+          </Button>
+        </ComposerPrimitive.Cancel>
+      ) : null}
+    </div>
+  )
+}
 
 export const PlanToolUI = makeAssistantToolUI({
   toolName: "upsert_plan",
@@ -277,6 +317,44 @@ export const SaveArtifactToolUI = makeAssistantToolUI({
   },
 })
 
+function SpawnCitationsBlock({ citations }: { citations: unknown }) {
+  const navigate = useNavigate()
+  const parsed = Array.isArray(citations)
+    ? citations.map((item) => safeParseSerializableCitation(item)).filter(isPresent)
+    : []
+  const handleNavigate = React.useCallback(async (href: string) => {
+    const legacyDocumentId = parseLegacyDocumentHref(href)
+    if (legacyDocumentId) {
+      try {
+        const res = await knowledgeBaseArticleApi.detail(legacyDocumentId)
+        navigate(knowledgeBaseArticlePath(res.data.knowledgeBaseId, res.data.articleId))
+      } catch {
+        toast.error("无法打开引用文档")
+      }
+      return
+    }
+    const internalPath = toInternalAppPath(href)
+    if (internalPath) {
+      navigate(internalPath)
+      return
+    }
+    if (typeof window !== "undefined") {
+      window.open(href, "_blank", "noopener,noreferrer")
+    }
+  }, [navigate])
+  if (parsed.length === 0) return null
+  return (
+    <div className="mt-2">
+      <CitationList
+        id="spawn-citations"
+        citations={parsed}
+        variant="stacked"
+        onNavigate={handleNavigate}
+      />
+    </div>
+  )
+}
+
 export const SpawnResearchSubagentToolUI = makeAssistantToolUI({
   toolName: "spawn_research_subagent",
   render: ({ args, result, status }) => {
@@ -286,22 +364,25 @@ export const SpawnResearchSubagentToolUI = makeAssistantToolUI({
     const ok = payload?.ok === true
     const summary = typeof payload?.summary === "string" ? payload.summary : ""
     const usage = asRecord(payload?.usage)
+    const errorCode = typeof payload?.errorCode === "string" ? payload.errorCode : null
     return (
       <ToolStatusCard
         title={`子检索：${goal}`}
         status={status}
         icon={<Search className="size-4" />}
         collapsible
-        defaultOpen={false}
+        defaultOpen={isSpawnRunning(status) || errorCode === "aborted"}
       >
+        <SpawnBudgetBar label={SUBAGENT_BUDGET_LABEL} status={status} errorCode={errorCode} />
         {usage ? (
           <p className="mb-2 text-[11px] text-muted-foreground">
             {typeof usage.calls === "number" ? `${usage.calls} 次工具` : null}
             {typeof usage.totalTokens === "number" ? ` · ${usage.totalTokens} tok` : null}
-            {ok === false ? " · 未完成" : null}
+            {ok === false && errorCode !== "aborted" ? " · 未完成" : null}
           </p>
         ) : null}
         {summary ? <p className="line-clamp-4 text-sm text-muted-foreground">{summary}</p> : null}
+        <SpawnCitationsBlock citations={payload?.citations} />
       </ToolStatusCard>
     )
   },
@@ -315,14 +396,16 @@ export const SpawnWriteSubagentToolUI = makeAssistantToolUI({
     const goal = typeof input?.goal === "string" ? input.goal : "写入规划"
     const summary = typeof payload?.summary === "string" ? payload.summary : ""
     const actions = Array.isArray(payload?.proposedActions) ? payload.proposedActions : []
+    const errorCode = typeof payload?.errorCode === "string" ? payload.errorCode : null
     return (
       <ToolStatusCard
         title={`写子代理：${goal}`}
         status={status}
         icon={<Pencil className="size-4" />}
         collapsible
-        defaultOpen={false}
+        defaultOpen={isSpawnRunning(status) || errorCode === "aborted"}
       >
+        <SpawnBudgetBar label={SUBAGENT_BUDGET_LABEL} status={status} errorCode={errorCode} />
         {actions.length > 0 ? (
           <p className="mb-2 text-[11px] text-muted-foreground">{actions.length} 条提案</p>
         ) : null}
@@ -340,14 +423,20 @@ export const SpawnResearchFanoutToolUI = makeAssistantToolUI({
     const tasks = Array.isArray(input?.tasks) ? input.tasks : []
     const results = Array.isArray(payload?.results) ? payload.results : []
     const usage = asRecord(payload?.usage)
+    const errorCode = typeof payload?.errorCode === "string" ? payload.errorCode : null
+    const mergedCitations = results.flatMap((item) => {
+      const row = asRecord(item)
+      return Array.isArray(row?.citations) ? row.citations : []
+    })
     return (
       <ToolStatusCard
         title={`并行子检索：${tasks.length || results.length || "?"} 路`}
         status={status}
         icon={<ListTree className="size-4" />}
         collapsible
-        defaultOpen={false}
+        defaultOpen={isSpawnRunning(status) || errorCode === "aborted"}
       >
+        <SpawnBudgetBar label={FANOUT_BUDGET_LABEL} status={status} errorCode={errorCode} />
         {usage ? (
           <p className="mb-2 text-[11px] text-muted-foreground">
             {typeof usage.succeeded === "number" && typeof usage.tasks === "number"
@@ -367,6 +456,7 @@ export const SpawnResearchFanoutToolUI = makeAssistantToolUI({
             )
           })}
         </ul>
+        <SpawnCitationsBlock citations={mergedCitations} />
       </ToolStatusCard>
     )
   },

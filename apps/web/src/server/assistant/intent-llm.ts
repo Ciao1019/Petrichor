@@ -6,7 +6,7 @@ import {
     type IntentRouteResult,
     type IntentRouteSource,
 } from "./domain-types"
-import { routeAssistantIntent, withAuxiliaryDomains, MAX_PRIMARY_INTENT_DOMAINS } from "./intent-router"
+import { routeAssistantIntent, withAuxiliaryDomains, MAX_PRIMARY_INTENT_DOMAINS, hasWriteDomainCandidate, stripWriteDomains } from "./intent-router"
 
 export const INTENT_LLM_CONFIDENCE_THRESHOLD = 0.5
 export const INTENT_LLM_TIMEOUT_MS = 5_000
@@ -48,7 +48,8 @@ export type IntentRoutePartData = {
 }
 
 export function needsIntentLlm(route: IntentRouteResult): boolean {
-    return route.confidence < INTENT_LLM_CONFIDENCE_THRESHOLD
+    // 低置信度，或规则已挂写域 → 强制 LLM 复核，减少误挂
+    return route.confidence < INTENT_LLM_CONFIDENCE_THRESHOLD || hasWriteDomainCandidate(route.domains)
 }
 
 export function formatIntentRouteLabel(input: {
@@ -127,6 +128,8 @@ export async function routeAssistantIntentWithLlm(input: {
         return rulesResult
     }
 
+    const rulesHadWrite = hasWriteDomainCandidate(rules.domains)
+
     try {
         const llm = await classifyIntentWithLlm({
             userText: input.userText,
@@ -138,6 +141,15 @@ export async function routeAssistantIntentWithLlm(input: {
         })
         return llm
     } catch {
+        // 写域候选时 LLM 失败 → 偏安全去掉写域；纯读域低置信失败仍回退规则
+        if (rulesHadWrite) {
+            return {
+                domains: stripWriteDomains(rules.domains),
+                confidence: Math.min(rules.confidence, 0.45),
+                rationale: `${rules.rationale ?? "rules"};write-domain-stripped-on-llm-failure`,
+                source: "rules",
+            }
+        }
         return rulesResult
     }
 }
@@ -169,9 +181,10 @@ export async function classifyIntentWithLlm(input: {
             "你是 Petrichor 站内助手的意图分类器。",
             "只输出 JSON，选择本轮需要装载的工具域。",
             "可选域：knowledge（知识库）、doc_library（文档库）、system（系统概览/进度/引用）、content_write（写文章/分享）、admin（模型配置/API Key/公开问答）。",
+            "规则：只有用户明确要求创建/修改/删除/分享/改配置时才含 content_write 或 admin；纯问答、总结、检索、解释不要挂写域。",
             "规则：写/删/改内容必须含 content_write；管理面必须含 admin；知识库或文档库问答通常同时含 system（便于引用与进度）。",
             "rationale 用中文短句说明理由，不超过 80 字。",
-            "不要编造域；不确定时优先只读域 system/knowledge/doc_library。",
+            "不要编造域；不确定时优先只读域 system/knowledge/doc_library，不要猜测写意图。",
         ].join("\n"),
         prompt: [
             `用户消息：${input.userText || "（空）"}`,

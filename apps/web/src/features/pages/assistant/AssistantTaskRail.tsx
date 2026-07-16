@@ -11,6 +11,8 @@ import {
 import { safeParseSerializableProgressTracker } from "@/components/tool-ui/progress-tracker/schema"
 import { cn } from "@/lib/utils"
 
+import { scrollQaViewportToMessage } from "./assistant-toc"
+
 const TASK_TOOL_NAMES = new Set(["show_progress", "upsert_plan"])
 
 export type AssistantTaskStepStatus =
@@ -32,6 +34,8 @@ export type AssistantLiveTask = {
   description?: string
   steps: AssistantTaskStep[]
   source: "progress" | "plan"
+  /** 产出该任务的消息 id，供侧栏点击滚动 */
+  messageId?: string
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -45,12 +49,13 @@ function normalizeProgressStatus(status: string): AssistantTaskStepStatus {
   return "pending"
 }
 
-export function planToLiveTask(plan: SerializablePlan): AssistantLiveTask {
+export function planToLiveTask(plan: SerializablePlan, messageId?: string): AssistantLiveTask {
   return {
     id: plan.id,
     title: plan.title,
     description: plan.description,
     source: "plan",
+    messageId,
     steps: plan.todos.map((todo) => ({
       id: todo.id,
       label: todo.label,
@@ -88,10 +93,11 @@ export function resolveRailTask(input: {
   return null
 }
 
-function extractLiveTaskFromMessages(messages: readonly { parts?: readonly unknown[] }[]): AssistantLiveTask | null {
+function extractLiveTaskFromMessages(messages: readonly { id?: string; parts?: readonly unknown[] }[]): AssistantLiveTask | null {
   let latest: AssistantLiveTask | null = null
 
   for (const message of messages) {
+    const messageId = typeof message.id === "string" ? message.id : undefined
     const parts = Array.isArray(message.parts) ? message.parts : []
     for (const raw of parts) {
       const part = asRecord(raw)
@@ -112,6 +118,7 @@ function extractLiveTaskFromMessages(messages: readonly { parts?: readonly unkno
           title: parsed.choice?.summary || active?.label || "任务进度",
           description: undefined,
           source: "progress",
+          messageId,
           steps: parsed.steps.map((step) => ({
             id: step.id,
             label: step.label,
@@ -123,7 +130,7 @@ function extractLiveTaskFromMessages(messages: readonly { parts?: readonly unkno
 
       const parsed = safeParseSerializablePlan(payload)
       if (!parsed) continue
-      latest = planToLiveTask(parsed)
+      latest = planToLiveTask(parsed, messageId)
     }
   }
 
@@ -259,22 +266,42 @@ export function AssistantTaskRail({
       </div>
 
       <ul className="space-y-1.5">
-        {task.steps.map((step) => (
-          <li key={step.id} className="flex items-start gap-2">
-            <StepIcon status={step.status} />
-            <span
-              className={cn(
-                "min-w-0 flex-1 text-[12px] leading-snug",
-                step.status === "pending" || step.status === "cancelled"
-                  ? "text-[#9a9a9a]"
-                  : "text-[#3a3a3a] dark:text-[#c8c8c8]",
-                step.status === "cancelled" && "line-through",
+        {task.steps.map((step) => {
+          const canScroll = Boolean(task.messageId)
+          const content = (
+            <>
+              <StepIcon status={step.status} />
+              <span
+                className={cn(
+                  "min-w-0 flex-1 text-left text-[12px] leading-snug",
+                  step.status === "pending" || step.status === "cancelled"
+                    ? "text-[#9a9a9a]"
+                    : "text-[#3a3a3a] dark:text-[#c8c8c8]",
+                  step.status === "cancelled" && "line-through",
+                )}
+              >
+                {step.label}
+              </span>
+            </>
+          )
+          return (
+            <li key={step.id}>
+              {canScroll ? (
+                <button
+                  type="button"
+                  className="-mx-1 flex w-[calc(100%+0.5rem)] items-start gap-2 rounded-md px-1 py-0.5 text-left hover:bg-[#f5f5f5] dark:hover:bg-[#252525]"
+                  onClick={() => {
+                    if (task.messageId) scrollQaViewportToMessage(task.messageId)
+                  }}
+                >
+                  {content}
+                </button>
+              ) : (
+                <div className="flex items-start gap-2">{content}</div>
               )}
-            >
-              {step.label}
-            </span>
-          </li>
-        ))}
+            </li>
+          )
+        })}
       </ul>
     </aside>
   )

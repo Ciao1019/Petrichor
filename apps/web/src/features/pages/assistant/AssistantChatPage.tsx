@@ -24,6 +24,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
+  PanelRight,
   RefreshCw,
   Search,
   Trash2,
@@ -1100,9 +1101,18 @@ function AssistantPreparingStatus() {
 }
 
 function AssistantMessageBubble() {
+  const hasPlanSynced = useAuiState((s) =>
+    s.message.parts.some((part) => part.type === "tool-call" && part.toolName === "upsert_plan"),
+  )
   return (
     <div className="flex flex-col items-start">
       <div className="w-full max-w-none">
+        {hasPlanSynced ? (
+          <p className="mb-2 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+            <PanelRight className="size-3 opacity-70" aria-hidden />
+            计划已同步到侧栏
+          </p>
+        ) : null}
         <div className="wrap-break-word">
           <MessagePrimitive.Parts>
             {({ part }) => {

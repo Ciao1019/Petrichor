@@ -24,6 +24,20 @@ export function getQaViewport(): HTMLElement | null {
   return document.querySelector<HTMLElement>(QA_TOC_VIEWPORT_SELECTOR)
 }
 
+/** 滚动聊天视口到指定消息锚点（data-qa-msg-id） */
+export function scrollQaViewportToMessage(messageId: string) {
+  const viewport = getQaViewport()
+  if (!viewport) return false
+  const target = viewport.querySelector<HTMLElement>(`[data-qa-msg-id="${CSS.escape(messageId)}"]`)
+  if (!target) return false
+  const top = target.getBoundingClientRect().top
+    - viewport.getBoundingClientRect().top
+    + viewport.scrollTop
+    - QA_TOC_CLICK_OFFSET
+  viewport.scrollTo({ top: Math.max(0, top), behavior: "smooth" })
+  return true
+}
+
 export function QaThreadToc() {
   const messages = useAuiState((s) => s.thread.messages)
   const items = React.useMemo<QaTocItem[]>(() => {
@@ -109,15 +123,7 @@ export function QaThreadToc() {
   }, [hasItems])
 
   const handleTocClick = React.useCallback((id: string) => {
-    const viewport = getQaViewport()
-    if (!viewport) return
-    const target = viewport.querySelector<HTMLElement>(`[data-qa-msg-id="${CSS.escape(id)}"]`)
-    if (!target) return
-    const top = target.getBoundingClientRect().top
-      - viewport.getBoundingClientRect().top
-      + viewport.scrollTop
-      - QA_TOC_CLICK_OFFSET
-    viewport.scrollTo({ top: Math.max(0, top), behavior: "smooth" })
+    if (!scrollQaViewportToMessage(id)) return
     setActiveId(id)
   }, [])
 
