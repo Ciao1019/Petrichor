@@ -255,6 +255,24 @@ export async function listRecentToolNames(threadId: number): Promise<string[]> {
     return steps.map((step) => step.toolName)
 }
 
+/** 读取本线程上一轮 run 的意图域，供短确认延续写域装载 */
+export async function listRecentIntentDomains(threadId: number): Promise<AgentDomainId[]> {
+    const [lastRun] = await getDb()
+        .select({ intentDomainsJson: assistantRuns.intentDomainsJson })
+        .from(assistantRuns)
+        .where(eq(assistantRuns.threadId, threadId))
+        .orderBy(desc(assistantRuns.startedAt), desc(assistantRuns.id))
+        .limit(1)
+    if (!lastRun?.intentDomainsJson) return []
+    try {
+        const parsed = JSON.parse(lastRun.intentDomainsJson) as unknown
+        if (!Array.isArray(parsed)) return []
+        return parsed.filter((item): item is AgentDomainId => typeof item === "string")
+    } catch {
+        return []
+    }
+}
+
 export async function listAssistantThreads(input: {
     userId: number
     cursor?: number

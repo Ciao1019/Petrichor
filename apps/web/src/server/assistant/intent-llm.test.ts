@@ -159,6 +159,55 @@ describe("intent-llm", () => {
         expect(result.rationale).toContain("write-domain-kept-on-llm-failure")
     })
 
+    it("短确认时 LLM 漏掉写域会并回", async () => {
+        generateObjectMock.mockResolvedValueOnce({
+            object: {
+                domains: ["knowledge", "system"],
+                confidence: 0.7,
+                rationale: "用户在确认",
+            },
+            toJsonResponse: undefined,
+        } as never)
+        const result = await routeAssistantIntentWithLlm({
+            userText: "对的",
+            focus: null,
+            recentToolNames: [],
+            recentIntentDomains: ["content_write", "knowledge", "system"],
+            model: {} as LanguageModel,
+            rulesRoute: {
+                domains: ["content_write", "knowledge", "system"],
+                confidence: 0.8,
+                rationale: "sticky:content_write",
+            },
+        })
+        expect(result.domains).toContain("content_write")
+        expect(result.rationale).toContain("write-domain-kept-from-rules")
+    })
+
+    it("规则命中写域时 LLM 不得剥掉", async () => {
+        generateObjectMock.mockResolvedValueOnce({
+            object: {
+                domains: ["knowledge"],
+                confidence: 0.9,
+                rationale: "只是在问知识库",
+            },
+            toJsonResponse: undefined,
+        } as never)
+        const result = await routeAssistantIntentWithLlm({
+            userText: "把这篇文章迁移到另一个知识库",
+            focus: null,
+            recentToolNames: [],
+            model: {} as LanguageModel,
+            rulesRoute: {
+                domains: ["content_write", "knowledge", "system"],
+                confidence: 0.8,
+                rationale: "text:content_write",
+            },
+        })
+        expect(result.domains).toContain("content_write")
+        expect(result.rationale).toContain("write-domain-kept-from-rules")
+    })
+
     it("传入 rulesRoute 时低置信会调 LLM", async () => {
         generateObjectMock.mockResolvedValueOnce({
             object: {

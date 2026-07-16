@@ -17,6 +17,7 @@ import { needsJsonPromptInjectionForStructuredOutput } from "@/server/ai/protoco
 import type { AiProtocol } from "@/server/ai/config-logic"
 import { HttpError, toErrorResponse } from "@/server/http/response"
 import type { AssistantToolContext } from "./domain-types"
+import { resolveToolLoadDomains } from "./domain-types"
 import { assertAssistantFocusOwnership } from "./focus-guard"
 import {
     dedupeIntentRouteParts,
@@ -55,6 +56,7 @@ import {
     ensureAssistantThread,
     finishAssistantRun,
     listRecentToolNames,
+    listRecentIntentDomains,
     persistAssistantMessage,
     recordAssistantStep,
     updateAssistantRunIntent,
@@ -105,8 +107,14 @@ export async function assistantChat(request: NextRequest) {
         const { model, config } = await resolveAssistantModel(user.id, input.configId ?? null)
 
         const recentToolNames = await listRecentToolNames(thread.id)
+        const recentIntentDomains = await listRecentIntentDomains(thread.id)
         // 先规则占位，保证响应头立刻有 Run-Id；stream 内低置信度 LLM 可覆盖并回写
-        const rulesRoute = await routeAssistantIntent({ userText: lastUserText, focus, recentToolNames })
+        const rulesRoute = await routeAssistantIntent({
+            userText: lastUserText,
+            focus,
+            recentToolNames,
+            recentIntentDomains,
+        })
         const run = await createAssistantRun({
             threadId: thread.id,
             modelConfigId: config.id,
@@ -211,6 +219,7 @@ export async function assistantChat(request: NextRequest) {
                             userText: lastUserText,
                             focus,
                             recentToolNames,
+                            recentIntentDomains,
                             model: model as LanguageModel,
                             signal: request.signal,
                             rulesRoute,
@@ -239,9 +248,12 @@ export async function assistantChat(request: NextRequest) {
                         })
                     }
 
-                    const tools = loadMastraToolsForDomains(finalRoute.domains, toolContext, resilience)
+                    // Claude Code 风格：核心域（含 content_write）常驻；admin 仍按意图按需。
+                    // 意图芯片仍展示 finalRoute；实际工具/skill/提示用 toolDomains。
+                    const toolDomains = resolveToolLoadDomains(finalRoute.domains)
+                    const tools = loadMastraToolsForDomains(toolDomains, toolContext, resilience)
                     const activeToolNames = Object.keys(tools)
-                    const skills = resolveAssistantSkills(finalRoute.domains)
+                    const skills = resolveAssistantSkills(toolDomains)
 
                     if (pack.status === "done" || pack.status === "failed") {
                         writeCompress({
@@ -258,7 +270,7 @@ export async function assistantChat(request: NextRequest) {
                         description: "In-site universal assistant for system overview, knowledge bases, and document libraries.",
                         model: model as unknown as AgentModelConfig,
                         instructions: buildInstructionsWithContextSummary(
-                            buildAssistantSystemPrompt(finalRoute.domains),
+                            buildAssistantSystemPrompt(toolDomains),
                             pack.summaryMd,
                             pack.recalledSnippets,
                         ),

@@ -25,7 +25,35 @@ describe("routeAssistantIntent", () => {
         expect(result.domains[0]).toBe("content_write")
     })
 
-    it("纯问答不因宽泛动词误挂写域", async () => {
+    it("迁移/移到 也命中 content_write", async () => {
+        const migrate = await routeAssistantIntent({
+            userText: "把文章 3、4 给我迁移到 Agent 框架这个知识库里边吧",
+            focus: null,
+            recentToolNames: [],
+        })
+        expect(migrate.domains).toContain("content_write")
+        expect(migrate.domains).toContain("knowledge")
+
+        const moveArticle = await routeAssistantIntent({
+            userText: "move_article 不是吗",
+            focus: null,
+            recentToolNames: [],
+        })
+        expect(moveArticle.domains).toContain("content_write")
+    })
+
+    it("写域粘性：上一轮写域在本轮无写动词时仍保留", async () => {
+        const result = await routeAssistantIntent({
+            userText: "对的",
+            focus: null,
+            recentToolNames: [],
+            recentIntentDomains: ["content_write", "knowledge", "system"],
+        })
+        expect(result.domains).toContain("content_write")
+        expect(result.rationale).toMatch(/sticky|sticky-write/)
+    })
+
+    it("纯问答无粘性时不挂写域", async () => {
         const result = await routeAssistantIntent({
             userText: "分享一下这篇文章主要讲了什么",
             focus: { knowledgeBaseId: "1" },

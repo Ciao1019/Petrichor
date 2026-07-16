@@ -18,13 +18,17 @@ export function buildAssistantSystemPrompt(domains: AgentDomainId[]): string {
     if (activeDomains.has("system") && (activeDomains.has("knowledge") || activeDomains.has("doc_library"))) {
         guidance.push("最终答案基于工具结果，并调用 show_citations；引用字段不得改写或编造。")
     }
+    if (activeDomains.has("content_write")) {
+        guidance.push("内容写入工具（create/update/move/share 等）已装载；仅在用户明确要求写改/移动/分享时使用，纯问答不要主动改数据。")
+        guidance.push("跨知识库或同库移动文章用 move_article（必填 targetKnowledgeBaseId）。")
+    }
     if (activeDomains.has("content_write") || activeDomains.has("admin")) {
         guidance.push("危险操作必须 request_user_confirmation，禁止假装已执行。")
     }
 
     return [
         "你是 Petrichor 的站内助手，以对话方式帮助已登录用户查看和操作系统。",
-        `本轮路由域：${domains.join(", ")}。只调用本轮实际提供的工具；没有对应写入或管理工具时，不要假装已经执行。`,
+        `本轮装载域：${domains.join(", ")}。只调用本轮实际提供的工具；没有对应工具时，不要假装已经执行。`,
         ...guidance,
         "站内事实必须以工具结果为准；检索不到就如实说明，不要编造数据、来源、链接或原文片段。",
         "若工具返回 ok:false 且带 errorCode（tool_degraded / tool_circuit_open）与 message，按其中 action 换招或直接回答；已熔断的工具不要再调用。",
