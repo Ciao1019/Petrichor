@@ -12,6 +12,8 @@ import { safeParseSerializableProgressTracker } from "@/components/tool-ui/progr
 import { cn } from "@/lib/utils"
 
 import { scrollQaViewportToMessage } from "./assistant-toc"
+import { assistantApi } from "@/lib/api"
+import { toast } from "sonner"
 
 const TASK_TOOL_NAMES = new Set(["show_progress", "upsert_plan"])
 
@@ -163,13 +165,18 @@ export function settleLiveTask(task: AssistantLiveTask, isRunning: boolean): Ass
 
 export function AssistantTaskRail({
   persistedPlans,
+  threadId,
+  onPlanPatched,
 }: {
   persistedPlans?: SerializablePlan[] | null
+  threadId?: string | null
+  onPlanPatched?: (plan: SerializablePlan) => void
 } = {}) {
   const messages = useAuiState((s) => s.thread.messages)
   const isRunning = useAuiState((s) => s.thread.isRunning)
   const [dismissedId, setDismissedId] = React.useState<string | null>(null)
   const [pinned, setPinned] = React.useState(false)
+  const [patchingTodoId, setPatchingTodoId] = React.useState<string | null>(null)
 
   const rawLive = React.useMemo(() => extractLiveTaskFromMessages(messages), [messages])
   const [sawLiveThisMount, setSawLiveThisMount] = React.useState(false)
@@ -273,6 +280,9 @@ export function AssistantTaskRail({
       <ul className="space-y-1.5">
         {task.steps.map((step) => {
           const canScroll = Boolean(task.messageId)
+          const canMarkComplete = Boolean(threadId)
+            && task.source === "plan"
+            && (step.status === "pending" || step.status === "in_progress")
           const content = (
             <>
               <StepIcon status={step.status} />
@@ -290,20 +300,49 @@ export function AssistantTaskRail({
             </>
           )
           return (
-            <li key={step.id}>
-              {canScroll ? (
-                <button
-                  type="button"
-                  className="-mx-1 flex w-[calc(100%+0.5rem)] items-start gap-2 rounded-md px-1 py-1.5 text-left hover:bg-[#f5f5f5] md:py-0.5 dark:hover:bg-[#252525]"
-                  onClick={() => {
-                    if (task.messageId) scrollQaViewportToMessage(task.messageId)
-                  }}
-                >
-                  {content}
-                </button>
-              ) : (
-                <div className="flex items-start gap-2 py-1 md:py-0">{content}</div>
-              )}
+            <li key={step.id} className="group/step">
+              <div className="flex items-start gap-1">
+                {canScroll ? (
+                  <button
+                    type="button"
+                    className="-mx-1 flex min-w-0 flex-1 items-start gap-2 rounded-md px-1 py-1.5 text-left hover:bg-[#f5f5f5] md:py-0.5 dark:hover:bg-[#252525]"
+                    onClick={() => {
+                      if (task.messageId) scrollQaViewportToMessage(task.messageId)
+                    }}
+                  >
+                    {content}
+                  </button>
+                ) : (
+                  <div className="flex min-w-0 flex-1 items-start gap-2 py-1 md:py-0">{content}</div>
+                )}
+                {canMarkComplete ? (
+                  <button
+                    type="button"
+                    className="mt-0.5 shrink-0 rounded px-1 py-0.5 text-[10px] text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover/step:opacity-100 disabled:opacity-40"
+                    disabled={patchingTodoId === step.id}
+                    onClick={async (event) => {
+                      event.stopPropagation()
+                      if (!threadId) return
+                      setPatchingTodoId(step.id)
+                      try {
+                        const res = await assistantApi.planTodoPatch({
+                          threadId,
+                          planId: task.id,
+                          todoId: step.id,
+                          status: "completed",
+                        })
+                        onPlanPatched?.(res.data.plan)
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : "标记失败")
+                      } finally {
+                        setPatchingTodoId(null)
+                      }
+                    }}
+                  >
+                    完成
+                  </button>
+                ) : null}
+              </div>
             </li>
           )
         })}

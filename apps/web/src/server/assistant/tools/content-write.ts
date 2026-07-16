@@ -160,6 +160,69 @@ export async function updateArticleForAssistant(ctx: AssistantToolContext, raw: 
     }
 }
 
+/** 简单行级 unified diff（足够给模型/用户预览；非完整 Myers） */
+export function buildUnifiedDiff(before: string, after: string, label = "content"): string {
+    const a = before.replace(/\r\n/g, "\n").split("\n")
+    const b = after.replace(/\r\n/g, "\n").split("\n")
+    const lines: string[] = [`--- a/${label}`, `+++ b/${label}`]
+    const max = Math.max(a.length, b.length)
+    let hunkOpen = false
+    for (let i = 0; i < max; i += 1) {
+        const left = a[i]
+        const right = b[i]
+        if (left === right) {
+            if (hunkOpen && left !== undefined) lines.push(` ${left}`)
+            continue
+        }
+        if (!hunkOpen) {
+            lines.push(`@@ line ${i + 1} @@`)
+            hunkOpen = true
+        }
+        if (left !== undefined) lines.push(`-${left}`)
+        if (right !== undefined) lines.push(`+${right}`)
+    }
+    if (lines.length <= 2) return `${lines[0]}\n${lines[1]}\n@@ unchanged @@\n`
+    return lines.join("\n")
+}
+
+export async function previewArticleUpdateForAssistant(ctx: AssistantToolContext, raw: unknown) {
+    const input = updateArticleSchema.parse(raw)
+    const article = await requireArticleOwner(ctx.userId, input.articleId)
+    const nextTitle = input.title ?? article.title
+    const nextContent = input.contentMd ?? article.contentMd
+    const titleChanged = input.title != null && input.title !== article.title
+    const contentChanged = input.contentMd != null && input.contentMd !== article.contentMd
+    if (!titleChanged && !contentChanged) {
+        return {
+            ok: true,
+            dryRun: true,
+            articleId: String(article.id),
+            changed: false,
+            message: "与当前内容相同，无需更新",
+        }
+    }
+    return {
+        ok: true,
+        dryRun: true,
+        articleId: String(article.id),
+        changed: true,
+        title: {
+            before: article.title,
+            after: nextTitle,
+            changed: titleChanged,
+        },
+        contentDiff: contentChanged
+            ? buildUnifiedDiff(article.contentMd ?? "", nextContent, "content.md")
+            : null,
+        contentStats: {
+            beforeChars: (article.contentMd ?? "").length,
+            afterChars: nextContent.length,
+        },
+        href: knowledgeBaseArticlePath(String(article.knowledgeBaseId), String(article.id)),
+        message: "预览未落库；确认后请调用 update_article",
+    }
+}
+
 export async function createArticleShareForAssistant(ctx: AssistantToolContext, raw: unknown) {
     const input = articleIdSchema.parse(raw)
     const article = await requireArticleOwner(ctx.userId, input.articleId)
@@ -266,9 +329,17 @@ export const contentWriteAssistantTools: AssistantToolRegistration[] = [
         name: "update_article",
         domain: "content_write",
         risk: "write",
-        description: "更新文章标题和/或 Markdown 正文。",
+        description: "更新文章标题和/或 Markdown 正文（会落库）。大段改写前请先 preview_article_update。",
         inputSchema: updateArticleSchema,
         execute: updateArticleForAssistant,
+    },
+    {
+        name: "preview_article_update",
+        domain: "content_write",
+        risk: "read",
+        description: "预览 update_article 的标题变更与正文 unified diff，不落库。大段改写必须先调用本工具。",
+        inputSchema: updateArticleSchema,
+        execute: previewArticleUpdateForAssistant,
     },
     {
         name: "create_article_share",

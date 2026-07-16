@@ -5,6 +5,7 @@ import {
 } from "@/components/tool-ui/plan/schema"
 import { getDb } from "@/server/db/client"
 import { assistantPlans, type AssistantPlanRecord } from "@/server/db/schema"
+import { badRequest, notFound } from "@/server/http/response"
 
 export function planRecordToSerializable(row: AssistantPlanRecord): SerializablePlan | null {
     try {
@@ -54,6 +55,41 @@ export async function upsertAssistantPlan(input: {
                 updatedAt: now,
             },
         })
+}
+
+export async function patchAssistantPlanTodo(input: {
+    userId: number
+    threadId: number
+    planId: string
+    todoId: string
+    status: "pending" | "in_progress" | "completed" | "cancelled"
+}): Promise<SerializablePlan> {
+    const [row] = await getDb()
+        .select()
+        .from(assistantPlans)
+        .where(and(
+            eq(assistantPlans.threadId, input.threadId),
+            eq(assistantPlans.userId, input.userId),
+            eq(assistantPlans.planKey, input.planId),
+            eq(assistantPlans.status, "active"),
+        ))
+        .limit(1)
+    if (!row) throw notFound("计划不存在")
+    const plan = planRecordToSerializable(row)
+    if (!plan) throw badRequest("计划数据损坏")
+    const todos = plan.todos.map((todo) => (
+        todo.id === input.todoId ? { ...todo, status: input.status } : todo
+    ))
+    if (!todos.some((todo) => todo.id === input.todoId)) {
+        throw notFound("步骤不存在")
+    }
+    const next = { ...plan, todos }
+    await upsertAssistantPlan({
+        userId: input.userId,
+        threadId: input.threadId,
+        plan: next,
+    })
+    return next
 }
 
 export async function listActiveAssistantPlans(input: {
