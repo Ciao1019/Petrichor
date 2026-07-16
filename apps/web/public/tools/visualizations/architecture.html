@@ -884,10 +884,52 @@
                 font-size: 18px;
                 color: var(--ink-faint);
             }
-            @media (max-width: 640px) {
+            /* ── 手机端适配 ─────────────────────────────── */
+            @media (max-width: 600px) {
+                .container {
+                    padding: 22px 14px 46px;
+                }
+                body {
+                    font-size: 16px;
+                }
+                /* 弹性 / 网格子项可收缩，长标识符换行而不撑破页面 */
+                .card,
+                .mem-layer,
+                .snap-box,
+                .lab-panel,
+                .flow-list li {
+                    min-width: 0;
+                }
+                code,
+                .kv td,
+                .lyr-tables,
+                .diagram-note {
+                    overflow-wrap: anywhere;
+                    word-break: break-word;
+                }
+                .kv td:first-child {
+                    white-space: normal;
+                }
+                .thesis-path {
+                    flex: 1 1 100%;
+                    white-space: normal;
+                    overflow-wrap: anywhere;
+                }
+                .lyr-head {
+                    gap: 6px 10px;
+                }
+                .lyr-head .lyr-tables {
+                    flex-basis: 100%;
+                }
+                /* 三格快照对照竖排，箭头转向下；竖排时高度随内容 */
+                .snap-demo {
+                    flex-direction: column;
+                }
+                .snap-box {
+                    flex: 0 0 auto;
+                }
                 .snap-arrow {
                     transform: rotate(90deg);
-                    align-self: center;
                 }
             }
 
