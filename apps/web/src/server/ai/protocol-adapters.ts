@@ -40,7 +40,8 @@ export function resolveChatProtocolAdapter(context: ProtocolAdapterContext): Cha
     }
     // OPENAI_COMPAT / SILICONFLOW：默认走通用 OpenAI 兼容，
     // 但对历史上以 DeepSeek 模型 / api.deepseek.com 接入的旧配置保留兼容。
-    if (isLegacyDeepSeekCompatibleConfig(context)) {
+    // SiliconFlow 上的 DeepSeek 模型同样不支持 json_schema，复用 DeepSeek 适配层。
+    if (isLegacyDeepSeekCompatibleConfig(context) || isSiliconFlowDeepSeekModel(context)) {
         return createDeepSeekAdapter(context)
     }
     return createOpenAICompatAdapter(context)
@@ -93,23 +94,58 @@ function createOpenAICompatAdapter(context: ProtocolAdapterContext): ChatProtoco
     }
 }
 
-export function prepareDeepSeekChatBody(body: unknown, options: ChatGenerationOptions) {
+/**
+ * DeepSeek 拒绝 response_format.json_schema（generateObject / 结构化输出会 400）。
+ * 降为 json_object，并把 schema 注入到 messages，满足「prompt 须含 json」约束。
+ */
+export function adaptUnsupportedJsonSchemaResponseFormat(body: unknown): unknown {
     if (!isRecord(body)) {
         return body
     }
-    const hasTools = Array.isArray(body.tools) && body.tools.length > 0
+    const responseFormat = body.response_format
+    if (!isRecord(responseFormat) || responseFormat.type !== "json_schema") {
+        return body
+    }
+
+    const jsonSchema = isRecord(responseFormat.json_schema) ? responseFormat.json_schema : null
+    const schemaName = typeof jsonSchema?.name === "string" && jsonSchema.name.trim()
+        ? jsonSchema.name.trim()
+        : "response"
+    const schema = jsonSchema?.schema
+
+    const messages = Array.isArray(body.messages) ? [...body.messages] : []
+    const instruction = [
+        "Return ONLY a valid JSON object matching the required schema.",
+        `Schema name: ${schemaName}.`,
+        schema == null ? null : `JSON schema: ${JSON.stringify(schema)}`,
+    ].filter(Boolean).join(" ")
+    messages.push({ role: "user", content: instruction })
+
+    return {
+        ...body,
+        messages,
+        response_format: { type: "json_object" },
+    }
+}
+
+export function prepareDeepSeekChatBody(body: unknown, options: ChatGenerationOptions) {
+    const adapted = adaptUnsupportedJsonSchemaResponseFormat(body)
+    if (!isRecord(adapted)) {
+        return adapted
+    }
+    const hasTools = Array.isArray(adapted.tools) && adapted.tools.length > 0
     const thinking = hasTools && options.disableDeepSeekThinkingForTools
         ? "disabled"
         : options.deepSeekThinking
 
     if (!thinking) {
-        return body
+        return adapted
     }
 
     // DeepSeek 思考模式结合工具调用时，下一轮请求必须回传 reasoning_content。
     // AI SDK OpenAI 兼容 provider 不会保留该私有字段，因此工具请求默认关闭 thinking。
     return {
-        ...body,
+        ...adapted,
         thinking: { type: thinking },
     }
 }
@@ -120,6 +156,9 @@ function createDeepSeekFetch(options: ChatGenerationOptions): typeof fetch {
             return fetch(resource, init)
         }
         const body = parseFetchJsonBody(init.body)
+        if (body == null) {
+            return fetch(resource, init)
+        }
         const nextBody = prepareDeepSeekChatBody(body, options)
         if (nextBody === body) {
             return fetch(resource, init)
@@ -148,6 +187,10 @@ function isLegacyDeepSeekCompatibleConfig(context: ProtocolAdapterContext) {
     return descriptor.includes("deepseek")
 }
 
+function isSiliconFlowDeepSeekModel(context: Pick<ProtocolAdapterContext, "protocol" | "model">) {
+    return context.protocol === "SILICONFLOW" && context.model.toLowerCase().includes("deepseek")
+}
+
 export function isDeepSeekProtocolContext(context: ProtocolAdapterContext) {
     if (context.protocol === "DEEPSEEK") return true
     return isLegacyDeepSeekCompatibleConfig(context)
@@ -155,7 +198,8 @@ export function isDeepSeekProtocolContext(context: ProtocolAdapterContext) {
 
 /**
  * DeepSeek（含兼容接入）不支持 OpenAI 的 response_format.json_schema。
- * Mastra 的 PromptInjectionDetector 等结构化检测需改走 jsonPromptInjection。
+ * Mastra 的 PromptInjectionDetector 等结构化检测需改走 jsonPromptInjection；
+ * AI SDK generateObject 则由 DeepSeek fetch 适配层改写为 json_object。
  */
 export function needsJsonPromptInjectionForStructuredOutput(context: Pick<ProtocolAdapterContext, "protocol" | "baseUrl" | "model" | "name">) {
     if (isDeepSeekProtocolContext({
@@ -172,11 +216,7 @@ export function needsJsonPromptInjectionForStructuredOutput(context: Pick<Protoc
     })) {
         return true
     }
-    // SiliconFlow 上的 DeepSeek 模型同样拒绝 json_schema
-    if (context.protocol === "SILICONFLOW" && context.model.toLowerCase().includes("deepseek")) {
-        return true
-    }
-    return false
+    return isSiliconFlowDeepSeekModel(context)
 }
 
 function isChatCompletionsRequest(resource: Parameters<typeof fetch>[0]) {
