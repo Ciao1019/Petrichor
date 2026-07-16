@@ -25,3 +25,4 @@
 ### 其他
 
 - Assistant 危险确认票据表：`docs/migrations/2026-07-16-assistant-confirmation-ticket.sql`；未跑迁移则确认危险操作会失败
+- 助手工具装载对齐 Claude Code：`system+knowledge+doc_library+content_write` 常驻；`admin` 按需；dangerous 仍走确认协议，不靠意图藏普通写工具

@@ -1,12 +1,7 @@
 import { generateObject, type LanguageModel } from "ai"
 import { z } from "zod"
-import {
-    type AgentDomainId,
-    type AssistantFocus,
-    type IntentRouteResult,
-    type IntentRouteSource,
-} from "./domain-types"
-import { routeAssistantIntent, withAuxiliaryDomains, MAX_PRIMARY_INTENT_DOMAINS, hasWriteDomainCandidate } from "./intent-router"
+import type { AgentDomainId, AssistantFocus, IntentRouteResult, IntentRouteSource } from "./domain-types"
+import { routeAssistantIntent, withAuxiliaryDomains, MAX_PRIMARY_INTENT_DOMAINS, hasWriteDomainCandidate, withStickyWriteDomains, mergeWriteDomainsFromRules } from "./intent-router"
 
 export const INTENT_LLM_CONFIDENCE_THRESHOLD = 0.5
 export const INTENT_LLM_TIMEOUT_MS = 5_000
@@ -112,6 +107,7 @@ export async function routeAssistantIntentWithLlm(input: {
     userText: string
     focus: AssistantFocus | null
     recentToolNames: string[]
+    recentIntentDomains?: AgentDomainId[]
     model: LanguageModel
     signal?: AbortSignal
     /** 若调用方已跑过规则，传入可避免重复打分 */
@@ -121,8 +117,13 @@ export async function routeAssistantIntentWithLlm(input: {
         userText: input.userText,
         focus: input.focus,
         recentToolNames: input.recentToolNames,
+        recentIntentDomains: input.recentIntentDomains,
     })
-    const rulesResult: IntentRouteUiResult = { ...rules, source: "rules" }
+    const finalize = (route: IntentRouteUiResult): IntentRouteUiResult => ({
+        ...route,
+        domains: withStickyWriteDomains(route.domains, input.recentIntentDomains),
+    })
+    const rulesResult = finalize({ ...rules, source: "rules" })
 
     if (!needsIntentLlm(rules)) {
         return rulesResult
@@ -135,11 +136,20 @@ export async function routeAssistantIntentWithLlm(input: {
             userText: input.userText,
             focus: input.focus,
             recentToolNames: input.recentToolNames,
+            recentIntentDomains: input.recentIntentDomains,
             rules,
             model: input.model,
             signal: input.signal,
         })
-        return llm
+        // 规则已命中写域时不允许 LLM 剥掉（写域保底）；再叠加上一轮粘性
+        const merged = mergeWriteDomainsFromRules(llm.domains, rules.domains)
+        return finalize({
+            ...llm,
+            domains: merged.domains,
+            rationale: merged.kept
+                ? `${llm.rationale};write-domain-kept-from-rules`
+                : llm.rationale,
+        })
     } catch (error) {
         // 写域候选时 LLM 失败 → 信任规则（规则已命中写动词）；纯读域低置信失败仍回退规则
         const message = error instanceof Error ? error.message : String(error)
@@ -148,12 +158,12 @@ export async function routeAssistantIntentWithLlm(input: {
             message,
         })
         if (rulesHadWrite) {
-            return {
+            return finalize({
                 ...rulesResult,
                 rationale: `${rules.rationale ?? "rules"};write-domain-kept-on-llm-failure`,
-            }
+            })
         }
-        return rulesResult
+        return finalize(rulesResult)
     }
 }
 
@@ -161,6 +171,7 @@ export async function classifyIntentWithLlm(input: {
     userText: string
     focus: AssistantFocus | null
     recentToolNames: string[]
+    recentIntentDomains?: AgentDomainId[]
     rules: IntentRouteResult
     model: LanguageModel
     signal?: AbortSignal
@@ -168,6 +179,9 @@ export async function classifyIntentWithLlm(input: {
     const focusHint = summarizeFocus(input.focus)
     const recentHint = input.recentToolNames.length > 0
         ? input.recentToolNames.slice(0, 8).join(", ")
+        : "无"
+    const recentDomainsHint = input.recentIntentDomains && input.recentIntentDomains.length > 0
+        ? input.recentIntentDomains.join(", ")
         : "无"
 
     const timeout = AbortSignal.timeout(INTENT_LLM_TIMEOUT_MS)
@@ -183,16 +197,18 @@ export async function classifyIntentWithLlm(input: {
         system: [
             "你是 Petrichor 站内助手的意图分类器。",
             "只输出 JSON，选择本轮需要装载的工具域。",
-            "可选域：knowledge（知识库）、doc_library（文档库）、system（系统概览/进度/引用）、content_write（写文章/分享）、admin（模型配置/API Key/公开问答）。",
-            "规则：只有用户明确要求创建/修改/删除/分享/改配置时才含 content_write 或 admin；纯问答、总结、检索、解释不要挂写域。",
-            "规则：写/删/改内容必须含 content_write；管理面必须含 admin；知识库或文档库问答通常同时含 system（便于引用与进度）。",
+            "可选域：knowledge（知识库）、doc_library（文档库）、system（系统概览/进度/引用）、content_write（写/改/移动/迁移文章、分享）、admin（模型配置/API Key/公开问答）。",
+            "规则：用户明确要求创建/修改/删除/移动/迁移/分享/改配置时必须含 content_write 或 admin。",
+            "规则：上一轮意图域已含 content_write/admin 时，本轮除非用户明确改聊无关只读话题，否则继续包含对应写域（多轮写入不能中断）。",
+            "规则：知识库或文档库问答通常同时含 system（便于引用与进度）。",
             "rationale 用中文短句说明理由，不超过 80 字。",
-            "不要编造域；不确定时优先只读域 system/knowledge/doc_library，不要猜测写意图。",
+            "不要编造域。",
         ].join("\n"),
         prompt: [
             `用户消息：${input.userText || "（空）"}`,
             `当前 focus：${focusHint}`,
             `近期工具：${recentHint}`,
+            `上一轮意图域：${recentDomainsHint}`,
             `规则初筛 domains：${input.rules.domains.join(", ")}`,
             `规则置信度：${input.rules.confidence}`,
             `规则 rationale：${input.rules.rationale ?? ""}`,

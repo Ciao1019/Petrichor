@@ -95,10 +95,12 @@ describe("assistant domain-aware system prompt", () => {
         expect(prompt).not.toContain("doc-library-qa")
     })
 
-    it("content_write 提示含确认纪律与写入 skill", () => {
-        const prompt = buildAssistantSystemPrompt(["content_write", "system"])
+    it("content_write 提示含确认纪律、写入 skill 与 move_article", () => {
+        const prompt = buildAssistantSystemPrompt(["content_write", "system", "knowledge"])
         expect(prompt).toContain("request_user_confirmation")
         expect(prompt).toContain("article-write")
+        expect(prompt).toContain("move_article")
+        expect(prompt).toContain("仅在用户明确要求")
     })
 })
 

@@ -51,3 +51,24 @@ export type AssistantToolRegistration = {
 }
 
 export const DEFAULT_READ_DOMAINS: AgentDomainId[] = ["system", "knowledge", "doc_library"]
+
+/**
+ * 会话核心域（对齐 Claude Code：小工具集常驻，不靠意图硬门控藏工具）。
+ * dangerous 工具仍由 registry 对模型隐藏，经确认协议执行。
+ * admin 不在此列，仍按意图按需装载。
+ */
+export const CORE_SESSION_DOMAINS: AgentDomainId[] = [
+    "system",
+    "knowledge",
+    "doc_library",
+    "content_write",
+]
+
+/** 意图域 → 实际工具装载域：核心常驻 ∪ 意图中的 admin */
+export function resolveToolLoadDomains(intentDomains: AgentDomainId[]): AgentDomainId[] {
+    const next = new Set<AgentDomainId>(CORE_SESSION_DOMAINS)
+    for (const domain of intentDomains) {
+        if (domain === "admin") next.add("admin")
+    }
+    return [...next]
+}
