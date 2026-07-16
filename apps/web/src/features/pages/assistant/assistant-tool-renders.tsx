@@ -84,6 +84,35 @@ function SpawnBudgetBar({
   )
 }
 
+function SubagentStepsList({ steps }: { steps: unknown }) {
+  if (!Array.isArray(steps) || steps.length === 0) return null
+  return (
+    <Collapsible className="mb-2 rounded-md border border-border/50 bg-muted/20 px-2 py-1.5">
+      <CollapsibleTrigger className="group/steps flex w-full items-center gap-1 text-[11px] text-muted-foreground">
+        <ChevronDown className="size-3 transition-transform group-data-[state=closed]/steps:-rotate-90" />
+        子步骤 · {steps.length}
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-1.5 space-y-0.5 data-[state=closed]:hidden">
+        {steps.map((item, index) => {
+          const row = asRecord(item)
+          const name = typeof row?.toolName === "string" ? row.toolName : `step-${index + 1}`
+          const ok = row?.ok !== false
+          const errorCode = typeof row?.errorCode === "string" ? row.errorCode : null
+          return (
+            <div key={`${name}-${index}`} className="flex items-center gap-1.5 text-[11px]">
+              {ok
+                ? <CheckCircle2 className="size-3 shrink-0 text-emerald-600/80" />
+                : <CircleAlert className="size-3 shrink-0 text-amber-600/80" />}
+              <span className="truncate font-mono">{name}</span>
+              {errorCode ? <span className="text-muted-foreground">· {errorCode}</span> : null}
+            </div>
+          )
+        })}
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
 export const PlanToolUI = makeAssistantToolUI({
   toolName: "upsert_plan",
   // 进度改由右侧 AssistantTaskRail 展示，消息流内不再渲染大卡
@@ -121,29 +150,52 @@ function ConfirmationToolRender({
   const decision = asRecord(result)
   const confirmed = typeof decision?.confirmed === "boolean" ? decision.confirmed : null
   const choice = confirmed === true ? "approved" as const : confirmed === false ? "denied" as const : undefined
+  const action = asRecord(payload?.action)
+  const actionToolName = typeof action?.toolName === "string" ? action.toolName : ""
+  // critical 工具不提供会话放行按钮（与服务端 DESTRUCTIVE_CRITICAL 对齐）
+  const canAllowForThread = Boolean(actionToolName)
+    && !/^(delete_|revoke_|set_public_qa_enabled)/.test(actionToolName)
 
   if (!confirmationId) {
     return <ToolStatusCard title="等待确认" status={status} />
   }
 
   return (
-    <ApprovalCard
-      id={confirmationId}
-      title={title}
-      description={description}
-      variant={variant}
-      confirmLabel={confirmLabel}
-      cancelLabel={cancelLabel}
-      choice={choice}
-      onConfirm={() => {
-        if (choice != null) return
-        addResult({ confirmed: true, confirmationId })
-      }}
-      onCancel={() => {
-        if (choice != null) return
-        addResult({ confirmed: false, confirmationId, cancelled: true })
-      }}
-    />
+    <div className="space-y-2">
+      <ApprovalCard
+        id={confirmationId}
+        title={title}
+        description={description}
+        variant={variant}
+        confirmLabel={confirmLabel}
+        cancelLabel={cancelLabel}
+        choice={choice}
+        onConfirm={() => {
+          if (choice != null) return
+          addResult({ confirmed: true, confirmationId })
+        }}
+        onCancel={() => {
+          if (choice != null) return
+          addResult({ confirmed: false, confirmationId, cancelled: true })
+        }}
+      />
+      {choice == null && canAllowForThread ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 text-xs"
+          onClick={() => {
+            addResult({ confirmed: true, confirmationId, allowForThread: true })
+          }}
+        >
+          本会话允许同类操作
+        </Button>
+      ) : null}
+      {decision?.allowForThread === true ? (
+        <p className="text-[11px] text-muted-foreground">已为本会话放行该工具（非破坏性删除类）</p>
+      ) : null}
+    </div>
   )
 }
 
@@ -317,6 +369,42 @@ export const SaveArtifactToolUI = makeAssistantToolUI({
   },
 })
 
+export const PreviewArticleUpdateToolUI = makeAssistantToolUI({
+  toolName: "preview_article_update",
+  render: ({ result, status }) => {
+    const payload = asRecord(result)
+    if (!payload) return <ToolStatusCard title="文章更新预览" status={status} />
+    const title = asRecord(payload.title)
+    const diff = typeof payload.contentDiff === "string" ? payload.contentDiff : null
+    return (
+      <ToolStatusCard
+        title="文章更新预览（未落库）"
+        status={status}
+        icon={<FileText className="size-4" />}
+        collapsible
+        defaultOpen
+      >
+        {title?.changed === true ? (
+          <p className="mb-2 text-xs text-muted-foreground">
+            标题：<span className="line-through opacity-70">{String(title.before ?? "")}</span>
+            {" → "}
+            <span className="font-medium text-foreground">{String(title.after ?? "")}</span>
+          </p>
+        ) : null}
+        {diff ? (
+          <pre className="max-h-64 overflow-auto rounded-md border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
+            {diff}
+          </pre>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            {typeof payload.message === "string" ? payload.message : "无正文变更"}
+          </p>
+        )}
+      </ToolStatusCard>
+    )
+  },
+})
+
 function SpawnCitationsBlock({ citations }: { citations: unknown }) {
   const navigate = useNavigate()
   const parsed = Array.isArray(citations)
@@ -374,6 +462,7 @@ export const SpawnResearchSubagentToolUI = makeAssistantToolUI({
         defaultOpen={isSpawnRunning(status) || errorCode === "aborted"}
       >
         <SpawnBudgetBar label={SUBAGENT_BUDGET_LABEL} status={status} errorCode={errorCode} />
+        <SubagentStepsList steps={payload?.steps} />
         {usage ? (
           <p className="mb-2 text-[11px] text-muted-foreground">
             {typeof usage.calls === "number" ? `${usage.calls} 次工具` : null}
@@ -406,6 +495,7 @@ export const SpawnWriteSubagentToolUI = makeAssistantToolUI({
         defaultOpen={isSpawnRunning(status) || errorCode === "aborted"}
       >
         <SpawnBudgetBar label={SUBAGENT_BUDGET_LABEL} status={status} errorCode={errorCode} />
+        <SubagentStepsList steps={payload?.steps} />
         {actions.length > 0 ? (
           <p className="mb-2 text-[11px] text-muted-foreground">{actions.length} 条提案</p>
         ) : null}
@@ -437,6 +527,25 @@ export const SpawnResearchFanoutToolUI = makeAssistantToolUI({
         defaultOpen={isSpawnRunning(status) || errorCode === "aborted"}
       >
         <SpawnBudgetBar label={FANOUT_BUDGET_LABEL} status={status} errorCode={errorCode} />
+        {results.length > 0 ? (
+          <div className="mb-2 space-y-2">
+            {results.map((item, index) => {
+              const row = asRecord(item)
+              const goal = typeof asRecord(tasks[index])?.goal === "string"
+                ? String(asRecord(tasks[index])?.goal)
+                : `第 ${index + 1} 路`
+              return (
+                <div key={index} className="rounded-md border border-border/40 px-2 py-1.5">
+                  <p className="mb-1 truncate text-[11px] font-medium">{goal}</p>
+                  <SubagentStepsList steps={row?.steps} />
+                  {typeof row?.summary === "string" ? (
+                    <p className="line-clamp-2 text-[11px] text-muted-foreground">{row.summary}</p>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+        ) : null}
         {usage ? (
           <p className="mb-2 text-[11px] text-muted-foreground">
             {typeof usage.succeeded === "number" && typeof usage.tasks === "number"
@@ -542,6 +651,31 @@ function IntentRouteChips({ data }: { data: unknown }) {
 export const IntentRouteDataUI = makeAssistantDataUI({
   name: "intent-route",
   render: IntentRouteChips,
+})
+
+/** 服务端 data-step-budget → 步数将尽 / 已用尽提示 */
+export const StepBudgetDataUI = makeAssistantDataUI({
+  name: "step-budget",
+  render: ({ data }) => {
+    const payload = asRecord(data)
+    if (!payload) return null
+    const status = payload.status
+    if (status !== "warning" && status !== "exhausted") return null
+    const label = typeof payload.label === "string" && payload.label.trim()
+      ? payload.label.trim()
+      : status === "exhausted"
+        ? "本轮步数已用尽，可继续发消息接着做"
+        : "本轮步数将尽"
+    return (
+      <div
+        className="mb-2 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-2.5 py-2 text-xs text-amber-950/80 dark:text-amber-100/90"
+        role="status"
+      >
+        <Gauge className="mt-0.5 size-3.5 shrink-0 opacity-80" aria-hidden />
+        <span>{label}</span>
+      </div>
+    )
+  },
 })
 
 export function ToolStatusCard({

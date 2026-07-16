@@ -170,6 +170,27 @@ export async function persistAssistantMessage(input: {
         .where(and(eq(assistantThreads.id, input.threadId), eq(assistantThreads.userId, input.userId)))
 }
 
+/**
+ * 编辑重提：按时间序只保留前 keepCount 条消息，删除其后全部（线性截断，无分支）。
+ */
+export async function truncateAssistantThreadMessages(input: {
+    threadId: number
+    keepCount: number
+}): Promise<{ deleted: number }> {
+    const keep = Math.max(0, Math.floor(input.keepCount))
+    const rows = await getDb()
+        .select({ id: assistantMessages.id })
+        .from(assistantMessages)
+        .where(eq(assistantMessages.threadId, input.threadId))
+        .orderBy(asc(assistantMessages.createdAt), asc(assistantMessages.id))
+    const toDelete = rows.slice(keep).map((row) => row.id)
+    if (toDelete.length === 0) return { deleted: 0 }
+    await getDb()
+        .delete(assistantMessages)
+        .where(inArray(assistantMessages.id, toDelete))
+    return { deleted: toDelete.length }
+}
+
 export async function createAssistantRun(input: {
     threadId: number
     modelConfigId: number | null
