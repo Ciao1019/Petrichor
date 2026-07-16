@@ -166,7 +166,7 @@ export function AiReviewPage() {
   const showEmpty = !loading && !review && !generating && !errorMessage
 
   return (
-    <div className="flex w-full flex-col gap-6 px-6 py-6 lg:px-10">
+    <div className="flex w-full flex-col gap-6 px-4 py-6 sm:px-6 lg:px-10">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-3">
           <div className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
@@ -303,7 +303,7 @@ function ReviewReport({
         </section>
 
         {/* 核心统计 */}
-        <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatTile label="新增文章" value={review.stats.newArticles} />
           <StatTile label="修改文章" value={review.stats.updatedArticles} />
           <StatTile label="涉及字数" value={review.stats.totalChars} />
@@ -476,7 +476,7 @@ function ReviewSkeleton() {
       <CardContent className="space-y-6 py-8">
         <Skeleton className="h-8 w-56" />
         <Skeleton className="h-24 w-full" />
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[0, 1, 2, 3].map((index) => (
             <Skeleton key={index} className="h-20 w-full" />
           ))}

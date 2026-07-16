@@ -44,10 +44,18 @@ import {
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { useIsMobile } from "@/hooks/use-mobile"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -116,6 +124,7 @@ const SKIP_DELETE_CONFIRM_KEY = "petrichor:assistant.skipDeleteConfirm"
 const THREAD_PAGE_SIZE = 30
 
 export function AssistantChatPage() {
+  const isMobile = useIsMobile()
   const [threads, setThreads] = React.useState<AssistantThreadSummary[]>([])
   const [threadsLoading, setThreadsLoading] = React.useState(true)
   const [loadingMore, setLoadingMore] = React.useState(false)
@@ -130,7 +139,10 @@ export function AssistantChatPage() {
   const [persistedPlans, setPersistedPlans] = React.useState<AssistantPersistedPlan[]>([])
   const [runtimeSeed, setRuntimeSeed] = React.useState(0)
   const [threadLoading, setThreadLoading] = React.useState(false)
-  const [sidebarOpen, setSidebarOpen] = React.useState(true)
+  // 桌面默认展开；手机默认收起，避免首屏挤占聊天区
+  const [sidebarOpen, setSidebarOpen] = React.useState(() =>
+    typeof window !== "undefined" ? window.innerWidth >= 768 : true,
+  )
   const [threadFilter, setThreadFilter] = React.useState("")
   const [threadFilterCommitted, setThreadFilterCommitted] = React.useState("")
   const [manageMode, setManageMode] = React.useState(false)
@@ -275,8 +287,9 @@ export function AssistantChatPage() {
   }, [])
 
   const hideThreadSidebar = React.useCallback(() => {
-    setSidebarOpen(false)
-  }, [])
+    // 仅手机端自动收起：桌面保持用户手动控制
+    if (isMobile) setSidebarOpen(false)
+  }, [isMobile])
 
   const loadThread = React.useCallback(async (threadId: string) => {
     setThreadLoading(true)
@@ -287,19 +300,21 @@ export function AssistantChatPage() {
       setInitialMessages(toInitialMessages(response.data.messages))
       setPersistedPlans(response.data.plans ?? [])
       setRuntimeSeed((value) => value + 1)
+      if (isMobile) setSidebarOpen(false)
     } catch (error) {
       toast.error(resolveApiErrorMessage(error, "加载对话失败"))
     } finally {
       setThreadLoading(false)
     }
-  }, [])
+  }, [isMobile])
 
   const handleNewThread = React.useCallback(() => {
     setActiveThreadId(null)
     setInitialMessages([])
     setPersistedPlans([])
     setRuntimeSeed((value) => value + 1)
-  }, [])
+    if (isMobile) setSidebarOpen(false)
+  }, [isMobile])
 
   const performDeleteThread = React.useCallback(async (thread: AssistantThreadSummary) => {
     setDeletingThread(true)
@@ -442,10 +457,14 @@ export function AssistantChatPage() {
     })
   }, [allVisibleSelected, visibleThreadIds])
 
-  // GSAP 接管 sidebar 宽度（移除原 transition-[width]）。
+  // GSAP 接管 sidebar 宽度（仅桌面；手机走 Sheet 覆盖层）
   const sidebarRef = React.useRef<HTMLElement | null>(null)
   const sidebarMountedRef = React.useRef(false)
   React.useLayoutEffect(() => {
+    if (isMobile) {
+      sidebarMountedRef.current = false
+      return
+    }
     const el = sidebarRef.current
     if (!el) return
     const targetWidth = sidebarOpen ? "18rem" /* w-72 */ : "0px"
@@ -463,16 +482,10 @@ export function AssistantChatPage() {
     return () => {
       tween.kill()
     }
-  }, [sidebarOpen])
+  }, [sidebarOpen, isMobile])
 
-  return (
-    <div className="relative flex h-[calc(100dvh-3.5rem)] min-h-0 w-full bg-background">
-      {/* Sidebar */}
-      <aside
-        ref={sidebarRef}
-        className="flex h-full shrink-0 flex-col overflow-hidden border-r border-border/60 bg-muted/30 will-change-[width] dark:bg-[#0e0e0e]"
-      >
-        <div className="flex h-full w-72 min-w-72 flex-col overflow-hidden">
+  const threadSidebarBody = (
+        <div className="flex h-full w-full min-w-0 flex-col overflow-hidden md:w-72 md:min-w-72">
           {manageMode ? (
             <div className="flex h-12 shrink-0 items-center justify-between gap-1 px-3">
               <div className="flex min-w-0 items-center gap-2">
@@ -487,7 +500,7 @@ export function AssistantChatPage() {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-7 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+                      className="h-8 px-2 text-[11px] text-muted-foreground hover:text-foreground"
                       onClick={toggleSelectAllVisible}
                       disabled={visibleThreadIds.length === 0}
                     >
@@ -504,7 +517,7 @@ export function AssistantChatPage() {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="size-7 rounded-md text-destructive hover:bg-destructive/10 hover:text-destructive disabled:text-muted-foreground/40"
+                      className="size-8 rounded-md text-destructive hover:bg-destructive/10 hover:text-destructive disabled:text-muted-foreground/40"
                       onClick={() => setConfirmBulkDelete(true)}
                       disabled={selectedCount === 0 || bulkDeleting}
                     >
@@ -520,7 +533,7 @@ export function AssistantChatPage() {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="size-7 rounded-md text-muted-foreground hover:text-foreground"
+                      className="size-8 rounded-md text-muted-foreground hover:text-foreground"
                       onClick={exitManageMode}
                       disabled={bulkDeleting}
                     >
@@ -545,7 +558,7 @@ export function AssistantChatPage() {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="size-7 rounded-md text-muted-foreground hover:text-foreground"
+                      className="size-8 rounded-md text-muted-foreground hover:text-foreground"
                       onClick={handleNewThread}
                     >
                       <MessageSquarePlus className="size-3.5" />
@@ -561,7 +574,7 @@ export function AssistantChatPage() {
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="size-7 rounded-md text-muted-foreground hover:text-foreground"
+                        className="size-8 rounded-md text-muted-foreground hover:text-foreground"
                         onClick={() => setManageMode(true)}
                       >
                         <ListChecks className="size-3.5" />
@@ -577,7 +590,7 @@ export function AssistantChatPage() {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="size-7 rounded-md text-muted-foreground hover:text-foreground"
+                      className="size-8 rounded-md text-muted-foreground hover:text-foreground"
                       onClick={() => setSidebarOpen(false)}
                     >
                       <PanelLeftClose className="size-3.5" />
@@ -598,7 +611,7 @@ export function AssistantChatPage() {
                   value={threadFilter}
                   onChange={(event) => setThreadFilter(event.target.value)}
                   placeholder="搜索对话"
-                  className="h-8 w-full rounded-md border border-transparent bg-background/60 pl-8 pr-2 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 hover:bg-background focus:border-border focus:bg-background"
+                  className="h-9 w-full rounded-md border border-transparent bg-background/60 pl-8 pr-2 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 hover:bg-background focus:border-border focus:bg-background"
                 />
               </div>
             </div>
@@ -638,7 +651,31 @@ export function AssistantChatPage() {
             </div>
           </ScrollArea>
         </div>
-      </aside>
+  )
+
+  return (
+    <div className="relative flex h-[calc(100dvh-3.5rem)] min-h-0 w-full bg-background">
+      {isMobile ? (
+        <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+          <SheetContent
+            side="left"
+            className="w-[min(18rem,85vw)] gap-0 border-r border-border/60 bg-muted/30 p-0 dark:bg-[#0e0e0e] [&>button]:hidden"
+          >
+            <SheetHeader className="sr-only">
+              <SheetTitle>对话历史</SheetTitle>
+              <SheetDescription>选择或管理历史对话</SheetDescription>
+            </SheetHeader>
+            {threadSidebarBody}
+          </SheetContent>
+        </Sheet>
+      ) : (
+        <aside
+          ref={sidebarRef}
+          className="flex h-full shrink-0 flex-col overflow-hidden border-r border-border/60 bg-muted/30 will-change-[width] dark:bg-[#0e0e0e]"
+        >
+          {threadSidebarBody}
+        </aside>
+      )}
 
       {/* Main column */}
       <main className="relative flex min-w-0 flex-1 flex-col bg-[#fdfdfd] dark:bg-[#141414]">
@@ -649,7 +686,7 @@ export function AssistantChatPage() {
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="absolute left-3 top-3 z-10 size-8 rounded-md text-muted-foreground hover:text-foreground"
+                className="absolute left-3 top-3 z-10 size-9 rounded-md text-muted-foreground hover:text-foreground"
                 onClick={() => setSidebarOpen(true)}
               >
                 <PanelLeftOpen className="size-4" />
@@ -983,7 +1020,7 @@ function GrokThread({
 
   return (
     <ThreadPrimitive.Root
-      className="relative flex h-full flex-col items-stretch bg-[#fdfdfd] px-4 dark:bg-[#141414]"
+      className="relative flex h-full flex-col items-stretch bg-[#fdfdfd] px-3 dark:bg-[#141414] md:px-4"
     >
       <AuiIf condition={(s) => s.thread.isEmpty}>
         <div className="flex h-full flex-col items-center justify-center">
@@ -1074,7 +1111,7 @@ function UserMessageBubble() {
           </MessagePrimitive.Parts>
         </div>
       </div>
-      <div className="mt-1 flex h-8 items-center justify-end gap-0.5 opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100">
+      <div className="mt-1 flex h-8 items-center justify-end gap-0.5 opacity-100 transition-opacity md:opacity-0 md:group-focus-within/message:opacity-100 md:group-hover/message:opacity-100">
         <ActionBarPrimitive.Root className="flex items-center gap-0.5">
           <ActionBarPrimitive.Edit className="flex h-8 w-8 items-center justify-center rounded-full text-[#6b6b6b] transition-colors hover:bg-[#e5e5e5] hover:text-[#0d0d0d] dark:text-[#9a9a9a] dark:hover:bg-[#2a2a2a] dark:hover:text-white">
             <Pencil className="size-4" />
@@ -1151,7 +1188,7 @@ function AssistantMessageBubble() {
           </ErrorPrimitive.Root>
         </MessagePrimitive.Error>
       </div>
-      <div className="mt-1 flex h-8 w-full items-center justify-start gap-0.5 opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100">
+      <div className="mt-1 flex h-8 w-full items-center justify-start gap-0.5 opacity-100 transition-opacity md:opacity-0 md:group-focus-within/message:opacity-100 md:group-hover/message:opacity-100">
         <ActionBarPrimitive.Root className="flex items-center gap-0.5">
           <ActionBarPrimitive.Reload className="flex h-8 w-8 items-center justify-center rounded-full text-[#6b6b6b] transition-colors hover:bg-[#e5e5e5] hover:text-[#0d0d0d] dark:text-[#9a9a9a] dark:hover:bg-[#2a2a2a] dark:hover:text-white">
             <RefreshCw className="size-4" />
@@ -1185,7 +1222,7 @@ function MessageTimingDisplay() {
       >
         {totalTimeText}
       </button>
-      <div className="pointer-events-none absolute top-1/2 left-full z-10 ml-2 -translate-y-1/2 scale-95 rounded-lg border border-[#e5e5e5] bg-white px-3 py-2 opacity-0 shadow-lg transition-[transform,opacity] duration-200 before:absolute before:top-0 before:-left-2 before:h-full before:w-2 before:content-[''] group-hover/timing:pointer-events-auto group-hover/timing:scale-100 group-hover/timing:opacity-100 dark:border-[#2a2a2a] dark:bg-[#1a1a1a]">
+      <div className="pointer-events-none absolute top-full right-0 z-10 mt-1 scale-95 rounded-lg border border-[#e5e5e5] bg-white px-3 py-2 opacity-0 shadow-lg transition-[transform,opacity] duration-200 before:absolute before:top-0 before:-left-2 before:hidden before:h-full before:w-2 before:content-[''] group-hover/timing:pointer-events-auto group-hover/timing:scale-100 group-hover/timing:opacity-100 md:top-1/2 md:left-full md:right-auto md:mt-0 md:ml-2 md:-translate-y-1/2 md:before:block dark:border-[#2a2a2a] dark:bg-[#1a1a1a]">
         <div className="grid min-w-[140px] gap-1.5 text-xs">
           {timing.firstTokenTime !== undefined && (
             <div className="flex items-center justify-between gap-4">

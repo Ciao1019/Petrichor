@@ -234,13 +234,13 @@ export function DocumentImportJobsPage() {
   }, [selectedIds, fetchJobs])
 
   return (
-    <div className="flex w-full flex-col gap-6 px-6 py-6 lg:px-10">
-      <div className="flex items-center justify-between gap-4">
+    <div className="flex w-full flex-col gap-6 px-4 py-6 sm:px-6 lg:px-10">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold">文档导入任务</h1>
           <p className="text-sm text-muted-foreground">查看 PDF / Word 导入进度，重试失败页或手动合并文章。</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {selectedIds.length > 0 ? (
             <Button
               variant="destructive"
@@ -268,7 +268,7 @@ export function DocumentImportJobsPage() {
       </div>
 
       <div className="w-full space-y-4">
-        <div className="rounded-md border">
+        <div className="overflow-x-auto rounded-md border">
           <Table>
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (

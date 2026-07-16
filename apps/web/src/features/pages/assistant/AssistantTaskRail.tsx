@@ -234,7 +234,12 @@ export function AssistantTaskRail({
 
   return (
     <aside
-      className="pointer-events-auto absolute top-16 right-3 z-20 w-[220px] rounded-lg border border-[#e5e5e5] bg-white/95 p-3 shadow-sm backdrop-blur-sm dark:border-[#2a2a2a] dark:bg-[#1a1a1a]/95"
+      className={cn(
+        "pointer-events-auto absolute z-20 rounded-lg border border-[#e5e5e5] bg-white/95 p-3 shadow-sm backdrop-blur-sm dark:border-[#2a2a2a] dark:bg-[#1a1a1a]/95",
+        // 手机：通栏窄条 + 可滚动，避免盖住大半聊天区
+        "left-3 right-3 top-14 max-h-[min(40vh,18rem)] w-auto overflow-y-auto",
+        "md:left-auto md:right-3 md:top-16 md:max-h-none md:w-[220px] md:overflow-visible",
+      )}
       aria-label="任务进度"
     >
       <div className="mb-2 flex items-start gap-2">
@@ -247,7 +252,7 @@ export function AssistantTaskRail({
         </div>
         <button
           type="button"
-          className="rounded p-0.5 text-[#9a9a9a] hover:bg-[#f0f0f0] hover:text-[#0d0d0d] dark:hover:bg-[#2a2a2a] dark:hover:text-white"
+          className="flex size-8 shrink-0 items-center justify-center rounded-md text-[#9a9a9a] hover:bg-[#f0f0f0] hover:text-[#0d0d0d] dark:hover:bg-[#2a2a2a] dark:hover:text-white"
           aria-label="关闭任务面板"
           onClick={() => {
             setDismissedId(task.id)
@@ -289,7 +294,7 @@ export function AssistantTaskRail({
               {canScroll ? (
                 <button
                   type="button"
-                  className="-mx-1 flex w-[calc(100%+0.5rem)] items-start gap-2 rounded-md px-1 py-0.5 text-left hover:bg-[#f5f5f5] dark:hover:bg-[#252525]"
+                  className="-mx-1 flex w-[calc(100%+0.5rem)] items-start gap-2 rounded-md px-1 py-1.5 text-left hover:bg-[#f5f5f5] md:py-0.5 dark:hover:bg-[#252525]"
                   onClick={() => {
                     if (task.messageId) scrollQaViewportToMessage(task.messageId)
                   }}
@@ -297,7 +302,7 @@ export function AssistantTaskRail({
                   {content}
                 </button>
               ) : (
-                <div className="flex items-start gap-2">{content}</div>
+                <div className="flex items-start gap-2 py-1 md:py-0">{content}</div>
               )}
             </li>
           )

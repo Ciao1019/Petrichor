@@ -98,11 +98,11 @@ export function AppPagination({
       </p>
 
       {/* 分页控件 */}
-      <div className="flex items-center gap-2">
+      <div className="flex max-w-full items-center gap-2 overflow-x-auto">
         <Pagination className="mx-0 w-auto">
           <PaginationContent className="gap-0.5">
             {/* 首页 */}
-            <PaginationItem>
+            <PaginationItem className="hidden sm:list-item">
               <Button
                 variant="ghost"
                 size="icon"
@@ -166,7 +166,7 @@ export function AppPagination({
             </PaginationItem>
 
             {/* 末页 */}
-            <PaginationItem>
+            <PaginationItem className="hidden sm:list-item">
               <Button
                 variant="ghost"
                 size="icon"
@@ -183,7 +183,7 @@ export function AppPagination({
 
         {/* 跳页 */}
         {shouldShowJump && (
-          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          <div className="hidden items-center gap-1.5 text-sm text-muted-foreground sm:flex">
             <span className="shrink-0">跳至</span>
             <Input
               className="h-8 w-14 px-2 text-center tabular-nums"

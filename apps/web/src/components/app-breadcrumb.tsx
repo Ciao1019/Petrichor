@@ -171,9 +171,9 @@ export function AppBreadcrumb() {
             orientation="vertical"
             className="mr-1 data-[orientation=vertical]:h-4"
           />
-          <Breadcrumb>
-            <BreadcrumbList className="gap-1.5 text-sm">
-              <BreadcrumbItem>
+          <Breadcrumb className="min-w-0 overflow-hidden">
+            <BreadcrumbList className="flex-nowrap gap-1.5 text-sm">
+              <BreadcrumbItem className="shrink-0">
                 <BreadcrumbLink asChild className="flex items-center text-muted-foreground hover:text-foreground transition-colors">
                   <Link to={dashboardRoutes.root}>
                     <HomeIcon className="size-3.5" />
@@ -181,20 +181,30 @@ export function AppBreadcrumb() {
                   </Link>
                 </BreadcrumbLink>
               </BreadcrumbItem>
-              {items.map((item, index) => (
-                <span key={index} className="contents">
-                  <BreadcrumbSeparator className="text-muted-foreground/50" />
-                  <BreadcrumbItem>
-                    {index === items.length - 1 || !item.href ? (
-                      <BreadcrumbPage className="text-foreground font-medium">{item.label}</BreadcrumbPage>
-                    ) : (
-                      <BreadcrumbLink asChild className="text-muted-foreground hover:text-foreground transition-colors">
-                        <Link to={item.href}>{item.label}</Link>
-                      </BreadcrumbLink>
-                    )}
-                  </BreadcrumbItem>
-                </span>
-              ))}
+              {items.map((item, index) => {
+                const isLast = index === items.length - 1
+                // 手机端只保留末级，避免长链路撑破顶栏
+                const hideOnMobile = items.length > 1 && !isLast
+                return (
+                  <span
+                    key={index}
+                    className={hideOnMobile ? "hidden sm:contents" : "contents"}
+                  >
+                    <BreadcrumbSeparator className="shrink-0 text-muted-foreground/50" />
+                    <BreadcrumbItem className="min-w-0">
+                      {isLast || !item.href ? (
+                        <BreadcrumbPage className="block max-w-[42vw] truncate text-foreground font-medium sm:max-w-[min(28rem,40vw)] md:max-w-none">
+                          {item.label}
+                        </BreadcrumbPage>
+                      ) : (
+                        <BreadcrumbLink asChild className="text-muted-foreground hover:text-foreground transition-colors">
+                          <Link to={item.href}>{item.label}</Link>
+                        </BreadcrumbLink>
+                      )}
+                    </BreadcrumbItem>
+                  </span>
+                )
+              })}
             </BreadcrumbList>
           </Breadcrumb>
         </div>

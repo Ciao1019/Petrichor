@@ -1699,8 +1699,8 @@ export function KnowledgeBaseTreePage() {
                 ) : null}
                 <KbDropdownMenu
                   trigger={
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => e.stopPropagation()}>
-                      <MoreHorizontal className="h-3 w-3" />
+                    <Button variant="ghost" size="icon" className="size-9 md:size-6" onClick={(e) => e.stopPropagation()}>
+                      <MoreHorizontal className="size-4 md:size-3" />
                     </Button>
                   }
                   align="end"
@@ -1835,7 +1835,7 @@ export function KnowledgeBaseTreePage() {
 
   return (
     <div className="w-full p-4 lg:p-6">
-      <div className="flex items-start justify-between gap-4 mb-6">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold truncate">
             {knowledgeBase?.name || "知识库"}
@@ -1846,7 +1846,7 @@ export function KnowledgeBaseTreePage() {
             </p>
           ) : null}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" onClick={() => navigate(dashboardRoutes.knowledge)}>
             返回
           </Button>
@@ -1902,7 +1902,7 @@ export function KnowledgeBaseTreePage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="min-w-0 justify-start sm:w-[320px]"
+                  className="min-w-0 w-full justify-start sm:w-[320px]"
                 >
                   <CalendarIcon className="h-4 w-4 shrink-0" />
                   <span className="truncate">{articleCreatedDateLabel}</span>

@@ -141,15 +141,15 @@ export function DocumentImportJobDetailPage() {
   )
 
   return (
-    <div className="flex w-full flex-col gap-6 px-6 py-6 lg:px-10">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="flex w-full flex-col gap-6 px-4 py-6 sm:px-6 lg:px-10">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div className="min-w-0 space-y-1">
           <h1 className="truncate text-2xl font-semibold">{job ? job.title : "任务详情"}</h1>
           <p className="truncate text-sm text-muted-foreground">
             {job ? `${job.sourceType.toUpperCase()} · ${job.fileName}` : "查看导入进度，重试失败页或手动合并文章。"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" onClick={() => loadDetail(true)} disabled={loading}>
             <RefreshCw className={cn("mr-2 size-4", loading && "animate-spin")} />
             刷新
