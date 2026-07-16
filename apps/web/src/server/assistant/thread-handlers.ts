@@ -3,6 +3,7 @@ import { z } from "zod"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { ok, readJson, toErrorResponse } from "@/server/http/response"
 import { assertAssistantFocusOwnership } from "./focus-guard"
+import { patchAssistantPlanTodo } from "./plan-store"
 import {
     assistantFocusSchema,
     assistantIdSchema,
@@ -23,6 +24,13 @@ const threadIdInputSchema = z.object({
 const threadCreateInputSchema = z.object({
     title: z.string().trim().max(120).optional().nullable(),
     focus: assistantFocusSchema.optional().nullable(),
+})
+
+const planTodoPatchSchema = z.object({
+    threadId: assistantIdSchema,
+    planId: z.string().trim().min(1).max(120),
+    todoId: z.string().trim().min(1).max(120),
+    status: z.enum(["pending", "in_progress", "completed", "cancelled"]),
 })
 
 export async function assistantThreadList(request: NextRequest) {
@@ -82,6 +90,23 @@ export async function assistantThreadDeleteMany(request: NextRequest) {
         const user = await requireCurrentUser(request)
         const input = assistantThreadDeleteManySchema.parse(await readJson(request))
         return ok(await softDeleteAssistantThreads(user.id, input.threadIds))
+    } catch (error) {
+        return toErrorResponse(error, request.nextUrl.pathname)
+    }
+}
+
+export async function assistantPlanTodoPatch(request: NextRequest) {
+    try {
+        const user = await requireCurrentUser(request)
+        const input = planTodoPatchSchema.parse(await readJson(request))
+        const plan = await patchAssistantPlanTodo({
+            userId: user.id,
+            threadId: input.threadId,
+            planId: input.planId,
+            todoId: input.todoId,
+            status: input.status,
+        })
+        return ok({ plan })
     } catch (error) {
         return toErrorResponse(error, request.nextUrl.pathname)
     }

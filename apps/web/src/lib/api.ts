@@ -1899,4 +1899,10 @@ export const assistantApi = {
     api.post<{ ok: true }>("/assistant/thread/delete", { threadId }),
   threadDeleteMany: (threadIds: string[]) =>
     api.post<{ deleted: number }>("/assistant/thread/delete-many", { threadIds }),
+  planTodoPatch: (data: {
+    threadId: string
+    planId: string
+    todoId: string
+    status: "pending" | "in_progress" | "completed" | "cancelled"
+  }) => api.post<{ plan: AssistantPersistedPlan }>("/assistant/plan/patch", data),
 }
