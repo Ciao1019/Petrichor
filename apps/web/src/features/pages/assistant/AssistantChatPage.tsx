@@ -5,8 +5,12 @@ import {
   ActionBarPrimitive,
   AssistantRuntimeProvider,
   AuiIf,
+  ComposerPrimitive,
+  CompositeAttachmentAdapter,
   ErrorPrimitive,
   MessagePrimitive,
+  SimpleImageAttachmentAdapter,
+  SimpleTextAttachmentAdapter,
   SuggestionPrimitive,
   ThreadPrimitive,
   useAuiState,
@@ -34,6 +38,8 @@ import {
 import { toast } from "sonner"
 
 import { MarkdownText } from "@/components/assistant-ui/markdown-text"
+import { UserMessageAttachments } from "@/components/assistant-ui/attachment"
+import { Button } from "@/components/ui/button"
 import { QaMarkdownScope, QaMarkdownText, QaPreparing } from "@/features/pages/knowledge/QaMarkdown"
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback"
 import { AssistantTaskRail, TASK_TOOL_NAMES } from "@/features/pages/assistant/AssistantTaskRail"
@@ -41,7 +47,6 @@ import {
   SearchDocumentsToolUI,
   SearchKnowledgeToolUI,
 } from "@/features/pages/assistant/search-tool-ui"
-import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Sheet,
@@ -110,6 +115,7 @@ import {
   ListSystemOverviewToolUI,
   LoadingRows,
   PlanToolUI,
+  PreviewArticleUpdateToolUI,
   ProgressToolUI,
   ReadDocumentToolUI,
   ReadKnowledgeToolUI,
@@ -117,6 +123,7 @@ import {
   SpawnResearchFanoutToolUI,
   SpawnResearchSubagentToolUI,
   SpawnWriteSubagentToolUI,
+  StepBudgetDataUI,
 } from "./assistant-tool-renders"
 
 const CHAT_THREAD_HEADER = "X-Petrichor-Assistant-Thread-Id"
@@ -713,6 +720,12 @@ export function AssistantChatPage() {
             persistedPlans={persistedPlans}
             onThreadKnown={handleThreadKnown}
             onStreamSettled={onStreamSettled}
+            onPlanPatched={(plan) => {
+              setPersistedPlans((prev) => {
+                const next = prev.filter((item) => item.id !== plan.id)
+                return [plan, ...next]
+              })
+            }}
             scopeName={activeFocusName}
             knowledgeBases={knowledgeBases}
             docLibraries={docLibraries}
@@ -830,6 +843,7 @@ function QaChatPanel({
   persistedPlans,
   onThreadKnown,
   onStreamSettled,
+  onPlanPatched,
   scopeName,
   knowledgeBases,
   docLibraries,
@@ -845,6 +859,7 @@ function QaChatPanel({
   persistedPlans: AssistantPersistedPlan[]
   onThreadKnown: (threadId: string) => void
   onStreamSettled: () => void | Promise<void>
+  onPlanPatched?: (plan: AssistantPersistedPlan) => void
   scopeName: string | null
   knowledgeBases: KnowledgeBaseQaSummary[]
   docLibraries: DocLibrary[]
@@ -931,6 +946,12 @@ function QaChatPanel({
     messages: initialMessages,
     transport,
     suggestions,
+    adapters: {
+      attachments: new CompositeAttachmentAdapter([
+        new SimpleImageAttachmentAdapter(),
+        new SimpleTextAttachmentAdapter(),
+      ]),
+    },
     onFinish: () => {
       void onStreamSettled()
     },
@@ -946,6 +967,7 @@ function QaChatPanel({
       <SpawnWriteSubagentToolUI />
       <ContextCompressDataUI />
       <IntentRouteDataUI />
+      <StepBudgetDataUI />
       <CitationToolUI />
       <DataTableToolUI />
       <ListSystemOverviewToolUI />
@@ -956,6 +978,7 @@ function QaChatPanel({
       <ReadKnowledgeToolUI />
       <ReadDocumentToolUI />
       <SaveArtifactToolUI />
+      <PreviewArticleUpdateToolUI />
       <QaMarkdownScope>
       <div className="h-full min-h-0">
         <GrokThread
@@ -969,6 +992,8 @@ function QaChatPanel({
           onConfigChange={onConfigChange}
           onComposerFocus={onComposerFocus}
           persistedPlans={persistedPlans}
+          threadId={threadId}
+          onPlanPatched={onPlanPatched}
         />
       </div>
       </QaMarkdownScope>
@@ -987,6 +1012,8 @@ function GrokThread({
   onConfigChange,
   onComposerFocus,
   persistedPlans,
+  threadId,
+  onPlanPatched,
 }: {
   scopeName: string | null
   focusSelection: AssistantFocusSelection
@@ -998,6 +1025,8 @@ function GrokThread({
   onConfigChange: (next: string) => void
   onComposerFocus?: () => void
   persistedPlans: AssistantPersistedPlan[]
+  threadId: string | null
+  onPlanPatched?: (plan: AssistantPersistedPlan) => void
 }) {
   const isUnscoped = focusSelection.kind === "none"
   const scopeLabel =
@@ -1035,7 +1064,11 @@ function GrokThread({
             {() => <ChatMessage />}
           </ThreadPrimitive.Messages>
         </ThreadPrimitive.Viewport>
-        <AssistantTaskRail persistedPlans={persistedPlans} />
+        <AssistantTaskRail
+          persistedPlans={persistedPlans}
+          threadId={threadId}
+          onPlanPatched={onPlanPatched}
+        />
         <QaThreadToc />
         <GrokComposer placeholder={isUnscoped ? "继续提问..." : `继续在「${scopeLabel}」里提问...`} {...composerProps} />
         <p className="mx-auto w-full max-w-3xl pb-2 text-center text-[#9a9a9a] text-xs">
@@ -1073,15 +1106,41 @@ function SuggestionChip() {
 function ChatMessage() {
   // data-qa-msg-id 是对话大纲（QaThreadToc）定位/滚动的 DOM 锚点
   const messageId = useAuiState((s) => s.message.id)
+  const role = useAuiState((s) => s.message.role)
+  const isEditing = useAuiState((s) => s.message.composer.isEditing)
+  if (isEditing) {
+    return (
+      <MessagePrimitive.Root data-qa-msg-id={messageId} className="group/message relative mx-auto mb-2 flex w-full max-w-3xl flex-col pb-0.5">
+        <EditUserMessageComposer />
+      </MessagePrimitive.Root>
+    )
+  }
   return (
     <MessagePrimitive.Root data-qa-msg-id={messageId} className="group/message relative mx-auto mb-2 flex w-full max-w-3xl flex-col pb-0.5">
-      <AuiIf condition={(s) => s.message.role === "user"}>
-        <UserMessageBubble />
-      </AuiIf>
-      <AuiIf condition={(s) => s.message.role === "assistant"}>
-        <AssistantMessageBubble />
-      </AuiIf>
+      {role === "user" ? <UserMessageBubble /> : null}
+      {role === "assistant" ? <AssistantMessageBubble /> : null}
     </MessagePrimitive.Root>
+  )
+}
+
+function EditUserMessageComposer() {
+  return (
+    <div className="ml-auto flex w-full max-w-[90%] flex-col">
+      <ComposerPrimitive.Root className="rounded-3xl border border-[#e5e5e5] bg-[#f0f0f0] dark:border-[#2a2a2a] dark:bg-[#1a1a1a]">
+        <ComposerPrimitive.Input
+          className="min-h-14 w-full resize-none bg-transparent px-4 py-3 text-sm text-[#0d0d0d] outline-none dark:text-white"
+          autoFocus
+        />
+        <div className="mb-3 mr-3 flex items-center justify-end gap-2">
+          <ComposerPrimitive.Cancel asChild>
+            <Button type="button" variant="ghost" size="sm">取消</Button>
+          </ComposerPrimitive.Cancel>
+          <ComposerPrimitive.Send asChild>
+            <Button type="button" size="sm">更新并重跑</Button>
+          </ComposerPrimitive.Send>
+        </div>
+      </ComposerPrimitive.Root>
+    </div>
   )
 }
 
@@ -1101,6 +1160,7 @@ type QaTocItem = { id: string; level: number; text: string }
 function UserMessageBubble() {
   return (
     <div className="flex flex-col items-end">
+      <UserMessageAttachments />
       <div className="relative max-w-[90%] rounded-3xl rounded-br-lg border border-[#e5e5e5] bg-[#f0f0f0] px-4 py-3 text-[#0d0d0d] dark:border-[#2a2a2a] dark:bg-[#1a1a1a] dark:text-white">
         <div className="prose prose-sm dark:prose-invert wrap-break-word prose-p:my-0">
           <MessagePrimitive.Parts>

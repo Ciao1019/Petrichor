@@ -12,7 +12,6 @@ import {
   FileText,
   Globe2,
   Library,
-  Mic,
   Square,
 } from "lucide-react"
 
@@ -51,6 +50,10 @@ import {
   type AssistantFocusSelection,
   formatContextWindow,
 } from "./assistant-message-utils"
+import {
+  ComposerAddAttachment,
+  ComposerAttachments,
+} from "@/components/assistant-ui/attachment"
 
 export function GrokComposer({
   placeholder,
@@ -87,60 +90,54 @@ export function GrokComposer({
       data-running={isRunning}
     >
       <div className="overflow-hidden rounded-[28px] bg-[#f8f8f8] shadow-xs ring-1 ring-[#e5e5e5] ring-inset transition-shadow focus-within:ring-[#d0d0d0] dark:bg-[#212121] dark:ring-[#2a2a2a] dark:focus-within:ring-[#3a3a3a]">
-        <div className="flex items-end gap-1 p-2">
-          <ComposerPrimitive.Input
-            id="kb-qa-composer-input"
-            name="message"
-            placeholder={placeholder}
-            minRows={1}
-            onFocus={onComposerFocus}
-            className="my-2 ml-2 h-6 max-h-100 min-w-0 flex-1 resize-none bg-transparent text-[#0d0d0d] text-base leading-6 outline-none placeholder:text-[#9a9a9a] dark:text-white dark:placeholder:text-[#6b6b6b]"
-          />
-
-          <InlineScopeSelector
-            knowledgeBases={knowledgeBases}
-            docLibraries={docLibraries}
-            value={focusSelection}
-            onChange={onFocusChange}
-            scopeLabel={scopeLabel}
-            isEmpty={isEmpty}
-          />
-
-          <div className="relative mb-0.5 h-9 w-9 shrink-0 rounded-full bg-[#0d0d0d] text-white dark:bg-white dark:text-[#0d0d0d]">
-            {/* GSAP 接管 transform+opacity，替代原 transition-all duration-300 */}
-            <GsapFade
-              visible={isEmpty && !isRunning}
-              className="absolute inset-0"
-            >
-              <button
-                type="button"
-                className="flex h-full w-full items-center justify-center"
-                aria-label="语音模式"
-                tabIndex={-1}
-              >
-                <Mic className="size-[18px]" />
-              </button>
-            </GsapFade>
-
-            <GsapFade
-              visible={!isEmpty && !isRunning}
-              className="absolute inset-0"
-            >
-              <ComposerPrimitive.Send className="flex h-full w-full items-center justify-center">
-                <ArrowUp className="size-[18px]" />
-              </ComposerPrimitive.Send>
-            </GsapFade>
-
-            <GsapFade
-              visible={isRunning}
-              className="absolute inset-0"
-            >
-              <ComposerPrimitive.Cancel className="flex h-full w-full items-center justify-center">
-                <Square className="size-3.5 fill-current" />
-              </ComposerPrimitive.Cancel>
-            </GsapFade>
+        <ComposerPrimitive.AttachmentDropzone className="block">
+          <div className="px-3 pt-2 empty:hidden">
+            <ComposerAttachments />
           </div>
-        </div>
+          <div className="flex items-end gap-1 p-2">
+            <ComposerAddAttachment />
+            <ComposerPrimitive.Input
+              id="kb-qa-composer-input"
+              name="message"
+              placeholder={placeholder}
+              minRows={1}
+              onFocus={onComposerFocus}
+              className="my-2 ml-1 h-6 max-h-100 min-w-0 flex-1 resize-none bg-transparent text-[#0d0d0d] text-base leading-6 outline-none placeholder:text-[#9a9a9a] dark:text-white dark:placeholder:text-[#6b6b6b]"
+            />
+
+            <InlineScopeSelector
+              knowledgeBases={knowledgeBases}
+              docLibraries={docLibraries}
+              value={focusSelection}
+              onChange={onFocusChange}
+              scopeLabel={scopeLabel}
+              isEmpty={isEmpty}
+            />
+
+            <div className="relative mb-0.5 h-9 w-9 shrink-0 rounded-full bg-[#0d0d0d] text-white dark:bg-white dark:text-[#0d0d0d]">
+              <GsapFade
+                visible={!isRunning}
+                className="absolute inset-0"
+              >
+                <ComposerPrimitive.Send
+                  className="flex h-full w-full items-center justify-center disabled:opacity-40"
+                  disabled={isEmpty}
+                >
+                  <ArrowUp className="size-[18px]" />
+                </ComposerPrimitive.Send>
+              </GsapFade>
+
+              <GsapFade
+                visible={isRunning}
+                className="absolute inset-0"
+              >
+                <ComposerPrimitive.Cancel className="flex h-full w-full items-center justify-center">
+                  <Square className="size-3.5 fill-current" />
+                </ComposerPrimitive.Cancel>
+              </GsapFade>
+            </div>
+          </div>
+        </ComposerPrimitive.AttachmentDropzone>
       </div>
       {contextWindow ? (
         <div className="mx-2 mt-1.5 flex min-h-6 items-center justify-between gap-3 text-[11px] leading-none text-[#9a9a9a] dark:text-[#6b6b6b]">
