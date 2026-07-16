@@ -82,7 +82,7 @@ export function AgentCallLogsPage() {
   }, [filteredLogs, currentPage])
 
   return (
-    <div className="flex w-full flex-col gap-6 px-6 py-6 lg:px-10">
+    <div className="flex w-full flex-col gap-6 px-4 py-6 sm:px-6 lg:px-10">
       <AgentPageHeader
         icon={FileText}
         title="外部调用日志"
@@ -287,7 +287,7 @@ function CallLogDetailDialog({
             </div>
 
             <div className="flex-1 overflow-y-auto px-6 py-5">
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <MetricTile icon={Clock} label="耗时" value={`${log.durationMs}ms`} />
                 <MetricTile icon={KeyRound} label="API Key" value={log.apiKeyPrefix} mono />
                 <MetricTile icon={Network} label="IP" value={log.ip || "-"} mono />

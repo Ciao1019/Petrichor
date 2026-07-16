@@ -82,7 +82,7 @@ export function GrokComposer({
 
   return (
     <ComposerPrimitive.Root
-      className="group/composer mx-auto mb-3 w-full max-w-3xl"
+      className="group/composer mx-auto mb-3 w-full max-w-3xl max-md:mb-[max(0.75rem,env(safe-area-inset-bottom))]"
       data-empty={isEmpty}
       data-running={isRunning}
     >
@@ -261,7 +261,7 @@ export function InlineScopeSelector({
           <ChevronDown className="size-4 shrink-0" />
         </div>
       </PopoverTrigger>
-      <PopoverContent align="end" side="top" sideOffset={8} className="w-[320px] p-0">
+      <PopoverContent align="end" side="top" sideOffset={8} className="w-[min(320px,calc(100vw-2rem))] p-0">
         <Command>
           <CommandInput placeholder="搜索知识库或文档库..." />
           <CommandList>
@@ -361,7 +361,7 @@ export function BottomModelSelector({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-      <DropdownMenuContent align="start" side="bottom" sideOffset={6} className="min-w-[220px] p-1">
+      <DropdownMenuContent align="start" side="bottom" sideOffset={6} className="min-w-[min(220px,calc(100vw-2rem))] p-1">
         {availableModels.map((option) => {
           const active = option.configId === selectedConfigId
           const ctx = formatContextWindow(option.contextWindow)

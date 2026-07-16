@@ -686,10 +686,10 @@ export function DocLibraryBrowsePage() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-6 w-6"
+                  className="size-9 md:size-6"
                   onClick={(event) => event.stopPropagation()}
                 >
-                  <MoreHorizontal className="h-3 w-3" />
+                  <MoreHorizontal className="size-4 md:size-3" />
                 </Button>
               }
               align="end"
@@ -769,7 +769,7 @@ export function DocLibraryBrowsePage() {
 
   return (
     <div className="w-full p-4 lg:p-6">
-      <div className="mb-6 flex items-start justify-between gap-4">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="truncate text-2xl font-semibold">
             {library?.name || "文档库"}
@@ -783,7 +783,7 @@ export function DocLibraryBrowsePage() {
             {folders.length} 个文件夹 · {documents.length} 个文件
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" onClick={() => navigate(dashboardRoutes.docLibrary)}>
             返回
           </Button>

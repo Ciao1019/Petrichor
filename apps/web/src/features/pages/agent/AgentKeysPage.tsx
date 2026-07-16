@@ -85,7 +85,7 @@ export function AgentKeysPage() {
   }
 
   return (
-    <div className="flex w-full flex-col gap-6 px-6 py-6 lg:px-10">
+    <div className="flex w-full flex-col gap-6 px-4 py-6 sm:px-6 lg:px-10">
       <AgentPageHeader
         icon={KeyRound}
         title="API Key 管理"

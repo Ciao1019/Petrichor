@@ -5,6 +5,7 @@ import { useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import type { DateRange } from 'react-day-picker'
 
+import { useIsMobile } from '@/hooks/use-mobile'
 import { cn } from '@/lib/utils'
 
 import { MonthPanel } from './calendar-04-month-panel'
@@ -34,11 +35,13 @@ export type Calendar04Props = {
 export function Calendar04({
   value,
   onChange,
-  numberOfMonths = 2,
+  numberOfMonths,
   className,
   sound = true,
   showRangeLabel = true
 }: Calendar04Props) {
+  const isMobile = useIsMobile()
+  const months = numberOfMonths ?? (isMobile ? 1 : 2)
   const [baseCursor, setBaseCursor] = useState<MonthCursor>(() => {
     const from = value?.from ? normalizeDay(value.from) : new Date()
     return { year: from.getFullYear(), month: from.getMonth() }
@@ -76,8 +79,8 @@ export function Calendar04({
   }
 
   return (
-    <div className={cn('w-fit overflow-hidden rounded-[20px] border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950', className)}>
-      <div className="flex items-center justify-between px-6 py-4">
+    <div className={cn('w-fit max-w-[calc(100vw-2rem)] overflow-hidden rounded-[20px] border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950', className)}>
+      <div className="flex items-center justify-between px-4 py-4 sm:px-6">
         <motion.button
           whileTap={{ scale: 0.85 }}
           onClick={() => handleNavigate(-1)}
@@ -97,7 +100,7 @@ export function Calendar04({
         </motion.button>
       </div>
 
-      <div className="px-6 pb-4">
+      <div className="px-4 pb-4 sm:px-6">
         <AnimatePresence initial={false} mode="wait">
           <motion.div
             key={`${baseCursor.year}-${baseCursor.month}`}
@@ -108,7 +111,7 @@ export function Calendar04({
             className="flex gap-6"
           >
             <MonthPanel cursor={baseCursor} range={effectiveRange} todayKey={todayKey} hoverKey={hoverKey} onHover={setHoverKey} onPick={handlePick} />
-            {numberOfMonths > 1 ? (
+            {months > 1 ? (
               <MonthPanel cursor={secondCursor} range={effectiveRange} todayKey={todayKey} hoverKey={hoverKey} onHover={setHoverKey} onPick={handlePick} />
             ) : null}
           </motion.div>

@@ -334,7 +334,7 @@ export function KnowledgeWikiPage() {
   )
 
   return (
-    <div className="flex w-full flex-col gap-6 px-6 py-6 lg:px-10">
+    <div className="flex w-full flex-col gap-6 px-4 py-6 sm:px-6 lg:px-10">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold">知识 Wiki</h1>
@@ -448,7 +448,7 @@ export function KnowledgeWikiPage() {
                           {patch.operation === "CREATE" ? "新建" : "更新"}
                         </Badge>
                       </div>
-                      <div className="flex shrink-0 items-center gap-2">
+                      <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
                         <Button size="sm" variant="ghost" onClick={() => setActivePatch(patch)}>
                           <Eye className="mr-1 size-4" />
                           查看差异
@@ -497,6 +497,7 @@ export function KnowledgeWikiPage() {
                 还没有 Wiki 页面。点右上角「重新生成 Wiki」从知识库文章构建索引。
               </div>
             ) : (
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
@@ -533,6 +534,7 @@ export function KnowledgeWikiPage() {
                   ))}
                 </TableBody>
               </Table>
+              </div>
             )}
             {pages.length > PAGE_SIZE ? (
               <div className="border-t px-4 py-3">

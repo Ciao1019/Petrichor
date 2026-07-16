@@ -613,7 +613,7 @@ export function AiModelConfigPage() {
   }, [keywordInput])
 
   return (
-    <div className="flex w-full flex-col gap-6 px-6 py-6 lg:px-10">
+    <div className="flex w-full flex-col gap-6 px-4 py-6 sm:px-6 lg:px-10">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
@@ -624,27 +624,29 @@ export function AiModelConfigPage() {
             {configTypeLabel(activeType)}：{buildTypeSummary(activeType)}
           </p>
         </div>
-        <Button onClick={openCreate} className="shrink-0">
+        <Button onClick={openCreate} className="w-full shrink-0 sm:w-auto">
           新建配置
         </Button>
       </div>
 
-      <div className="inline-flex w-fit items-center gap-1 rounded-lg border bg-muted/40 p-1">
-        {CONFIG_TYPE_TABS.map((tab) => (
-          <button
-            key={tab.value}
-            type="button"
-            onClick={() => switchActiveType(tab.value)}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-              activeType === tab.value
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="w-full max-w-full overflow-x-auto">
+        <div className="inline-flex min-w-max items-center gap-1 rounded-lg border bg-muted/40 p-1">
+          {CONFIG_TYPE_TABS.map((tab) => (
+            <button
+              key={tab.value}
+              type="button"
+              onClick={() => switchActiveType(tab.value)}
+              className={cn(
+                "shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                activeType === tab.value
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
         <div>
@@ -747,12 +749,12 @@ export function AiModelConfigPage() {
 
           <div
             className={cn(
-              "rounded-2xl border border-neutral-500/10 dark:border-white/10",
+              "overflow-x-auto rounded-2xl border border-neutral-500/10 dark:border-white/10",
               "dark:shadow-[2px_4px_16px_0px_rgba(248,248,248,0.06)_inset]",
               "bg-gray-50 dark:bg-neutral-800/80",
             )}
           >
-            <Table className="table-fixed">
+            <Table className="table-fixed min-w-[1100px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[200px]">名称</TableHead>
@@ -1057,7 +1059,7 @@ export function AiModelConfigPage() {
             {buildTypeSummary(activeType)}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>协议类型</Label>
               <Select value={protocol} onValueChange={(v) => setProtocol(v as AiProtocol)}>
