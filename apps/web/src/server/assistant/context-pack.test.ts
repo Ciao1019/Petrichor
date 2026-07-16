@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
     buildFoldableTranscript,
     buildInstructionsWithContextSummary,
+    compactToolParts,
     estimateMessageTokens,
     resolveRecentWindowPolicy,
     shouldRefreshContextSummary,
@@ -77,6 +78,38 @@ describe("context-pack", () => {
         expect(text).toContain("全部歌曲下载进度")
         expect(text).toContain("在 AI 库")
         expect(estimateMessageTokens([{ a: "x".repeat(100) }])).toBeGreaterThan(10)
+    })
+
+    it("compactToolParts 折叠较早轮次的 tool output", () => {
+        const messages = [
+            {
+                role: "user",
+                parts: [{ type: "text", text: "旧问" }],
+            },
+            {
+                role: "assistant",
+                parts: [{
+                    type: "tool-search_knowledge",
+                    toolName: "search_knowledge",
+                    output: { ok: true, articleId: "9", hits: Array.from({ length: 20 }, (_, i) => ({ i })) },
+                }],
+            },
+            { role: "user", parts: [{ type: "text", text: "新问" }] },
+            {
+                role: "assistant",
+                parts: [{
+                    type: "tool-search_knowledge",
+                    toolName: "search_knowledge",
+                    output: { ok: true, articleId: "3", hits: [1, 2, 3] },
+                }],
+            },
+        ]
+        const compacted = compactToolParts(messages, { keepRecentTurns: 1 })
+        const oldOutput = (compacted[1] as { parts: Array<{ output: Record<string, unknown> }> }).parts[0]?.output
+        const newOutput = (compacted[3] as { parts: Array<{ output: Record<string, unknown> }> }).parts[0]?.output
+        expect(oldOutput?.summary).toContain("articleId=9")
+        expect(oldOutput?.hits).toBeUndefined()
+        expect(newOutput?.hits).toEqual([1, 2, 3])
     })
 })
 

@@ -115,6 +115,91 @@ export function splitRecentMessages<T>(messages: T[], recentCount = CONTEXT_RECE
     }
 }
 
+/** 从后往前数 keepRecentTurns 个 user 轮次，更早的消息做 tool result 折叠 */
+export function findToolCompactCutoff(messages: unknown[], keepRecentTurns = 2): number {
+    const keep = Math.max(1, keepRecentTurns)
+    let userTurns = 0
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const message = messages[index]
+        if (!message || typeof message !== "object") continue
+        if ((message as { role?: unknown }).role !== "user") continue
+        userTurns += 1
+        if (userTurns >= keep) return index
+    }
+    return 0
+}
+
+function asMessageRecord(value: unknown): Record<string, unknown> | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null
+    return value as Record<string, unknown>
+}
+
+function readPartToolName(part: Record<string, unknown>): string {
+    if (typeof part.toolName === "string") return part.toolName
+    if (typeof part.type === "string" && part.type.startsWith("tool-") && part.type !== "tool-call" && part.type !== "tool-invocation") {
+        return part.type.slice("tool-".length)
+    }
+    return ""
+}
+
+function summarizeCompactToolOutput(toolName: string, output: unknown): Record<string, unknown> {
+    if (!output || typeof output !== "object" || Array.isArray(output)) {
+        return { toolName, ok: false, summary: "compacted" }
+    }
+    const record = output as Record<string, unknown>
+    const ok = record.ok !== false && record.error == null && record.errorCode == null
+    const idKeys = [
+        "id", "articleId", "documentId", "knowledgeBaseId", "libraryId",
+        "confirmationId", "planId", "shareId", "configId",
+    ]
+    const ids: string[] = []
+    for (const key of idKeys) {
+        const value = record[key]
+        if (value != null && (typeof value === "string" || typeof value === "number")) {
+            ids.push(`${key}=${value}`)
+        }
+    }
+    const message = typeof record.message === "string"
+        ? record.message.slice(0, 120)
+        : typeof record.error === "string"
+            ? record.error.slice(0, 120)
+            : null
+    return {
+        toolName,
+        ok,
+        ...(typeof record.errorCode === "string" ? { errorCode: record.errorCode } : {}),
+        summary: ids.length > 0 ? ids.join(", ") : (message ?? "compacted"),
+    }
+}
+
+/**
+ * 压缩较早轮次的 tool result：保留最近 keepRecentTurns 轮全文，更早的只留短摘要。
+ */
+export function compactToolParts<T>(messages: T[], options?: { keepRecentTurns?: number }): T[] {
+    if (messages.length === 0) return messages
+    const cutoff = findToolCompactCutoff(messages, options?.keepRecentTurns ?? 2)
+    if (cutoff <= 0) return messages
+
+    return messages.map((message, index) => {
+        if (index >= cutoff) return message
+        const record = asMessageRecord(message)
+        if (!record || !Array.isArray(record.parts)) return message
+        const parts = record.parts.map((rawPart) => {
+            const part = asMessageRecord(rawPart)
+            if (!part) return rawPart
+            const type = typeof part.type === "string" ? part.type : ""
+            const isToolPart = type.startsWith("tool-") || type === "dynamic-tool"
+            if (!isToolPart) return rawPart
+            const toolName = readPartToolName(part) || "tool"
+            const next = { ...part }
+            if ("output" in next) next.output = summarizeCompactToolOutput(toolName, next.output)
+            if ("result" in next) next.result = summarizeCompactToolOutput(toolName, next.result)
+            return next
+        })
+        return { ...record, parts } as T
+    })
+}
+
 export function buildFoldableTranscript(messages: unknown[]): string {
     return messages
         .map(extractMessagePlainText)
@@ -180,13 +265,16 @@ export async function buildContextPack(input: {
     tokenBudget: number
     configId?: number | null
     signal?: AbortSignal
+    /** 确认 resume 等场景跳过摘要刷新，仍做窗口切分与 tool 压缩 */
+    skipRefresh?: boolean
     onCompressStart?: () => void
 }): Promise<ContextPack> {
+    const compactedMessages = compactToolParts(input.messages, { keepRecentTurns: 2 })
     const windowPolicy = resolveRecentWindowPolicy({
-        messages: input.messages,
+        messages: compactedMessages,
         tokenBudget: input.tokenBudget,
     })
-    const { foldable, recent } = splitRecentMessages(input.messages, windowPolicy.recentCount)
+    const { foldable, recent } = splitRecentMessages(compactedMessages, windowPolicy.recentCount)
     const [thread] = await getDb()
         .select()
         .from(assistantThreads)
@@ -199,17 +287,19 @@ export async function buildContextPack(input: {
 
     const existingSummary = thread?.contextSummaryMd?.trim() || null
     const persistedCount = await countThreadMessages(input.threadId)
-    const needsRefresh = shouldRefreshContextSummary({
-        messages: input.messages,
-        tokenBudget: input.tokenBudget,
-        persistedMessageCount: persistedCount,
-        recentCount: windowPolicy.recentCount,
-    }) && foldable.length > 0
+    const needsRefresh = !input.skipRefresh
+        && shouldRefreshContextSummary({
+            messages: compactedMessages,
+            tokenBudget: input.tokenBudget,
+            persistedMessageCount: persistedCount,
+            recentCount: windowPolicy.recentCount,
+        })
+        && foldable.length > 0
 
     const recalledSnippets = await maybeRecallSnippets({
         userId: input.userId,
         threadId: input.threadId,
-        messages: input.messages,
+        messages: compactedMessages,
         recentCount: windowPolicy.recentCount,
         persistedCount,
     })
@@ -217,9 +307,9 @@ export async function buildContextPack(input: {
     if (!needsRefresh) {
         return {
             summaryMd: existingSummary,
-            recentMessages: existingSummary ? recent as UIMessage[] : input.messages,
+            recentMessages: existingSummary ? recent as UIMessage[] : compactedMessages as UIMessage[],
             compressedMessageCount: existingSummary
-                ? Math.max(0, input.messages.length - recent.length)
+                ? Math.max(0, compactedMessages.length - recent.length)
                 : 0,
             refreshed: false,
             status: "skipped",
@@ -265,9 +355,9 @@ export async function buildContextPack(input: {
     } catch {
         return {
             summaryMd: existingSummary,
-            recentMessages: existingSummary ? recent as UIMessage[] : input.messages,
+            recentMessages: existingSummary ? recent as UIMessage[] : compactedMessages as UIMessage[],
             compressedMessageCount: existingSummary
-                ? Math.max(0, input.messages.length - recent.length)
+                ? Math.max(0, compactedMessages.length - recent.length)
                 : 0,
             refreshed: false,
             status: "failed",
@@ -353,7 +443,8 @@ async function summarizeContextWithTimeout(input: {
         userId: input.userId,
         configId: input.configId,
         systemPrompt: [
-            "你是对话上下文压缩器。把较早的多轮对话压成简洁中文摘要，保留：用户目标、已确认事实、未决任务、关键实体 ID/路径。",
+            "你是对话上下文压缩器。把较早的多轮对话压成简洁中文摘要，保留：用户目标、已确认事实、未决任务、关键实体 ID/路径（如 articleId、knowledgeBaseId、documentId）。",
+            "工具结果若已折叠，优先保留其中的 id 与错误码。",
             "不要编造；不要输出 API Key、Cookie、密码；不要使用 Markdown 标题堆砌。",
             "只输出摘要正文。",
         ].join(""),

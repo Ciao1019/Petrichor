@@ -107,7 +107,7 @@ describe("confirmation protocol", () => {
                 result: { confirmed: true, confirmationId: "c1" },
             }],
         }]
-        expect(findPendingConfirmationExecution(messages)).toEqual({ confirmationId: "c1" })
+        expect(findPendingConfirmationExecution(messages)).toEqual({ confirmationId: "c1", allowForThread: false })
         const patched = patchConfirmationExecutionOutcome(messages, "c1", { deleted: true })
         expect(findPendingConfirmationExecution(patched)).toBeNull()
     })

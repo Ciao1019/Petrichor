@@ -835,6 +835,8 @@ export const assistantThreads = pgTable("petrichor_assistant_thread", {
     contextSummaryMd: text("context_summary_md"),
     contextSummaryUntilMessageId: bigint("context_summary_until_message_id", { mode: "number" }),
     contextSummaryUpdatedAt: timestamp("context_summary_updated_at", { withTimezone: true }),
+    /** 会话级危险工具放行：JSON { toolNames: string[], updatedAt: string } */
+    dangerAllowlistJson: text("danger_allowlist_json"),
     ...timestamps,
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [
