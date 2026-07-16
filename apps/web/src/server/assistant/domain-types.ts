@@ -32,6 +32,8 @@ export type AssistantToolContext = {
     threadId: number
     runId: number
     focus: AssistantFocus | null
+    /** 当前用户 systemRole；操作员门闩 / 专属工具用 */
+    systemRole?: string | null
     /** 当前执行中的研究子代理深度；主助手未设置 */
     spawnDepth?: number
     /** 本轮委派链允许的最大 depth */
@@ -45,6 +47,8 @@ export type AssistantToolRegistration = {
     domain: AgentDomainId
     risk: "read" | "write" | "dangerous"
     description: string
+    /** 仅操作员装载；非操作员不对模型暴露 */
+    requiresOperator?: boolean
     // 契约写作 ZodTypeAny（zod v3 记法）；zod v4 的等价物是 z.ZodType
     inputSchema: z.ZodType
     execute: (ctx: AssistantToolContext, input: unknown) => Promise<unknown>

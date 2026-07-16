@@ -25,4 +25,7 @@
 ### 其他
 
 - Assistant 危险确认票据表：`docs/migrations/2026-07-16-assistant-confirmation-ticket.sql`；未跑迁移则确认危险操作会失败
+- 操作员常驻记忆：`docs/migrations/2026-07-17-assistant-operator-persistent-memory.sql`；未跑则冻结快照/profile 读写会失败
+- 操作员 Skills/进化：`docs/migrations/2026-07-17-assistant-operator-skills-evolution.sql`（skill / pending / evolution + embedding FTS）
 - 助手工具装载对齐 Claude Code：`system+knowledge+doc_library+content_write` 常驻；`admin` 按需；dangerous 仍走确认协议，不靠意图藏普通写工具
+- 操作员专属工具（`memory_manage` / `search_operator_history` / `skill_manage`）经 `requiresOperator` + `isAssistantOperator` 过滤；壳右上角「记忆进化」面板审批/触发进化

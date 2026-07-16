@@ -57,6 +57,7 @@ describe("parseAssistantFocus / toAssistantThreadResponse", () => {
             contextSummaryUntilMessageId: null,
             contextSummaryUpdatedAt: null,
             dangerAllowlistJson: null,
+            operatorMemorySnapshotJson: null,
             createdAt: now,
             updatedAt: now,
             deletedAt: null,

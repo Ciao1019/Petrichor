@@ -1,14 +1,18 @@
 import type { AgentDomainId } from "./domain-types"
 import { listAssistantSkillCatalog } from "./skills"
 
-export function buildAssistantSystemPrompt(domains: AgentDomainId[]): string {
+export function buildAssistantSystemPrompt(
+    domains: AgentDomainId[],
+    skillCatalogOverride?: Array<{ name: string; description: string }>,
+): string {
     const activeDomains = new Set(domains)
     const guidance: string[] = []
-    const skillCatalog = listAssistantSkillCatalog(domains)
+    const skillCatalog = skillCatalogOverride ?? listAssistantSkillCatalog(domains)
 
     if (activeDomains.has("system")) {
         guidance.push("系统元信息用 list_system_overview。多步任务用 show_progress / upsert_plan（侧栏展示，正文不重复罗列）。可复用结果才用 save_answer_artifact。")
         guidance.push("跨库或多步核验可用 spawn_research_subagent；多路子问题用 spawn_research_fanout（tasks≤3）。根据 summary/citations/results 作答，不编造来源。")
+        guidance.push("操作员可用 memory_manage / search_operator_history / skill_manage（若已装载）：记忆写入只影响新线程；历史回忆请用 search_operator_history。")
     }
     if (skillCatalog.length > 0) {
         const lines = skillCatalog.map((skill) => `- ${skill.name}：${skill.description}`).join("\n")
