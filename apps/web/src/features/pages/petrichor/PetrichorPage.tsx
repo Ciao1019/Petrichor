@@ -17,66 +17,65 @@ const LINKS = {
     demo: "https://wl.do",
     deploy:
         "https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FCiao1019%2FPetrichor&project-name=petrichor&repository-name=petrichor&root-directory=apps%2Fweb",
-    license: "https://github.com/Ciao1019/Petrichor/blob/main/LICENSE",
-    agentDocs: "https://github.com/Ciao1019/Petrichor/blob/main/docs/agent-integration.md",
+    license: "https://github.com/Ciao1019/Petrichor/blob/master/LICENSE",
 } as const
 
-/* 能力矩阵：对齐 README 的功能特性表，每条补上「具体到能点开的东西」的细节，
-   dot 用马克笔色轮换，像清单前随手点的墨点。 */
+/* 能力矩阵：对齐 README 的功能特性表，每条用桌面注记的语气写清「能干什么」，
+   少堆术语清单；dot 用马克笔色轮换，像清单前随手点的墨点。 */
 const CAPABILITIES: { title: string; tag: string; detail: string; dot: MarkerColor }[] = [
     {
         title: "富文本编辑器",
         tag: "PlateJS",
         dot: "red",
-        detail: "Markdown 双向输入、代码块高亮、表格、数学公式、白板、思维导图、媒体嵌入与拖拽上传，块级结构化存储而非纯文本。",
+        detail: "Markdown 与所见即所得来回切；代码、表格、公式、白板、思维导图都能嵌进正文，拖进去的附件也会乖乖落位。",
     },
     {
         title: "知识库",
         tag: "Tree",
         dot: "orange",
-        detail: "多层级目录树、文章标签、跨库搜索、Wiki 编译视图、文章分享（可设访问密码与到期时间）、独立 RSS / Atom Feed。",
+        detail: "目录树一层层长起来，标签、跨库搜索、Wiki 视图随手可用；想给人看就设个密码和过期时间，RSS 也会自己跟着走。",
     },
     {
         title: "AI 写作助手",
         tag: "Multi-model",
         dot: "green",
-        detail: "续写 / 改写 / 翻译 / 语气调整、文章总结、思维导图与知识图谱生成，以及 AI 周报 & 月报回顾。模型在后台自行配置。",
+        detail: "卡住了就让它续写、改写、翻译或换语气；总结、导图、知识图谱和周月回顾也一并包办，模型在后台配好即可。",
     },
     {
         title: "站内对话助手",
         tag: "Runtime",
         dot: "teal",
-        detail: "自研运行时：工具调用、子代理分发、写操作二次确认、上下文压缩与向量召回、跨会话多层记忆，详见下一节。",
+        detail: "不是挂在旁边的聊天窗——它能翻你的库、调工具、分派子代理，改东西前还会先问你一声。细节见下一节。",
     },
     {
         title: "认证体系",
         tag: "Better Auth",
         dot: "blue",
-        detail: "httpOnly Cookie 会话、邮箱密码登录、LinuxDo OAuth、二步验证与强制开启策略；首个注册账号自动成为超级管理员。",
+        detail: "会话藏在 httpOnly Cookie 里；邮箱密码、LinuxDo、二步验证都有，第一个注册进来的人自动当上超级管理员。",
     },
     {
         title: "对象存储",
         tag: "S3",
         dot: "purple",
-        detail: "封面、附件、头像、AI 配图统一走服务端签名的预签名 URL，上传 / 下载有效期可配，兼容 Bitiful / AWS S3 / MinIO。",
+        detail: "封面、附件、头像、AI 配图都走签名过的预签名链接，过期时间你说了算；Bitiful、AWS S3、MinIO 都能接。",
     },
     {
         title: "仪表盘",
         tag: "Metrics",
         dot: "pink",
-        detail: "写作数据统计、活跃度热力图、知识库分布、文档导入任务队列与失败详情回看。",
+        detail: "一眼看清写了多少、哪天最勤快、知识库怎么铺开；导入卡住了也能翻回失败详情，不用猜。",
     },
     {
         title: "公开站点",
         tag: "SEO",
         dot: "red",
-        detail: "文章公开页与短链分享、阅后即焚链接、完整 SEO 元数据、sitemap.xml、RSS 与 Atom，自定义站点标题 / 图标 / 主题。",
+        detail: "文章可以正经发布，也可以短链或阅后即焚；SEO、sitemap、RSS 都齐，站点标题、图标和主题随你定。",
     },
     {
         title: "Agent 开放层",
         tag: "MCP / REST",
         dot: "blue",
-        detail: "API Key 管理、MCP Server（Streamable HTTP）、可下载 Skill 包、全量调用审计日志与免鉴权能力发现接口。",
+        detail: "给外部 AI 一把钥匙：MCP、Skill 包、能力自发现都有，谁调了什么、调得怎样，审计日志里一清二楚。",
     },
 ]
 
@@ -350,7 +349,7 @@ export function PetrichorPage() {
                 <div className="mt-20 flex flex-col gap-20">
                     {/* ——— 01 能力矩阵 ——— */}
                     <section aria-labelledby="promo-capabilities" className="blog-home-fade-in blog-delay-300">
-                        <SectionHeading index="01" label="Capabilities" title="一套仓库里的九个模块" />
+                        <SectionHeading index="01" label="Capabilities" title="一个应用，九种能力" />
                         <h3 id="promo-capabilities" className="sr-only">
                             能力矩阵
                         </h3>
@@ -440,16 +439,6 @@ export function PetrichorPage() {
                                 </li>
                             ))}
                         </ol>
-                        <a
-                            href={LINKS.agentDocs}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="group/link relative mt-7 inline-flex items-center font-mono text-[0.74rem] font-bold underline decoration-transparent underline-offset-4 transition-colors duration-200 hover:decoration-current"
-                            style={{ color: "var(--desk-marker-blue)" }}
-                        >
-                            设计文档 docs/agent-integration.md
-                            <LinkDoodle />
-                        </a>
                     </section>
 
                     {/* ——— 04 技术选型 ——— */}
