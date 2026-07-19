@@ -65,29 +65,46 @@ function inventoryScript(): DemoScript {
 
 function planScript(): DemoScript {
     const planId = "demo-plan-inventory"
-    const todos: AssistantPersistedPlan["todos"] = [
-        { id: "t1", label: "枚举全部知识库与文章数", status: "completed" },
-        { id: "t2", label: "抽取每个库的核心主题", status: "completed" },
-        { id: "t3", label: "标记超过 30 天未更新的库", status: "completed" },
-        { id: "t4", label: "输出盘点结论与建议", status: "in_progress" },
-    ]
-    const planPayload = {
+    const labels = [
+        { id: "t1", label: "枚举全部知识库与文章数" },
+        { id: "t2", label: "抽取每个库的核心主题" },
+        { id: "t3", label: "标记超过 30 天未更新的库" },
+        { id: "t4", label: "输出盘点结论与建议" },
+    ] as const
+
+    const makeTodos = (activeIndex: number, completedThrough: number): AssistantPersistedPlan["todos"] =>
+        labels.map((item, index) => ({
+            id: item.id,
+            label: item.label,
+            status:
+                index < completedThrough
+                    ? ("completed" as const)
+                    : index === activeIndex
+                        ? ("in_progress" as const)
+                        : ("pending" as const),
+        }))
+
+    const planMeta = {
         id: planId,
         title: "盘点我的知识库现状",
         description: "分四步执行，可在右侧勾选进度",
-        todos,
     }
+
+    // 落库态故意留最后一项未完成，方便演示侧栏勾选；流式过程中逐步推进让观众看清
+    const persistedTodos = makeTodos(3, 3)
+
     return {
-        plan: { ...planPayload, todos: todos.map((todo) => ({ ...todo })) },
+        plan: { ...planMeta, todos: persistedTodos },
         steps: [
             { kind: "text", text: "收到，我把这件事拆成可见的计划，边执行边同步进度。\n\n" },
             {
                 kind: "tool",
                 name: "upsert_plan",
-                input: { ...planPayload, todos: todos.map((todo, i) => ({ ...todo, status: i === 0 ? "in_progress" as const : "pending" as const })) },
+                input: { ...planMeta, todos: makeTodos(0, 0) },
                 output: { ok: true, planId },
             },
-            { kind: "pause", ms: 500 },
+            // 计划刚出现：多停一会，让侧栏被注意到
+            { kind: "pause", ms: 1600 },
             {
                 kind: "tool",
                 name: "list_knowledge_bases",
@@ -96,14 +113,29 @@ function planScript(): DemoScript {
                     knowledgeBases: demoStore.knowledgeBases.map((kb) => ({ id: kb.id, name: kb.name })),
                 },
             },
-            { kind: "pause", ms: 400 },
+            { kind: "pause", ms: 900 },
             {
                 kind: "tool",
                 name: "upsert_plan",
-                input: planPayload,
+                input: { ...planMeta, todos: makeTodos(1, 1) },
                 output: { ok: true, planId },
             },
-            { kind: "pause", ms: 300 },
+            { kind: "pause", ms: 1300 },
+            {
+                kind: "tool",
+                name: "upsert_plan",
+                input: { ...planMeta, todos: makeTodos(2, 2) },
+                output: { ok: true, planId },
+            },
+            { kind: "pause", ms: 1300 },
+            {
+                kind: "tool",
+                name: "upsert_plan",
+                input: { ...planMeta, todos: makeTodos(3, 3) },
+                output: { ok: true, planId },
+            },
+            // 结论打出来前再停一下，避免「做完 → 文字」连成一闪
+            { kind: "pause", ms: 1100 },
             {
                 kind: "text",
                 text:
@@ -116,6 +148,8 @@ function planScript(): DemoScript {
                     "**建议**：读书摘录可以考虑和产品手记打通——《思考，快与慢》那篇的锚定效应，正好能引用到定价页设计的讨论里。\n\n" +
                     "右侧 Plan 侧栏的最后一项还没勾完，你可以手动把它标记为完成试试。",
             },
+            // 结论写完后再留一点观看时间，再结束流（结束时 settle 会收口）
+            { kind: "pause", ms: 1800 },
         ],
     }
 }
@@ -271,10 +305,11 @@ export async function demoAssistantChatResponse(init?: RequestInit): Promise<Res
                         continue
                     }
                     const toolCallId = nextToolCallId()
+                    const isPlanTool = step.name === "upsert_plan"
                     send({ type: "tool-input-start", toolCallId, toolName: step.name })
-                    await sleep(220 + Math.random() * 200, signal)
+                    await sleep((isPlanTool ? 480 : 220) + Math.random() * (isPlanTool ? 260 : 200), signal)
                     send({ type: "tool-input-available", toolCallId, toolName: step.name, input: step.input })
-                    await sleep(320 + Math.random() * 280, signal)
+                    await sleep((isPlanTool ? 620 : 320) + Math.random() * (isPlanTool ? 320 : 280), signal)
                     send({ type: "tool-output-available", toolCallId, output: step.output })
                     persistedParts.push({
                         type: `tool-${step.name}`,

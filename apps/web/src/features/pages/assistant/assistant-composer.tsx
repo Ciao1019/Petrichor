@@ -89,12 +89,10 @@ export function GrokComposer({
       data-empty={isEmpty}
       data-running={isRunning}
     >
-      <div className="overflow-hidden rounded-[28px] bg-[#f8f8f8] shadow-xs ring-1 ring-[#e5e5e5] ring-inset transition-shadow focus-within:ring-[#d0d0d0] dark:bg-[#212121] dark:ring-[#2a2a2a] dark:focus-within:ring-[#3a3a3a]">
+      <div className="overflow-hidden rounded-[24px] bg-[#f8f8f8] shadow-xs ring-1 ring-[#e5e5e5] ring-inset transition-shadow focus-within:ring-[#d0d0d0] dark:bg-[#212121] dark:ring-[#2a2a2a] dark:focus-within:ring-[#3a3a3a]">
         <ComposerPrimitive.AttachmentDropzone className="block">
-          <div className="px-3 pt-2 empty:hidden">
-            <ComposerAttachments />
-          </div>
-          <div className="flex items-end gap-1 p-1.5">
+          <ComposerAttachments className="px-3 pt-2.5" />
+          <div className="flex items-center gap-1 px-2 py-1.5">
             <ComposerAddAttachment />
             <ComposerPrimitive.Input
               id="kb-qa-composer-input"
@@ -102,7 +100,7 @@ export function GrokComposer({
               placeholder={placeholder}
               minRows={1}
               onFocus={onComposerFocus}
-              className="my-1.5 ml-1 h-6 max-h-100 min-w-0 flex-1 resize-none bg-transparent text-[#0d0d0d] text-base leading-6 outline-none placeholder:text-[#9a9a9a] dark:text-white dark:placeholder:text-[#6b6b6b]"
+              className="ml-1 max-h-100 min-h-8 min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[#0d0d0d] text-base leading-6 outline-none placeholder:text-[#9a9a9a] dark:text-white dark:placeholder:text-[#6b6b6b]"
             />
 
             <InlineScopeSelector
@@ -114,7 +112,7 @@ export function GrokComposer({
               isEmpty={isEmpty}
             />
 
-            <div className="relative h-9 w-9 shrink-0 rounded-full bg-[#0d0d0d] text-white dark:bg-white dark:text-[#0d0d0d]">
+            <div className="relative size-8 shrink-0 rounded-full bg-[#0d0d0d] text-white dark:bg-[#e8e8e8] dark:text-[#0d0d0d]">
               <GsapFade
                 visible={!isRunning}
                 className="absolute inset-0"
@@ -123,7 +121,7 @@ export function GrokComposer({
                   className="flex h-full w-full items-center justify-center disabled:opacity-40"
                   disabled={isEmpty}
                 >
-                  <ArrowUp className="size-[18px]" />
+                  <ArrowUp className="size-4" strokeWidth={2.25} />
                 </ComposerPrimitive.Send>
               </GsapFade>
 
@@ -199,13 +197,13 @@ export function InlineScopeSelector({
     if (!trigger || !inner) return
 
     const targets = isEmpty
-      ? { pad: 10, gap: 8, innerMax: 160, innerOpacity: 1 }
+      ? { pad: 10, gap: 6, innerMax: 160, innerOpacity: 1 }
       : { pad: 0, gap: 0, innerMax: 0, innerOpacity: 0 }
 
     if (!mountedRef.current) {
       mountedRef.current = true
       gsap.set(trigger, {
-        width: isEmpty ? "auto" : "2.25rem",
+        width: isEmpty ? "auto" : "2rem",
         paddingLeft: targets.pad,
         paddingRight: targets.pad,
         gap: targets.gap,
@@ -216,7 +214,7 @@ export function InlineScopeSelector({
 
     const tweens = [
       gsap.to(trigger, {
-        width: isEmpty ? "auto" : "2.25rem",
+        width: isEmpty ? "auto" : "2rem",
         paddingLeft: targets.pad,
         paddingRight: targets.pad,
         gap: targets.gap,
@@ -242,19 +240,19 @@ export function InlineScopeSelector({
       <PopoverTrigger
         ref={triggerRef}
         className={cn(
-          "mb-0.5 flex h-9 shrink-0 items-center justify-center overflow-hidden rounded-full text-[#0d0d0d] will-change-[width,padding,gap] transition-colors duration-150 hover:bg-[#f0f0f0] data-[state=open]:bg-[#f0f0f0] dark:text-white dark:hover:bg-[#2a2a2a] dark:data-[state=open]:bg-[#2a2a2a]",
+          "flex h-8 shrink-0 items-center justify-center overflow-hidden rounded-full text-[#3d3d3d] will-change-[width,padding,gap] transition-colors duration-150 hover:bg-[#ececec] hover:text-[#0d0d0d] data-[state=open]:bg-[#ececec] data-[state=open]:text-[#0d0d0d] dark:text-[#c8c8c8] dark:hover:bg-[#2a2a2a] dark:hover:text-white dark:data-[state=open]:bg-[#2a2a2a] dark:data-[state=open]:text-white",
         )}
         aria-label="选择提问范围"
       >
-        <ScopeIcon className={cn("size-[18px] shrink-0", isAll && "text-violet-600 dark:text-violet-300")} />
+        <ScopeIcon className={cn("size-4 shrink-0", isAll && "text-violet-600 dark:text-violet-300")} />
         <div
           ref={innerRef}
           className="flex items-center gap-1 overflow-hidden will-change-[max-width,opacity]"
         >
-          <span className="max-w-[10rem] truncate whitespace-nowrap font-semibold text-sm">
+          <span className="max-w-[10rem] truncate whitespace-nowrap text-sm font-medium">
             {scopeLabel}
           </span>
-          <ChevronDown className="size-4 shrink-0" />
+          <ChevronDown className="size-3.5 shrink-0 opacity-70" />
         </div>
       </PopoverTrigger>
       <PopoverContent align="end" side="top" sideOffset={8} className="w-[min(320px,calc(100vw-2rem))] p-0">

@@ -139,14 +139,17 @@ function extractLiveTaskFromMessages(messages: readonly { id?: string; parts?: r
   return latest
 }
 
-/** 流结束后把卡死的 in_progress / 未执行 pending 收口，避免侧栏一直转圈。 */
+/** 流结束后把卡死的进度收口，避免侧栏一直转圈。
+ * 若只剩 in_progress、没有未开始的 pending，视为留给用户收尾，不自动勾掉。 */
 export function settleLiveTask(task: AssistantLiveTask, isRunning: boolean): AssistantLiveTask {
   if (isRunning) return task
 
-  const hasIncomplete = task.steps.some(
-    (step) => step.status === "in_progress" || step.status === "pending",
-  )
-  if (!hasIncomplete) return task
+  const hasPending = task.steps.some((step) => step.status === "pending")
+  const hasInProgress = task.steps.some((step) => step.status === "in_progress")
+  if (!hasPending && !hasInProgress) return task
+
+  // 故意留给用户的最后一步：保持可勾选
+  if (hasInProgress && !hasPending) return task
 
   const hasFailure = task.steps.some((step) => step.status === "failed")
   return {
