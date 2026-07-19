@@ -32,6 +32,7 @@ import { BlogHomePage } from '@/features/pages/blog/BlogHomePage'
 import { TagsPage } from '@/features/pages/blog/TagsPage'
 import { AboutPage } from '@/features/pages/about/AboutPage'
 import { ProjectsPage } from '@/features/pages/projects/ProjectsPage'
+import { PetrichorPage } from '@/features/pages/petrichor/PetrichorPage'
 import { PublicQaPage } from '@/features/pages/ask/PublicQaPage'
 import { AccountPage } from '@/features/pages/account/AccountPage'
 import { DashboardMetricsPage } from '@/features/pages/dashboard/DashboardMetricsPage'
@@ -107,6 +108,7 @@ function AppThemeScope() {
             <Route path="/ask" element={<PublicQaPage />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
+            <Route path="/petrichor" element={<PetrichorPage />} />
             <Route path="/p/:shareCode" element={<PublicArticlePage />} />
             <Route path="/b/:code" element={<BurnReadPage />} />
             <Route path="/login" element={<LoginPage />} />

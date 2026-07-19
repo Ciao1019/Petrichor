@@ -8,6 +8,7 @@
 @import "./retypeset-fonts.css";
 @import "./retypeset-home.css";
 @import "./about-desk.css";
+@import "./project-promo.css";
 @import "tw-shimmer";
 
 @custom-variant dark (&:is(.dark *));

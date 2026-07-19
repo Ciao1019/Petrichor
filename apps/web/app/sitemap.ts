@@ -33,6 +33,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
             changeFrequency: "monthly",
             priority: 0.6,
         },
+        {
+            url: toAbsolutePublicUrl("/petrichor", baseUrl),
+            lastModified: now,
+            changeFrequency: "monthly",
+            priority: 0.7,
+        },
     ]
     const articles = await loadPublicSiteArticles()
     const articleRoutes: MetadataRoute.Sitemap = articles.map((article) => ({
