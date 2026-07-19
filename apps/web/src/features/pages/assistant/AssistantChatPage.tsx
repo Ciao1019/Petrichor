@@ -85,6 +85,7 @@ import {
   type DocLibrary,
 } from "@/lib/api"
 import { dashboardRoutes } from "@/lib/dashboard-routes"
+import { isDemoMode } from "@/lib/demo/demo-mode"
 import { gsap } from "@/lib/gsap"
 
 import { GrokComposer } from "./assistant-composer"
@@ -899,6 +900,14 @@ function QaChatPanel({
         } catch {
           // 非 JSON body 时保持原样
         }
+      }
+      if (isDemoMode()) {
+        // 演示模式：不触网，走脚本化 SSE 回放（见 lib/demo/demo-chat.ts）
+        const { demoAssistantChatResponse } = await import("@/lib/demo/demo-chat")
+        const demoResponse = await demoAssistantChatResponse(nextInit)
+        const demoThreadId = demoResponse.headers.get(CHAT_THREAD_HEADER)
+        if (demoThreadId) onThreadKnown(demoThreadId)
+        return demoResponse
       }
       const response = await fetch(input, nextInit)
       if (response.status === 401 && typeof window !== "undefined") {

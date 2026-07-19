@@ -281,7 +281,7 @@ export function PetrichorPage() {
 
             <div className="relative z-30 mx-auto w-full max-w-6xl px-6 pt-8 md:px-24 lg:contents">
                 <RetypesetSiteHeader dockVisible />
-                <RetypesetSiteNav activeSection="projects" dockVisible />
+                <RetypesetSiteNav activeSection="petrichor" dockVisible />
             </div>
 
             <section className="relative z-20 mx-auto flex w-full max-w-[51.462rem] flex-1 flex-col px-[min(7.25vw,3.731rem)] py-12 lg:mx-[max(5.75rem,calc(50vw-34.25rem))] lg:max-w-[min(calc(75vw-16rem),44rem)] lg:px-0">
@@ -333,16 +333,19 @@ export function PetrichorPage() {
                     </div>
 
                     <div className="mt-9 flex flex-wrap items-center gap-3">
-                        <a href={LINKS.repo} target="_blank" rel="noopener noreferrer" className="promo-cta promo-cta--ink">
-                            GitHub 仓库
+                        <a href="/demo" className="promo-cta promo-cta--ink">
+                            免登录体验工作台
                         </a>
-                        <a href={LINKS.demo} target="_blank" rel="noopener noreferrer" className="promo-cta promo-cta--paper">
-                            在线 Demo
+                        <a href={LINKS.repo} target="_blank" rel="noopener noreferrer" className="promo-cta promo-cta--paper">
+                            GitHub 仓库
                         </a>
                         <a href={LINKS.deploy} target="_blank" rel="noopener noreferrer" className="promo-cta promo-cta--paper">
                             一键部署
                         </a>
                     </div>
+                    <p className="mt-3 text-[0.72rem]" style={{ color: "var(--desk-sheet-muted)" }}>
+                        演示模式为纯前端沙盒：数据只在你的浏览器内存里，随便改，刷新即重置。
+                    </p>
                 </header>
 
                 <div className="mt-20 flex flex-col gap-20">

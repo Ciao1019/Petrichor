@@ -38,7 +38,26 @@ import {
 } from "@/components/ui/sidebar"
 import { authApi } from "@/lib/api"
 import { dashboardRoutes, isDashboardSectionPath } from "@/lib/dashboard-routes"
+import { isDemoMode } from "@/lib/demo/demo-mode"
 import type { UserResponse } from "@/lib/api"
+
+/* 演示模式只开放已 mock 的页面，其余入口整组隐藏，避免点进去一屏报错。 */
+const DEMO_NAV_URLS = new Set<string>([
+  dashboardRoutes.knowledge,
+  dashboardRoutes.assistant,
+  dashboardRoutes.metrics,
+])
+
+type NavItemLike = { url: string; items?: { url: string }[] }
+
+function filterNavForDemo<T extends NavItemLike>(items: T[]): T[] {
+  return items
+    .filter((item) => DEMO_NAV_URLS.has(item.url))
+    .map((item) => ({
+      ...item,
+      items: item.items?.filter((child) => DEMO_NAV_URLS.has(child.url)),
+    }))
+}
 
 function matchKnowledgeList(pathname: string) {
   return (
@@ -239,11 +258,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         {userLoaded ? (
-          <>
-            <NavContent groupLabel="笔记管理" items={noteNav} />
-            <NavContent groupLabel="Agent 集成" items={agentNav} />
-            {systemNav.length > 0 ? <NavContent groupLabel="系统管理" items={systemNav} /> : null}
-          </>
+          isDemoMode() ? (
+            <NavContent groupLabel="笔记管理" items={filterNavForDemo(noteNav)} />
+          ) : (
+            <>
+              <NavContent groupLabel="笔记管理" items={noteNav} />
+              <NavContent groupLabel="Agent 集成" items={agentNav} />
+              {systemNav.length > 0 ? <NavContent groupLabel="系统管理" items={systemNav} /> : null}
+            </>
+          )
         ) : (
           <SidebarNavSkeleton />
         )}
