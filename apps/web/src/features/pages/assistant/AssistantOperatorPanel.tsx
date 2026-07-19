@@ -19,6 +19,7 @@ import {
   type AssistantOperatorEvolutionProposal,
   type AssistantOperatorSkillPending,
 } from "@/lib/api"
+import { isDemoMode } from "@/lib/demo/demo-mode"
 
 export function AssistantOperatorPanel() {
   const [open, setOpen] = React.useState(false)
@@ -56,8 +57,17 @@ export function AssistantOperatorPanel() {
     if (open) void refresh()
   }, [open, refresh])
 
+  // 演示模式不开弹层：面板依赖真实模型与操作员权限，mock 不了完整体验
+  const handleOpenChange = React.useCallback((next: boolean) => {
+    if (next && isDemoMode()) {
+      toast.info("演示模式暂不开放记忆进化，私有化部署后即可使用")
+      return
+    }
+    setOpen(next)
+  }, [])
+
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetTrigger asChild>
         <Button type="button" variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs">
           <Brain className="size-3.5" />
