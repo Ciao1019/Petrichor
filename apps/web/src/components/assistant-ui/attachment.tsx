@@ -195,9 +195,9 @@ export const UserMessageAttachments: FC = () => {
   );
 };
 
-export const ComposerAttachments: FC = () => {
+export const ComposerAttachments: FC<{ className?: string }> = ({ className }) => {
   return (
-    <div className="aui-composer-attachments flex w-full flex-row items-center gap-2 overflow-x-auto empty:hidden">
+    <div className={cn("aui-composer-attachments flex w-full flex-row items-center gap-2 overflow-x-auto empty:hidden", className)}>
       <ComposerPrimitive.Attachments>
         {() => <AttachmentUI />}
       </ComposerPrimitive.Attachments>
@@ -213,10 +213,10 @@ export const ComposerAddAttachment: FC = () => {
         side="bottom"
         variant="ghost"
         size="icon"
-        className="aui-composer-add-attachment size-8 rounded-full p-1 font-semibold text-xs hover:bg-muted-foreground/15 dark:border-muted-foreground/15 dark:hover:bg-muted-foreground/30"
+        className="aui-composer-add-attachment size-8 rounded-full p-1 text-muted-foreground hover:bg-muted-foreground/15 hover:text-foreground dark:hover:bg-muted-foreground/25"
         aria-label="添加附件"
       >
-        <PlusIcon className="aui-attachment-add-icon size-5 stroke-[1.5px]" />
+        <PlusIcon className="aui-attachment-add-icon size-[18px] stroke-[1.5px]" />
       </TooltipIconButton>
     </ComposerPrimitive.AddAttachment>
   );

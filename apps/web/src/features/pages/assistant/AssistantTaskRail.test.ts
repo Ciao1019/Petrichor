@@ -46,12 +46,23 @@ describe("settleLiveTask", () => {
     expect(settleLiveTask(task, true)).toEqual(task)
   })
 
-  it("流结束后把 in_progress 收成 completed、pending 收成 cancelled", () => {
+  it("流结束后若仍有未开始的 pending，则收口 in_progress / pending", () => {
     expect(settleLiveTask(sampleTask(), false).steps.map((s) => s.status)).toEqual([
       "completed",
       "completed",
       "cancelled",
     ])
+  })
+
+  it("只剩 in_progress、没有 pending 时留给用户收尾", () => {
+    const task = sampleTask({
+      steps: [
+        { id: "1", label: "概览", status: "completed" },
+        { id: "2", label: "列表", status: "completed" },
+        { id: "3", label: "汇总", status: "in_progress" },
+      ],
+    })
+    expect(settleLiveTask(task, false)).toEqual(task)
   })
 
   it("已有 failed 时 in_progress 收成 cancelled", () => {
