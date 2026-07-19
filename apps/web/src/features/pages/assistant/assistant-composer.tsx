@@ -94,7 +94,7 @@ export function GrokComposer({
           <div className="px-3 pt-2 empty:hidden">
             <ComposerAttachments />
           </div>
-          <div className="flex items-end gap-1 p-2">
+          <div className="flex items-end gap-1 p-1.5">
             <ComposerAddAttachment />
             <ComposerPrimitive.Input
               id="kb-qa-composer-input"
@@ -102,7 +102,7 @@ export function GrokComposer({
               placeholder={placeholder}
               minRows={1}
               onFocus={onComposerFocus}
-              className="my-2 ml-1 h-6 max-h-100 min-w-0 flex-1 resize-none bg-transparent text-[#0d0d0d] text-base leading-6 outline-none placeholder:text-[#9a9a9a] dark:text-white dark:placeholder:text-[#6b6b6b]"
+              className="my-1.5 ml-1 h-6 max-h-100 min-w-0 flex-1 resize-none bg-transparent text-[#0d0d0d] text-base leading-6 outline-none placeholder:text-[#9a9a9a] dark:text-white dark:placeholder:text-[#6b6b6b]"
             />
 
             <InlineScopeSelector
@@ -114,7 +114,7 @@ export function GrokComposer({
               isEmpty={isEmpty}
             />
 
-            <div className="relative mb-0.5 h-9 w-9 shrink-0 rounded-full bg-[#0d0d0d] text-white dark:bg-white dark:text-[#0d0d0d]">
+            <div className="relative h-9 w-9 shrink-0 rounded-full bg-[#0d0d0d] text-white dark:bg-white dark:text-[#0d0d0d]">
               <GsapFade
                 visible={!isRunning}
                 className="absolute inset-0"
