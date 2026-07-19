@@ -308,7 +308,7 @@ export function PetrichorPage() {
                         className="mt-5 text-2xl leading-snug md:text-3xl"
                         style={{ ...handwritingStyle, color: "var(--desk-sheet-soft)" }}
                     >
-                        开箱即用的全栈知识库与博客平台 —— 一个人也能撑起来的内容基建。
+                        Petrichor，雨后泥土的气息——知识攒得够久，会有自己的味道。
                     </p>
 
                     <div
@@ -316,19 +316,18 @@ export function PetrichorPage() {
                         style={{ color: "var(--desk-sheet-ink)" }}
                     >
                         <p>
-                            Petrichor 面向个人与小团队，把富文本编辑器、多层级知识库、公开博客、AI 助手与 Agent
-                            开放层做进<HandUnderline color="red" note="one repo, all in">同一个全栈应用</HandUnderline>
-                            ：不拆微服务、不搞插件市场，一份仓库跑完整条链路。
+                            对读者，它是一个排版讲究、专注阅读的<HandUnderline color="green" note="就是本站">博客</HandUnderline>
+                            ；对你，它是一整套知识工作台——写作、整理、发布、问答，都发生在
+                            <HandUnderline color="red" note="不用再拼积木">同一个地方</HandUnderline>。
                         </p>
                         <p>
-                            部署形态刻意做轻：Vercel 托管前后端、Supabase 提供 Postgres、任意 S3 兼容存储放附件，
-                            <MarkerHighlight note="免费额度就够用">零自建服务器</MarkerHighlight>
-                            ，填好环境变量就能上线。
+                            AI 助手直接长在你的笔记上：检索、引用、改写、总结，还记得住你的偏好——
+                            <MarkerHighlight note="这是最好玩的部分">你写得越多，它越懂你</MarkerHighlight>。
                         </p>
                         <p>
-                            对外是一个按 Retypeset 风格排版、专注中文阅读的<HandUnderline color="green" note="就是本站">博客</HandUnderline>
-                            ；登录后进入仪表盘，管理知识库、导入文档、配置 AI 模型、签发 Agent 密钥——对内是一套
-                            <HandUnderline color="purple" note="知识工作台">完整的知识工作台</HandUnderline>。
+                            部署刻意做轻：Vercel + Supabase + 任意 S3 兼容存储，
+                            <HandUnderline color="purple" note="免费额度就够">零自建服务器</HandUnderline>
+                            ，填好环境变量就能上线，数据始终在你自己手里。
                         </p>
                     </div>
 
