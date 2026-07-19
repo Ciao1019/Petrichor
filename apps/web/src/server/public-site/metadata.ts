@@ -101,6 +101,15 @@ export function buildStaticPublicPageMetadata(pathname: string): Metadata {
         })
     }
 
+    if (pathname === "/petrichor") {
+        return buildPublicMetadata({
+            title: "Petrichor · 开箱即用的全栈知识库与博客平台",
+            description:
+                "Petrichor 把富文本编辑器、多层级知识库、公开博客、AI 助手与 Agent 开放层做进同一个 Next.js 全栈应用，Vercel + Supabase 零自建服务器即可上线。",
+            pathname,
+        })
+    }
+
     return buildPublicMetadata({
         title: siteName,
         description: defaultDescription,
@@ -161,6 +170,9 @@ export function resolvePublicRouteMetadata(
     }
     if (firstSegment === "projects" && pathSegments.length === 1) {
         return buildStaticPublicPageMetadata("/projects")
+    }
+    if (firstSegment === "petrichor" && pathSegments.length === 1) {
+        return buildStaticPublicPageMetadata("/petrichor")
     }
     if (firstSegment === "p" && secondSegment) {
         const article = articles.find((item) => item.shareCode === secondSegment) ?? null

@@ -1,0 +1,266 @@
+/*
+ * Petrichor 项目宣传页（/petrichor）专用样式。
+ * 右侧站点 dock 沿用 retypeset 全站样式；左侧正文完全融入「关于我」同源的
+ * 暖纸桌面语言（about-desk.css 的 --desk-* 变量）：米白纸面、马克笔注记、
+ * 手撕便签。本文件只补桌面体系里没有的原语——纸质清单卡、时间轴、终端窗、
+ * 墨色按钮。类名统一 promo- 前缀，不污染 About / Projects 页。
+ */
+
+@keyframes promo-caret {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  55%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ---------- 章节标签：粉色等宽小字 + 手绘短横线 ---------- */
+
+.promo-section-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--desk-marker-pink);
+}
+
+.promo-section-label::before {
+  content: "";
+  width: 1.6rem;
+  height: 2px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--desk-marker-pink) 55%, transparent);
+}
+
+/* ---------- 纸质清单卡：比页面底色略亮的一张「纸」，硬边细描 + 轻投影 ---------- */
+
+.promo-sheet {
+  background: var(--desk-sheet);
+  border: 1px solid var(--desk-sheet-hair);
+  border-radius: 14px 11px 15px 12px / 11px 15px 12px 14px; /* 不规则圆角，像裁出来的纸 */
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.03),
+    0 10px 24px -18px rgba(91, 80, 20, 0.5);
+}
+
+/* 清单卡内的规格行：细线分隔，悬停时纸面微微提亮 */
+.promo-spec {
+  border-top: 1px solid var(--desk-sheet-hair);
+  transition: background-color 0.2s ease;
+}
+
+.promo-spec:first-child {
+  border-top: 0;
+}
+
+.promo-spec:hover {
+  background: color-mix(in srgb, var(--desk-sticky) 22%, transparent);
+}
+
+/* ---------- 能力网格：无框行，马克笔圆点作序号 ---------- */
+
+.promo-cap {
+  border-top: 1px solid var(--desk-sheet-hair);
+}
+
+.promo-cap-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50% 45% 55% 50% / 50% 55% 45% 50%; /* 手点的墨点，不是正圆 */
+  flex-shrink: 0;
+  margin-top: 0.42rem;
+}
+
+/* ---------- 步骤时间轴：细线 + 马克笔空心圈 ---------- */
+
+.promo-steps {
+  position: relative;
+  padding-left: 1.85rem;
+}
+
+.promo-steps::before {
+  content: "";
+  position: absolute;
+  left: 0.4rem;
+  top: 0.55rem;
+  bottom: 0.45rem;
+  width: 1px;
+  background: var(--desk-sheet-hair);
+}
+
+.promo-step {
+  position: relative;
+}
+
+.promo-step::before {
+  content: "";
+  position: absolute;
+  left: -1.85rem;
+  top: 0.28rem;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 55% 45% 50% 50% / 50% 50% 45% 55%;
+  border: 2px solid var(--desk-marker-blue);
+  background: var(--desk-paper);
+}
+
+.promo-step[data-ink="pink"]::before {
+  border-color: var(--desk-marker-pink);
+}
+
+.promo-step[data-ink="green"]::before {
+  border-color: var(--desk-marker-green);
+}
+
+.promo-step[data-ink="orange"]::before {
+  border-color: var(--desk-marker-orange);
+}
+
+.promo-step[data-ink="teal"]::before {
+  border-color: var(--desk-marker-teal);
+}
+
+.promo-step[data-ink="purple"]::before {
+  border-color: var(--desk-marker-purple);
+}
+
+/* ---------- 终端窗：暖墨色的一块「深纸」，配三颗窗点 ---------- */
+
+.promo-terminal {
+  overflow-x: auto;
+  background: #2b2620;
+  color: #efe9db;
+  border-radius: 12px 10px 13px 11px / 10px 13px 11px 12px;
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.05),
+    0 14px 30px -20px rgba(43, 38, 32, 0.9);
+}
+
+.promo-terminal-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.promo-terminal-dots span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50% 45% 55% 50% / 50% 55% 45% 50%;
+}
+
+.promo-terminal-line {
+  display: block;
+  white-space: pre;
+}
+
+.promo-terminal-line[data-prompt="true"]::before {
+  content: "$ ";
+  color: var(--desk-marker-green);
+}
+
+.promo-caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  vertical-align: -0.15em;
+  background: var(--desk-marker-green);
+  animation: promo-caret 1.1s steps(1) infinite;
+}
+
+/* ---------- 技术栈小片：About Toolkit 同款硬边小签 ---------- */
+
+.promo-chip {
+  border: 1px solid var(--desk-sheet-hair);
+  background: var(--desk-paper);
+  color: var(--desk-sheet-soft);
+  border-radius: 7px 5px 8px 5px / 5px 8px 5px 7px;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.promo-chip:hover {
+  color: var(--desk-sheet-ink);
+  border-color: color-mix(in srgb, var(--desk-sheet-soft) 55%, transparent);
+  transform: translateY(-1px) rotate(-0.5deg);
+}
+
+/* ---------- 按钮：墨色实心 / 纸面描边，都带轻微手作歪斜 ---------- */
+
+.promo-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.62rem 1.15rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border-radius: 10px 7px 11px 8px / 7px 11px 8px 10px;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.promo-cta:hover {
+  transform: translateY(-2px) rotate(-0.4deg);
+}
+
+/* .retypeset-home a { color: inherit } 的特异度是 (0,1,1)，会盖掉单类按钮色，
+   故这里带上容器类把墨色按钮的字色抢回来。 */
+.promo-cta--ink,
+.retypeset-home .promo-cta--ink {
+  background: var(--desk-sheet-ink);
+  color: var(--desk-sheet);
+  box-shadow: 0 8px 18px -10px rgba(38, 34, 28, 0.75);
+}
+
+.promo-cta--ink:hover {
+  box-shadow: 0 12px 24px -12px rgba(38, 34, 28, 0.8);
+}
+
+.promo-cta--paper,
+.retypeset-home .promo-cta--paper {
+  border: 1.5px solid color-mix(in srgb, var(--desk-sheet-ink) 30%, transparent);
+  background: var(--desk-paper);
+  color: var(--desk-sheet-ink);
+}
+
+.promo-cta--paper:hover {
+  border-color: color-mix(in srgb, var(--desk-sheet-ink) 55%, transparent);
+}
+
+/* ---------- 架构图链接行 ---------- */
+
+.promo-viz-row {
+  border-top: 1px solid var(--desk-sheet-hair);
+  transition: background-color 0.2s ease;
+}
+
+.promo-viz-row:first-child {
+  border-top: 0;
+}
+
+.promo-viz-row:hover {
+  background: color-mix(in srgb, var(--desk-sticky) 22%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .promo-caret {
+    animation: none;
+  }
+
+  .promo-cta:hover,
+  .promo-chip:hover {
+    transform: none;
+  }
+}
