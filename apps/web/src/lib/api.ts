@@ -1,5 +1,7 @@
 import axios, { type AxiosResponse } from "axios"
 
+import { installDemoAdapter } from "@/lib/demo/demo-adapter"
+
 const api = axios.create({
   baseURL: "/api",
   withCredentials: true,
@@ -7,6 +9,9 @@ const api = axios.create({
     "Content-Type": "application/json",
   },
 })
+
+// 演示模式（/demo）下把所有请求拦到内存 mock，非演示模式零开销直通网络。
+installDemoAdapter(api)
 
 export interface ApiErrorResponse {
   code: number

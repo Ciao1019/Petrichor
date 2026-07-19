@@ -43,6 +43,8 @@ import { AboutProfileConfigPage } from '@/features/pages/admin/AboutProfileConfi
 import { ProjectsConfigPage } from '@/features/pages/admin/ProjectsConfigPage'
 import { NotificationPage } from '@/features/pages/notification/NotificationPage'
 import { dashboardRoutes } from '@/lib/dashboard-routes'
+import { enterDemoMode } from '@/lib/demo/demo-mode'
+import { DemoModeBanner } from '@/components/demo-mode-banner'
 import { isPublicLightThemePath } from '@/lib/public-theme-routes'
 import { SiteAppearanceConfigPage } from '@/features/pages/admin/SiteAppearanceConfigPage'
 
@@ -64,7 +66,15 @@ function LoginPage() {
       <div className="absolute top-4 right-4">
         <ThemeToggle />
       </div>
-      <LoginForm className="w-full max-w-sm" onLoginSuccess={handleLoginSuccess} />
+      <div className="w-full max-w-sm">
+        <LoginForm className="w-full" onLoginSuccess={handleLoginSuccess} />
+        <p className="mt-4 text-center text-xs text-muted-foreground">
+          没有账号？
+          <a href="/demo" className="ml-1 underline underline-offset-4 hover:text-foreground">
+            免登录进入演示模式
+          </a>
+        </p>
+      </div>
     </div>
   )
 }
@@ -84,6 +94,7 @@ function DashboardLayout() {
       <AppSidebar variant="inset" />
       <SidebarInset>
         <AppBreadcrumb />
+        <DemoModeBanner />
         <TwoFactorEnforcementBanner />
         <div className="flex flex-1 flex-col">
           <Outlet />
@@ -91,6 +102,13 @@ function DashboardLayout() {
       </SidebarInset>
     </SidebarProvider>
   )
+}
+
+/* 演示模式入口：落 sessionStorage 标记后直接进真实仪表盘。
+   页面组件不感知演示态，数据层由 demo adapter 全量接管。 */
+function DemoEntry() {
+  enterDemoMode()
+  return <Navigate to={dashboardRoutes.knowledge} replace />
 }
 
 function AppThemeScope() {
@@ -109,6 +127,7 @@ function AppThemeScope() {
             <Route path="/about" element={<AboutPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/petrichor" element={<PetrichorPage />} />
+            <Route path="/demo" element={<DemoEntry />} />
             <Route path="/p/:shareCode" element={<PublicArticlePage />} />
             <Route path="/b/:code" element={<BurnReadPage />} />
             <Route path="/login" element={<LoginPage />} />
