@@ -29,12 +29,15 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
-import { ToolbarButton, ToolbarMenuGroup } from './toolbar';
+import { ToolbarButton } from './toolbar';
 
 const ACTION_ICONS: Record<ToolbarHighlighterAction, React.ReactNode> = {
   highlight: <HighlighterIcon className="size-4" />,
@@ -120,30 +123,34 @@ export function HighlighterToolbarButton({
         className="ignore-click-outside/toolbar w-56"
         align="start"
       >
-        <ToolbarMenuGroup label="标注样式">
-          <div className="grid grid-cols-2 gap-1 px-2 pb-1">
-            {HIGHLIGHTER_ACTIONS.map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                className={cn(
-                  'hover:bg-accent flex items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm',
-                  action === item.value && 'bg-accent'
-                )}
-                onClick={() => {
-                  setAction(item.value);
-                  applyHighlight(item.value, color);
-                }}
-              >
-                {ACTION_ICONS[item.value]}
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </ToolbarMenuGroup>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="text-muted-foreground text-xs font-semibold">
+            标注样式
+          </DropdownMenuLabel>
+          {HIGHLIGHTER_ACTIONS.map((item) => (
+            <DropdownMenuItem
+              key={item.value}
+              className={cn(action === item.value && 'bg-accent')}
+              onSelect={(event) => {
+                // 选样式后继续选颜色，不要立刻关菜单
+                event.preventDefault();
+                setAction(item.value);
+                applyHighlight(item.value, color);
+              }}
+            >
+              {ACTION_ICONS[item.value]}
+              {item.label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
 
-        <ToolbarMenuGroup label="颜色">
-          <div className="grid grid-cols-4 gap-1.5 px-2 pb-1">
+        <DropdownMenuSeparator />
+
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="text-muted-foreground text-xs font-semibold">
+            颜色
+          </DropdownMenuLabel>
+          <div className="grid grid-cols-4 gap-1.5 px-2 pb-1.5">
             {HIGHLIGHTER_COLORS.map((item) => (
               <button
                 key={item.value}
@@ -151,7 +158,7 @@ export function HighlighterToolbarButton({
                 title={item.name}
                 aria-label={item.name}
                 className={cn(
-                  'size-7 rounded-md border border-black/10 shadow-sm transition-transform hover:scale-105',
+                  'size-7 rounded-md border border-black/10 shadow-sm transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                   color === item.value && 'ring-ring ring-2 ring-offset-1'
                 )}
                 style={{ backgroundColor: item.value }}
@@ -163,15 +170,18 @@ export function HighlighterToolbarButton({
               />
             ))}
           </div>
-        </ToolbarMenuGroup>
+        </DropdownMenuGroup>
 
         {highlightActive && (
-          <ToolbarMenuGroup>
-            <DropdownMenuItem className="gap-2 p-2" onClick={clearHighlight}>
-              <EraserIcon className="size-4" />
-              清除高亮
-            </DropdownMenuItem>
-          </ToolbarMenuGroup>
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuItem className="gap-2" onSelect={clearHighlight}>
+                <EraserIcon className="size-4" />
+                清除高亮
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
