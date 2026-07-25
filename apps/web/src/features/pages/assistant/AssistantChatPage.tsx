@@ -663,7 +663,7 @@ export function AssistantChatPage() {
   )
 
   return (
-    <div className="relative flex h-[calc(100dvh-3.5rem)] min-h-0 w-full bg-background">
+    <div className="relative flex min-h-0 w-full flex-1 bg-background">
       {isMobile ? (
         <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
           <SheetContent
@@ -1066,9 +1066,12 @@ function GrokThread({
       className="relative flex h-full flex-col items-stretch bg-[#fdfdfd] px-3 dark:bg-[#141414] md:px-4"
     >
       <AuiIf condition={(s) => s.thread.isEmpty}>
-        <div className="flex h-full flex-col items-center justify-center">
+        {/* 空状态：建议居中，输入框贴底，避免手机端垂直居中造成大块空白 */}
+        <div className="flex h-full min-h-0 flex-col items-center">
+          <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center">
+            <ThreadSuggestions />
+          </div>
           <GrokComposer placeholder={isUnscoped ? "问点什么？在知识库和文档库里寻找答案..." : `在「${scopeLabel}」里问点什么？`} {...composerProps} />
-          <ThreadSuggestions />
         </div>
       </AuiIf>
 
@@ -1095,7 +1098,7 @@ function GrokThread({
 
 function ThreadSuggestions() {
   return (
-    <div className="mt-4 flex w-full max-w-3xl flex-wrap justify-center gap-2 px-4">
+    <div className="flex w-full max-w-3xl flex-wrap justify-center gap-2 px-4">
       <ThreadPrimitive.Suggestions>
         {() => <SuggestionChip />}
       </ThreadPrimitive.Suggestions>

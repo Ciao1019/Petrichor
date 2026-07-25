@@ -23,6 +23,7 @@
     "@plate": "https://platejs.org/r/{name}.json",
     "@tool-ui": "https://www.tool-ui.com/r/{name}.json",
     "@extend": "https://www.extend.ai/ui/r/{name}.json",
-    "@kibo-ui": "https://www.kibo-ui.com/r/{name}.json"
+    "@kibo-ui": "https://www.kibo-ui.com/r/{name}.json",
+    "@godui": "https://godui.design/r/{name}.json"
   }
 }
