@@ -149,6 +149,17 @@ export interface MyToggleElement extends MyTextBlockElement {
 
 export interface RichText extends TBasicMarks, TCommentText, TFontMarks, TText {
   kbd?: boolean;
+  /** GodUI rough-notation 标注样式 */
+  highlightAction?:
+    | 'highlight'
+    | 'underline'
+    | 'box'
+    | 'circle'
+    | 'strike-through'
+    | 'crossed-off'
+    | 'bracket';
+  /** GodUI rough-notation 标注颜色 */
+  highlightColor?: string;
 }
 
 export type MyValue = (

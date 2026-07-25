@@ -4,7 +4,6 @@ import {
   BaselineIcon,
   BoldIcon,
   Code2Icon,
-  HighlighterIcon,
   ItalicIcon,
   PaintBucketIcon,
   StrikethroughIcon,
@@ -19,6 +18,7 @@ import { CommentToolbarButton } from './comment-toolbar-button';
 import { EmbedCardToolbarButton } from './embed-card-toolbar-button';
 import { EmojiToolbarButton } from './emoji-toolbar-button';
 import { FontColorToolbarButton } from './font-color-toolbar-button';
+import { HighlighterToolbarButton } from './highlighter-toolbar-button';
 import { RedoToolbarButton, UndoToolbarButton } from './history-toolbar-button';
 import { InsertToolbarButton } from './insert-toolbar-classic-button';
 import { LineHeightToolbarButton } from './line-height-toolbar-button';
@@ -134,9 +134,7 @@ export function FixedToolbarButtons() {
       <div className="grow" />
 
       <ToolbarGroup>
-        <MarkToolbarButton nodeType={KEYS.highlight} tooltip="Highlight">
-          <HighlighterIcon />
-        </MarkToolbarButton>
+        <HighlighterToolbarButton tooltip="手绘高亮 (⌘⇧H)" />
         <CommentToolbarButton />
       </ToolbarGroup>
 

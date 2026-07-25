@@ -11,10 +11,11 @@ import { KEYS } from 'platejs';
 import { useEditorReadOnly } from 'platejs/react';
 
 import { AiAssistantToolbarButton } from '@/components/editor/ai-assistant/ai-toolbar-button';
+import { CommentToolbarButton } from './comment-toolbar-button';
+import { HighlighterToolbarButton } from './highlighter-toolbar-button';
 import { LinkToolbarButton } from './link-toolbar-button';
 import { MarkToolbarButton } from './mark-toolbar-button';
 import { MoreToolbarButton } from './more-toolbar-button';
-import { CommentToolbarButton } from './comment-toolbar-button';
 import { SuggestionToolbarButton } from './suggestion-toolbar-button';
 import { ToolbarGroup, ToolbarSeparator } from './toolbar';
 import { TurnIntoToolbarButton } from './turn-into-toolbar-classic-button';
@@ -48,6 +49,8 @@ export function FloatingToolbarClassicButtons() {
         <MarkToolbarButton nodeType={KEYS.code} tooltip="行内代码 (⌘+E)">
           <Code2Icon />
         </MarkToolbarButton>
+
+        <HighlighterToolbarButton tooltip="手绘高亮 (⌘⇧H)" />
 
         <LinkToolbarButton />
         <CommentToolbarButton />
