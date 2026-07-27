@@ -5,13 +5,16 @@ import { MoreHorizontal, Book as BookIcon } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 
-import { cn } from "@/lib/utils"
 import {
-  ModernBookCover,
-  BookHeader,
-  BookTitle,
-  BookDescription,
-} from "@/cuicui/other/books/modern-book-cover/modern-book-cover"
+  Table,
+  useTableSortable,
+  useTableSortableState,
+  proportional,
+  pixel,
+  type TableColumn,
+} from "@astryxdesign/core/Table"
+import { Text } from "@astryxdesign/core/Text"
+import { AstryxProvider } from "@/components/astryx/astryx-provider"
 import { KbDialog } from "@/components/shadcn-studio/dialog/dialog-09"
 import { KbDropdownMenu } from "@/components/shadcn-studio/dropdown-menu/dropdown-menu-09"
 import { toastWithIcon } from "@/components/shadcn-studio/sonner/sonner-03"
@@ -29,100 +32,24 @@ import {
 } from "@/lib/api"
 import { knowledgeBasePath } from "@/lib/dashboard-routes"
 
-const BOOK_COLORS = [
-  "neutral",
-  "amber",
-  "blue",
-  "emerald",
-  "violet",
-  "rose",
-  "sky",
-  "orange",
-] as const
-
-type BookColor = (typeof BOOK_COLORS)[number]
-
-function pickBookColor(id: string): BookColor {
-  let hash = 0
-  for (let i = 0; i < id.length; i += 1) {
-    hash = (hash * 31 + id.charCodeAt(i)) >>> 0
-  }
-  return BOOK_COLORS[hash % BOOK_COLORS.length]
+/**
+ * Astryx Table 的数据行类型。使用 type 别名（而非 interface）以满足
+ * useTableSortable 的 `Record<string, unknown>` 约束。
+ */
+type KnowledgeBaseRow = {
+  id: string
+  name: string
+  description: string
+  createdAt: string
+  updatedAt: string
 }
 
-function KnowledgeBaseCard({
-  kb,
-  onClick,
-  onEdit,
-  onDelete,
-}: {
-  kb: KnowledgeBaseResponse
-  onClick: () => void
-  onEdit: () => void
-  onDelete: () => void
-}) {
-  return (
-    <div
-      className={cn(
-        "group cursor-pointer outline-hidden rounded-xl transform-gpu transition-transform hover:scale-[1.02]",
-        "focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-      )}
-      onClick={onClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.currentTarget !== e.target) return
-        if (e.key !== "Enter" && e.key !== " ") return
-        e.preventDefault()
-        onClick()
-      }}
-    >
-      <ModernBookCover size="sm" color={pickBookColor(kb.id)} className="w-min">
-        <BookHeader className="w-full items-start justify-between gap-3">
-          <BookIcon size={20} className="text-white/90 shrink-0" />
-          <KbDropdownMenu
-            trigger={
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  "h-8 w-8 shrink-0 text-white/80",
-                  "hover:bg-white/10 hover:text-white",
-                  "focus-visible:ring-2 focus-visible:ring-white/30"
-                )}
-                aria-label="更多操作"
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            }
-            align="end"
-          >
-            <DropdownMenuItem
-              onClick={() => {
-                void navigator.clipboard.writeText(kb.id)
-                  .then(() => toastWithIcon("已复制知识库 ID"))
-                  .catch(() => toast.error("复制失败"))
-              }}
-            >
-              复制 ID
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onEdit}>编辑</DropdownMenuItem>
-            <DropdownMenuItem variant="destructive" onClick={onDelete}>
-              删除
-            </DropdownMenuItem>
-          </KbDropdownMenu>
-        </BookHeader>
+type KnowledgeBaseSortKey = "name" | "updatedAt"
 
-        <BookTitle className="line-clamp-2 text-lg">{kb.name}</BookTitle>
-        <BookDescription className="line-clamp-2 min-h-[2.5rem]">
-          {kb.description || "暂无描述"}
-        </BookDescription>
-        <div className="mt-3 text-[11px] opacity-70 select-none">
-          更新于 {new Date(kb.updatedAt).toLocaleDateString()}
-        </div>
-      </ModernBookCover>
-    </div>
-  )
+function formatDate(value: string): string {
+  if (!value) return "-"
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? "-" : date.toLocaleDateString()
 }
 
 export function KnowledgeBasePage() {
@@ -141,7 +68,6 @@ export function KnowledgeBasePage() {
   const navigate = useNavigate()
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
-  const currentPage = pageIndex + 1
 
   const fetchData = React.useCallback(async () => {
     setLoading(true)
@@ -269,6 +195,117 @@ export function KnowledgeBasePage() {
     }
   }, [activeKb, fetchData, saving])
 
+  const rows = React.useMemo<KnowledgeBaseRow[]>(
+    () =>
+      data.map((kb) => ({
+        id: kb.id,
+        name: kb.name,
+        description: kb.description || "",
+        createdAt: kb.createdAt,
+        updatedAt: kb.updatedAt,
+      })),
+    [data],
+  )
+
+  const { sortedData, sortConfig } = useTableSortableState<KnowledgeBaseRow, KnowledgeBaseSortKey>({
+    data: rows,
+    defaultSort: [{ sortKey: "updatedAt", direction: "descending" }],
+    comparators: {
+      name: (a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"),
+      updatedAt: (a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime(),
+    },
+  })
+  const sortPlugin = useTableSortable<KnowledgeBaseRow, KnowledgeBaseSortKey>(sortConfig)
+
+  const columns = React.useMemo<TableColumn<KnowledgeBaseRow>[]>(
+    () => [
+      {
+        key: "name",
+        header: "名称",
+        sortable: true,
+        width: proportional(2),
+        renderCell: (kb) => (
+          <button
+            type="button"
+            className="flex min-w-0 items-center gap-2 text-left outline-none hover:underline focus-visible:underline"
+            onClick={() => navigate(knowledgeBasePath(kb.id))}
+          >
+            <BookIcon size={16} className="shrink-0 text-muted-foreground" />
+            <Text weight="semibold" maxLines={1}>
+              {kb.name}
+            </Text>
+          </button>
+        ),
+      },
+      {
+        key: "description",
+        header: "描述",
+        width: proportional(3),
+        renderCell: (kb) => (
+          <Text type="supporting" color="secondary" maxLines={2}>
+            {kb.description || "暂无描述"}
+          </Text>
+        ),
+      },
+      {
+        key: "updatedAt",
+        header: "更新时间",
+        sortable: true,
+        width: pixel(140),
+        renderCell: (kb) => (
+          <Text type="supporting" color="secondary">
+            {formatDate(kb.updatedAt)}
+          </Text>
+        ),
+      },
+      {
+        key: "actions",
+        header: "",
+        align: "end",
+        width: pixel(64),
+        resizable: false,
+        renderCell: (kb) => (
+          <KbDropdownMenu
+            trigger={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                aria-label="更多操作"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            }
+            align="end"
+          >
+            <DropdownMenuItem
+              onClick={() => {
+                void navigator.clipboard.writeText(kb.id)
+                  .then(() => toastWithIcon("已复制知识库 ID"))
+                  .catch(() => toast.error("复制失败"))
+              }}
+            >
+              复制 ID
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => openEdit(data.find((item) => item.id === kb.id) ?? kb)}>
+              编辑
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => {
+                setActiveKb(data.find((item) => item.id === kb.id) ?? kb)
+                setDeleteOpen(true)
+              }}
+            >
+              删除
+            </DropdownMenuItem>
+          </KbDropdownMenu>
+        ),
+      },
+    ],
+    [data, navigate, openEdit],
+  )
+
   return (
     <div className="w-full p-4 lg:p-6">
       <div className="flex items-center justify-between mb-6">
@@ -280,25 +317,20 @@ export function KnowledgeBasePage() {
         <div className="flex items-center justify-center h-64">
           <span className="text-muted-foreground">加载中...</span>
         </div>
-      ) : data.length === 0 ? (
-        <div className="flex items-center justify-center h-64">
-          <span className="text-muted-foreground">暂无数据</span>
-        </div>
       ) : (
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 justify-items-center">
-          {data.map((kb) => (
-            <KnowledgeBaseCard
-              key={kb.id}
-              kb={kb}
-              onClick={() => navigate(knowledgeBasePath(kb.id))}
-              onEdit={() => openEdit(kb)}
-              onDelete={() => {
-                setActiveKb(kb)
-                setDeleteOpen(true)
-              }}
-            />
-          ))}
-        </div>
+        <AstryxProvider>
+          <Table
+            data={sortedData}
+            columns={columns}
+            idKey="id"
+            plugins={{ sort: sortPlugin }}
+            density="balanced"
+            dividers="rows"
+            hasHover
+            verticalAlign="middle"
+            textOverflow="truncate"
+          />
+        </AstryxProvider>
       )}
 
       <div className="py-3 mt-4">
