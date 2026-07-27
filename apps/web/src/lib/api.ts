@@ -449,6 +449,19 @@ export const knowledgeBaseApi = {
 
 export type KnowledgeBaseNodeType = "FOLDER" | "ARTICLE"
 
+/** 文章公开分享状态：未分享 / 已公开 / 需密码 / 已过期 */
+export type ArticleTreeShareStatus = "none" | "public" | "password" | "expired"
+
+/** 文章在 LLM Wiki 中的编译状态：未收录 / 已同步 / 源文已更新待重编 */
+export type ArticleTreeWikiStatus = "none" | "ready" | "stale"
+
+/** 文章节点在知识库树中的状态徽标数据 */
+export interface ArticleTreeStatus {
+  hasMindmap: boolean
+  shareStatus: ArticleTreeShareStatus
+  wikiStatus: ArticleTreeWikiStatus
+}
+
 export interface KnowledgeBaseTreeNode {
   id: string
   parentId: string | null
@@ -458,6 +471,8 @@ export interface KnowledgeBaseTreeNode {
   sortOrder: number
   hasChildren?: boolean
   children?: KnowledgeBaseTreeNode[]
+  /** 仅文章节点返回：分享 / 思维导图 / LLM Wiki 状态 */
+  status?: ArticleTreeStatus
 }
 
 export interface KnowledgeBaseTreeResponse {

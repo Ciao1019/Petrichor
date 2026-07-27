@@ -6,12 +6,16 @@ import { requireCurrentUser } from "@/server/auth/current-user"
 import { getDb } from "@/server/db/client"
 import {
     knowledgeBaseArticles,
+    knowledgeBaseArticleShares,
     knowledgeBaseArticleTags,
     knowledgeBaseNodes,
     knowledgeBases,
+    knowledgeBaseWikiPages,
     type KnowledgeBaseArticleRecord,
+    type KnowledgeBaseArticleShareRecord,
     type KnowledgeBaseNodeRecord,
     type KnowledgeBaseRecord,
+    type KnowledgeBaseWikiPageRecord,
 } from "@/server/db/schema"
 import { badRequest, notFound, ok, readJson, tableData, toErrorResponse } from "@/server/http/response"
 import { resolvePagination } from "@/server/http/pagination"
@@ -19,6 +23,11 @@ import { invalidatePublicArticleDetailCache, invalidatePublicArticleListCache } 
 import { buildPublicArticleMetadata } from "@/server/kb/share-logic"
 import { buildArticleAiSummaryContentHash, resolveUsableArticleAiSummary } from "@/server/kb/article-summary-logic"
 import { isDescendantKnowledgeBaseNode, moveNodeIdIntoSiblingOrder } from "@/server/kb/node-move-logic"
+import {
+    buildArticleWikiSourcePageKey,
+    resolveArticleTreeStatus,
+    type ArticleTreeStatus,
+} from "@/server/kb/tree-status-logic"
 import { deleteS3Objects, extractS4ObjectKeysFromArticleContent } from "@/server/upload/s3-delete"
 import { getLocalStorageDirOrNull } from "@/server/upload/local-storage"
 
@@ -34,6 +43,8 @@ type TreeNodeResponse = {
     sortOrder: number
     hasChildren: boolean
     children: TreeNodeResponse[]
+    /** 仅文章节点：公开分享 / 思维导图 / LLM Wiki 编译状态 */
+    status?: ArticleTreeStatus
 }
 
 const idSchema = z.union([z.string(), z.number()]).transform((value, ctx) => {
@@ -237,16 +248,56 @@ async function loadKnowledgeBaseGraph(db: Db, userId: number, knowledgeBaseId: n
             .where(and(eq(knowledgeBaseArticles.userId, userId), inArray(knowledgeBaseArticles.nodeId, articleNodeIds)))
         : []
 
-    return { nodes, articles }
+    const articleIds = articles.map((article) => article.id)
+    // 批量拉取分享记录与 LLM Wiki 源页面，供文章树状态徽标使用
+    const shares = articleIds.length > 0
+        ? await db
+            .select()
+            .from(knowledgeBaseArticleShares)
+            .where(and(eq(knowledgeBaseArticleShares.userId, userId), inArray(knowledgeBaseArticleShares.articleId, articleIds)))
+        : []
+
+    const wikiSourcePageKeys = articleIds.map((articleId) => buildArticleWikiSourcePageKey(articleId))
+    const wikiPages = wikiSourcePageKeys.length > 0
+        ? await db
+            .select()
+            .from(knowledgeBaseWikiPages)
+            .where(and(
+                eq(knowledgeBaseWikiPages.userId, userId),
+                eq(knowledgeBaseWikiPages.knowledgeBaseId, knowledgeBaseId),
+                inArray(knowledgeBaseWikiPages.pageKey, wikiSourcePageKeys),
+            ))
+        : []
+
+    return { nodes, articles, shares, wikiPages }
 }
 
 function indexGraph(
     nodes: KnowledgeBaseNodeRecord[],
     articles: KnowledgeBaseArticleRecord[],
+    shares: KnowledgeBaseArticleShareRecord[] = [],
+    wikiPages: KnowledgeBaseWikiPageRecord[] = [],
 ) {
+    const shareByArticleId = new Map(shares.map((share) => [share.articleId, share]))
+    const wikiPageByPageKey = new Map(wikiPages.map((page) => [page.pageKey, page]))
+    const now = new Date()
+
+    const statusByNodeId = new Map<number, ArticleTreeStatus>(
+        articles.map((article) => [
+            article.nodeId,
+            resolveArticleTreeStatus(
+                article,
+                shareByArticleId.get(article.id),
+                wikiPageByPageKey.get(buildArticleWikiSourcePageKey(article.id)),
+                now,
+            ),
+        ]),
+    )
+
     return {
         articleByNodeId: new Map(articles.map((article) => [article.nodeId, article])),
         nodeById: new Map(nodes.map((node) => [node.id, node])),
+        statusByNodeId,
     }
 }
 
@@ -268,11 +319,12 @@ function buildTree(
     nodes: KnowledgeBaseNodeRecord[],
     articleByNodeId: Map<number, KnowledgeBaseArticleRecord>,
     parentId: number | null,
+    statusByNodeId?: Map<number, ArticleTreeStatus>,
 ): TreeNodeResponse[] {
     return nodes
         .filter((node) => (node.parentId ?? null) === parentId)
         .map((node) => {
-            const children = buildTree(nodes, articleByNodeId, node.id)
+            const children = buildTree(nodes, articleByNodeId, node.id, statusByNodeId)
             const article = articleByNodeId.get(node.id)
 
             return {
@@ -284,6 +336,7 @@ function buildTree(
                 sortOrder: node.sortOrder,
                 hasChildren: children.length > 0,
                 children,
+                ...(node.type === "ARTICLE" ? { status: statusByNodeId?.get(node.id) } : {}),
             }
         })
 }
@@ -308,8 +361,9 @@ function flattenRootChildrenForChildrenEndpoint(
     nodes: KnowledgeBaseNodeRecord[],
     articleByNodeId: Map<number, KnowledgeBaseArticleRecord>,
     parentId: number | null,
+    statusByNodeId?: Map<number, ArticleTreeStatus>,
 ) {
-    return buildTree(nodes, articleByNodeId, parentId).map((node) => ({
+    return buildTree(nodes, articleByNodeId, parentId, statusByNodeId).map((node) => ({
         ...node,
         children: [],
     }))
@@ -565,8 +619,11 @@ export async function treeNodes(request: NextRequest) {
         const input = nodeTreeSchema.parse(await readJson(request))
         await assertKnowledgeBaseOwner(getDb(), user.id, input.knowledgeBaseId)
         const graph = await loadKnowledgeBaseGraph(getDb(), user.id, input.knowledgeBaseId)
-        const indexed = indexGraph(graph.nodes, graph.articles)
-        const roots = filterTreeByKeyword(buildTree(graph.nodes, indexed.articleByNodeId, null), input.keyword)
+        const indexed = indexGraph(graph.nodes, graph.articles, graph.shares, graph.wikiPages)
+        const roots = filterTreeByKeyword(
+            buildTree(graph.nodes, indexed.articleByNodeId, null, indexed.statusByNodeId),
+            input.keyword,
+        )
 
         return ok({
             knowledgeBaseId: String(input.knowledgeBaseId),
@@ -583,8 +640,11 @@ export async function rootNodes(request: NextRequest) {
         const input = nodeTreeSchema.parse(await readJson(request))
         await assertKnowledgeBaseOwner(getDb(), user.id, input.knowledgeBaseId)
         const graph = await loadKnowledgeBaseGraph(getDb(), user.id, input.knowledgeBaseId)
-        const indexed = indexGraph(graph.nodes, graph.articles)
-        const roots = filterTreeByKeyword(buildTree(graph.nodes, indexed.articleByNodeId, null), input.keyword)
+        const indexed = indexGraph(graph.nodes, graph.articles, graph.shares, graph.wikiPages)
+        const roots = filterTreeByKeyword(
+            buildTree(graph.nodes, indexed.articleByNodeId, null, indexed.statusByNodeId),
+            input.keyword,
+        )
             .map((node) => ({ ...node, children: [] }))
         const { limit, offset } = resolvePagination(input)
 
@@ -606,7 +666,7 @@ export async function childNodes(request: NextRequest) {
             await assertFolderParent(getDb(), user.id, input.knowledgeBaseId, input.parentId)
         }
         const graph = await loadKnowledgeBaseGraph(getDb(), user.id, input.knowledgeBaseId)
-        const indexed = indexGraph(graph.nodes, graph.articles)
+        const indexed = indexGraph(graph.nodes, graph.articles, graph.shares, graph.wikiPages)
 
         return ok({
             knowledgeBaseId: String(input.knowledgeBaseId),
@@ -615,6 +675,7 @@ export async function childNodes(request: NextRequest) {
                 graph.nodes,
                 indexed.articleByNodeId,
                 input.parentId ?? null,
+                indexed.statusByNodeId,
             ),
         })
     })

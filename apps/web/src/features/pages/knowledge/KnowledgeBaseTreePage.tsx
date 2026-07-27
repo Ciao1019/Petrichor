@@ -83,9 +83,12 @@ import {
   knowledgeBaseApi,
   knowledgeBaseArticleApi,
   knowledgeBaseNodeApi,
+  type ArticleTreeStatus,
   type KnowledgeBaseResponse,
   type KnowledgeBaseTreeNode,
 } from "@/lib/api"
+import { Badge } from "@astryxdesign/core/Badge"
+import { AstryxProvider } from "@/components/astryx/astryx-provider"
 import {
   dashboardRoutes,
   knowledgeBaseArticleMindMapPath,
@@ -94,6 +97,45 @@ import {
 import { DocumentImportDialog } from "@/components/knowledge/DocumentImportDialog"
 import { cn } from "@/lib/utils"
 import { gsap } from "@/lib/gsap"
+
+/**
+ * 文章节点状态徽标：使用 Astryx Badge 展示公开分享 / 思维导图 / LLM Wiki 编译状态。
+ * 没有任何可展示状态时返回 null，避免占用树节点空间。
+ */
+function ArticleStatusBadges({ status }: { status: ArticleTreeStatus | undefined }) {
+  if (!status) return null
+
+  const badges: React.ReactNode[] = []
+
+  if (status.shareStatus === "public") {
+    badges.push(<Badge key="share" variant="green" label="已公开" />)
+  } else if (status.shareStatus === "password") {
+    badges.push(<Badge key="share" variant="orange" label="密码分享" />)
+  } else if (status.shareStatus === "expired") {
+    badges.push(<Badge key="share" variant="red" label="分享过期" />)
+  }
+
+  if (status.hasMindmap) {
+    badges.push(<Badge key="mindmap" variant="purple" label="思维导图" />)
+  }
+
+  if (status.wikiStatus === "ready") {
+    badges.push(<Badge key="wiki" variant="blue" label="Wiki 已同步" />)
+  } else if (status.wikiStatus === "stale") {
+    badges.push(<Badge key="wiki" variant="yellow" label="Wiki 待更新" />)
+  }
+
+  if (badges.length === 0) return null
+
+  return (
+    <div
+      className="hidden shrink-0 items-center gap-1 sm:flex"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {badges}
+    </div>
+  )
+}
 
 type CreateArticleImportStage = "idle" | "reading" | "ready" | "creating" | "error"
 
@@ -1690,6 +1732,8 @@ export function KnowledgeBaseTreePage() {
 
               <TreeLabel>{node.name}</TreeLabel>
 
+              {!isFolder ? <ArticleStatusBadges status={node.status} /> : null}
+
               <div className="ml-auto shrink-0 flex items-center gap-1">
                 {isFolder && activeDragNodeId ? (
                   <KnowledgeBaseFolderDropTarget
@@ -1834,6 +1878,7 @@ export function KnowledgeBaseTreePage() {
   )
 
   return (
+    <AstryxProvider>
     <div className="w-full p-4 lg:p-6">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
@@ -2444,6 +2489,7 @@ export function KnowledgeBaseTreePage() {
         />
       ) : null}
     </div>
+    </AstryxProvider>
   )
 }
 
