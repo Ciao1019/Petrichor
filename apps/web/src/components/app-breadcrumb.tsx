@@ -21,6 +21,7 @@ import { notificationApi } from "@/lib/api"
 import { dashboardRoutes } from "@/lib/dashboard-routes"
 import { emitNotificationRefresh, useNotificationCenter } from "@/hooks/use-notification-center"
 import { resolveAxiosErrorMessage } from "@/components/knowledge/article-share-utils"
+import { getKnowledgeBaseCrumbName } from "@/features/pages/knowledge/kb-recent"
 import { toast } from "sonner"
 
 interface BreadcrumbItem {
@@ -31,15 +32,15 @@ interface BreadcrumbItem {
 const routeMap: Record<string, BreadcrumbItem[]> = {
   [dashboardRoutes.root]: [{ label: "系统看板" }],
   [dashboardRoutes.account]: [{ label: "个人中心" }, { label: "账号资料" }],
-  [dashboardRoutes.knowledge]: [{ label: "笔记管理" }, { label: "知识库" }],
-  [dashboardRoutes.imports]: [{ label: "笔记管理" }, { label: "导入任务列表" }],
-  [dashboardRoutes.wiki]: [{ label: "笔记管理" }, { label: "知识 Wiki" }],
-  [dashboardRoutes.notifications]: [{ label: "系统消息" }, { label: "消息中心" }],
-  [`${dashboardRoutes.knowledge}/articles`]: [{ label: "笔记管理" }, { label: "知识库", href: dashboardRoutes.knowledge }, { label: "文章列表" }],
-  [`${dashboardRoutes.knowledge}/categories`]: [{ label: "笔记管理" }, { label: "知识库", href: dashboardRoutes.knowledge }, { label: "分类管理" }],
-  [dashboardRoutes.aiConfig]: [{ label: "笔记管理" }, { label: "模型配置" }],
-  [dashboardRoutes.assistant]: [{ label: "智能应用" }, { label: "助手" }],
-  [dashboardRoutes.metrics]: [{ label: "笔记管理" }, { label: "数据概览" }],
+  [dashboardRoutes.knowledge]: [{ label: "知识库" }],
+  [dashboardRoutes.imports]: [{ label: "导入任务" }],
+  [dashboardRoutes.wiki]: [{ label: "知识 Wiki" }],
+  [dashboardRoutes.notifications]: [{ label: "消息中心" }],
+  [`${dashboardRoutes.knowledge}/articles`]: [{ label: "知识库", href: dashboardRoutes.knowledge }, { label: "文章列表" }],
+  [`${dashboardRoutes.knowledge}/categories`]: [{ label: "知识库", href: dashboardRoutes.knowledge }, { label: "分类管理" }],
+  [dashboardRoutes.aiConfig]: [{ label: "模型配置" }],
+  [dashboardRoutes.assistant]: [{ label: "助手" }],
+  [dashboardRoutes.metrics]: [{ label: "数据概览" }],
   [dashboardRoutes.agentKeys]: [{ label: "Agent 集成" }, { label: "API Key 管理" }],
   [dashboardRoutes.agentLogs]: [{ label: "Agent 集成" }, { label: "调用日志" }],
   [dashboardRoutes.agentMcp]: [{ label: "Agent 集成" }, { label: "MCP Server" }],
@@ -57,7 +58,6 @@ function resolveBreadcrumbItems(pathname: string): BreadcrumbItem[] | undefined 
 
   if (new RegExp(`^${dashboardRoutes.knowledge}/[^/]+/articles/[^/]+/mindmap$`).test(pathname)) {
     return [
-      { label: "笔记管理" },
       { label: "知识库", href: dashboardRoutes.knowledge },
       { label: "思维导图" },
     ]
@@ -65,7 +65,6 @@ function resolveBreadcrumbItems(pathname: string): BreadcrumbItem[] | undefined 
 
   if (new RegExp(`^${dashboardRoutes.knowledge}/[^/]+/articles/[^/]+$`).test(pathname)) {
     return [
-      { label: "笔记管理" },
       { label: "知识库", href: dashboardRoutes.knowledge },
       { label: "文章编辑" },
     ]
@@ -73,25 +72,25 @@ function resolveBreadcrumbItems(pathname: string): BreadcrumbItem[] | undefined 
 
   if (new RegExp(`^${dashboardRoutes.imports}/[^/]+$`).test(pathname)) {
     return [
-      { label: "笔记管理" },
-      { label: "导入任务列表", href: dashboardRoutes.imports },
+      { label: "导入任务", href: dashboardRoutes.imports },
       { label: "任务详情" },
     ]
   }
 
   if (new RegExp(`^${dashboardRoutes.knowledge}/[^/]+/imports$`).test(pathname)) {
     return [
-      { label: "笔记管理" },
-      { label: "导入任务列表", href: dashboardRoutes.imports },
+      { label: "导入任务", href: dashboardRoutes.imports },
       { label: "知识库任务" },
     ]
   }
 
-  if (new RegExp(`^${dashboardRoutes.knowledge}/[^/]+$`).test(pathname)) {
+  const knowledgeBaseMatch = pathname.match(new RegExp(`^${dashboardRoutes.knowledge}/([^/]+)$`))
+  if (knowledgeBaseMatch) {
+    const kbId = knowledgeBaseMatch[1]
+    const kbName = getKnowledgeBaseCrumbName(kbId)
     return [
-      { label: "笔记管理" },
       { label: "知识库", href: dashboardRoutes.knowledge },
-      { label: "文章列表" },
+      { label: kbName || "浏览" },
     ]
   }
 
@@ -101,7 +100,17 @@ function resolveBreadcrumbItems(pathname: string): BreadcrumbItem[] | undefined 
 export function AppBreadcrumb() {
   const location = useLocation()
   const navigate = useNavigate()
-  const items = resolveBreadcrumbItems(location.pathname) || [{ label: "首页" }]
+  // 知识库详情异步写入名称后刷新末级面包屑
+  const [kbCrumbTick, setKbCrumbTick] = React.useState(0)
+  React.useEffect(() => {
+    const onCrumb = () => setKbCrumbTick((n) => n + 1)
+    window.addEventListener("petrichor:kb-crumb", onCrumb)
+    return () => window.removeEventListener("petrichor:kb-crumb", onCrumb)
+  }, [])
+  const items = React.useMemo(
+    () => resolveBreadcrumbItems(location.pathname) || [{ label: "首页" }],
+    [location.pathname, kbCrumbTick],
+  )
   const {
     unreadCount,
     recentItems,

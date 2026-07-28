@@ -1,14 +1,19 @@
 import {
   CalendarIcon,
   CheckCircle2,
+  ChevronLeft,
+  ChevronDown,
+  BookOpen,
   FileText,
   FileUp,
   Folder,
   FolderInput,
   FolderOpen,
+  FolderPlus,
   GripVertical,
   Loader2,
   MoreHorizontal,
+  Plus,
   Trash2,
   X,
 } from "lucide-react"
@@ -55,9 +60,18 @@ import { KbDropdownMenu } from "@/components/shadcn-studio/dropdown-menu/dropdow
 import { toastWithIcon } from "@/components/shadcn-studio/sonner/sonner-03"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
 import { AppPagination } from "@/components/app-pagination"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { OrbitingCircles } from "@/components/godui/orbiting-circles"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -87,7 +101,7 @@ import {
   type KnowledgeBaseResponse,
   type KnowledgeBaseTreeNode,
 } from "@/lib/api"
-import { Badge } from "@astryxdesign/core/Badge"
+import { StatusDot, type StatusDotVariant } from "@astryxdesign/core/StatusDot"
 import { AstryxProvider } from "@/components/astryx/astryx-provider"
 import {
   dashboardRoutes,
@@ -97,42 +111,49 @@ import {
 import { DocumentImportDialog } from "@/components/knowledge/DocumentImportDialog"
 import { cn } from "@/lib/utils"
 import { gsap } from "@/lib/gsap"
+import { rememberKnowledgeBase } from "@/features/pages/knowledge/kb-recent"
 
 /**
- * 文章节点状态徽标：使用 Astryx Badge 展示公开分享 / 思维导图 / LLM Wiki 编译状态。
- * 没有任何可展示状态时返回 null，避免占用树节点空间。
+ * 文章节点状态：用 StatusDot 降噪，悬停看含义，避免彩色胶囊墙抢标题注意力。
  */
 function ArticleStatusBadges({ status }: { status: ArticleTreeStatus | undefined }) {
   if (!status) return null
 
-  const badges: React.ReactNode[] = []
+  const dots: Array<{ key: string; variant: StatusDotVariant; label: string }> = []
 
   if (status.shareStatus === "public") {
-    badges.push(<Badge key="share" variant="green" label="已公开" />)
+    dots.push({ key: "share", variant: "success", label: "已公开" })
   } else if (status.shareStatus === "password") {
-    badges.push(<Badge key="share" variant="orange" label="密码分享" />)
+    dots.push({ key: "share", variant: "warning", label: "密码分享" })
   } else if (status.shareStatus === "expired") {
-    badges.push(<Badge key="share" variant="red" label="分享过期" />)
+    dots.push({ key: "share", variant: "error", label: "分享过期" })
   }
 
   if (status.hasMindmap) {
-    badges.push(<Badge key="mindmap" variant="purple" label="思维导图" />)
+    dots.push({ key: "mindmap", variant: "neutral", label: "思维导图" })
   }
 
   if (status.wikiStatus === "ready") {
-    badges.push(<Badge key="wiki" variant="blue" label="Wiki 已同步" />)
+    dots.push({ key: "wiki", variant: "accent", label: "Wiki 已同步" })
   } else if (status.wikiStatus === "stale") {
-    badges.push(<Badge key="wiki" variant="yellow" label="Wiki 待更新" />)
+    dots.push({ key: "wiki", variant: "warning", label: "Wiki 待更新" })
   }
 
-  if (badges.length === 0) return null
+  if (dots.length === 0) return null
 
   return (
     <div
-      className="hidden shrink-0 items-center gap-1 sm:flex"
+      className="hidden shrink-0 items-center gap-1.5 sm:flex"
       onClick={(e) => e.stopPropagation()}
     >
-      {badges}
+      {dots.map((dot) => (
+        <StatusDot
+          key={dot.key}
+          variant={dot.variant}
+          label={dot.label}
+          tooltip={dot.label}
+        />
+      ))}
     </div>
   )
 }
@@ -859,6 +880,7 @@ export function KnowledgeBaseTreePage() {
           return
         }
         setKnowledgeBase(kbRes.data)
+        rememberKnowledgeBase(kbRes.data)
       })
       .catch(() => {
         if (canceled) {
@@ -1881,38 +1903,62 @@ export function KnowledgeBaseTreePage() {
     <AstryxProvider>
     <div className="w-full p-4 lg:p-6">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold truncate">
-            {knowledgeBase?.name || "知识库"}
-          </h1>
-          {knowledgeBase?.description ? (
-            <p className="text-muted-foreground text-sm mt-1 line-clamp-2">
-              {knowledgeBase.description}
-            </p>
-          ) : null}
+        <div className="min-w-0 space-y-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="-ml-2 h-8 gap-1 px-2 text-muted-foreground hover:text-foreground"
+            onClick={() => navigate(dashboardRoutes.knowledge)}
+          >
+            <ChevronLeft className="size-4" />
+            知识库
+          </Button>
+          <div>
+            <h1 className="truncate text-2xl font-semibold tracking-tight">
+              {knowledgeBase?.name || "知识库"}
+            </h1>
+            {knowledgeBase?.description ? (
+              <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                {knowledgeBase.description}
+              </p>
+            ) : null}
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={() => navigate(dashboardRoutes.knowledge)}>
-            返回
-          </Button>
-          <Button
-            variant="outline"
-            disabled={!knowledgeBaseId || loading || saving}
-            onClick={() => openCreateFolder(null)}
-          >
-            新建文件夹
-          </Button>
-          <Button
-            variant="outline"
-            disabled={!knowledgeBaseId}
-            onClick={() => setImportDialogOpen(true)}
-          >
-            导入文档
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!knowledgeBaseId || loading || saving}
+              >
+                更多
+                <ChevronDown className="size-4 opacity-70" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem
+                disabled={!knowledgeBaseId || loading || saving}
+                onClick={() => openCreateFolder(null)}
+              >
+                <FolderPlus className="size-4" />
+                新建文件夹
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!knowledgeBaseId}
+                onClick={() => setImportDialogOpen(true)}
+              >
+                <FileUp className="size-4" />
+                导入文档
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             disabled={!knowledgeBaseId || loading || saving}
             onClick={() => openCreateArticle(null)}
           >
+            <Plus className="size-4" />
             新建文章
           </Button>
         </div>
@@ -2013,11 +2059,83 @@ export function KnowledgeBaseTreePage() {
         </div>
 
         {loading ? (
-          <div className="py-8 text-muted-foreground text-sm">加载中...</div>
-        ) : roots.length === 0 ? (
-          <div className="py-8 text-muted-foreground text-sm">
-            {debouncedKeyword ? "暂无匹配结果" : "暂无文件/文件夹"}
+          <div
+            className="flex min-h-56 items-center justify-center py-10"
+            role="status"
+            aria-live="polite"
+            aria-label="正在加载知识库"
+          >
+            <OrbitingCircles
+              radius={52}
+              duration={12}
+              iconSize={36}
+              className="text-muted-foreground"
+            >
+              <span className="flex size-9 items-center justify-center rounded-full border border-border/60 bg-background shadow-xs">
+                <Folder className="size-4" />
+              </span>
+              <span className="flex size-9 items-center justify-center rounded-full border border-border/60 bg-background shadow-xs">
+                <FileText className="size-4" />
+              </span>
+              <span className="flex size-9 items-center justify-center rounded-full border border-border/60 bg-background shadow-xs">
+                <BookOpen className="size-4" />
+              </span>
+            </OrbitingCircles>
           </div>
+        ) : roots.length === 0 ? (
+          <Empty className="border border-dashed py-10">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <FolderOpen />
+              </EmptyMedia>
+              <EmptyTitle>
+                {debouncedKeyword || hasArticleCreatedDateFilter
+                  ? "暂无匹配结果"
+                  : "暂无文件 / 文件夹"}
+              </EmptyTitle>
+              <EmptyDescription>
+                {debouncedKeyword || hasArticleCreatedDateFilter
+                  ? "调整搜索词或日期筛选后再试。"
+                  : "从一篇文章或一个文件夹开始整理这个知识库。"}
+              </EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+              {debouncedKeyword || hasArticleCreatedDateFilter ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setKeyword("")
+                    setArticleCreatedDateRange(undefined)
+                    setArticleCreatedDateDraftRange(undefined)
+                    setPageIndex(0)
+                  }}
+                >
+                  清除筛选
+                </Button>
+              ) : (
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!knowledgeBaseId || loading || saving}
+                    onClick={() => openCreateFolder(null)}
+                  >
+                    <FolderPlus className="size-4" />
+                    新建文件夹
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={!knowledgeBaseId || loading || saving}
+                    onClick={() => openCreateArticle(null)}
+                  >
+                    <Plus className="size-4" />
+                    新建文章
+                  </Button>
+                </div>
+              )}
+            </EmptyContent>
+          </Empty>
         ) : (
           <DndContext
             sensors={sensors}

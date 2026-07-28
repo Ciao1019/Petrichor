@@ -149,6 +149,7 @@
     "docx-preview": "^0.3.7",
     "drizzle-orm": "^0.45.2",
     "embla-carousel-react": "^8.6.0",
+    "framer-motion": "^12.42.2",
     "github-slugger": "^2.0.0",
     "gsap": "^3.15.0",
     "heat-graph": "^0.0.9",

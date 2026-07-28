@@ -18,10 +18,13 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar"
+import { cn } from "@/lib/utils"
 
 export function NavContent({
   groupLabel,
   items,
+  collapsibleGroup = false,
+  defaultGroupOpen,
 }: {
   groupLabel: string
   items: {
@@ -37,6 +40,10 @@ export function NavContent({
       match?: (pathname: string) => boolean
     }[]
   }[]
+  /** 整组可折叠：用于降低非主线入口的视觉权重 */
+  collapsibleGroup?: boolean
+  /** 组默认展开；未传时：有激活项则展开，否则折叠 */
+  defaultGroupOpen?: boolean
 }) {
   const location = useLocation()
   const matchNavItem = (item: {
@@ -52,36 +59,82 @@ export function NavContent({
     )
   }
 
+  const hasActiveItem = items.some(
+    (item) =>
+      item.isActive ||
+      matchNavItem(item) ||
+      item.items?.some((sub) => matchNavItem(sub)),
+  )
+  const [groupOpen, setGroupOpen] = React.useState(
+    defaultGroupOpen ?? hasActiveItem,
+  )
+
+  React.useEffect(() => {
+    if (hasActiveItem) {
+      setGroupOpen(true)
+    }
+  }, [hasActiveItem])
+
+  const menu = (
+    <SidebarMenu>
+      {items.map((item) => {
+        const hasChildren = Boolean(item.items && item.items.length > 0)
+
+        if (!hasChildren) {
+          const isActive = matchNavItem(item)
+          return (
+            <SidebarMenuItem key={item.title}>
+              <SidebarMenuButton asChild isActive={isActive} tooltip={item.title}>
+                <Link to={item.url}>
+                  <item.icon />
+                  <span>{item.title}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )
+        }
+
+        return (
+          <NavCollapsibleItem
+            key={item.title}
+            item={item}
+            matchNavItem={matchNavItem}
+          />
+        )
+      })}
+    </SidebarMenu>
+  )
+
+  if (!collapsibleGroup) {
+    return (
+      <SidebarGroup>
+        <SidebarGroupLabel>{groupLabel}</SidebarGroupLabel>
+        {menu}
+      </SidebarGroup>
+    )
+  }
+
   return (
     <SidebarGroup>
-      <SidebarGroupLabel>{groupLabel}</SidebarGroupLabel>
-      <SidebarMenu>
-        {items.map((item) => {
-          const hasChildren = Boolean(item.items && item.items.length > 0)
-
-          if (!hasChildren) {
-            const isActive = matchNavItem(item)
-            return (
-              <SidebarMenuItem key={item.title}>
-                <SidebarMenuButton asChild isActive={isActive} tooltip={item.title}>
-                  <Link to={item.url}>
-                    <item.icon />
-                    <span>{item.title}</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            )
-          }
-
-          return (
-            <NavCollapsibleItem
-              key={item.title}
-              item={item}
-              matchNavItem={matchNavItem}
+      <Collapsible open={groupOpen} onOpenChange={setGroupOpen} className="group/nav-group">
+        <CollapsibleTrigger asChild>
+          <SidebarGroupLabel
+            className={cn(
+              "cursor-pointer select-none hover:text-sidebar-foreground",
+              "flex w-full items-center justify-between pr-1",
+            )}
+          >
+            <span>{groupLabel}</span>
+            <IconChevronRight
+              className={cn(
+                "size-3.5 opacity-50 transition-transform duration-200",
+                groupOpen && "rotate-90",
+              )}
             />
-          )
-        })}
-      </SidebarMenu>
+          </SidebarGroupLabel>
+        </CollapsibleTrigger>
+        <GsapCollapse open={groupOpen}>{menu}</GsapCollapse>
+      </Collapsible>
     </SidebarGroup>
   )
 }
