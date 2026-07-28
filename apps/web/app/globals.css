@@ -77,6 +77,32 @@
   --font-mono:
     "Maple Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
     monospace;
+  --button-py-sm: 0.5rem;
+  --button-px-sm: 1rem;
+  --button-text-sm: 0.875rem;
+  --button-leading-sm: 1.25rem;
+  --button-radius-sm: var(--radius-md);
+  --button-py-md: 0.75rem;
+  --button-px-md: 1.5rem;
+  --button-text-md: 0.875rem;
+  --button-leading-md: 1.25rem;
+  --button-radius-md: var(--radius-lg);
+  --button-py-lg: 1rem;
+  --button-px-lg: 2rem;
+  --button-text-lg: 1rem;
+  --button-leading-lg: 1.5rem;
+  --button-radius-lg: var(--radius-xl);
+  --rainbow-speed: var(--rainbow-speed);
+  --color-rainbow-5: var(--rainbow-5);
+  --color-rainbow-4: var(--rainbow-4);
+  --color-rainbow-3: var(--rainbow-3);
+  --color-rainbow-2: var(--rainbow-2);
+  --color-rainbow-1: var(--rainbow-1);
+  --color-primary-rgb: var(--color-primary-rgb);
+  --glow-highlight: var(--glow-highlight);
+  --god-glow: var(--god-glow);
+  --god-gradient: var(--god-gradient);
+  --shadow: var(--shadow);
 }
 
 :root {
@@ -114,6 +140,24 @@
   --sidebar-ring: oklch(0.708 0 0);
   --highlight: oklch(0.852 0.199 91.936);
   --brand: oklch(0.623 0.214 259.815);
+  --shadow-2xs: 0 1px 2px rgb(0 0 0 / 0.02);
+  --shadow-xs: 0 1px 3px rgb(0 0 0 / 0.04);
+  --shadow-sm: 0 2px 6px rgb(0 0 0 / 0.05);
+  --shadow: 0 4px 12px rgb(0 0 0 / 0.06);
+  --shadow-md: 0 8px 20px rgb(0 0 0 / 0.08);
+  --shadow-lg: 0 16px 32px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 24px 48px rgb(0 0 0 / 0.12);
+  --shadow-2xl: 0 40px 80px rgb(0 0 0 / 0.16);
+  --god-gradient: linear-gradient(135deg, oklch(0.55 0.19 266) 0%, oklch(1 0 0) 50%, oklch(0.85 0.12 90) 100%);
+  --god-glow: 0 0 24px oklch(0.55 0.19 266 / 0.14), 0 0 80px oklch(0.85 0.12 90 / 0.06);
+  --glow-highlight: 61, 102, 223;
+  --color-primary-rgb: 61, 102, 223;
+  --rainbow-1: oklch(0.55 0.19 266);
+  --rainbow-2: oklch(0.68 0.16 305);
+  --rainbow-3: oklch(0.82 0.1 185);
+  --rainbow-4: oklch(0.78 0.12 14);
+  --rainbow-5: oklch(0.8 0.13 90);
+  --rainbow-speed: 2s;
 }
 
 .dark {
@@ -151,6 +195,24 @@
   --sidebar-ring: oklch(0.556 0 0);
   --highlight: oklch(0.852 0.199 91.936);
   --brand: oklch(0.707 0.165 254.624);
+  --shadow-2xs: 0 1px 2px rgb(0 0 0 / 0.12);
+  --shadow-xs: 0 1px 3px rgb(0 0 0 / 0.15);
+  --shadow-sm: 0 2px 6px rgb(0 0 0 / 0.2);
+  --shadow: 0 4px 12px rgb(0 0 0 / 0.25);
+  --shadow-md: 0 8px 20px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 16px 32px rgb(0 0 0 / 0.35);
+  --shadow-xl: 0 24px 48px rgb(0 0 0 / 0.4);
+  --shadow-2xl: 0 40px 80px rgb(0 0 0 / 0.5);
+  --god-gradient: linear-gradient(135deg, oklch(0.72 0.15 266) 0%, oklch(1 0 0) 50%, oklch(0.86 0.12 90) 100%);
+  --god-glow: 0 0 24px oklch(0.72 0.15 266 / 0.28), 0 0 80px oklch(0.86 0.12 90 / 0.12);
+  --glow-highlight: 120, 160, 255;
+  --color-primary-rgb: 120, 160, 255;
+  --rainbow-1: oklch(0.72 0.15 266);
+  --rainbow-2: oklch(0.74 0.16 305);
+  --rainbow-3: oklch(0.84 0.1 185);
+  --rainbow-4: oklch(0.8 0.12 14);
+  --rainbow-5: oklch(0.84 0.13 90);
+  --rainbow-speed: 2s;
 }
 
 /* ── View Transition: 昼夜切换 crossfade ── */
@@ -272,6 +334,9 @@
   .dark input:-webkit-autofill:focus,
   .dark input:-webkit-autofill:active {
     -webkit-box-shadow: 0 0 0 30px oklch(0.205 0 0) inset !important;
+  }
+  :is(code, kbd, samp, pre) {
+    font-family: var(--font-mono);
   }
 }
 

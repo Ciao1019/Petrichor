@@ -263,8 +263,20 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           ) : (
             <>
               <NavContent groupLabel="笔记管理" items={noteNav} />
-              <NavContent groupLabel="Agent 集成" items={agentNav} />
-              {systemNav.length > 0 ? <NavContent groupLabel="系统管理" items={systemNav} /> : null}
+              <NavContent
+                groupLabel="Agent 集成"
+                items={agentNav}
+                collapsibleGroup
+                defaultGroupOpen={false}
+              />
+              {systemNav.length > 0 ? (
+                <NavContent
+                  groupLabel="系统管理"
+                  items={systemNav}
+                  collapsibleGroup
+                  defaultGroupOpen={false}
+                />
+              ) : null}
             </>
           )
         ) : (
