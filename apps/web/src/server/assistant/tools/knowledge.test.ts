@@ -14,8 +14,15 @@ const treeMocks = vi.hoisted(() => ({
     semanticSearchTreeNodes: vi.fn(),
 }))
 
+// 星图公开载荷的加载链最终会走到 kb/share-handlers → auth，
+// 那里在模块加载期就要求运行时配置；本套件只验证工具契约，直接打桩
+const graphMocks = vi.hoisted(() => ({
+    loadPublicSiteGraph: vi.fn(),
+}))
+
 vi.mock("@/server/kb/wiki-agent-logic", () => wikiMocks)
 vi.mock("@/server/kb/wiki-tree", () => treeMocks)
+vi.mock("@/server/site-graph/public-graph", () => graphMocks)
 
 import { knowledgeAssistantTools, readKnowledgeNode, searchKnowledge } from "./knowledge"
 
@@ -201,6 +208,7 @@ describe("knowledge assistant tools", () => {
         expect(knowledgeAssistantTools.map(({ name, domain, risk }) => ({ name, domain, risk }))).toEqual([
             { name: "list_knowledge_bases", domain: "knowledge", risk: "read" },
             { name: "search_knowledge", domain: "knowledge", risk: "read" },
+            { name: "search_knowledge_graph", domain: "knowledge", risk: "read" },
             { name: "read_knowledge_node", domain: "knowledge", risk: "read" },
         ])
     })

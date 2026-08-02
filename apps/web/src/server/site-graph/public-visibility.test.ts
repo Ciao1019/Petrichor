@@ -15,6 +15,7 @@ function node(
         route: null,
         summary: "",
         attributes: [],
+        aliases: [],
         parentId,
         topSectionId: null,
         weight: 1,

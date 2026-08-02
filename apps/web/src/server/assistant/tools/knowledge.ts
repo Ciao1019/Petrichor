@@ -13,6 +13,8 @@ import {
     type TreeRetrievalHit,
 } from "@/server/kb/wiki-tree"
 import { badRequest, notFound } from "@/server/http/response"
+import { retrieveFromGraph } from "@/server/site-graph/qa-retrieval"
+import { loadPublicSiteGraph } from "@/server/site-graph/public-graph"
 import type { AssistantToolContext, AssistantToolRegistration } from "../domain-types"
 
 const idSchema = z.union([z.string(), z.number()]).transform((value, ctx) => {
@@ -22,6 +24,12 @@ const idSchema = z.union([z.string(), z.number()]).transform((value, ctx) => {
         return z.NEVER
     }
     return Number(raw)
+})
+
+const searchKnowledgeGraphSchema = z.object({
+    query: z.string().trim().min(1),
+    maxHops: z.number().int().min(1).max(3).optional(),
+    limit: z.number().int().min(1).max(10).optional(),
 })
 
 const searchKnowledgeSchema = z.object({
@@ -139,7 +147,12 @@ export async function readKnowledgeNode(
 ) {
     const knowledgeBaseId = input.knowledgeBaseId ?? focusId(ctx.focus?.knowledgeBaseId)
     if (knowledgeBaseId == null) {
-        throw badRequest("缺少 knowledgeBaseId，且当前对话未提供 focus.knowledgeBaseId")
+        // 跨库检索（search_knowledge 不传 knowledgeBaseId）时没有 focus 默认库，
+        // 必须由调用方把命中项里的 knowledgeBaseId 带回来。报错要给出可执行的下一步，
+        // 否则模型只会当成「工具不可用」直接放弃。
+        throw badRequest(
+            "缺少 knowledgeBaseId：当前对话没有默认知识库。请从 search_knowledge 返回的 hits[].knowledgeBaseId 取出该条目所属的库 ID，连同 nodeKey/pageKey/articleId 一起重新调用本工具。",
+        )
     }
 
     if (input.nodeKey) {
@@ -192,10 +205,25 @@ export const knowledgeAssistantTools: AssistantToolRegistration[] = [
         execute: async (ctx, input) => await searchKnowledge(ctx, searchKnowledgeSchema.parse(input)),
     },
     {
+        name: "search_knowledge_graph",
+        domain: "knowledge",
+        risk: "read",
+        // 注意作用域：全站星图只由「已公开分享的文章」构建，覆盖不到私有知识库。
+        // 因此它是关系型问题的加速入口，不能替代 search_knowledge。
+        description: "在「全站星图」（知识图谱）上按问题检索：把问句落到概念/实体节点，沿关系边扩散，返回命中概念、途经链路与链路终点的文章。适合「A 和 B 有什么关系 / 围绕某概念都写过什么」这类关联型问题。注意：星图仅覆盖已公开分享的文章，查不到私有知识库内容，因此它只是加速入口——私有内容或图谱未命中时，仍需用 search_knowledge。返回的 articles[].articleId 可继续传给 read_knowledge_node。",
+        inputSchema: searchKnowledgeGraphSchema,
+        execute: async (ctx, input) => {
+            void ctx
+            const parsed = searchKnowledgeGraphSchema.parse(input)
+            const payload = await loadPublicSiteGraph()
+            return retrieveFromGraph(payload, parsed)
+        },
+    },
+    {
         name: "read_knowledge_node",
         domain: "knowledge",
         risk: "read",
-        description: "读取检索命中的知识内容；nodeKey、pageKey、articleId 三选一，可省略 knowledgeBaseId 使用 focus 默认库。若内容含图片/附件，会在 media 字段返回可直接渲染的引用（src 多为 s4key:…）；需要展示图片时在最终答案中输出 Markdown：`![说明](media.src)`。",
+        description: "读取检索命中的知识内容；nodeKey、pageKey、articleId 三选一。knowledgeBaseId 仅在当前对话已锁定知识库时可省略；若上一步是跨库检索（search_knowledge 返回 mode=cross_kb），必须把该命中项的 hits[].knowledgeBaseId 一并传入，否则无法定位。若内容含图片/附件，会在 media 字段返回可直接渲染的引用（src 多为 s4key:…）；需要展示图片时在最终答案中输出 Markdown：`![说明](media.src)`。",
         inputSchema: readKnowledgeNodeSchema,
         execute: async (ctx, input) => await readKnowledgeNode(ctx, readKnowledgeNodeSchema.parse(input)),
     },

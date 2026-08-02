@@ -521,6 +521,7 @@ export async function loadPublicGraphPayload(): Promise<SiteGraphPayload> {
             route: live?.href ?? node.route,
             summary: node.summary ?? "",
             attributes: parseAttributes(node.attributesJson),
+            aliases: parseAliases(node.aliasesJson),
             parentId: parentKey,
             topSectionId: null,
             weight: node.weight,

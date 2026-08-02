@@ -82,6 +82,8 @@ export interface SiteGraphPayloadNode {
     route: string | null
     summary: string
     attributes: SiteGraphAttribute[]
+    /** 同义写法，供检索命中；渲染不用 */
+    aliases: string[]
     parentId: string | null
     /** 所属顶层分类，用于点群聚簇着色 */
     topSectionId: string | null
