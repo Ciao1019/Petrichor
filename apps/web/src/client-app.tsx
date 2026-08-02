@@ -43,7 +43,7 @@ import { UserManagementPage } from '@/features/pages/admin/UserManagementPage'
 import { AboutProfileConfigPage } from '@/features/pages/admin/AboutProfileConfigPage'
 import { ProjectsConfigPage } from '@/features/pages/admin/ProjectsConfigPage'
 import { NotificationPage } from '@/features/pages/notification/NotificationPage'
-import { dashboardRoutes } from '@/lib/dashboard-routes'
+import { dashboardRoutes, isFixedViewportRoute } from '@/lib/dashboard-routes'
 import { enterDemoMode } from '@/lib/demo/demo-mode'
 import { DemoModeBanner } from '@/components/demo-mode-banner'
 import { isPublicSitePath } from '@/lib/public-theme-routes'
@@ -83,6 +83,10 @@ function LoginPage() {
 
 function DashboardLayout() {
   const [searchParams] = useSearchParams()
+  const location = useLocation()
+  /* 助手这类应用型页面必须给外壳一个确定高度：默认的 min-h-svh 会让整条 flex 链高度为 auto，
+     内部的 overflow-y-auto 永远不触发，长回答会把整页撑高，左侧会话列表被推出视口。 */
+  const lockViewport = isFixedViewportRoute(location.pathname)
 
   useEffect(() => {
     const token = searchParams.get('token')
@@ -91,8 +95,19 @@ function DashboardLayout() {
     }
   }, [searchParams])
 
+  useEffect(() => {
+    if (!lockViewport) return
+    // 只锁 documentElement，body 留给 Radix 的 scroll lock，避免互相覆盖
+    const root = document.documentElement
+    const previousOverflow = root.style.overflow
+    root.style.overflow = 'hidden'
+    return () => {
+      root.style.overflow = previousOverflow
+    }
+  }, [lockViewport])
+
   return (
-    <SidebarProvider>
+    <SidebarProvider className={lockViewport ? 'h-svh overflow-hidden' : undefined}>
       <AppSidebar variant="inset" />
       <SidebarInset>
         <AppBreadcrumb />
