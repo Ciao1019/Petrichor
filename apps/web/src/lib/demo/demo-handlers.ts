@@ -323,8 +323,6 @@ const handlers: Record<string, DemoHandler> = {
     "POST /assistant/thread/delete-many": (body) =>
         demoThreadDelete(Array.isArray(body.threadIds) ? body.threadIds.map(String) : []),
     "POST /assistant/plan/patch": (body) => demoPlanPatch(body),
-    "POST /assistant/operator-skills/pending/list": () => ok({ items: [] }),
-    "POST /assistant/operator-evolution/list": () => ok({ items: [] }),
 }
 
 export function resolveDemoHandler(key: string): DemoHandler | undefined {

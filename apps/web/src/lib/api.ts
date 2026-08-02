@@ -368,6 +368,8 @@ export interface SiteGraphPayloadNode {
   route: string | null
   summary: string
   attributes: SiteGraphAttribute[]
+  /** 同义写法，供检索命中；渲染不用 */
+  aliases: string[]
   parentId: string | null
   topSectionId: string | null
   weight: number
@@ -2180,39 +2182,4 @@ export const assistantApi = {
     todoId: string
     status: "pending" | "in_progress" | "completed" | "cancelled"
   }) => api.post<{ plan: AssistantPersistedPlan }>("/assistant/plan/patch", data),
-  operatorSkillsPendingList: () =>
-    api.post<{ items: AssistantOperatorSkillPending[] }>("/assistant/operator-skills/pending/list", {}),
-  operatorSkillsPendingResolve: (data: { pendingId: string; decision: "approve" | "reject" }) =>
-    api.post<{ ok: true; status: string }>("/assistant/operator-skills/pending/resolve", data),
-  operatorEvolutionList: (data: { status?: "pending" | "accepted" | "rejected" } = {}) =>
-    api.post<{ items: AssistantOperatorEvolutionProposal[] }>("/assistant/operator-evolution/list", data),
-  operatorEvolutionRun: (data: {
-    targetType: "skill" | "user_profile" | "agent_notes"
-    targetName?: string | null
-    hint?: string | null
-  }) => api.post<{ proposalId: string }>("/assistant/operator-evolution/run", data),
-  operatorEvolutionResolve: (data: { proposalId: string; decision: "accept" | "reject" }) =>
-    api.post<{ ok: true; status: string }>("/assistant/operator-evolution/resolve", data),
-}
-
-export interface AssistantOperatorSkillPending {
-  id: string
-  skillName: string
-  action: string
-  gist: string
-  description: string | null
-  status: string
-  createdAt: string
-}
-
-export interface AssistantOperatorEvolutionProposal {
-  id: string
-  targetType: string
-  targetName: string | null
-  beforeMd: string
-  afterMd: string
-  rationaleMd: string
-  status: string
-  createdAt: string
-  resolvedAt: string | null
 }

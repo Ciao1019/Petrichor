@@ -978,37 +978,6 @@ export const assistantOperatorSkills = pgTable("petrichor_assistant_operator_ski
     index("petrichor_assistant_operator_skill_user_idx").on(table.userId, table.status),
 ])
 
-export const assistantOperatorSkillPendings = pgTable("petrichor_assistant_operator_skill_pending", {
-    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
-    userId: bigint("user_id", { mode: "number" }).notNull(),
-    skillName: text("skill_name").notNull(),
-    action: text("action").notNull(),
-    beforeMd: text("before_md"),
-    afterMd: text("after_md"),
-    description: text("description"),
-    gist: text("gist").notNull(),
-    status: text("status").notNull().default("pending"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
-}, (table) => [
-    index("petrichor_assistant_operator_skill_pending_user_idx").on(table.userId, table.status, table.createdAt),
-])
-
-export const assistantOperatorEvolutionProposals = pgTable("petrichor_assistant_operator_evolution_proposal", {
-    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
-    userId: bigint("user_id", { mode: "number" }).notNull(),
-    targetType: text("target_type").notNull(),
-    targetName: text("target_name"),
-    beforeMd: text("before_md").notNull(),
-    afterMd: text("after_md").notNull(),
-    rationaleMd: text("rationale_md").notNull(),
-    status: text("status").notNull().default("pending"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
-}, (table) => [
-    index("petrichor_assistant_operator_evolution_user_idx").on(table.userId, table.status, table.createdAt),
-])
-
 export const assistantMessages = pgTable("petrichor_assistant_message", {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     threadId: bigint("thread_id", { mode: "number" }).notNull(),

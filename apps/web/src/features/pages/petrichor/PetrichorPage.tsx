@@ -98,12 +98,12 @@ const RUNTIME_NOTES: { title: string; detail: string; ink: MarkerColor }[] = [
     {
         title: "操作员多层记忆",
         ink: "purple",
-        detail: "记忆按层分区存放，跨会话保留你的写作偏好与项目背景；可以手动触发「进化」，把近期对话沉淀成长期记忆。",
+        detail: "记忆按层分区存放，跨会话保留你的写作偏好与项目背景；对话里随时可以让助手记下一条，下个线程就生效。",
     },
     {
-        title: "可写 Skills",
+        title: "Skill 目录",
         ink: "orange",
-        detail: "助手能读写自己的 Skill 目录，把重复流程固化成技能，下次直接调用，而不是每次重新描述一遍要求。",
+        detail: "把重复流程写成 Skill，助手按需加载全文再照着 playbook 调工具，而不是每次重新描述一遍要求。",
     },
     {
         title: "Plan 侧栏",

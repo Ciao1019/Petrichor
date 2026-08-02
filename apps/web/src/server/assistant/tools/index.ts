@@ -10,7 +10,6 @@ import { systemAssistantTools } from "./system"
 import { loadSkillTools } from "./load-skill"
 import { memoryManageTools } from "./memory-manage"
 import { searchOperatorHistoryTools } from "./search-operator-history"
-import { skillManageTools } from "./skill-manage"
 import { writeSubagentTools } from "./write-subagent"
 
 export const readonlyAssistantTools: AssistantToolRegistration[] = [
@@ -26,7 +25,6 @@ export const allAssistantTools: AssistantToolRegistration[] = [
     ...readonlyAssistantTools,
     ...memoryManageTools,
     ...searchOperatorHistoryTools,
-    ...skillManageTools,
     ...contentWriteAssistantTools,
     ...writeSubagentTools,
     ...adminAssistantTools,
