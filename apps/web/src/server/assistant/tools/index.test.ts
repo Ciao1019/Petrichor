@@ -21,6 +21,7 @@ const ctx: AssistantToolContext = {
 const LOCKED_TOOL_NAMES = [
     "list_knowledge_bases",
     "search_knowledge",
+    "search_knowledge_graph",
     "read_knowledge_node",
     "list_doc_libraries",
     "search_documents",
@@ -56,6 +57,7 @@ describe("readonly assistant tool registration", () => {
             "read_knowledge_node",
             "save_answer_artifact",
             "search_knowledge",
+            "search_knowledge_graph",
             "show_citations",
             "show_data_table",
             "show_progress",

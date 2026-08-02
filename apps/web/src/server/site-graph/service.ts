@@ -1,5 +1,5 @@
 import { badRequest } from "@/server/http/response"
-import { cachePublicContent, invalidatePublicSiteGraphCache } from "@/server/public-content-cache"
+import { invalidatePublicSiteGraphCache } from "@/server/public-content-cache"
 
 import { runSiteGraphExtraction } from "./extract-agent"
 import { loadAncestorPath, loadNeighborhoodNodeIds, loadSubtreeNodeIds } from "./graph-query"
@@ -17,7 +17,6 @@ import {
     loadEntityRegistryEntries,
     loadPublicArticleIdSet,
     loadPublicArticleInputs,
-    loadPublicGraphPayload,
     loadStoredDraft,
     mergeNodes,
     persistDraft,
@@ -29,17 +28,12 @@ import {
 import { summarizeValidationReport, validateSiteGraphDraft } from "./validate"
 import type {
     SiteGraphAdminNode,
-    SiteGraphPayload,
     SiteGraphRunMode,
     SiteGraphValidationReport,
 } from "./types"
 
-/** 前台点群载荷读缓存：与其他公开内容一致，写操作主动失效 */
-const loadCachedPublicGraph = cachePublicContent("siteGraph", loadPublicGraphPayload)
-
-export async function loadPublicSiteGraph(): Promise<SiteGraphPayload> {
-    return await loadCachedPublicGraph()
-}
+// 只读入口在 public-graph.ts，这里转出以保持既有 import 路径不变
+export { loadPublicSiteGraph } from "./public-graph"
 
 export interface SiteGraphGenerateResult {
     runId: string

@@ -388,6 +388,10 @@ export async function createSiteGraphRuntime(options: SiteGraphRuntimeOptions): 
     const { nodeMap, nodes, links } = buildRuntimeGraph(payload, labelLayer)
     const structureLinks = links.filter(isStructureLink)
     const relationLinks = links.filter((link) => !isStructureLink(link))
+    // 全站图谱靠父子结构成形；但检索出的子图没有结构边（节点都是平的），
+    // 此时若仍只对结构边施力，节点之间没有任何约束，会散成一圈互斥的孤点。
+    // 故没有结构边时回退用关系边做布局力。
+    const layoutLinks = structureLinks.length > 0 ? structureLinks : relationLinks
 
     let hoverNodeId: string | null = null
     let previewNodeId: string | null = null
@@ -420,7 +424,7 @@ export async function createSiteGraphRuntime(options: SiteGraphRuntimeOptions): 
         .alphaTarget(0.012)
         .velocityDecay(0.32)
         .force("link", force
-            .forceLink<RuntimeNode, RuntimeLink>(structureLinks)
+            .forceLink<RuntimeNode, RuntimeLink>(layoutLinks)
             .id((node) => node.id)
             .iterations(2)
             .distance((link) => {

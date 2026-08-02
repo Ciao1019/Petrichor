@@ -28,6 +28,8 @@ import {
     searchPublicArticles,
     type PublicArticleScope,
 } from "@/server/kb/public-qa-logic"
+import { retrieveFromGraph } from "@/server/site-graph/qa-retrieval"
+import { loadPublicSiteGraph } from "@/server/site-graph/public-graph"
 
 export const maxDuration = 300
 
@@ -173,6 +175,18 @@ function buildPublicQaTools(scope: PublicArticleScope) {
                 }
             },
         }),
+        search_knowledge_graph: tool({
+            description: "在本站「全站星图」（知识图谱）上按问题检索：把问句落到概念/实体节点，沿关系边扩散，返回命中的概念、途经链路与链路终点的公开文章。适合「A 和 B 有什么关系 / 围绕某概念都写过什么 / 这个概念涉及哪些文章」这类关联型问题。返回的 articles 可直接拿 articleId 继续调用 search_document_tree / read_source_article。",
+            inputSchema: z.object({
+                query: z.string().min(1),
+                maxHops: z.number().int().min(1).max(3).optional(),
+                limit: z.number().int().min(1).max(10).optional(),
+            }),
+            execute: async ({ query, maxHops, limit }) => {
+                const payload = await loadPublicSiteGraph()
+                return retrieveFromGraph(payload, { query, maxHops, limit })
+            },
+        }),
         search_public_articles: tool({
             description: "在本站「公开文章」里按关键词检索（标题/摘要/正文），返回最相关的文章列表（含 articleId、shareCode、标题、摘要）。回答具体内容问题前优先调用。",
             inputSchema: z.object({
@@ -248,7 +262,10 @@ function buildPublicQaSystemPrompt() {
         "核心规则：",
         "1. 遇到自我介绍、能力说明、寒暄等「元问题」（如「你是谁 / 你能做什么 / 你好」），直接用简短文字回答，不要调用任何检索或 UI 工具——尤其不要用 show_agent_plan / show_progress 把能力排成待办清单。",
         "2. 问「有哪些公开文章 / 公开文章列表 / 目录」时，调用 list_public_articles；可用 show_data_table 整理清单。",
-        "3. 回答涉及具体内容的问题前，先调用 search_public_articles 检索相关公开文章，拿到 articleId 与 shareCode。",
+        "3. 回答涉及具体内容的问题前，先检索定位文章：",
+        "   3a. 关联型问题（「A 和 B 有什么关系」「围绕某概念都写过什么」「这个主题涉及哪些内容」）优先用 search_knowledge_graph，它会给出命中的概念、途经链路与链路终点的公开文章；拿到 articles[].articleId 后再往下读。",
+        "   3b. 关键词型问题、或 search_knowledge_graph 没有命中时，用 search_public_articles 做全文检索，拿到 articleId 与 shareCode。",
+        "   3c. 两者可以并用：先用图谱理清概念关系，再用全文检索补齐图谱未覆盖的细节。星图只收录了概念骨架，正文细节仍以文章为准。",
         "4. 命中文章后，用 search_document_tree（传该文章 articleId）在其目录树上做推理式检索定位章节；片段不足时用 read_tree_node 看章节全文，或 read_wiki_page（source-<articleId>）/ read_source_article 读整篇补全。",
         "5. 严禁编造或使用公开文章之外的知识。若检索不到相关公开文章，直接如实回答「本站暂无相关的公开资料」，不要杜撰。",
         "6. 回答必须给出依据：调用 show_citations 渲染引用，每个引用的 href 必须是公开页路径 `/p/<shareCode>`（shareCode 从检索/读取结果获取），title 写文章标题。",

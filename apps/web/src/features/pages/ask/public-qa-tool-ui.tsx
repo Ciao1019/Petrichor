@@ -11,9 +11,11 @@ import {
   Library,
   ListTree,
   Loader2,
+  Network,
   Search,
 } from "lucide-react"
 
+import { GraphRetrievalBody, parseGraphRetrievalResult } from "@/components/site-graph/GraphPathChain"
 import { CitationList } from "@/components/tool-ui/citation"
 import { safeParseSerializableCitation } from "@/components/tool-ui/citation/schema"
 import { DataTable } from "@/components/tool-ui/data-table"
@@ -277,6 +279,33 @@ const SearchTreeToolUI = makeAssistantToolUI({
   },
 })
 
+const SearchGraphToolUI = makeAssistantToolUI({
+  toolName: "search_knowledge_graph",
+  render: ({ result, status }) => {
+    const { matched, paths, graphNodes, graphLinks, emptyMessage } = parseGraphRetrievalResult(result)
+
+    if (paths.length === 0 && matched.length === 0) {
+      return (
+        <ToolStatusCard title="星图检索" status={status} icon={<Network className="size-4" />}>
+          {emptyMessage ? <p className="text-xs text-white/60">{emptyMessage}</p> : null}
+        </ToolStatusCard>
+      )
+    }
+
+    return (
+      <ToolStatusCard title="星图检索" status={status} icon={<Network className="size-4" />} collapsible defaultOpen={false}>
+        <GraphRetrievalBody
+          matched={matched}
+          paths={paths}
+          graphNodes={graphNodes}
+          graphLinks={graphLinks}
+          onNavigate={(route) => window.location.assign(route)}
+        />
+      </ToolStatusCard>
+    )
+  },
+})
+
 const ReadTreeNodeToolUI = makeAssistantToolUI({
   toolName: "read_tree_node",
   render: ({ result, status }) => {
@@ -345,6 +374,7 @@ export function PublicQaToolUIs() {
       <DataTableToolUI />
       <ListArticlesToolUI />
       <SearchArticlesToolUI />
+      <SearchGraphToolUI />
       <SearchTreeToolUI />
       <ReadTreeNodeToolUI />
       <ReadWikiToolUI />
