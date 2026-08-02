@@ -63,3 +63,9 @@ export function isDashboardSectionPath(pathname: string, sectionPath: string) {
     const targetPath = dashboardPath(sectionPath)
     return pathname === targetPath || pathname.startsWith(`${targetPath}/`)
 }
+
+/* 应用型页面：外壳锁死视口高度，滚动只发生在页面内部容器（消息区、会话列表等），
+   整页不产生 document 级滚动。其余页面仍走常规的整页滚动。 */
+export function isFixedViewportRoute(pathname: string) {
+    return isDashboardSectionPath(pathname, "/assistant")
+}
