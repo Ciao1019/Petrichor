@@ -139,6 +139,18 @@ export function Citation(props: CitationProps) {
     <TypeIcon className="size-3.5 shrink-0 opacity-60" aria-hidden="true" />
   );
 
+  // 站内引用往往没有 domain/author/date，拼不出内容时整行不渲染，避免留空行
+  const metaParts: React.ReactNode[] = [];
+  if (domain) metaParts.push(<span key="domain">{domain}</span>);
+  if (author) metaParts.push(<span key="author">{author}</span>);
+  if (publishedAt) {
+    metaParts.push(
+      <time key="date" dateTime={publishedAt} className="tabular-nums">
+        {formatDate(publishedAt, locale)}
+      </time>,
+    );
+  }
+
   const { open, handleMouseEnter, handleMouseLeave } = useHoverPopover();
 
   // Inline variant: compact chip with hover popover
@@ -218,40 +230,38 @@ export function Citation(props: CitationProps) {
         tabIndex={sanitizedHref ? 0 : undefined}
         onKeyDown={handleKeyDown}
       >
-        <div className="flex flex-col gap-2 p-4">
-          <div className="text-muted-foreground flex min-w-0 items-center justify-between gap-1.5 text-xs">
-            <div className="flex min-w-0 items-center gap-1.5">
-              {iconElement}
-              <span className="truncate font-medium">{domain}</span>
-              {(author || publishedAt) && (
-                <span className="opacity-70">
-                  <span className="opacity-60"> — </span>
-                  {author}
-                  {author && publishedAt && ", "}
-                  {publishedAt && (
-                    <time dateTime={publishedAt} className="tabular-nums">
-                      {formatDate(publishedAt, locale)}
-                    </time>
-                  )}
+        <div className="flex items-start gap-2.5 px-3 py-2.5">
+          <span className="mt-0.5 flex">{iconElement}</span>
+
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <div className="flex min-w-0 items-start gap-1.5">
+              <h3 className="text-foreground min-w-0 flex-1 text-[13.5px] leading-snug font-medium text-pretty">
+                <span className="group-hover:decoration-foreground/30 line-clamp-2 group-hover:underline group-hover:underline-offset-2">
+                  {title}
                 </span>
+              </h3>
+              {sanitizedHref && (
+                <ExternalLink className="text-muted-foreground mt-0.5 size-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
               )}
             </div>
-            {sanitizedHref && (
-              <ExternalLink className="size-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+
+            {snippet && (
+              <p className="text-muted-foreground line-clamp-2 text-[12.5px] leading-[1.5] text-pretty">
+                {snippet}
+              </p>
+            )}
+
+            {metaParts.length > 0 && (
+              <p className="text-muted-foreground/70 truncate text-[11px]">
+                {metaParts.map((part, index) => (
+                  <React.Fragment key={index}>
+                    {index > 0 && <span className="opacity-60"> · </span>}
+                    {part}
+                  </React.Fragment>
+                ))}
+              </p>
             )}
           </div>
-
-          <h3 className="text-foreground text-[15px] leading-snug font-medium text-pretty">
-            <span className="group-hover:decoration-foreground/30 line-clamp-2 group-hover:underline group-hover:underline-offset-2">
-              {title}
-            </span>
-          </h3>
-
-          {snippet && (
-            <p className="text-muted-foreground text-[13px] leading-relaxed text-pretty">
-              <span className="line-clamp-3">{snippet}</span>
-            </p>
-          )}
         </div>
       </div>
     </article>
