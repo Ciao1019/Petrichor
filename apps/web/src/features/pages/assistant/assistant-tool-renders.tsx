@@ -16,13 +16,11 @@ import {
   Compass,
   FileText,
   Gauge,
-  Library,
   ListTree,
   Loader2,
   Network,
   Pencil,
   Search,
-  Sparkles,
   Square,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -42,12 +40,12 @@ import { knowledgeBaseArticlePath } from "@/lib/dashboard-routes"
 
 import {
   asRecord,
-  asRows,
   isPresent,
   parseLegacyDocumentHref,
   toInternalAppPath,
   toolStatusLabel,
 } from "./assistant-message-utils"
+import { ProcessToolGroup } from "./process-tool-group"
 
 const SUBAGENT_BUDGET_LABEL = "最多 6 步 · 超时 90s"
 const FANOUT_BUDGET_LABEL = "最多 3 路并行 · 每路 6 步 / 90s"
@@ -264,60 +262,21 @@ export const DataTableToolUI = makeAssistantToolUI({
   },
 })
 
+/* 以下 6 个「过程类」工具统一走 ProcessToolGroup：合并成一段单行过程日志，
+   由该组首条调用渲染全部，其余返回 null（外层 empty:hidden 兜住空 div）。 */
 export const ListSystemOverviewToolUI = makeAssistantToolUI({
   toolName: "list_system_overview",
-  render: ({ result, status }) => {
-    const payload = asRecord(result)
-    return (
-      <ToolStatusCard title="系统概览" status={status} icon={<Gauge className="size-4" />}>
-        {payload ? (
-          <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
-            <div>知识库 <span className="font-medium">{String(payload.knowledgeBases ?? 0)}</span></div>
-            <div>文章 <span className="font-medium">{String(payload.articles ?? 0)}</span></div>
-            <div>文档库 <span className="font-medium">{String(payload.docLibraries ?? 0)}</span></div>
-            <div>文档 <span className="font-medium">{String(payload.documents ?? 0)}</span></div>
-            <div>对话 <span className="font-medium">{String(payload.assistantThreads ?? 0)}</span></div>
-            <div className="flex flex-wrap gap-1">
-              <Badge variant={payload.chatModelReady ? "secondary" : "outline"} className="text-[10px]">CHAT {payload.chatModelReady ? "就绪" : "未配"}</Badge>
-              <Badge variant={payload.embeddingModelReady ? "secondary" : "outline"} className="text-[10px]">EMBED {payload.embeddingModelReady ? "就绪" : "未配"}</Badge>
-            </div>
-          </div>
-        ) : null}
-      </ToolStatusCard>
-    )
-  },
+  render: ({ toolCallId }) => <ProcessToolGroup toolCallId={toolCallId} />,
 })
 
 export const ListKbToolUI = makeAssistantToolUI({
   toolName: "list_knowledge_bases",
-  render: ({ result, status }) => {
-    const rows = Array.isArray(result) ? result.map(asRecord).filter(isPresent) : asRows(result, "knowledgeBases")
-    return (
-      <ToolStatusCard title="我的知识库" status={status} icon={<Library className="size-4" />}>
-        <div className="flex flex-wrap gap-1.5">
-          {rows.slice(0, 12).map((row, index) => (
-            <Badge key={String(row.id ?? index)} variant="secondary" className="font-normal">{String(row.name ?? "未命名")}</Badge>
-          ))}
-        </div>
-      </ToolStatusCard>
-    )
-  },
+  render: ({ toolCallId }) => <ProcessToolGroup toolCallId={toolCallId} />,
 })
 
 export const ListDocLibrariesToolUI = makeAssistantToolUI({
   toolName: "list_doc_libraries",
-  render: ({ result, status }) => {
-    const rows = Array.isArray(result) ? result.map(asRecord).filter(isPresent) : asRows(result, "libraries")
-    return (
-      <ToolStatusCard title="我的文档库" status={status} icon={<Library className="size-4" />}>
-        <div className="flex flex-wrap gap-1.5">
-          {rows.slice(0, 12).map((row, index) => (
-            <Badge key={String(row.id ?? index)} variant="secondary" className="font-normal">{String(row.name ?? "未命名")}</Badge>
-          ))}
-        </div>
-      </ToolStatusCard>
-    )
-  },
+  render: ({ toolCallId }) => <ProcessToolGroup toolCallId={toolCallId} />,
 })
 
 export const SearchGraphToolUI = makeAssistantToolUI({
@@ -343,53 +302,17 @@ export const SearchGraphToolUI = makeAssistantToolUI({
 
 export const ReadKnowledgeToolUI = makeAssistantToolUI({
   toolName: "read_knowledge_node",
-  render: ({ result, status }) => {
-    const payload = asRecord(result)
-    const title = typeof payload?.title === "string" ? payload.title : "知识节点"
-    const kind = typeof payload?.kind === "string" ? payload.kind : null
-    return (
-      <ToolStatusCard title="阅读知识" status={status} icon={<FileText className="size-4" />}>
-        <div className="flex items-center justify-between gap-2">
-          <span className="line-clamp-2 text-sm font-medium">{title}</span>
-          {kind ? <Badge variant="outline" className="text-[10px]">{kind}</Badge> : null}
-        </div>
-      </ToolStatusCard>
-    )
-  },
+  render: ({ toolCallId }) => <ProcessToolGroup toolCallId={toolCallId} />,
 })
 
 export const ReadDocumentToolUI = makeAssistantToolUI({
   toolName: "read_document",
-  render: ({ result, status }) => {
-    const payload = asRecord(result)
-    const title = typeof payload?.title === "string" ? payload.title : typeof payload?.fileName === "string" ? payload.fileName : "文档"
-    const locator = payload?.locator ?? payload?.fromIndex
-    return (
-      <ToolStatusCard title="阅读文档" status={status} icon={<FileText className="size-4" />}>
-        <div className="flex items-center justify-between gap-2">
-          <span className="line-clamp-2 text-sm font-medium">{title}</span>
-          {locator != null ? <Badge variant="outline" className="text-[10px]">{String(locator)}</Badge> : null}
-        </div>
-      </ToolStatusCard>
-    )
-  },
+  render: ({ toolCallId }) => <ProcessToolGroup toolCallId={toolCallId} />,
 })
 
 export const SaveArtifactToolUI = makeAssistantToolUI({
   toolName: "save_answer_artifact",
-  render: ({ result, status }) => {
-    const payload = asRecord(result)
-    const title = typeof payload?.title === "string" ? payload.title : "回答产物"
-    const type = typeof payload?.kind === "string" ? payload.kind : typeof payload?.artifactType === "string" ? payload.artifactType : "artifact"
-    return (
-      <ToolStatusCard title="产物已保存" status={status} icon={<Sparkles className="size-4" />}>
-        <div className="flex items-center justify-between gap-3">
-          <span className="min-w-0 truncate text-sm font-medium">{title}</span>
-          <Badge variant="outline">{type}</Badge>
-        </div>
-      </ToolStatusCard>
-    )
-  },
+  render: ({ toolCallId }) => <ProcessToolGroup toolCallId={toolCallId} />,
 })
 
 export const PreviewArticleUpdateToolUI = makeAssistantToolUI({
