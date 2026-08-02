@@ -5,8 +5,9 @@ import { Github, MessageCircleQuestion, Search } from "lucide-react"
 import { Link } from "react-router-dom"
 
 import { BlogSearchDialog, useBlogSearchHotkey } from "@/components/blog-search-dialog"
+import { StaticNoise } from "@/cuicui/other/creative-effects/animated-noise/static-noise"
 
-export type RetypesetSiteActiveSection = "articles" | "tags" | "ask" | "projects" | "petrichor" | "about"
+export type RetypesetSiteActiveSection = "articles" | "tags" | "graph" | "ask" | "projects" | "petrichor" | "about"
 type RetypesetSiteNavSection = RetypesetSiteActiveSection
 type RetypesetSiteNavItem = {
     section: RetypesetSiteNavSection
@@ -27,7 +28,7 @@ const retypesetSiteCopy = {
     siteSubtitle: "Knowledge, Articles & Inspiration",
     navLabel: "站点导航",
     navPosts: "文章",
-    navTags: "标签",
+    navGraph: "星图",
     navAsk: "问答",
     navProjects: "开源",
     navPetrichor: "项目",
@@ -40,7 +41,8 @@ const RETYPESET_SITE_GITHUB_HREF = "https://github.com/Ciao1019/Petrichor"
 
 const retypesetSiteNavItems: RetypesetSiteNavItem[] = [
     { section: "articles", href: "/#articles", label: retypesetSiteCopy.navPosts, internal: true },
-    { section: "tags", href: "/tags", label: retypesetSiteCopy.navTags, internal: true },
+    // 标签页不进导航栏（仍保留 /tags 路由，由文章标签与图谱标签节点跳入）
+    { section: "graph", href: "/graph", label: retypesetSiteCopy.navGraph, internal: true },
     { section: "projects", href: "/projects", label: retypesetSiteCopy.navProjects, internal: true },
     { section: "petrichor", href: "/petrichor", label: retypesetSiteCopy.navPetrichor, internal: true },
     { section: "about", href: "/about", label: retypesetSiteCopy.navAbout, internal: true },
@@ -88,6 +90,10 @@ export function RetypesetSiteHeader({ dockVisible }: { dockVisible: boolean }) {
 
     return (
         <div className="retypeset-home contents">
+            {/* 噪点纹理：与后台右侧内容区（SidebarInset）同一组件、同一档透明度，
+                前台整页铺满故改为 fixed。头部在每个公开页都渲染，挂这里即全站覆盖。 */}
+            <StaticNoise opacity={0.08} className="fixed" />
+
             <header
                 className={`${dockVisibilityClass} retypeset-c-secondary mb-[2.625rem] transition-opacity duration-150 lg:fixed lg:right-[max(5rem,calc(50vw-35rem))] lg:top-20 lg:z-30 lg:mb-0 lg:w-56`}
             >

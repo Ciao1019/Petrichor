@@ -9,6 +9,7 @@ export const PUBLIC_CONTENT_CACHE_TAGS = {
     aboutProfile: "public:about:profile",
     projectShowcase: "public:project:showcase",
     siteAppearance: "public:site:appearance",
+    siteGraph: "public:site:graph",
 } as const
 
 // 公开内容缓存统一 TTL：1 天。写操作都会主动失效（invalidate* + revalidateTag），
@@ -22,6 +23,7 @@ export const PUBLIC_CONTENT_CACHE_TTL_SECONDS = {
     aboutProfile: PUBLIC_CONTENT_TTL_SECONDS,
     projectShowcase: PUBLIC_CONTENT_TTL_SECONDS,
     siteAppearance: PUBLIC_CONTENT_TTL_SECONDS,
+    siteGraph: PUBLIC_CONTENT_TTL_SECONDS,
 } as const
 
 type PublicContentCacheKey = keyof typeof PUBLIC_CONTENT_CACHE_TAGS
@@ -32,6 +34,7 @@ const publicContentCacheKeyParts: Record<PublicContentCacheKey, string[]> = {
     aboutProfile: ["public-content", "about-profile"],
     projectShowcase: ["public-content", "project-showcase"],
     siteAppearance: ["public-content", "site-appearance"],
+    siteGraph: ["public-content", "site-graph"],
 }
 
 // Redis 缓存键：与 unstable_cache 的键各自独立，二选一启用（配置了 Upstash 即走 Redis）
@@ -41,6 +44,7 @@ const publicContentRedisKey: Record<PublicContentCacheKey, string> = {
     aboutProfile: cacheKey("public", "about-profile"),
     projectShowcase: cacheKey("public", "project-showcase"),
     siteAppearance: cacheKey("public", "site-appearance"),
+    siteGraph: cacheKey("public", "site-graph"),
 }
 
 export function cachePublicContent<T>(key: PublicContentCacheKey, loader: () => Promise<T>) {
@@ -108,6 +112,11 @@ export function invalidatePublicProjectShowcaseCache() {
 export function invalidatePublicSiteAppearanceCache() {
     revalidateTag(PUBLIC_CONTENT_CACHE_TAGS.siteAppearance, "max")
     void cacheDrop(publicContentRedisKey.siteAppearance)
+}
+
+export function invalidatePublicSiteGraphCache() {
+    revalidateTag(PUBLIC_CONTENT_CACHE_TAGS.siteGraph, "max")
+    void cacheDrop(publicContentRedisKey.siteGraph)
 }
 
 function buildPublicArticleDetailCacheTag(shareCode: string) {

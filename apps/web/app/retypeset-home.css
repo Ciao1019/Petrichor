@@ -1,17 +1,25 @@
 /*
  * Retypeset 前台样式。
- * 背景使用 Sn0w 的暖纸色（#f8f4ec），accent / highlight 仍为 sakura 玫红系；
- * 并在 .retypeset-home 容器内接管原蓝色像素风遗留的写死颜色类。
+ * 配色对齐后台右侧内容区（SidebarInset）：底色用 dark 主题的 --background，
+ * 文字用 --foreground / --muted-foreground，配合 StaticNoise 噪点得到同款质感。
+ * 前台不再提供浅色主题，这里只有一套暗色取值。
+ * 容器内还接管了原蓝色像素风遗留的写死颜色类（见文件末尾兼容层）。
  */
 
 :root {
-  --retypeset-primary: oklch(24% 0.04 8);
-  --retypeset-secondary: oklch(34% 0.045 8);
-  /* 暖纸底色，对齐 Sn0w 的 --color-paper（#f8f4ec）。 */
-  --retypeset-background: #f8f4ec;
-  --retypeset-surface-tint: oklch(24% 0.08 8);
-  --retypeset-highlight: oklch(0.82 0.18 6 / 0.5);
-  --retypeset-accent: oklch(50% 0.2 8);
+  /* 与 .dark 的 --foreground 一致：标题与强调文字 */
+  --retypeset-primary: oklch(0.985 0 0);
+  /* 与 .dark 的 --muted-foreground 一致：正文 */
+  --retypeset-secondary: oklch(0.708 0 0);
+  /* 与 .dark 的 --background 一致：后台右侧内容区同款底色 */
+  --retypeset-background: oklch(0.145 0 0);
+  /* 与 .dark 的 --card 一致：浮起的卡片面 */
+  --retypeset-surface-tint: oklch(0.205 0 0);
+  /* 强调色对齐后台的 --brand（暗色档）。
+     原 sakura 玫红在近黑底上偏艳、且低透明度会糊成暗红块，观感不佳。
+     徽标底、标记笔下划线、链接 hover 全部派生自这两个变量。 */
+  --retypeset-accent: oklch(0.707 0.165 254.624);
+  --retypeset-highlight: oklch(0.707 0.165 254.624 / 0.3);
 }
 
 .retypeset-home {
@@ -158,18 +166,26 @@
   color: var(--retypeset-accent);
 }
 
+/* 状态徽标：借用 Astryx Badge 的几何（inline-flex 居中、定高、小圆角），
+   但配色全部由 --retypeset-accent 派生，跟站点强调色联动——写死 hex 的话
+   以后换强调色徽标不会跟着走。这是列表里的次要元数据，饱和度压低，
+   不与标题争视线。 */
 .retypeset-home .retypeset-status-tag {
   display: inline-flex;
   align-items: center;
-  padding: 0.1rem 0.45rem;
-  border: 1px dashed color-mix(in oklab, var(--retypeset-secondary) 35%, transparent);
-  border-radius: 2px 6px 6px 2px;
-  background-color: color-mix(in oklab, var(--retypeset-accent) 22%, transparent);
-  color: var(--retypeset-primary);
+  justify-content: center;
+  height: 1.15rem;
+  padding-block: 0;
+  padding-inline: 0.4rem;
+  border: 1px solid color-mix(in oklab, var(--retypeset-accent) 28%, transparent);
+  border-radius: 0.3rem;
+  background-color: color-mix(in oklab, var(--retypeset-accent) 11%, transparent);
+  color: color-mix(in oklab, var(--retypeset-accent) 88%, var(--retypeset-primary));
   font-family: "Maple Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.62rem;
-  font-weight: 600;
-  line-height: 1.2;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .retypeset-home .retypeset-lock-tag {

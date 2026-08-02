@@ -38,18 +38,11 @@ const QaForcedDarkContext = React.createContext<boolean | null>(null)
 /** 解析当前明暗：优先用强制模式，否则跟随 app 的 theme-provider（system 时再跟随系统）。 */
 function useIsDark() {
   const forced = React.useContext(QaForcedDarkContext)
-  const { theme } = useTheme()
-  const [systemDark, setSystemDark] = React.useState(false)
-  React.useEffect(() => {
-    if (theme !== "system" || typeof window === "undefined") return
-    const mq = window.matchMedia("(prefers-color-scheme: dark)")
-    const update = () => setSystemDark(mq.matches)
-    update()
-    mq.addEventListener("change", update)
-    return () => mq.removeEventListener("change", update)
-  }, [theme])
+  // 必须用 resolvedTheme：它已解析 system 且已应用 forcedTheme，
+  // 而 theme 只是用户偏好，在强制暗色的前台页上会得出相反结论
+  const { resolvedTheme } = useTheme()
   if (forced != null) return forced
-  return theme === "dark" || (theme === "system" && systemDark)
+  return resolvedTheme === "dark"
 }
 
 /**

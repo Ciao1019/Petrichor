@@ -15,6 +15,7 @@ const cacheMocks = vi.hoisted(() => ({
     invalidatePublicAboutProfileCache: vi.fn(),
     invalidatePublicArticleDetailCache: vi.fn(),
     invalidatePublicArticleListCache: vi.fn(),
+    invalidatePublicSiteGraphCache: vi.fn(),
 }))
 
 const aiMocks = vi.hoisted(() => ({
@@ -209,6 +210,8 @@ describe("public content cache invalidation points", () => {
         await expect(response.json()).resolves.toMatchObject({ articleId: "9", shareCode: "shareCode123" })
         expect(cacheMocks.invalidatePublicArticleListCache).toHaveBeenCalledTimes(1)
         expect(cacheMocks.invalidatePublicArticleDetailCache).toHaveBeenCalledWith("shareCode123")
+        // 分享状态变化会改变前台图谱里文章节点的可见性，图谱缓存必须一起失效
+        expect(cacheMocks.invalidatePublicSiteGraphCache).toHaveBeenCalledTimes(1)
     })
 
     it("创建公开分享时保存并返回转载来源", async () => {
@@ -474,6 +477,8 @@ describe("public content cache invalidation points", () => {
         await expect(response.json()).resolves.toMatchObject({ articleId: "9", enabled: false })
         expect(cacheMocks.invalidatePublicArticleListCache).toHaveBeenCalledTimes(1)
         expect(cacheMocks.invalidatePublicArticleDetailCache).toHaveBeenCalledWith("shareCode123")
+        // 撤销分享后前台图谱必须立刻不再展示这篇文章，缓存不失效就会继续泄漏标题与摘要
+        expect(cacheMocks.invalidatePublicSiteGraphCache).toHaveBeenCalledTimes(1)
     })
 
     it("更新文章内容和标签成功后失效公开文章列表缓存", async () => {

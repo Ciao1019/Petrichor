@@ -2,32 +2,10 @@
 
 import * as React from "react"
 
-import { PixelFlowerLayer, type PixelFlowerDecoration } from "@/features/pages/blog/PixelDecorations"
 import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import { publicProjectShowcaseApi, type ProjectItem, type ProjectShowcaseResponse } from "@/lib/api"
 
 import { DateTag, HandStamp, LinkDoodle } from "../about/DeskAccents"
-
-const projectsBackgroundFlowers: PixelFlowerDecoration[] = [
-    {
-        className: "left-[5%] top-[12%] size-12 opacity-40",
-        tone: "red",
-        speed: 0.4,
-        animationClassName: "blog-float-medium",
-    },
-    {
-        className: "bottom-[12%] right-[6%] size-16 opacity-40",
-        tone: "yellow",
-        speed: 0.8,
-        animationClassName: "blog-float-slow blog-delay-500",
-    },
-    {
-        className: "right-[16%] top-[22%] hidden size-8 opacity-30 md:block",
-        tone: "red",
-        speed: 1.2,
-        animationClassName: "blog-float-fast blog-delay-300",
-    },
-]
 
 function resolveApiError(error: unknown) {
     return (
@@ -209,11 +187,6 @@ export function ProjectsPage() {
             onPointerLeave={resetParallax}
         >
             <div className="blog-home-grid pointer-events-none fixed inset-0 z-0" />
-            <PixelFlowerLayer
-                flowers={projectsBackgroundFlowers}
-                className="fixed inset-0 z-0 overflow-hidden"
-                parallax={parallax}
-            />
 
             <div className="relative z-30 mx-auto w-full max-w-6xl px-6 pt-8 md:px-24 lg:contents">
                 <RetypesetSiteHeader dockVisible />

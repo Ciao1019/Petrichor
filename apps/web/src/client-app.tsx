@@ -30,6 +30,7 @@ import { AgentSkillPage } from '@/features/pages/agent/AgentSkillPage'
 import { AgentMcpPage } from '@/features/pages/agent/AgentMcpPage'
 import { BlogHomePage } from '@/features/pages/blog/BlogHomePage'
 import { TagsPage } from '@/features/pages/blog/TagsPage'
+import { SiteGraphPage } from '@/features/pages/graph/SiteGraphPage'
 import { AboutPage } from '@/features/pages/about/AboutPage'
 import { ProjectsPage } from '@/features/pages/projects/ProjectsPage'
 import { PetrichorPage } from '@/features/pages/petrichor/PetrichorPage'
@@ -45,8 +46,9 @@ import { NotificationPage } from '@/features/pages/notification/NotificationPage
 import { dashboardRoutes } from '@/lib/dashboard-routes'
 import { enterDemoMode } from '@/lib/demo/demo-mode'
 import { DemoModeBanner } from '@/components/demo-mode-banner'
-import { isPublicLightThemePath } from '@/lib/public-theme-routes'
+import { isPublicSitePath } from '@/lib/public-theme-routes'
 import { SiteAppearanceConfigPage } from '@/features/pages/admin/SiteAppearanceConfigPage'
+import { SiteGraphConfigPage } from '@/features/pages/admin/SiteGraphConfigPage'
 
 function LoginPage() {
   const navigate = useNavigate()
@@ -113,7 +115,8 @@ function DemoEntry() {
 
 function AppThemeScope() {
   const location = useLocation()
-  const forcedTheme = isPublicLightThemePath(location.pathname) ? 'light' : undefined
+  // 前台公开页固定暗色，后台仍可自由切换
+  const forcedTheme = isPublicSitePath(location.pathname) ? 'dark' : undefined
 
   return (
     <ThemeProvider defaultTheme="system" forcedTheme={forcedTheme}>
@@ -123,6 +126,7 @@ function AppThemeScope() {
           <Routes>
             <Route path="/" element={<BlogHomePage />} />
             <Route path="/tags" element={<TagsPage />} />
+            <Route path="/graph" element={<SiteGraphPage />} />
             <Route path="/ask" element={<PublicQaPage />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
@@ -152,6 +156,7 @@ function AppThemeScope() {
               <Route path="admin/about" element={<AboutProfileConfigPage />} />
               <Route path="admin/projects" element={<ProjectsConfigPage />} />
               <Route path="admin/appearance" element={<SiteAppearanceConfigPage />} />
+              <Route path="admin/site-graph" element={<SiteGraphConfigPage />} />
               <Route path="ai/config" element={<AiModelConfigPage />} />
               <Route path="ai/review" element={<AiReviewPage />} />
               <Route path="agent" element={<AgentKeysPage />} />

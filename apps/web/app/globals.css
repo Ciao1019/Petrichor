@@ -9,6 +9,7 @@
 @import "./retypeset-home.css";
 @import "./about-desk.css";
 @import "./project-promo.css";
+@import "./site-graph.css";
 @import "tw-shimmer";
 @import "@astryxdesign/core/astryx.css";
 @import "@astryxdesign/theme-neutral/theme.css";
@@ -408,11 +409,6 @@
     -webkit-mask-image: radial-gradient(circle at center, black 60%, transparent 100%);
   }
 
-  .blog-pixel-art {
-    image-rendering: pixelated;
-    shape-rendering: crispEdges;
-  }
-
   .blog-home-link {
     position: relative;
     padding-block: 0.25rem;
@@ -440,24 +436,8 @@
     transform: scaleX(1);
   }
 
-  .blog-float-slow {
-    animation: blog-float-slow 6s ease-in-out infinite;
-  }
-
-  .blog-float-medium {
-    animation: blog-float-medium 5s ease-in-out infinite;
-  }
-
-  .blog-float-fast {
-    animation: blog-float-fast 4s ease-in-out infinite;
-  }
-
   .blog-home-fade-in {
     animation: blog-home-fade-in 700ms ease-out both;
-  }
-
-  .blog-delay-200 {
-    animation-delay: 200ms;
   }
 
   .blog-delay-300 {
@@ -466,44 +446,6 @@
 
   .blog-delay-500 {
     animation-delay: 500ms;
-  }
-
-  .blog-delay-700 {
-    animation-delay: 700ms;
-  }
-
-  .blog-delay-1000 {
-    animation-delay: 1000ms;
-  }
-
-  @keyframes blog-float-slow {
-    0%,
-    100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(-20px);
-    }
-  }
-
-  @keyframes blog-float-medium {
-    0%,
-    100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(-15px);
-    }
-  }
-
-  @keyframes blog-float-fast {
-    0%,
-    100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(-10px);
-    }
   }
 
   @keyframes blog-home-fade-in {

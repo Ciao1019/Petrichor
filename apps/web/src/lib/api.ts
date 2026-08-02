@@ -349,6 +349,261 @@ export const adminProjectShowcaseApi = {
   update: (data: ProjectShowcaseUpdateRequest) => api.post<ProjectShowcaseResponse>("/admin/projects", data),
 }
 
+// ===== 全站星图（Site Graph）=====
+
+export type SiteGraphNodeKind = "root" | "section" | "article" | "concept" | "entity" | "tag"
+export type SiteGraphEdgeKind = "reference" | "semantic" | "derived"
+export type SiteGraphStatus = "DRAFT" | "PUBLISHED" | "ARCHIVED"
+export type SiteGraphSource = "AGENT" | "MANUAL" | "SYSTEM"
+
+export interface SiteGraphAttribute {
+  name: string
+  value: string
+}
+
+export interface SiteGraphPayloadNode {
+  id: string
+  label: string
+  kind: SiteGraphNodeKind
+  route: string | null
+  summary: string
+  attributes: SiteGraphAttribute[]
+  parentId: string | null
+  topSectionId: string | null
+  weight: number
+}
+
+export interface SiteGraphPayloadLink {
+  source: string
+  target: string
+  kind: "structure" | SiteGraphEdgeKind
+  relation: string
+}
+
+export interface SiteGraphPayload {
+  nodes: SiteGraphPayloadNode[]
+  links: SiteGraphPayloadLink[]
+  stats: {
+    nodeCount: number
+    linkCount: number
+    articleCount: number
+    conceptCount: number
+  }
+  generatedAt: string | null
+}
+
+export interface SiteGraphAdminNode {
+  id: string
+  nodeKey: string
+  parentId: string | null
+  parentKey: string | null
+  kind: SiteGraphNodeKind
+  name: string
+  summary: string
+  route: string | null
+  articleId: string | null
+  attributes: SiteGraphAttribute[]
+  aliases: string[]
+  weight: number
+  sortOrder: number
+  status: SiteGraphStatus
+  source: SiteGraphSource
+  confidence: number
+  locked: boolean
+  depth: number
+  childCount: number
+  degree: number
+  updatedAt: string
+}
+
+export interface SiteGraphAdminEdge {
+  id: string
+  fromNodeId: string
+  fromNodeKey: string
+  fromNodeName: string
+  toNodeId: string
+  toNodeKey: string
+  toNodeName: string
+  relation: string
+  kind: SiteGraphEdgeKind
+  attributes: SiteGraphAttribute[]
+  weight: number
+  directed: boolean
+  status: SiteGraphStatus
+  source: SiteGraphSource
+  confidence: number
+  locked: boolean
+  updatedAt: string
+}
+
+export interface SiteGraphIssue {
+  severity: "error" | "warning" | "info"
+  code: string
+  target: string
+  message: string
+}
+
+export interface SiteGraphValidationReport {
+  score: number
+  passed: boolean
+  nodeCount: number
+  edgeCount: number
+  orphanCount: number
+  maxDepth: number
+  issues: SiteGraphIssue[]
+  checkedAt: string
+}
+
+export interface SiteGraphRunSummary {
+  id: string
+  status: "RUNNING" | "COMPLETED" | "FAILED"
+  mode: "FULL" | "INCREMENTAL"
+  modelName: string | null
+  articleCount: number
+  nodeCount: number
+  edgeCount: number
+  validation: SiteGraphValidationReport | null
+  warnings: string[]
+  errorMessage: string | null
+  startedAt: string
+  finishedAt: string | null
+}
+
+export interface SiteGraphNodeOption {
+  id: string
+  nodeKey: string
+  name: string
+  kind: SiteGraphNodeKind
+}
+
+/** 名称相近但未自动合并的实体对子，等后台确认 */
+export interface SiteGraphMergeCandidate {
+  id: string
+  sourceKey: string
+  sourceName: string
+  sourceNodeId: string | null
+  targetKey: string
+  targetName: string
+  targetNodeId: string | null
+  reason: string
+  score: number
+  detail: string | null
+  status: string
+  createdAt: string
+}
+
+export interface SiteGraphOverviewResponse {
+  nodes: SiteGraphAdminNode[]
+  edges: SiteGraphAdminEdge[]
+  runs: SiteGraphRunSummary[]
+  nodeOptions: SiteGraphNodeOption[]
+  validation: SiteGraphValidationReport
+  mergeCandidates: SiteGraphMergeCandidate[]
+  stats: {
+    nodeCount: number
+    edgeCount: number
+    publishedNodes: number
+    draftNodes: number
+    lockedNodes: number
+    manualNodes: number
+    articleNodes: number
+    conceptNodes: number
+  }
+}
+
+export interface SiteGraphGenerateResponse {
+  runId: string
+  validation: SiteGraphValidationReport
+  warnings: string[]
+  articleCount: number
+  nodeCount: number
+  edgeCount: number
+  lockedSkipped: number
+  autoAlignedCount: number
+  mergeCandidateCount: number
+  summary: string
+}
+
+export interface SiteGraphMergeResult {
+  targetKey: string
+  absorbedAliases: number
+  movedEdges: number
+  droppedEdges: number
+  movedChildren: number
+  attributeConflicts: number
+}
+
+export interface SiteGraphNodeSaveRequest {
+  id?: string | null
+  nodeKey?: string
+  parentId?: string | null
+  kind: SiteGraphNodeKind
+  name: string
+  summary?: string | null
+  route?: string | null
+  attributes?: SiteGraphAttribute[]
+  aliases?: string[]
+  weight?: number
+  status?: SiteGraphStatus
+  confidence?: number
+  locked?: boolean
+}
+
+export interface SiteGraphEdgeSaveRequest {
+  id?: string | null
+  fromNodeId: string
+  toNodeId: string
+  relation: string
+  kind: SiteGraphEdgeKind
+  attributes?: SiteGraphAttribute[]
+  weight?: number
+  directed?: boolean
+  status?: SiteGraphStatus
+  confidence?: number
+  locked?: boolean
+}
+
+export interface SiteGraphSubtreeResponse {
+  ancestors: Array<{ id: string; nodeKey: string; name: string }>
+  nodes: Array<SiteGraphAdminNode & { subtreeDepth: number }>
+  edges: SiteGraphAdminEdge[]
+}
+
+export const publicSiteGraphApi = {
+  detail: () => api.get<SiteGraphPayload>("/public/site-graph"),
+}
+
+export const adminSiteGraphApi = {
+  overview: () => api.get<SiteGraphOverviewResponse>("/admin/site-graph/overview"),
+  generate: (data: { configId?: string | null; mode?: "FULL" | "INCREMENTAL" } = {}) =>
+    api.post<SiteGraphGenerateResponse>("/admin/site-graph/generate", data),
+  validate: () =>
+    api.post<{ validation: SiteGraphValidationReport; summary: string }>("/admin/site-graph/validate", {}),
+  publish: () =>
+    api.post<{ publishedNodes: number; publishedEdges: number; archivedStaleNodes: number }>(
+      "/admin/site-graph/publish",
+      {},
+    ),
+  unpublish: () =>
+    api.post<{ unpublishedNodes: number; unpublishedEdges: number }>("/admin/site-graph/unpublish", {}),
+  clear: () => api.post<{ cleared: boolean }>("/admin/site-graph/clear", {}),
+  saveNode: (data: SiteGraphNodeSaveRequest) =>
+    api.post<{ id: string; nodeKey: string }>("/admin/site-graph/node/save", data),
+  deleteNode: (id: string) => api.post<{ id: string }>("/admin/site-graph/node/delete", { id }),
+  saveEdge: (data: SiteGraphEdgeSaveRequest) => api.post<{ id: string }>("/admin/site-graph/edge/save", data),
+  deleteEdge: (id: string) => api.post<{ id: string }>("/admin/site-graph/edge/delete", { id }),
+  confirmMerge: (sourceNodeId: string, targetNodeId: string) =>
+    api.post<SiteGraphMergeResult>("/admin/site-graph/merge/confirm", { sourceNodeId, targetNodeId }),
+  ignoreMerge: (id: string) => api.post<{ id: string }>("/admin/site-graph/merge/ignore", { id }),
+  subtree: (nodeId: string, depth?: number) =>
+    api.post<SiteGraphSubtreeResponse>("/admin/site-graph/subtree", { nodeId, depth }),
+  neighborhood: (nodeId: string, hops?: number) =>
+    api.post<{ nodes: SiteGraphAdminNode[]; edges: SiteGraphAdminEdge[] }>(
+      "/admin/site-graph/neighborhood",
+      { nodeId, hops },
+    ),
+}
+
 export interface SiteAppearanceResponse {
   publicQaEnabled: boolean
   createdAt?: string | null

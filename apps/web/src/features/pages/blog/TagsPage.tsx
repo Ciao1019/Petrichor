@@ -1,41 +1,12 @@
 "use client"
 
-import { LockKeyhole } from "lucide-react"
 import * as React from "react"
 import { Link } from "react-router-dom"
 
-import { PixelFlowerLayer, type PixelFlowerDecoration } from "@/features/pages/blog/PixelDecorations"
+import { ArticleStatusBadges } from "@/features/pages/blog/ArticleStatusBadges"
 import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import { buildPublicTagGroups, resolveSelectedPublicTagGroup, type PublicTagGroup } from "@/features/pages/blog/tags-page-utils"
 import { publicArticleShareApi, type PublicArticleListItem } from "@/lib/api"
-
-const tagsBackgroundFlowers: PixelFlowerDecoration[] = [
-    {
-        className: "left-[4%] top-[14%] size-10 opacity-35 sm:size-12",
-        tone: "yellow",
-        speed: 0.45,
-        animationClassName: "blog-float-medium",
-    },
-    {
-        className: "right-[12%] top-[18%] hidden size-12 opacity-35 md:block",
-        tone: "red",
-        speed: 0.75,
-        tall: true,
-        animationClassName: "blog-float-slow blog-delay-500",
-    },
-    {
-        className: "bottom-[16%] left-[10%] hidden size-8 opacity-30 sm:block",
-        tone: "red",
-        speed: 0.9,
-        animationClassName: "blog-float-fast blog-delay-300",
-    },
-    {
-        className: "bottom-[9%] right-[8%] size-11 opacity-30",
-        tone: "yellow",
-        speed: 0.55,
-        animationClassName: "blog-float-medium blog-delay-700",
-    },
-]
 
 const tagsPageCopy = {
     loadFailed: "标签加载失败",
@@ -72,11 +43,6 @@ function TagsPageChrome({ children }: { children: React.ReactNode }) {
     return (
         <main className="scrollbar-hide retypeset-home relative flex min-h-screen flex-col overflow-hidden bg-[#0044cc] text-white selection:bg-yellow-300 selection:text-blue-950">
             <div className="blog-home-grid pointer-events-none fixed inset-0 z-0" />
-            <PixelFlowerLayer
-                flowers={tagsBackgroundFlowers}
-                className="fixed inset-0 z-0 overflow-hidden"
-                flowerClassName="drop-shadow-lg"
-            />
 
             <div className="relative z-30 mx-auto w-full max-w-[51.462rem] px-[min(7.25vw,3.731rem)] pt-10 lg:contents">
                 <RetypesetSiteHeader dockVisible />
@@ -111,45 +77,6 @@ function TagPill({
         >
             <span className="retypeset-tag-pill-name">{group.name}</span>
         </button>
-    )
-}
-
-function ArticleStatusBadges({ article }: { article: PublicArticleListItem }) {
-    if (!article.isRepost && !article.isInternalLink && !article.expired && !article.hasPassword) {
-        return null
-    }
-
-    return (
-        <span className="ml-2 inline-flex translate-y-[-0.12em] items-center gap-1 align-middle">
-            {article.isRepost ? (
-                <span className="retypeset-status-tag" title={tagsPageCopy.repost}>
-                    {tagsPageCopy.repost}
-                </span>
-            ) : null}
-            {article.isInternalLink ? (
-                <span className="retypeset-status-tag" title={tagsPageCopy.internalLink}>
-                    {tagsPageCopy.internalLink}
-                </span>
-            ) : null}
-            {article.expired ? (
-                <span
-                    className="retypeset-status-tag"
-                    title={tagsPageCopy.expiredTitle(article.expiresAt ? formatTagDate(article.expiresAt) : null)}
-                >
-                    {tagsPageCopy.expired}
-                </span>
-            ) : null}
-            {article.hasPassword ? (
-                <span
-                    className="retypeset-lock-tag"
-                    aria-label={tagsPageCopy.passwordRequired}
-                    title={tagsPageCopy.passwordRequired}
-                >
-                    <LockKeyhole className="size-3" aria-hidden="true" />
-                    <span className="sr-only">{tagsPageCopy.passwordRequired}</span>
-                </span>
-            ) : null}
-        </span>
     )
 }
 
@@ -193,7 +120,7 @@ function TagArticleItem({ article }: { article: PublicArticleListItem }) {
                 ) : (
                     <span className={linkClassName}>{article.title}</span>
                 )}
-                <ArticleStatusBadges article={article} />
+                <ArticleStatusBadges article={article} copy={tagsPageCopy} formatDate={formatTagDate} />
             </h3>
 
             {/* 移动端：时间换行 */}

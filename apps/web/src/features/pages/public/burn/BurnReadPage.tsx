@@ -6,11 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp"
 import { Label } from "@/components/ui/label"
 import { Card17 } from "@/components/shadcn-studio/card/card-17"
-import { PixelFlowerLayer } from "@/features/pages/blog/PixelDecorations"
 import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import {
   PublicArticlePageView,
-  articleDetailBackgroundFlowers,
 } from "@/features/pages/public/PublicArticlePageView"
 import { useBurnReadModel } from "@/features/pages/public/burn/useBurnReadModel"
 
@@ -23,11 +21,6 @@ function BurnShell({ children }: { children: React.ReactNode }) {
   return (
     <main className="retypeset-home scrollbar-hide relative flex min-h-screen flex-col overflow-x-hidden bg-[#0044cc] text-white selection:bg-yellow-300 selection:text-blue-950">
       <div className="blog-home-grid pointer-events-none fixed inset-0 z-0" />
-      <PixelFlowerLayer
-        flowers={articleDetailBackgroundFlowers}
-        className="fixed inset-0 z-0 overflow-hidden"
-        flowerClassName="drop-shadow-lg"
-      />
 
       <div className="relative z-30 mx-auto w-full max-w-[51.462rem] px-[min(7.25vw,3.731rem)] pt-8 lg:contents">
         <RetypesetSiteHeader dockVisible />
