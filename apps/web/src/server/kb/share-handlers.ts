@@ -18,6 +18,7 @@ import {
     cachePublicContent,
     invalidatePublicArticleDetailCache,
     invalidatePublicArticleListCache,
+    invalidatePublicSiteGraphCache,
 } from "@/server/public-content-cache"
 import {
     buildArticlePath,
@@ -175,6 +176,7 @@ export async function createArticleShare(request: NextRequest) {
                 .returning()
 
         invalidatePublicArticleListCache()
+        invalidatePublicSiteGraphCache()
         invalidatePublicArticleDetailCache(share.shareCode)
         if (existing?.shareCode && existing.shareCode !== share.shareCode) {
             invalidatePublicArticleDetailCache(existing.shareCode)
@@ -212,6 +214,7 @@ export async function revokeArticleShare(request: NextRequest) {
             .where(eq(knowledgeBaseArticleShares.id, share.id))
 
         invalidatePublicArticleListCache()
+        invalidatePublicSiteGraphCache()
         invalidatePublicArticleDetailCache(share.shareCode)
         return ok({ articleId: String(articleId), enabled: false, revokedAt: revokedAt.toISOString() })
     })
@@ -283,6 +286,7 @@ export async function setArticleSharePin(request: NextRequest) {
             .returning()
 
         invalidatePublicArticleListCache()
+        invalidatePublicSiteGraphCache()
         invalidatePublicArticleDetailCache(updated.shareCode)
 
         return ok({

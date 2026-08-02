@@ -13,9 +13,9 @@ import { useTheme } from "@/components/theme-provider"
  * 通过应用现有的 ThemeProvider 同步明暗模式，使 Astryx 组件与站点主题保持一致。
  */
 export function AstryxProvider({ children }: { children: React.ReactNode }) {
-  const { theme } = useTheme()
+  const { resolvedTheme } = useTheme()
   return (
-    <Theme theme={neutralTheme} mode={theme}>
+    <Theme theme={neutralTheme} mode={resolvedTheme}>
       {children}
     </Theme>
   )

@@ -13,6 +13,7 @@ export const dashboardRoutes = {
     adminAbout: `${DASHBOARD_ROOT}/admin/about`,
     adminProjects: `${DASHBOARD_ROOT}/admin/projects`,
     adminAppearance: `${DASHBOARD_ROOT}/admin/appearance`,
+    adminSiteGraph: `${DASHBOARD_ROOT}/admin/site-graph`,
     aiConfig: `${DASHBOARD_ROOT}/ai/config`,
     aiReview: `${DASHBOARD_ROOT}/ai/review`,
     docLibrary: `${DASHBOARD_ROOT}/doc-library`,

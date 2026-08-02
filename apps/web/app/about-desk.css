@@ -3,39 +3,40 @@
  * 用在前台「关于我」页：手绘波浪下划线（红/绿/蓝）、悬停浮起的手写注记气泡、
  * 荧光笔涂抹、以及蓝色虚线框便签（图钉 + 邮票齿边）。
  *
- * 这些 class / 变量都带 `desk-` 前缀，只服务于 About 页，互不污染全站。
- * 颜色按暖色 sakura 主题微调，但保留可辨识的红/绿/蓝马克笔语义。
+ * 这些 class / 变量都带 `desk-` 前缀，只服务于 About / 开源项目页，互不污染全站。
+ *
+ * 前台已统一为暗色主题：纸面/便签这类"承载面"改为暗色层（对齐 --card 一档），
+ * 墨色翻转为浅色；马克笔本身是手绘语义色，只做提亮以适配暗底，色相保持不变。
  */
 
 :root {
-  /* 马克笔色板 —— 红/绿/蓝沿用 Sn0w 同源色值，另扩展橙/青/紫/粉，
-     均为中等饱和度、落在暖米白纸面上对比清晰且彼此可区分。 */
-  --desk-marker-red: #d75a48;
-  --desk-marker-orange: #e08a3c;
-  --desk-marker-green: #4f9d69;
-  --desk-marker-teal: #2f9e8f;
-  --desk-marker-blue: #4f6fc0;
-  --desk-marker-purple: #8268c0;
-  --desk-marker-pink: #d2569b;
+  /* 马克笔色板 —— 保持红/绿/蓝等语义可辨识，整体提亮以在暗底上拉开对比 */
+  --desk-marker-red: #f0806e;
+  --desk-marker-orange: #f0a95f;
+  --desk-marker-green: #6fc48c;
+  --desk-marker-teal: #4fc4b4;
+  --desk-marker-blue: #7d99e0;
+  --desk-marker-purple: #a68ce0;
+  --desk-marker-pink: #ec7cba;
 
-  /* 蓝色边注便签（"蓝色部分"）的底色与墨色 */
-  --desk-note-bg: #dde8fb;
-  --desk-note-ink: #3a5ba0;
+  /* 蓝色边注便签：暗底 + 浅墨 */
+  --desk-note-bg: oklch(0.28 0.045 260);
+  --desk-note-ink: #b9cbf2;
 
-  /* 荧光笔涂抹色 + 其墨色 */
-  --desk-sticky: #fbf1a4;
-  --desk-sticky-ink: #6a6320;
+  /* 荧光笔涂抹色 + 其墨色：暗底下用低亮度暖色块，墨色转浅 */
+  --desk-sticky: oklch(0.34 0.07 95);
+  --desk-sticky-ink: #f0e6a8;
 
-  /* 注记气泡的"纸"底色（比页面背景再暖一点，拉开层次）+ 阴影/印章墨 */
-  --desk-paper: #faf6ee;
-  --desk-stamp: #7a6f3e;
+  /* 注记气泡的"纸"底色：比页面背景略亮一档，拉开层次（对齐 --card） */
+  --desk-paper: oklch(0.225 0 0);
+  --desk-stamp: #cbbf86;
 
-  /* 开源项目「纸面」清单（移植自 Sn0w projects 区，沿用其暖纸/墨色阶） */
-  --desk-sheet: #f8f4ec;
-  --desk-sheet-ink: #26221c;
-  --desk-sheet-soft: #6f685c;
-  --desk-sheet-muted: #8a8170;
-  --desk-sheet-hair: #e2dccd;
+  /* 开源项目「纸面」清单：同样转为暗色承载面 */
+  --desk-sheet: oklch(0.205 0 0);
+  --desk-sheet-ink: oklch(0.985 0 0);
+  --desk-sheet-soft: oklch(0.78 0 0);
+  --desk-sheet-muted: oklch(0.65 0 0);
+  --desk-sheet-hair: oklch(1 0 0 / 12%);
 }
 
 /* 波浪下划线自描边动画：dash 远长于路径，靠 dashoffset 由隐到显地"画"出来 */

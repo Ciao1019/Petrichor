@@ -570,6 +570,116 @@ export const siteProjectShowcase = pgTable("petrichor_site_project_showcase", {
     ...timestamps,
 })
 
+// ===== 全站星图（Site Graph）=====
+// 不引入图数据库：树形骨架用「邻接表」（parent_id 自引用），跨树关系单独放 petrichor_site_graph_edge，
+// 子树 / N 跳邻域查询统一用 PostgreSQL 递归 CTE（见 src/server/site-graph/graph-query.ts）。
+
+// 图谱节点：root / section（分类）/ article（公开文章）/ concept（概念）/ entity（实体）/ tag（标签）
+export const siteGraphNodes = pgTable("petrichor_site_graph_node", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    // 稳定业务键：同一站点内唯一，Agent 重跑靠它做 upsert 而不是重建
+    nodeKey: text("node_key").notNull(),
+    // 邻接表：父节点为空表示根
+    parentId: bigint("parent_id", { mode: "number" }),
+    kind: text("kind").notNull(),
+    name: text("name").notNull(),
+    summary: text("summary"),
+    // 前台点击后跳转的站内路径，可空（概念节点通常没有独立页面）
+    route: text("route"),
+    articleId: bigint("article_id", { mode: "number" }),
+    // 节点属性：JSON 数组 [{name,value}]，由抽取 Agent 产出、后台可改
+    attributesJson: text("attributes_json"),
+    // 别名：JSON 字符串数组，用于跨文章合并同一实体
+    aliasesJson: text("aliases_json"),
+    weight: integer("weight").notNull().default(1),
+    sortOrder: integer("sort_order").notNull().default(0),
+    // DRAFT（仅后台可见）/ PUBLISHED（前台可见）/ ARCHIVED
+    status: text("status").notNull().default("DRAFT"),
+    // AGENT / MANUAL / SYSTEM
+    source: text("source").notNull().default("AGENT"),
+    // 0~100，Agent 自评置信度
+    confidence: integer("confidence").notNull().default(80),
+    // 人工锁定：Agent 重跑时跳过，不覆盖人工维护结果
+    locked: boolean("locked").notNull().default(false),
+    ...timestamps,
+}, (table) => [
+    uniqueIndex("ux_petrichor_site_graph_node_key").on(table.userId, table.nodeKey),
+    index("idx_petrichor_site_graph_node_parent").on(table.userId, table.parentId, table.sortOrder),
+    index("idx_petrichor_site_graph_node_status").on(table.userId, table.status, table.kind),
+    index("idx_petrichor_site_graph_node_article").on(table.articleId),
+])
+
+// 图谱关系：树形父子关系不入表（走 parent_id），这里只存跨树的引用/语义关系
+export const siteGraphEdges = pgTable("petrichor_site_graph_edge", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    fromNodeId: bigint("from_node_id", { mode: "number" }).notNull(),
+    toNodeId: bigint("to_node_id", { mode: "number" }).notNull(),
+    // 关系名称（中文短语，如「依赖」「引用」「同类」），前台悬停时展示
+    relation: text("relation").notNull(),
+    // 渲染分组：reference（引用）/ semantic（语义相近）/ derived（衍生）
+    kind: text("kind").notNull().default("reference"),
+    attributesJson: text("attributes_json"),
+    weight: integer("weight").notNull().default(1),
+    directed: boolean("directed").notNull().default(true),
+    status: text("status").notNull().default("DRAFT"),
+    source: text("source").notNull().default("AGENT"),
+    confidence: integer("confidence").notNull().default(80),
+    locked: boolean("locked").notNull().default(false),
+    ...timestamps,
+}, (table) => [
+    uniqueIndex("ux_petrichor_site_graph_edge_triple").on(table.userId, table.fromNodeId, table.toNodeId, table.relation),
+    index("idx_petrichor_site_graph_edge_from").on(table.userId, table.fromNodeId),
+    index("idx_petrichor_site_graph_edge_to").on(table.userId, table.toNodeId),
+    index("idx_petrichor_site_graph_edge_status").on(table.userId, table.status),
+])
+
+// 待确认的实体合并候选：名称相近但不能确定同一实体的对子，等后台人工拍板。
+// 精确命中（名称/别名规范化后一致）在抽取阶段就直接合并了，不会进这张表。
+export const siteGraphMergeCandidates = pgTable("petrichor_site_graph_merge_candidate", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    /** 新抽取到的节点键 */
+    sourceKey: text("source_key").notNull(),
+    /** 注册表里已有的规范键 */
+    targetKey: text("target_key").notNull(),
+    /** name_similar / name_contains */
+    reason: text("reason").notNull(),
+    /** 0~100 相似度 */
+    score: integer("score").notNull().default(0),
+    detail: text("detail"),
+    /** PENDING / MERGED / IGNORED */
+    status: text("status").notNull().default("PENDING"),
+    ...timestamps,
+}, (table) => [
+    uniqueIndex("ux_petrichor_site_graph_merge_candidate_pair").on(table.userId, table.sourceKey, table.targetKey),
+    index("idx_petrichor_site_graph_merge_candidate_status").on(table.userId, table.status, table.score),
+])
+
+// 抽取 Agent 的每次运行记录：写入统计 + 校验报告，后台「生成历史」读它
+export const siteGraphRuns = pgTable("petrichor_site_graph_run", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    // RUNNING / COMPLETED / FAILED
+    status: text("status").notNull().default("RUNNING"),
+    // FULL（全量重建）/ INCREMENTAL（仅新增文章）
+    mode: text("mode").notNull().default("FULL"),
+    modelName: text("model_name"),
+    articleCount: integer("article_count").notNull().default(0),
+    nodeCount: integer("node_count").notNull().default(0),
+    edgeCount: integer("edge_count").notNull().default(0),
+    // 校验报告（score / issues / 统计），结构见 site-graph/validate.ts
+    validationJson: text("validation_json"),
+    warningsJson: text("warnings_json"),
+    errorMessage: text("error_message"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    ...timestamps,
+}, (table) => [
+    index("idx_petrichor_site_graph_run_user").on(table.userId, table.startedAt),
+])
+
 // 前台公开问答限流：固定窗口（按小时）计数桶，bucket_key 形如 visitor:<id>:<yyyyMMddHH> 或 ip:<ip>:<yyyyMMddHH>
 export const publicQaRateLimits = pgTable("petrichor_public_qa_rate_limit", {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
@@ -1000,6 +1110,10 @@ export type AgentCallLogRecord = typeof agentCallLogs.$inferSelect
 export type SiteAboutProfileRecord = typeof siteAboutProfiles.$inferSelect
 export type SiteAppearanceRecord = typeof siteAppearance.$inferSelect
 export type SiteProjectShowcaseRecord = typeof siteProjectShowcase.$inferSelect
+export type SiteGraphNodeRecord = typeof siteGraphNodes.$inferSelect
+export type SiteGraphEdgeRecord = typeof siteGraphEdges.$inferSelect
+export type SiteGraphRunRecord = typeof siteGraphRuns.$inferSelect
+export type SiteGraphMergeCandidateRecord = typeof siteGraphMergeCandidates.$inferSelect
 export type PublicQaRateLimitRecord = typeof publicQaRateLimits.$inferSelect
 export type AiModelConfigRecord = typeof aiModelConfigs.$inferSelect
 export type AiReviewRecord = typeof aiReviews.$inferSelect

@@ -46,6 +46,17 @@ export default async function RootLayout({
 }>) {
     return (
         <html lang="zh-CN" suppressHydrationWarning data-retypeset-theme={FIXED_RETYPESET_THEME_ID}>
+            <head>
+                {/* 首屏防闪：前台公开页恒为暗色，但 .dark 由 ThemeProvider 在客户端才加，
+                    SSR 首帧会先按浅色令牌绘制导致顶栏白闪。这段脚本在样式生效前就定好主题。
+                    判定规则与 src/lib/public-theme-routes.ts 的 isPublicSitePathByExclusion 等价，
+                    两者一致性由 public-theme-routes.test.ts 钉住。 */}
+                <script
+                    dangerouslySetInnerHTML={{
+                        __html: `(function(){try{var p=location.pathname.replace(/(.)\\/$/,"$1")||"/";var deny=["/dashboard","/login","/auth","/demo"];var isPublic=!deny.some(function(d){return p===d||p.indexOf(d+"/")===0});var t=isPublic?"dark":(localStorage.getItem("ui-theme")||"system");if(t==="system"){t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}document.documentElement.classList.add(t)}catch(e){}})()`,
+                    }}
+                />
+            </head>
             <body>
                 {children}
             </body>

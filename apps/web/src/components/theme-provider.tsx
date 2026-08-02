@@ -10,7 +10,14 @@ type ThemeProviderProps = {
 }
 
 type ThemeProviderState = {
+  /** 用户的偏好设置（可能是 'system'），主题切换器读它来显示当前选项 */
   theme: Theme
+  /**
+   * 实际生效的主题：已解析 'system'、且已应用 forcedTheme。
+   * 判断"现在到底是不是暗色"必须用它——前台公开页强制暗色，
+   * 但用户 localStorage 里可能存着 'light'，读 theme 会得到错误结论。
+   */
+  resolvedTheme: Exclude<Theme, 'system'>
   setTheme: (theme: Theme) => void
 }
 
@@ -32,6 +39,23 @@ export function ThemeProvider({
   )
 
   const effectiveTheme = forcedTheme ?? theme
+
+  const [systemDark, setSystemDark] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.matchMedia('(prefers-color-scheme: dark)').matches
+  })
+
+  useLayoutEffect(() => {
+    if (effectiveTheme !== 'system' || typeof window === 'undefined') return
+    const query = window.matchMedia('(prefers-color-scheme: dark)')
+    const update = () => setSystemDark(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [effectiveTheme])
+
+  const resolvedTheme: Exclude<Theme, 'system'> =
+    effectiveTheme === 'system' ? (systemDark ? 'dark' : 'light') : effectiveTheme
 
   useLayoutEffect(() => {
     const root = window.document.documentElement
@@ -70,6 +94,7 @@ export function ThemeProvider({
 
   const value = {
     theme,
+    resolvedTheme,
     setTheme: (theme: Theme) => {
       if (typeof window !== 'undefined') {
         window.localStorage.setItem(storageKey, theme)

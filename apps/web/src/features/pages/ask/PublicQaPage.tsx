@@ -17,7 +17,6 @@ import { ArrowUp, Copy, MessageCircleQuestion, RefreshCw, Square } from "lucide-
 
 import { MarkdownText } from "@/components/assistant-ui/markdown-text"
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback"
-import { PixelFlowerLayer, type PixelFlowerDecoration } from "@/features/pages/blog/PixelDecorations"
 import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import { QaMarkdownScope, QaMarkdownText, QaPreparing } from "@/features/pages/knowledge/QaMarkdown"
 import { SignedUrlPublicAccessProvider } from "@/hooks/use-signed-url"
@@ -26,30 +25,6 @@ import { PublicQaToolUIs } from "./public-qa-tool-ui"
 
 const VISITOR_ID_STORAGE_KEY = "petrichor.public-qa.visitor-id"
 const VISITOR_ID_HEADER = "X-Petrichor-Visitor-Id"
-
-const askBackgroundFlowers: PixelFlowerDecoration[] = [
-  {
-    className: "left-[5%] top-[12%] size-10 opacity-30 sm:size-12",
-    tone: "red",
-    animationClassName: "blog-float-medium",
-  },
-  {
-    className: "right-[6%] top-[22%] hidden size-12 opacity-35 md:block",
-    tone: "yellow",
-    animationClassName: "blog-float-slow blog-delay-500",
-  },
-  {
-    className: "bottom-[12%] left-[8%] hidden size-8 opacity-30 sm:block",
-    tone: "yellow",
-    animationClassName: "blog-float-fast blog-delay-300",
-  },
-  {
-    className: "bottom-[10%] right-[7%] size-10 opacity-30 md:size-14",
-    tone: "red",
-    tall: true,
-    animationClassName: "blog-float-medium blog-delay-700",
-  },
-]
 
 /** 读取/生成稳定的 visitor-id（localStorage），作为限流主键。 */
 function ensureVisitorId(): string {
@@ -96,11 +71,6 @@ export function PublicQaPage() {
   return (
     <main className="retypeset-home scrollbar-hide relative flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#0044cc] text-white selection:bg-yellow-300 selection:text-blue-950">
       <div className="blog-home-grid pointer-events-none fixed inset-0 z-0" />
-      <PixelFlowerLayer
-        flowers={askBackgroundFlowers}
-        className="fixed inset-0 z-0 overflow-hidden"
-        flowerClassName="drop-shadow-lg"
-      />
 
       <div className="relative z-30 mx-auto w-full max-w-[51.462rem] px-[min(7.25vw,3.731rem)] pt-8 lg:contents">
         <RetypesetSiteHeader dockVisible />
@@ -191,7 +161,8 @@ function PublicQaChat() {
       <SignedUrlPublicAccessProvider publicAccess>
         <PublicQaToolUIs />
         <div className="flex h-full min-h-0 flex-col">
-          <QaMarkdownScope mode="light">
+          {/* 不写死 light：前台已统一暗色，强制浅色会让内容变成暗底暗字 */}
+          <QaMarkdownScope>
             <PublicQaThread />
           </QaMarkdownScope>
         </div>

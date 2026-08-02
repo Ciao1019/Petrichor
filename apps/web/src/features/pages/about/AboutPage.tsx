@@ -2,7 +2,6 @@
 
 import * as React from "react"
 
-import { PixelFlower, PixelFlowerLayer, type PixelFlowerDecoration } from "@/features/pages/blog/PixelDecorations"
 import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import { publicAboutProfileApi, type AboutAccent, type AboutProfileResponse } from "@/lib/api"
 
@@ -55,27 +54,6 @@ function decorateIntro(text: string, accents: AboutAccent[]): React.ReactNode[] 
         )
     })
 }
-
-const aboutBackgroundFlowers: PixelFlowerDecoration[] = [
-    {
-        className: "left-[5%] top-[10%] size-12 opacity-40",
-        tone: "red",
-        speed: 0.4,
-        animationClassName: "blog-float-medium",
-    },
-    {
-        className: "bottom-[10%] right-[5%] size-16 opacity-40",
-        tone: "yellow",
-        speed: 0.8,
-        animationClassName: "blog-float-slow blog-delay-500",
-    },
-    {
-        className: "right-[18%] top-[24%] hidden size-8 opacity-30 md:block",
-        tone: "red",
-        speed: 1.2,
-        animationClassName: "blog-float-fast blog-delay-300",
-    },
-]
 
 function resolveApiError(error: unknown) {
     return (
@@ -188,11 +166,6 @@ export function AboutPage() {
             onPointerLeave={resetParallax}
         >
             <div className="blog-home-grid pointer-events-none fixed inset-0 z-0" />
-            <PixelFlowerLayer
-                flowers={aboutBackgroundFlowers}
-                className="fixed inset-0 z-0 overflow-hidden"
-                parallax={parallax}
-            />
 
             <div className="relative z-30 mx-auto w-full max-w-6xl px-6 pt-8 md:px-24 lg:contents">
                 <RetypesetSiteHeader dockVisible />
@@ -200,14 +173,14 @@ export function AboutPage() {
             </div>
 
             <section className="relative z-20 mx-auto flex w-full max-w-[51.462rem] flex-1 flex-col px-[min(7.25vw,3.731rem)] py-12 lg:mx-[max(5.75rem,calc(50vw-34.25rem))] lg:max-w-[min(calc(75vw-16rem),44rem)] lg:px-0">
-                <div className="grid w-full grid-cols-1 items-start gap-12 md:grid-cols-12">
-                    <aside className="blog-home-fade-in flex flex-col items-center md:col-span-4 md:items-start">
-                        <div className="group relative flex size-64 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-white/5 p-4 shadow-2xl md:size-80">
+                {/* 两列按内容定宽：原来是 grid-cols-12 + gap-12，11 个间隙吃掉大半宽度，
+                    col-span-4 只剩约 200px，而头像框写死 320px，会溢出压住右侧正文。 */}
+                <div className="grid w-full grid-cols-1 items-start gap-10 md:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] md:gap-12">
+                    <aside className="blog-home-fade-in flex flex-col items-center md:items-start">
+                        {/* 用 aspect-square + w-full 让头像跟随列宽收缩，不再写死尺寸 */}
+                        <div className="group relative flex aspect-square w-full max-w-64 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-white/5 p-4 shadow-2xl">
                             <div className="absolute inset-0 bg-yellow-300/5 opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
                             <PixelAvatar />
-                            <div className="blog-float-medium blog-delay-300 absolute -bottom-2 -right-2 size-10">
-                                <PixelFlower tone="red" />
-                            </div>
                         </div>
                         <div className="mt-8 text-center md:text-left">
                             <h1 className="break-words text-2xl font-bold uppercase">{profile.displayName}</h1>
@@ -215,9 +188,10 @@ export function AboutPage() {
                         </div>
                     </aside>
 
-                    <div className="blog-home-fade-in blog-delay-300 flex flex-col gap-12 md:col-span-8">
+                    <div className="blog-home-fade-in blog-delay-300 flex min-w-0 flex-col gap-12">
                         <section aria-labelledby="about-story-heading">
-                            <h2 id="about-story-heading" className="mb-6 font-serif text-5xl italic md:text-7xl">
+                            {/* 正文列变窄后 7xl 会顶出列宽，降一档并允许换行 */}
+                            <h2 id="about-story-heading" className="mb-6 break-words font-serif text-4xl italic sm:text-5xl md:text-6xl">
                                 The Story
                             </h2>
                             <div className="max-w-2xl space-y-6 text-sm leading-relaxed text-white/90 md:text-base">

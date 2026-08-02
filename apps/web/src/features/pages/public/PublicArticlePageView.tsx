@@ -7,7 +7,6 @@ import { ChevronUp, GalleryHorizontalEnd, ImageIcon } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { PixelFlowerLayer, type PixelFlowerDecoration } from "@/features/pages/blog/PixelDecorations"
 import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import { PublicArticleErrorCard, PublicArticlePasswordCard } from "@/features/pages/public/PublicArticleChrome"
 import { PublicArticleComments } from "@/features/pages/public/PublicArticleComments"
@@ -59,30 +58,6 @@ export type PublicArticleRepostSource = {
 
 const PUBLIC_ARTICLE_SUMMARY_REVEAL_CPS = 13
 
-export const articleDetailBackgroundFlowers: PixelFlowerDecoration[] = [
-  {
-    className: "left-[5%] top-[9%] size-10 opacity-30 sm:size-12",
-    tone: "red",
-    animationClassName: "blog-float-medium",
-  },
-  {
-    className: "right-[6%] top-[24%] hidden size-12 opacity-35 md:block",
-    tone: "yellow",
-    animationClassName: "blog-float-slow blog-delay-500",
-  },
-  {
-    className: "bottom-[14%] left-[8%] hidden size-8 opacity-30 sm:block",
-    tone: "yellow",
-    animationClassName: "blog-float-fast blog-delay-300",
-  },
-  {
-    className: "bottom-[10%] right-[7%] size-10 opacity-30 md:size-14",
-    tone: "red",
-    tall: true,
-    animationClassName: "blog-float-medium blog-delay-700",
-  },
-]
-
 export function PublicArticlePageView({ model }: { model: PublicArticlePageModel }) {
   const renderState = {
     hasArticleData: model.hasArticleData,
@@ -96,11 +71,6 @@ export function PublicArticlePageView({ model }: { model: PublicArticlePageModel
   return (
     <main className="retypeset-home scrollbar-hide relative flex min-h-screen flex-col overflow-x-hidden bg-[#0044cc] text-white selection:bg-yellow-300 selection:text-blue-950">
       <div className="blog-home-grid pointer-events-none fixed inset-0 z-0" />
-      <PixelFlowerLayer
-        flowers={articleDetailBackgroundFlowers}
-        className="fixed inset-0 z-0 overflow-hidden"
-        flowerClassName="drop-shadow-lg"
-      />
 
       <div className="relative z-30 mx-auto w-full max-w-[51.462rem] px-[min(7.25vw,3.731rem)] pt-8 lg:contents">
         <RetypesetSiteHeader dockVisible />
@@ -232,7 +202,8 @@ function PublicArticleAiSummary({ summary }: { summary: string | null }) {
     <section className="post-ai-summary" aria-label="AI 总结">
       <div className="post-ai-summary-label">AI 总结</div>
       <div className="post-ai-summary-text">
-        <QaMarkdownScope mode="light">
+        {/* 不写死 light：前台已统一暗色，强制浅色会让内容变成暗底暗字 */}
+        <QaMarkdownScope>
           <QaStreamingMarkdown
             key={normalizedSummary}
             text={normalizedSummary}

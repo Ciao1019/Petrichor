@@ -1,11 +1,10 @@
 "use client"
 
-import { LockKeyhole } from "lucide-react"
 import * as React from "react"
 import { Link } from "react-router-dom"
 
 import { publicArticleShareApi, type PublicArticleListItem } from "@/lib/api"
-import { PixelFlowerLayer, type PixelFlowerDecoration } from "@/features/pages/blog/PixelDecorations"
+import { ArticleStatusBadges } from "@/features/pages/blog/ArticleStatusBadges"
 import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 
 type HomepageArticle = PublicArticleListItem
@@ -14,30 +13,6 @@ type ArticleYearGroup = {
     year: string
     articles: HomepageArticle[]
 }
-
-const articleIndexBackgroundFlowers: PixelFlowerDecoration[] = [
-    {
-        className: "left-[5%] top-[8%] size-10 opacity-35 sm:size-12",
-        tone: "red",
-        animationClassName: "blog-float-medium",
-    },
-    {
-        className: "right-[16%] top-[18%] hidden size-12 opacity-40 md:block",
-        tone: "yellow",
-        animationClassName: "blog-float-slow blog-delay-500",
-    },
-    {
-        className: "bottom-[17%] left-[8%] hidden size-8 opacity-35 sm:block",
-        tone: "yellow",
-        animationClassName: "blog-float-fast blog-delay-300",
-    },
-    {
-        className: "bottom-[10%] right-[9%] size-10 opacity-30 md:size-14",
-        tone: "red",
-        tall: true,
-        animationClassName: "blog-float-medium blog-delay-700",
-    },
-]
 
 const articleIndexCopy = {
     loadFailed: "文章索引加载失败",
@@ -117,45 +92,6 @@ function isSpaArticleHref(href: string) {
     return href.startsWith("/p/")
 }
 
-function ArticleStatusBadges({ article, copy }: { article: HomepageArticle; copy: ArticleIndexCopy }) {
-    if (!article.isRepost && !article.isInternalLink && !article.expired && !article.hasPassword) {
-        return null
-    }
-
-    return (
-        <span className="ml-2 inline-flex translate-y-[-0.12em] items-center gap-1 align-middle">
-            {article.isRepost ? (
-                <span className="retypeset-status-tag" title={copy.repost}>
-                    {copy.repost}
-                </span>
-            ) : null}
-            {article.isInternalLink ? (
-                <span className="retypeset-status-tag" title={copy.internalLink}>
-                    {copy.internalLink}
-                </span>
-            ) : null}
-            {article.expired ? (
-                <span
-                    className="retypeset-status-tag"
-                    title={copy.expiredTitle(article.expiresAt ? formatArticleDate(article.expiresAt) : null)}
-                >
-                    {copy.expired}
-                </span>
-            ) : null}
-            {article.hasPassword ? (
-                <span
-                    className="retypeset-lock-tag"
-                    aria-label={copy.passwordRequired}
-                    title={copy.passwordRequired}
-                >
-                    <LockKeyhole className="size-3" aria-hidden="true" />
-                    <span className="sr-only">{copy.passwordRequired}</span>
-                </span>
-            ) : null}
-        </span>
-    )
-}
-
 function ArticleListItem({ article, copy }: { article: HomepageArticle; copy: ArticleIndexCopy }) {
     const date = formatArticleDate(article.updatedAt)
     const linkClassName = "break-words lg:text-[1.125rem] lg:font-medium"
@@ -195,7 +131,7 @@ function ArticleListItem({ article, copy }: { article: HomepageArticle; copy: Ar
                 ) : (
                     <span className={linkClassName}>{article.title}</span>
                 )}
-                <ArticleStatusBadges article={article} copy={copy} />
+                <ArticleStatusBadges article={article} copy={copy} formatDate={formatArticleDate} />
             </h3>
 
             <div className="retypeset-font-time py-[0.2rem] text-sm lg:hidden">
@@ -271,11 +207,6 @@ function ArticleIndexFrame({
     return (
         <section id="articles" ref={sectionRef} className="retypeset-home relative z-10 min-h-screen overflow-hidden">
             <div className="blog-home-grid pointer-events-none absolute inset-0 z-0" />
-            <PixelFlowerLayer
-                flowers={articleIndexBackgroundFlowers}
-                className="absolute inset-0 z-0 overflow-hidden"
-                flowerClassName="drop-shadow-lg"
-            />
             <div className="relative z-10 mx-auto min-h-dvh w-full max-w-[51.462rem] px-[min(7.25vw,3.731rem)] py-10 lg:mx-[max(5.75rem,calc(50vw-34.25rem))] lg:my-20 lg:min-h-full lg:max-w-[min(calc(75vw-16rem),44rem)] lg:p-0">
                 <RetypesetSiteHeader dockVisible={dockVisible} />
                 <RetypesetSiteNav activeSection="articles" dockVisible={dockVisible} />

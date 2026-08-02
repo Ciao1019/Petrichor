@@ -1,21 +1,40 @@
 import { describe, expect, it } from "vitest"
 
-import { isPublicLightThemePath } from "./public-theme-routes"
+import { isPublicSitePath, isPublicSitePathByExclusion } from "./public-theme-routes"
 
 describe("public theme routes", () => {
-  it("公开前台路由强制白天模式", () => {
-    expect(isPublicLightThemePath("/")).toBe(true)
-    expect(isPublicLightThemePath("/tags")).toBe(true)
-    expect(isPublicLightThemePath("/tags/")).toBe(true)
-    expect(isPublicLightThemePath("/about")).toBe(true)
-    expect(isPublicLightThemePath("/ask")).toBe(true)
-    expect(isPublicLightThemePath("/p/shareCode123")).toBe(true)
+  it("公开前台路由强制暗色主题", () => {
+    expect(isPublicSitePath("/")).toBe(true)
+    expect(isPublicSitePath("/tags")).toBe(true)
+    expect(isPublicSitePath("/tags/")).toBe(true)
+    expect(isPublicSitePath("/graph")).toBe(true)
+    expect(isPublicSitePath("/about")).toBe(true)
+    expect(isPublicSitePath("/ask")).toBe(true)
+    expect(isPublicSitePath("/projects")).toBe(true)
+    expect(isPublicSitePath("/petrichor")).toBe(true)
+    expect(isPublicSitePath("/p/shareCode123")).toBe(true)
+    expect(isPublicSitePath("/b/burnCode123")).toBe(true)
   })
 
   it("后台和登录页保留普通主题切换", () => {
-    expect(isPublicLightThemePath("/dashboard")).toBe(false)
-    expect(isPublicLightThemePath("/dashboard/knowledge")).toBe(false)
-    expect(isPublicLightThemePath("/login")).toBe(false)
-    expect(isPublicLightThemePath("/auth/callback")).toBe(false)
+    expect(isPublicSitePath("/dashboard")).toBe(false)
+    expect(isPublicSitePath("/dashboard/knowledge")).toBe(false)
+    expect(isPublicSitePath("/login")).toBe(false)
+    expect(isPublicSitePath("/auth/callback")).toBe(false)
+  })
+
+  // 首屏防闪脚本用的是反向排除规则，不能与本模块的正向判定分叉，
+  // 否则会出现「脚本判为暗、React 判为亮」的闪烁回归
+  it("防闪脚本的排除式判定与正向判定结论一致", () => {
+    const appRoutes = [
+      "/", "/tags", "/tags/", "/graph", "/ask", "/about", "/projects", "/petrichor",
+      "/p/shareCode123", "/b/burnCode123",
+      "/dashboard", "/dashboard/knowledge", "/dashboard/admin/site-graph",
+      "/login", "/auth/callback", "/demo",
+    ]
+    for (const route of appRoutes) {
+      expect([route, isPublicSitePathByExclusion(route)])
+        .toEqual([route, isPublicSitePath(route)])
+    }
   })
 })

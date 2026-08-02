@@ -93,6 +93,14 @@ export function buildStaticPublicPageMetadata(pathname: string): Metadata {
         })
     }
 
+    if (pathname === "/graph") {
+        return buildPublicMetadata({
+            title: "全站星图",
+            description: "把公开文章、分类、标签以及 AI 抽取的概念与实体连成一张可交互的点群星图。",
+            pathname,
+        })
+    }
+
     if (pathname === "/projects") {
         return buildPublicMetadata({
             title: "开源项目",
@@ -167,6 +175,9 @@ export function resolvePublicRouteMetadata(
     }
     if (firstSegment === "ask" && pathSegments.length === 1) {
         return buildStaticPublicPageMetadata("/ask")
+    }
+    if (firstSegment === "graph" && pathSegments.length === 1) {
+        return buildStaticPublicPageMetadata("/graph")
     }
     if (firstSegment === "projects" && pathSegments.length === 1) {
         return buildStaticPublicPageMetadata("/projects")

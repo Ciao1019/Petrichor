@@ -48,6 +48,7 @@ const routeMap: Record<string, BreadcrumbItem[]> = {
   [dashboardRoutes.adminUsers]: [{ label: "系统管理" }, { label: "用户管理" }],
   [dashboardRoutes.adminAbout]: [{ label: "系统管理" }, { label: "关于我配置" }],
   [dashboardRoutes.adminProjects]: [{ label: "系统管理" }, { label: "开源项目" }],
+  [dashboardRoutes.adminSiteGraph]: [{ label: "系统管理" }, { label: "全站星图" }],
 }
 
 function resolveBreadcrumbItems(pathname: string): BreadcrumbItem[] | undefined {
