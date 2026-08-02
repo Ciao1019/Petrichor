@@ -1,6 +1,18 @@
 import { describe, expect, it, vi } from "vitest"
 
 import type { S3Config } from "@/config/server"
+
+// deleteS3Objects 会先问「是否本地存储模式」，而该判定要读 getServerConfig()，
+// 在单测环境里没有 DATABASE_URL / SESSION_SECRET 会直接抛错，
+// 错误又被逐条 try/catch 吞进 failedObjectKeys，表现为「什么都没删成功」。
+// 本文件测的是 S3 分支，这里显式声明非本地存储模式。
+vi.mock("@/server/upload/local-storage", () => ({
+    getLocalStorageDirOrNull: () => null,
+    deleteLocalObject: async () => {
+        throw new Error("本测试不应走本地存储分支")
+    },
+}))
+
 import { deleteS3Object, deleteS3Objects, extractS4ObjectKeysFromArticleContent } from "./s3-delete"
 
 const config: S3Config = {

@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const dbMocks = vi.hoisted(() => ({
-    getDb: vi.fn(() => {
+    // 显式标注返回类型：函数体只有 throw 时会被推断成 never，
+    // 连带让 mockReturnValue 的入参也变成 never，后面塞查询链会报类型错。
+    getDb: vi.fn((): unknown => {
         throw new Error("getDb 不应在守卫校验阶段被调用")
     }),
 }))
