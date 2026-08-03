@@ -1,6 +1,6 @@
 import { Copy, DotIcon, Flame, Lock } from "lucide-react"
 
-import { KbDialog } from "@/components/shadcn-studio/dialog/dialog-09"
+import { ModalShell } from "@/components/petrichor-ui/modal-shell"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { CalendarWave } from "@/components/ui/calendar-wave"
@@ -124,7 +124,7 @@ export function BurnLinkDialog({ open, onOpenChange, articleId }: BurnLinkDialog
   )
 
   return (
-    <KbDialog
+    <ModalShell
       open={open}
       onOpenChange={onOpenChange}
       title="阅后即焚链接"
@@ -235,6 +235,6 @@ export function BurnLinkDialog({ open, onOpenChange, articleId }: BurnLinkDialog
           )}
         </div>
       </div>
-    </KbDialog>
+    </ModalShell>
   )
 }

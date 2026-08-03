@@ -5,7 +5,7 @@ import { CheckCircle2, FileText, Loader2, RotateCcw, UploadCloud, X } from "luci
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
-import { KbDialog } from "@/components/shadcn-studio/dialog/dialog-09"
+import { ModalShell } from "@/components/petrichor-ui/modal-shell"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -372,7 +372,7 @@ export function DocumentImportDialog({
 
   return (
     <>
-    <KbDialog
+    <ModalShell
       open={open}
       onOpenChange={(next) => {
         if (busy) return
@@ -534,8 +534,8 @@ export function DocumentImportDialog({
           </div>
         </div>
       </div>
-    </KbDialog>
-    <KbDialog
+    </ModalShell>
+    <ModalShell
       open={notice != null}
       onOpenChange={(next) => {
         if (!next) setNotice(null)
@@ -567,7 +567,7 @@ export function DocumentImportDialog({
           进度、目标知识库、目标文件夹和失败页重试都可以在左侧菜单的「导入任务列表」中查看。
         </p>
       </div>
-    </KbDialog>
+    </ModalShell>
     </>
   )
 }

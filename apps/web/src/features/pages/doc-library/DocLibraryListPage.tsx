@@ -6,9 +6,9 @@ import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 
 import { AppPagination } from "@/components/app-pagination"
-import { KbDialog } from "@/components/shadcn-studio/dialog/dialog-09"
-import { KbDropdownMenu } from "@/components/shadcn-studio/dropdown-menu/dropdown-menu-09"
-import { toastWithIcon } from "@/components/shadcn-studio/sonner/sonner-03"
+import { ModalShell } from "@/components/petrichor-ui/modal-shell"
+import { ActionMenu } from "@/components/petrichor-ui/action-menu"
+import { notify } from "@/components/petrichor-ui/notify"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenuItem,
@@ -98,7 +98,7 @@ function DocLibraryCard({
       <ModernBookCover size="sm" color={pickBookColor(library.id)} className="w-min">
         <BookHeader className="w-full items-start justify-between gap-3">
           <FileText size={20} className="shrink-0 text-white/90" />
-          <KbDropdownMenu
+          <ActionMenu
             trigger={
               <Button
                 variant="ghost"
@@ -118,7 +118,7 @@ function DocLibraryCard({
             <DropdownMenuItem
               onClick={() => {
                 void navigator.clipboard.writeText(library.id)
-                  .then(() => toastWithIcon("已复制文档库 ID"))
+                  .then(() => notify("已复制文档库 ID"))
                   .catch(() => toast.error("复制失败"))
               }}
             >
@@ -128,7 +128,7 @@ function DocLibraryCard({
             <DropdownMenuItem variant="destructive" onClick={onDelete}>
               删除
             </DropdownMenuItem>
-          </KbDropdownMenu>
+          </ActionMenu>
         </BookHeader>
 
         <BookTitle className="line-clamp-2 text-lg">{library.name}</BookTitle>
@@ -298,7 +298,7 @@ export function DocLibraryListPage() {
         />
       </div>
 
-      <KbDialog
+      <ModalShell
         open={dialogOpen}
         onOpenChange={(open) => {
           if (!open && saving) return
@@ -360,9 +360,9 @@ export function DocLibraryListPage() {
             />
           </div>
         </div>
-      </KbDialog>
+      </ModalShell>
 
-      <KbDialog
+      <ModalShell
         open={deleteOpen}
         onOpenChange={(open) => {
           if (!open && saving) return

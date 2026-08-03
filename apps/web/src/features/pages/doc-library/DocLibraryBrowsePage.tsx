@@ -17,9 +17,9 @@ import {
   TreeProvider,
   TreeView,
 } from "@/components/kibo-ui/tree"
-import { KbDialog } from "@/components/shadcn-studio/dialog/dialog-09"
-import { KbDropdownMenu } from "@/components/shadcn-studio/dropdown-menu/dropdown-menu-09"
-import { toastWithIcon } from "@/components/shadcn-studio/sonner/sonner-03"
+import { ModalShell } from "@/components/petrichor-ui/modal-shell"
+import { ActionMenu } from "@/components/petrichor-ui/action-menu"
+import { notify } from "@/components/petrichor-ui/notify"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -681,7 +681,7 @@ export function DocLibraryBrowsePage() {
           ) : null}
 
           <div className="ml-auto flex shrink-0 items-center gap-1">
-            <KbDropdownMenu
+            <ActionMenu
               trigger={
                 <Button
                   variant="ghost"
@@ -729,7 +729,7 @@ export function DocLibraryBrowsePage() {
                   <DropdownMenuItem
                     onClick={() => {
                       void navigator.clipboard.writeText(node.document.id)
-                        .then(() => toastWithIcon("已复制文件 ID"))
+                        .then(() => notify("已复制文件 ID"))
                         .catch(() => toast.error("复制失败"))
                     }}
                   >
@@ -752,7 +752,7 @@ export function DocLibraryBrowsePage() {
                   </DropdownMenuItem>
                 </>
               )}
-            </KbDropdownMenu>
+            </ActionMenu>
           </div>
         </TreeNodeTrigger>
 
@@ -846,7 +846,7 @@ export function DocLibraryBrowsePage() {
         />
       </div>
 
-      <KbDialog
+      <ModalShell
         open={createFolderOpen}
         onOpenChange={(open) => {
           if (!open && saving) return
@@ -890,9 +890,9 @@ export function DocLibraryBrowsePage() {
             }}
           />
         </div>
-      </KbDialog>
+      </ModalShell>
 
-      <KbDialog
+      <ModalShell
         open={renameFolderOpen}
         onOpenChange={(open) => {
           if (!open && saving) return
@@ -936,9 +936,9 @@ export function DocLibraryBrowsePage() {
             }}
           />
         </div>
-      </KbDialog>
+      </ModalShell>
 
-      <KbDialog
+      <ModalShell
         open={uploadOpen}
         onOpenChange={(open) => {
           if (!open && uploading) return
@@ -968,9 +968,9 @@ export function DocLibraryBrowsePage() {
             onFilesAccepted={handleFilesAccepted}
           />
         )}
-      </KbDialog>
+      </ModalShell>
 
-      <KbDialog
+      <ModalShell
         open={deleteOpen}
         onOpenChange={(open) => {
           if (!open && saving) return
