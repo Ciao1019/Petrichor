@@ -54,10 +54,10 @@ import {
   TreeView,
 } from "@/components/kibo-ui/tree"
 import { FileIcon } from "@/components/kibo-ui/tree/file-icon"
-import { Calendar04 } from "@/components/shadcn-studio/calendar/calendar-04"
-import { KbDialog } from "@/components/shadcn-studio/dialog/dialog-09"
-import { KbDropdownMenu } from "@/components/shadcn-studio/dropdown-menu/dropdown-menu-09"
-import { toastWithIcon } from "@/components/shadcn-studio/sonner/sonner-03"
+import { DateRangeCalendar } from "@/components/petrichor-ui/date-range-calendar"
+import { ModalShell } from "@/components/petrichor-ui/modal-shell"
+import { ActionMenu } from "@/components/petrichor-ui/action-menu"
+import { notify } from "@/components/petrichor-ui/notify"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -1763,7 +1763,7 @@ export function KnowledgeBaseTreePage() {
                     folderId={node.id}
                   />
                 ) : null}
-                <KbDropdownMenu
+                <ActionMenu
                   trigger={
                     <Button variant="ghost" size="icon" className="size-9 md:size-6" onClick={(e) => e.stopPropagation()}>
                       <MoreHorizontal className="size-4 md:size-3" />
@@ -1825,7 +1825,7 @@ export function KnowledgeBaseTreePage() {
                         onClick={() => {
                           if (!node.articleId) return
                           void navigator.clipboard.writeText(node.articleId)
-                            .then(() => toastWithIcon("已复制文章 ID"))
+                            .then(() => notify("已复制文章 ID"))
                             .catch(() => toast.error("复制失败"))
                         }}
                       >
@@ -1851,7 +1851,7 @@ export function KnowledgeBaseTreePage() {
                       </DropdownMenuItem>
                     </>
                   )}
-                </KbDropdownMenu>
+                </ActionMenu>
               </div>
             </TreeNodeTrigger>
 
@@ -2007,7 +2007,7 @@ export function KnowledgeBaseTreePage() {
                 className="p-0"
               >
                 <div className="w-fit bg-background p-3">
-                  <Calendar04
+                  <DateRangeCalendar
                     value={articleCreatedDateDraftRange ?? articleCreatedDateRange}
                     showRangeLabel={false}
                     onChange={(next) => {
@@ -2180,7 +2180,7 @@ export function KnowledgeBaseTreePage() {
         />
       </div>
 
-      <KbDialog
+      <ModalShell
         open={createFolderOpen}
         onOpenChange={(open) => {
           if (!open && saving) return
@@ -2224,9 +2224,9 @@ export function KnowledgeBaseTreePage() {
             }}
           />
         </div>
-      </KbDialog>
+      </ModalShell>
 
-      <KbDialog
+      <ModalShell
         open={renameFolderOpen}
         onOpenChange={(open) => {
           if (!open && saving) return
@@ -2270,9 +2270,9 @@ export function KnowledgeBaseTreePage() {
             }}
           />
         </div>
-      </KbDialog>
+      </ModalShell>
 
-      <KbDialog
+      <ModalShell
         open={createArticleOpen}
         onOpenChange={(open) => {
           if (!open && createArticleBusy) return
@@ -2559,9 +2559,9 @@ export function KnowledgeBaseTreePage() {
             </div>
           </div>
         </div>
-      </KbDialog>
+      </ModalShell>
 
-      <KbDialog
+      <ModalShell
         open={deleteOpen}
         onOpenChange={(open) => {
           if (!open && saving) return

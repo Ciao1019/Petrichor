@@ -1,6 +1,6 @@
 import { Copy, DotIcon } from "lucide-react"
 
-import { KbDialog } from "@/components/shadcn-studio/dialog/dialog-09"
+import { ModalShell } from "@/components/petrichor-ui/modal-shell"
 import { Button } from "@/components/ui/button"
 import { CalendarWave } from "@/components/ui/calendar-wave"
 import { Input } from "@/components/ui/input"
@@ -121,7 +121,7 @@ export function ArticleShareDialog({ open, onOpenChange, articleId }: ArticleSha
   )
 
   return (
-    <KbDialog
+    <ModalShell
       open={open}
       onOpenChange={onOpenChange}
       title="分享文章"
@@ -331,6 +331,6 @@ export function ArticleShareDialog({ open, onOpenChange, articleId }: ArticleSha
           ) : null}
         </div>
       </div>
-    </KbDialog>
+    </ModalShell>
   )
 }

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp"
 import { Label } from "@/components/ui/label"
-import { Card17 } from "@/components/shadcn-studio/card/card-17"
+import { TiltCard } from "@/components/petrichor-ui/tilt-card"
 import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import {
   PublicArticlePageView,
@@ -97,7 +97,7 @@ export function BurnReadPage() {
   const consuming = model.phase === "consuming"
   return (
     <BurnShell>
-      <Card17
+      <TiltCard
         title={
           <span className="flex items-center gap-2 text-base">
             <Flame className="size-4 retypeset-c-primary" />
@@ -150,7 +150,7 @@ export function BurnReadPage() {
         >
           {consuming ? "正在打开..." : "确认阅读"}
         </Button>
-      </Card17>
+      </TiltCard>
     </BurnShell>
   )
 }

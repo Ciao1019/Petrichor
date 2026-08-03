@@ -15,9 +15,9 @@ import {
 } from "@astryxdesign/core/Table"
 import { Text } from "@astryxdesign/core/Text"
 import { AstryxProvider } from "@/components/astryx/astryx-provider"
-import { KbDialog } from "@/components/shadcn-studio/dialog/dialog-09"
-import { KbDropdownMenu } from "@/components/shadcn-studio/dropdown-menu/dropdown-menu-09"
-import { toastWithIcon } from "@/components/shadcn-studio/sonner/sonner-03"
+import { ModalShell } from "@/components/petrichor-ui/modal-shell"
+import { ActionMenu } from "@/components/petrichor-ui/action-menu"
+import { notify } from "@/components/petrichor-ui/notify"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -265,7 +265,7 @@ export function KnowledgeBasePage() {
         width: pixel(64),
         resizable: false,
         renderCell: (kb) => (
-          <KbDropdownMenu
+          <ActionMenu
             trigger={
               <Button
                 variant="ghost"
@@ -281,7 +281,7 @@ export function KnowledgeBasePage() {
             <DropdownMenuItem
               onClick={() => {
                 void navigator.clipboard.writeText(kb.id)
-                  .then(() => toastWithIcon("已复制知识库 ID"))
+                  .then(() => notify("已复制知识库 ID"))
                   .catch(() => toast.error("复制失败"))
               }}
             >
@@ -299,7 +299,7 @@ export function KnowledgeBasePage() {
             >
               删除
             </DropdownMenuItem>
-          </KbDropdownMenu>
+          </ActionMenu>
         ),
       },
     ],
@@ -343,7 +343,7 @@ export function KnowledgeBasePage() {
         />
       </div>
 
-      <KbDialog
+      <ModalShell
         open={dialogOpen}
         onOpenChange={(open) => {
           if (!open && saving) return
@@ -405,9 +405,9 @@ export function KnowledgeBasePage() {
             />
           </div>
         </div>
-      </KbDialog>
+      </ModalShell>
 
-      <KbDialog
+      <ModalShell
         open={deleteOpen}
         onOpenChange={(open) => {
           if (!open && saving) return

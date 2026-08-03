@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { AppPagination } from "@/components/app-pagination"
-import { KbDialog } from "@/components/shadcn-studio/dialog/dialog-09"
+import { ModalShell } from "@/components/petrichor-ui/modal-shell"
 import {
   importJobDetailPath,
   knowledgeBasePath,
@@ -339,7 +339,7 @@ export function DocumentImportJobsPage() {
         />
       </div>
 
-      <KbDialog
+      <ModalShell
         open={deleteConfirmOpen}
         onOpenChange={(next) => {
           if (deleting) return
@@ -364,7 +364,7 @@ export function DocumentImportJobsPage() {
         <p className="px-1 py-1 text-sm text-muted-foreground">
           删除后任务及其页面识别记录将被移除；已经生成的文章不会被删除。
         </p>
-      </KbDialog>
+      </ModalShell>
     </div>
   )
 }
