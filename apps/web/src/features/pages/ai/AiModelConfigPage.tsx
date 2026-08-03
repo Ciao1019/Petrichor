@@ -5,9 +5,9 @@ import { BrainCircuit, Loader2, MoreHorizontal, Search, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
-import { KbDialog } from "@/components/shadcn-studio/dialog/dialog-09"
-import { KbDropdownMenu } from "@/components/shadcn-studio/dropdown-menu/dropdown-menu-09"
-import { toastWithIcon } from "@/components/shadcn-studio/sonner/sonner-03"
+import { ModalShell } from "@/components/petrichor-ui/modal-shell"
+import { ActionMenu } from "@/components/petrichor-ui/action-menu"
+import { notify } from "@/components/petrichor-ui/notify"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -836,7 +836,7 @@ export function AiModelConfigPage() {
                         <EllipsisText value={formatDateTime(row.updatedAt)} />
                       </TableCell>
                       <TableCell className="text-right rounded-r-xl transition-colors group-hover:bg-muted/50">
-                        <KbDropdownMenu
+                        <ActionMenu
                           trigger={
                             <Button
                               variant="ghost"
@@ -859,7 +859,7 @@ export function AiModelConfigPage() {
                             onClick={() => {
                               void navigator.clipboard
                                 .writeText(row.id)
-                                .then(() => toastWithIcon("已复制配置 ID"))
+                                .then(() => notify("已复制配置 ID"))
                                 .catch(() => toast.error("复制失败"))
                             }}
                           >
@@ -890,7 +890,7 @@ export function AiModelConfigPage() {
                           >
                             删除
                           </DropdownMenuItem>
-                        </KbDropdownMenu>
+                        </ActionMenu>
                       </TableCell>
                     </TableRow>
                   ))
@@ -910,7 +910,7 @@ export function AiModelConfigPage() {
           </div>
         </div>
 
-      <KbDialog
+      <ModalShell
         open={detailOpen}
         onOpenChange={(open) => {
           setDetailOpen(open)
@@ -948,7 +948,7 @@ export function AiModelConfigPage() {
                     onClick={() => {
                       void navigator.clipboard
                         .writeText(detailConfig.id)
-                        .then(() => toastWithIcon("已复制配置 ID"))
+                        .then(() => notify("已复制配置 ID"))
                         .catch(() => toast.error("复制失败"))
                     }}
                   >
@@ -1014,9 +1014,9 @@ export function AiModelConfigPage() {
         ) : (
           <div className="py-6 text-sm text-muted-foreground">暂无详情</div>
         )}
-      </KbDialog>
+      </ModalShell>
 
-      <KbDialog
+      <ModalShell
         open={editorOpen}
         onOpenChange={(open) => {
           if (!open && saving) return
@@ -1208,9 +1208,9 @@ export function AiModelConfigPage() {
             ) : null}
           </div>
         </div>
-      </KbDialog>
+      </ModalShell>
 
-      <KbDialog
+      <ModalShell
         open={deleteOpen}
         onOpenChange={(open) => {
           if (!open && saving) return

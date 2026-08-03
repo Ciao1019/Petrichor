@@ -10,9 +10,7 @@ import { PasswordFields } from "@/components/account/PasswordFields"
 import { validatePasswordStrength } from "@/components/account/password-utils"
 import { LoginSessionsSection } from "@/components/account/login-sessions-section"
 import { TwoFactorSection } from "@/components/account/two-factor-section"
-import ProfileEditingAlert from "@/components/shadcn-studio/alert/alert-26"
-import ProfileUpdateSuccessAlert from "@/components/shadcn-studio/alert/alert-27"
-import ProfileIncompleteWarningAlert from "@/components/shadcn-studio/alert/alert-28"
+import { NoticeToast } from "@/components/petrichor-ui/notice-toast"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -226,7 +224,7 @@ export function AccountPage() {
     if (!isProfileIncomplete) return
 
     profileIncompleteToastShownRef.current = true
-    toast.custom(() => <ProfileIncompleteWarningAlert />, {
+    toast.custom(() => <NoticeToast tone="warning" title="一些细节缺失" description="填写您的个人资料以获得最佳体验。" />, {
       duration: 5000,
       position: "bottom-right",
       unstyled: true,
@@ -252,11 +250,14 @@ export function AccountPage() {
     if (savingProfile) return
 
     if (isProfileDraftDirty()) {
-      toast.custom(() => <ProfileEditingAlert />, {
-        duration: 2500,
-        position: "bottom-right",
-        unstyled: true,
-      })
+      toast.custom(
+        () => <NoticeToast title="更改未保存" description="您已取消编辑，未点击“保存”的更改不会生效。" />,
+        {
+          duration: 2500,
+          position: "bottom-right",
+          unstyled: true,
+        }
+      )
     }
     setEditOpen(false)
   }
@@ -275,7 +276,7 @@ export function AccountPage() {
         signature: signatureDraft.trim() || null,
       })
       setProfile(res.data)
-      toast.custom(() => <ProfileUpdateSuccessAlert />, {
+      toast.custom(() => <NoticeToast tone="success" title="资料已更新" description="您的更改已保存成功。" />, {
         duration: 3500,
         position: "bottom-right",
         unstyled: true,

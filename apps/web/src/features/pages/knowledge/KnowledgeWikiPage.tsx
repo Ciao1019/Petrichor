@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { AppPagination } from "@/components/app-pagination"
-import { KbDialog } from "@/components/shadcn-studio/dialog/dialog-09"
+import { ModalShell } from "@/components/petrichor-ui/modal-shell"
 import {
   knowledgeBaseQaApi,
   knowledgeBaseWikiAgentApi,
@@ -573,7 +573,7 @@ export function KnowledgeWikiPage() {
       )}
 
       {/* 补丁差异弹窗 */}
-      <KbDialog
+      <ModalShell
         open={activePatch != null}
         onOpenChange={(next) => {
           if (!next) setActivePatch(null)
@@ -612,10 +612,10 @@ export function KnowledgeWikiPage() {
             <DiffView diff={activePatch.diffText || "（无差异内容）"} />
           </div>
         ) : null}
-      </KbDialog>
+      </ModalShell>
 
       {/* 页面详情弹窗 */}
-      <KbDialog
+      <ModalShell
         open={pageDetail != null}
         onOpenChange={(next) => {
           if (!next) setPageDetail(null)
@@ -687,7 +687,7 @@ export function KnowledgeWikiPage() {
             )}
           </div>
         ) : null}
-      </KbDialog>
+      </ModalShell>
     </div>
   )
 }
