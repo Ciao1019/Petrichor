@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
+import { Bar, BarChart, CartesianGrid, LabelList, XAxis, YAxis } from "recharts"
 
 import {
   Card,
@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   ChartContainer,
   ChartTooltip,
@@ -19,9 +20,10 @@ import {
 } from "@/components/ui/chart"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import type { DashboardDistributionItem } from "@/lib/api"
+import { VIZ } from "../metrics-utils"
 
 const chartConfig = {
-  count: { label: "文章数", color: "var(--chart-1)" },
+  count: { label: "文章数", color: VIZ.slot1 },
 } satisfies ChartConfig
 
 type DistributionView = "knowledgeBases" | "tags"
@@ -68,11 +70,12 @@ export function DistributionChart({ knowledgeBases, tags, loading }: Distributio
       </CardHeader>
       <CardContent>
         {loading ? (
-          <div className="bg-muted/50 h-[240px] w-full animate-pulse rounded-md" />
+          <Skeleton className="h-[240px] w-full" />
         ) : hasData ? (
           <ChartContainer config={chartConfig} className="aspect-auto h-[240px] w-full">
-            <BarChart data={data} layout="vertical" margin={{ left: 8, right: 16 }}>
-              <CartesianGrid horizontal={false} />
+            {/* 名义类别单色即可；条长已经表达大小，不再用深浅重复编码 */}
+            <BarChart data={data} layout="vertical" margin={{ left: 8, right: 32 }}>
+              <CartesianGrid horizontal={false} strokeOpacity={0.5} />
               <XAxis type="number" hide />
               <YAxis
                 dataKey="short"
@@ -82,11 +85,17 @@ export function DistributionChart({ knowledgeBases, tags, loading }: Distributio
                 width={92}
                 tick={{ fontSize: 12 }}
               />
-              <ChartTooltip
-                cursor={false}
-                content={<ChartTooltipContent indicator="line" />}
-              />
-              <Bar dataKey="count" fill="var(--color-count)" radius={[0, 4, 4, 0]} barSize={18} />
+              <ChartTooltip cursor={{ fillOpacity: 0.08 }} content={<ChartTooltipContent indicator="line" />} />
+              <Bar dataKey="count" fill="var(--color-count)" radius={[0, 4, 4, 0]} barSize={18}>
+                {/* 数值直接标在条端，不必悬停也能读 */}
+                <LabelList
+                  dataKey="count"
+                  position="right"
+                  offset={8}
+                  className="fill-foreground"
+                  fontSize={11}
+                />
+              </Bar>
             </BarChart>
           </ChartContainer>
         ) : (

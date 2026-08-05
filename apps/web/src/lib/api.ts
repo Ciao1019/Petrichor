@@ -1950,12 +1950,82 @@ export interface DashboardDistributionItem {
   count: number
 }
 
+export interface DashboardGrowthPoint {
+  month: string
+  articles: number
+  words: number
+}
+
+/** 创作节律格子：星期与小时都是 UTC，前端按浏览器时区折算后再展示 */
+export interface DashboardRhythmCell {
+  weekday: number
+  hour: number
+  count: number
+}
+
+export interface DashboardKpiTile {
+  key: string
+  label: string
+  /** 累计总量 */
+  value: number
+  /** 近 7 天新增 */
+  current: number
+  /** 前 7 天新增 */
+  previous: number
+  /** 环比百分比；上一周期为 0 时为 null（无可比基数） */
+  delta: number | null
+  /** 最近 14 天迷你走势 */
+  spark: number[]
+  unit?: string
+}
+
+export interface DashboardStatItem {
+  key: string
+  label: string
+  value: number
+  hint?: string
+}
+
+export interface DashboardAgentPathStat {
+  path: string
+  method: string
+  count: number
+  avgMs: number
+  errorCount: number
+}
+
+export interface DashboardAgentDailyPoint {
+  date: string
+  count: number
+  avgMs: number
+  errors: number
+}
+
+export interface DashboardToolStat {
+  name: string
+  count: number
+  okCount: number
+  avgMs: number
+}
+
+export interface DashboardStatusBucket {
+  status: string
+  count: number
+}
+
+export interface DashboardActivityItem {
+  kind: "article" | "thread"
+  id: string
+  title: string
+  subtitle: string | null
+  at: string
+}
+
 export interface DashboardOverviewResponse {
+  generatedAt: string
   kpis: {
-    articles: number
-    qaThreads: number
-    knowledgeBases: number
-    activity7d: number
+    primary: DashboardKpiTile[]
+    secondary: DashboardStatItem[]
   }
   heatmap: {
     points: DashboardHeatmapPoint[]
@@ -1963,16 +2033,48 @@ export interface DashboardOverviewResponse {
     end: string
     total: number
   }
+  /** 365 天全量，前端按所选范围切片 */
   trend: DashboardTrendPoint[]
+  growth: DashboardGrowthPoint[]
+  rhythm: {
+    cells: DashboardRhythmCell[]
+    total: number
+  }
   distribution: {
     knowledgeBases: DashboardDistributionItem[]
     tags: DashboardDistributionItem[]
   }
+  assets: DashboardDistributionItem[]
+  agent: {
+    windowDays: number
+    totalCalls: number
+    successCalls: number
+    clientErrors: number
+    serverErrors: number
+    successRate: number
+    avgDurationMs: number
+    maxDurationMs: number
+    topPaths: DashboardAgentPathStat[]
+    daily: DashboardAgentDailyPoint[]
+  }
+  tools: {
+    windowDays: number
+    items: DashboardToolStat[]
+  }
+  pipeline: {
+    documents: DashboardStatusBucket[]
+    imports: DashboardStatusBucket[]
+    documentTotal: number
+    documentBytes: number
+    documentPages: number
+    importTotal: number
+  }
+  recentActivity: DashboardActivityItem[]
   recentThreads: AssistantThreadSummary[]
 }
 
 export const dashboardApi = {
-  /** 加载仪表盘总览：KPI、活动热力图、趋势、分布与最近助手对话 */
+  /** 加载仪表盘大屏总览：KPI、热力图、趋势、增长、节律、分布、Agent 健康与最近动态 */
   overview: () => api.post<DashboardOverviewResponse>("/dashboard/overview", {}),
 }
 

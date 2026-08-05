@@ -57,6 +57,18 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-viz-1: var(--viz-1);
+  --color-viz-2: var(--viz-2);
+  --color-viz-3: var(--viz-3);
+  --color-viz-4: var(--viz-4);
+  --color-viz-5: var(--viz-5);
+  --color-viz-6: var(--viz-6);
+  --color-viz-7: var(--viz-7);
+  --color-viz-8: var(--viz-8);
+  --color-viz-good: var(--viz-good);
+  --color-viz-warning: var(--viz-warning);
+  --color-viz-serious: var(--viz-serious);
+  --color-viz-critical: var(--viz-critical);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -131,6 +143,31 @@
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
+  /* 数据大屏分类色板（viz-1..8）。固定顺序即无障碍保障，禁止循环复用或临时插色。
+     已针对本项目卡片底色（浅色 #fff / 暗色 #171717）跑过校验：
+     浅色最差相邻色盲 ΔE 9.1、常规视觉 ΔE 19.6，均达标。
+     浅色下 viz-3/4/5 对底色对比度不足 3:1，凡使用这三档必须配直接数值标签或图例。
+     注意：shadcn 默认的 --chart-4/--chart-5 在浅色下常规视觉 ΔE 仅 7.4（肉眼难辨），
+     所以大屏不用 --chart-*，统一走这套。 */
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-5: #e87ba4;
+  --viz-6: #008300;
+  --viz-7: #4a3aa7;
+  --viz-8: #e34948;
+  /* 状态色：语义固定，永不当作「第 N 条序列」使用，且始终配图标或文字 */
+  --viz-good: #0ca30c;
+  --viz-warning: #fab219;
+  --viz-serious: #ec835a;
+  --viz-critical: #d03b3b;
+  /* 连续色阶（热力图用）：单一蓝色相，越深值越大；第 0 档留白表示「无」 */
+  --viz-seq-0: var(--muted);
+  --viz-seq-1: #b7d3f6;
+  --viz-seq-2: #6da7ec;
+  --viz-seq-3: #2a78d6;
+  --viz-seq-4: #184f95;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -185,6 +222,27 @@
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
+  /* 暗色不是浅色的自动反相，而是同样 8 个色相在暗底上单独取的一档，
+     并针对 #171717 卡片底色重新校验：最差相邻色盲 ΔE 8.4、常规视觉 ΔE 19.3，
+     且 8 档全部达到 3:1 对比度。 */
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-5: #d55181;
+  --viz-6: #008300;
+  --viz-7: #9085e9;
+  --viz-8: #e66767;
+  --viz-good: #0ca30c;
+  --viz-warning: #fab219;
+  --viz-serious: #ec835a;
+  --viz-critical: #d03b3b;
+  /* 暗底上锚点翻转：越亮值越大 */
+  --viz-seq-0: var(--muted);
+  --viz-seq-1: #184f95;
+  --viz-seq-2: #2a78d6;
+  --viz-seq-3: #6da7ec;
+  --viz-seq-4: #b7d3f6;
   /* 让右侧内容区与左侧菜单区在暗色模式下更容易分辨（差距保持克制） */
   --sidebar: oklch(0.13 0 0);
   --sidebar-foreground: oklch(0.985 0 0);

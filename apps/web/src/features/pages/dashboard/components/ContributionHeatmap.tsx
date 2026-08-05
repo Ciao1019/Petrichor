@@ -4,17 +4,13 @@ import * as React from "react"
 import * as HeatGraph from "heat-graph"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
 import type { DashboardHeatmapPoint } from "@/lib/api"
+import { HEAT_SCALE } from "../metrics-utils"
 
-// 与站点主题联动的色阶：0 级为留白，越深表示当天活动越多。
-// 使用 color-mix + --primary，自动适配明暗主题。
-const COLOR_SCALE = [
-  "var(--muted)",
-  "color-mix(in oklab, var(--primary) 28%, var(--muted))",
-  "color-mix(in oklab, var(--primary) 50%, transparent)",
-  "color-mix(in oklab, var(--primary) 72%, transparent)",
-  "var(--primary)",
-]
+// 连续量级用单色相、越深值越大的色阶；第 0 档留白表示当天没有发布。
+// 暗色模式下锚点翻转（越亮值越大），色值见 globals.css 的 --viz-seq-*。
+const COLOR_SCALE = HEAT_SCALE
 
 const WEEKDAY_LABELS = ["日", "一", "二", "三", "四", "五", "六"]
 // 仅显示一/三/五，贴近 GitHub 的稀疏标注
@@ -54,7 +50,7 @@ export function ContributionHeatmap({ points, total, start, end, loading }: Cont
       </CardHeader>
       <CardContent>
         {loading ? (
-          <div className="bg-muted/50 h-[160px] w-full animate-pulse rounded-md" />
+          <Skeleton className="h-[160px] w-full" />
         ) : (
           <div className="overflow-x-auto pb-1">
             <HeatGraph.Root

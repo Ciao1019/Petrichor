@@ -495,9 +495,31 @@ function seededRandom(seed: number) {
     }
 }
 
+/** 从日序列构造 KPI 磁贴，口径与服务端 buildKpiTile 保持一致 */
+function demoKpiTile(input: {
+    key: string
+    label: string
+    total: number
+    series: number[]
+    unit?: string
+}): DashboardOverviewResponse["kpis"]["primary"][number] {
+    const current = input.series.slice(-7).reduce((sum, value) => sum + value, 0)
+    const previous = input.series.slice(-14, -7).reduce((sum, value) => sum + value, 0)
+    return {
+        key: input.key,
+        label: input.label,
+        value: input.total,
+        current,
+        previous,
+        delta: previous > 0 ? ((current - previous) / previous) * 100 : null,
+        spark: input.series.slice(-14),
+        unit: input.unit,
+    }
+}
+
 export function buildDashboardOverview(): DashboardOverviewResponse {
     const random = seededRandom(20260719)
-    // 对齐真实服务端 overview-logic.ts：热力图 365 天、只统计文章发布
+    // 对齐真实服务端 overview-logic.ts：热力图与趋势都是 365 天、热力图只统计文章发布
     const heatmapDays = 365
     const points: { date: string; count: number }[] = []
     const end = new Date()
@@ -513,30 +535,99 @@ export function buildDashboardOverview(): DashboardOverviewResponse {
     }
     const total = points.reduce((sum, point) => sum + point.count, 0)
 
-    const trend: DashboardOverviewResponse["trend"] = []
-    for (let index = 29; index >= 0; index -= 1) {
-        const date = new Date(end)
-        date.setDate(end.getDate() - index)
-        const article = Math.floor(random() * 3)
+    // 趋势与热力图共用同一批文章数，助手与 Agent 另外生成
+    const trend: DashboardOverviewResponse["trend"] = points.map((point) => {
         const qa = Math.floor(random() * 4)
-        const agent = Math.floor(random() * 2)
-        trend.push({
-            date: date.toISOString().slice(0, 10),
-            article,
+        const agent = Math.floor(random() * 6)
+        return {
+            date: point.date,
+            article: point.count,
             qa,
             agent,
-            total: article + qa + agent,
+            total: point.count + qa + agent,
+        }
+    })
+
+    const articleSeries = trend.map((point) => point.article)
+    const qaSeries = trend.map((point) => point.qa)
+    const agentSeries = trend.map((point) => point.agent)
+    // 每篇按 800-2400 字估算，累计字数跟着文章数走
+    const wordSeries = articleSeries.map((count) => count * (800 + Math.floor(random() * 1600)))
+    const totalArticles = total + demoStore.articles.size
+    const totalWords = wordSeries.reduce((sum, value) => sum + value, 0) + 42_000
+    const totalAgentCalls = agentSeries.reduce((sum, value) => sum + value, 0)
+
+    // 按月累计
+    const growth: DashboardOverviewResponse["growth"] = []
+    {
+        const byMonth = new Map<string, { articles: number; words: number }>()
+        const order: string[] = []
+        trend.forEach((point, index) => {
+            const month = point.date.slice(0, 7)
+            let bucket = byMonth.get(month)
+            if (!bucket) {
+                bucket = { articles: 0, words: 0 }
+                byMonth.set(month, bucket)
+                order.push(month)
+            }
+            bucket.articles += point.article
+            bucket.words += wordSeries[index] ?? 0
         })
+        let articles = demoStore.articles.size
+        let words = 42_000
+        for (const month of order) {
+            const bucket = byMonth.get(month)
+            articles += bucket?.articles ?? 0
+            words += bucket?.words ?? 0
+            growth.push({ month, articles, words })
+        }
     }
 
+    // 创作节律：晚间与周末更集中，让演示数据看起来有规律
+    const rhythmCells: DashboardOverviewResponse["rhythm"]["cells"] = []
+    for (let weekday = 0; weekday < 7; weekday += 1) {
+        for (let hour = 0; hour < 24; hour += 1) {
+            const evening = hour >= 20 || hour <= 1
+            const workday = weekday >= 1 && weekday <= 5
+            const weight = (evening ? 0.5 : hour >= 9 && hour <= 18 ? 0.2 : 0.05) * (workday ? 1 : 0.6)
+            rhythmCells.push({
+                weekday,
+                hour,
+                count: random() < weight ? 1 + Math.floor(random() * 3) : 0,
+            })
+        }
+    }
+
+    const agentDaily = trend.slice(-30).map((point) => ({
+        date: point.date,
+        count: point.agent,
+        avgMs: 90 + Math.floor(random() * 180),
+        errors: random() < 0.12 ? 1 : 0,
+    }))
+    const agentWindowCalls = agentDaily.reduce((sum, point) => sum + point.count, 0)
+    const agentErrors = agentDaily.reduce((sum, point) => sum + point.errors, 0)
+    const clientErrors = Math.ceil(agentErrors * 0.7)
+
     return {
+        generatedAt: new Date().toISOString(),
         kpis: {
             // 与热力图口径一致：演示帐号是「写了一年多」的人设，
             // 侧栏知识库里只放了 8 篇精选样例
-            articles: total + demoStore.articles.size,
-            qaThreads: 23,
-            knowledgeBases: demoStore.knowledgeBases.length,
-            activity7d: trend.slice(-7).reduce((sum, point) => sum + point.total, 0),
+            primary: [
+                demoKpiTile({ key: "articles", label: "文章总数", total: totalArticles, series: articleSeries }),
+                demoKpiTile({ key: "words", label: "累计字数", total: totalWords, series: wordSeries, unit: "字" }),
+                demoKpiTile({ key: "threads", label: "助手对话", total: 23, series: qaSeries }),
+                demoKpiTile({ key: "agentCalls", label: "Agent 调用", total: totalAgentCalls, series: agentSeries }),
+            ],
+            secondary: [
+                { key: "knowledgeBases", label: "知识库", value: demoStore.knowledgeBases.length },
+                { key: "wikiPages", label: "Wiki 页面", value: 36 },
+                { key: "documents", label: "文档", value: 12, hint: "348 页" },
+                { key: "tags", label: "标签", value: 17 },
+                { key: "graphNodes", label: "图谱节点", value: 64, hint: "48 已发布" },
+                { key: "graphEdges", label: "图谱关系", value: 92 },
+                { key: "readingMinutes", label: "阅读时长", value: 486, hint: "分钟" },
+            ],
         },
         heatmap: {
             points,
@@ -545,6 +636,11 @@ export function buildDashboardOverview(): DashboardOverviewResponse {
             total,
         },
         trend,
+        growth: growth.slice(-12),
+        rhythm: {
+            cells: rhythmCells,
+            total: rhythmCells.reduce((sum, cell) => sum + cell.count, 0),
+        },
         distribution: {
             knowledgeBases: demoStore.knowledgeBases.map((kb) => ({
                 label: kb.name,
@@ -558,6 +654,74 @@ export function buildDashboardOverview(): DashboardOverviewResponse {
                 { label: "性能", count: 2 },
             ],
         },
+        assets: [
+            { label: "文章", count: totalArticles },
+            { label: "Wiki 页面", count: 36 },
+            { label: "文档", count: 12 },
+            { label: "图谱节点", count: 64 },
+        ],
+        agent: {
+            windowDays: 30,
+            totalCalls: agentWindowCalls,
+            successCalls: agentWindowCalls - agentErrors,
+            clientErrors,
+            serverErrors: agentErrors - clientErrors,
+            successRate: agentWindowCalls > 0 ? ((agentWindowCalls - agentErrors) / agentWindowCalls) * 100 : 0,
+            avgDurationMs: 148,
+            maxDurationMs: 2860,
+            topPaths: [
+                { path: "/api/agent/kb/search", method: "POST", count: 148, avgMs: 132, errorCount: 1 },
+                { path: "/api/agent/kb/article", method: "POST", count: 96, avgMs: 210, errorCount: 0 },
+                { path: "/api/agent/wiki/page", method: "POST", count: 54, avgMs: 178, errorCount: 2 },
+                { path: "/api/agent/kb/list", method: "POST", count: 32, avgMs: 88, errorCount: 0 },
+            ],
+            daily: agentDaily,
+        },
+        tools: {
+            windowDays: 30,
+            items: [
+                { name: "kb_search", count: 86, okCount: 84, avgMs: 420 },
+                { name: "kb_read_article", count: 62, okCount: 62, avgMs: 180 },
+                { name: "web_search", count: 41, okCount: 38, avgMs: 1240 },
+                { name: "kb_write_article", count: 24, okCount: 23, avgMs: 960 },
+                { name: "wiki_upsert_page", count: 18, okCount: 18, avgMs: 640 },
+                { name: "upsert_plan", count: 12, okCount: 12, avgMs: 40 },
+            ],
+        },
+        pipeline: {
+            documents: [
+                { status: "ready", count: 9 },
+                { status: "parsing", count: 2 },
+                { status: "failed", count: 1 },
+            ],
+            imports: [
+                { status: "completed", count: 6 },
+                { status: "pending", count: 1 },
+            ],
+            documentTotal: 12,
+            documentBytes: 86_400_000,
+            documentPages: 348,
+            importTotal: 7,
+        },
+        recentActivity: [
+            ...[...demoStore.articles.values()].slice(0, 4).map((article) => ({
+                kind: "article" as const,
+                id: article.articleId,
+                title: article.title,
+                subtitle:
+                    demoStore.knowledgeBases.find((kb) => kb.id === article.knowledgeBaseId)?.name ?? null,
+                at: article.updatedAt,
+            })),
+            ...demoStore.threads.slice(0, 4).map((thread) => ({
+                kind: "thread" as const,
+                id: thread.summary.id,
+                title: thread.summary.title || "未命名对话",
+                subtitle: null,
+                at: thread.summary.updatedAt ?? thread.summary.createdAt,
+            })),
+        ]
+            .sort((a, b) => b.at.localeCompare(a.at))
+            .slice(0, 8),
         recentThreads: demoStore.threads.map((thread) => thread.summary).slice(0, 5),
     }
 }

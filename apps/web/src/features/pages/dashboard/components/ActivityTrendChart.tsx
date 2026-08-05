@@ -1,6 +1,7 @@
 "use client"
 
-import { Area, AreaChart, CartesianGrid, XAxis } from "recharts"
+import * as React from "react"
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 
 import {
   Card,
@@ -9,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   ChartContainer,
   ChartLegend,
@@ -18,48 +20,51 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart"
 import type { DashboardTrendPoint } from "@/lib/api"
+import { VIZ, formatAxisTick, formatCompact, formatDay } from "../metrics-utils"
 
 const chartConfig = {
-  article: { label: "文章", color: "var(--chart-1)" },
-  qa: { label: "助手", color: "var(--chart-2)" },
-  agent: { label: "Agent", color: "var(--chart-3)" },
+  article: { label: "文章", color: VIZ.slot1 },
+  qa: { label: "助手对话", color: VIZ.slot2 },
+  agent: { label: "Agent 调用", color: VIZ.slot3 },
 } satisfies ChartConfig
+
+const SERIES = ["article", "qa", "agent"] as const
 
 type ActivityTrendChartProps = {
   data: DashboardTrendPoint[]
+  rangeLabel: string
   loading?: boolean
 }
 
-function formatDay(value: string) {
-  return new Date(`${value}T00:00:00Z`).toLocaleDateString("zh-CN", {
-    month: "numeric",
-    day: "numeric",
-    timeZone: "UTC",
-  })
-}
+export function ActivityTrendChart({ data, rangeLabel, loading }: ActivityTrendChartProps) {
+  const total = React.useMemo(
+    () => data.reduce((sum, point) => sum + point.total, 0),
+    [data],
+  )
 
-export function ActivityTrendChart({ data, loading }: ActivityTrendChartProps) {
   return (
     <Card className="@container/card">
       <CardHeader>
         <CardTitle>活动趋势</CardTitle>
-        <CardDescription>近 30 天文章、助手对话与 Agent 调用</CardDescription>
+        <CardDescription>
+          近 {rangeLabel}共 <span className="text-foreground font-medium">{formatCompact(total)}</span> 次活动
+        </CardDescription>
       </CardHeader>
       <CardContent className="px-2 sm:px-6">
         {loading ? (
-          <div className="bg-muted/50 h-[240px] w-full animate-pulse rounded-md" />
+          <Skeleton className="h-[260px] w-full" />
         ) : (
-          <ChartContainer config={chartConfig} className="aspect-auto h-[240px] w-full">
-            <AreaChart data={data}>
+          <ChartContainer config={chartConfig} className="aspect-auto h-[260px] w-full">
+            <AreaChart data={data} margin={{ left: 4, right: 8, top: 8 }}>
               <defs>
-                {(["article", "qa", "agent"] as const).map((key) => (
-                  <linearGradient key={key} id={`fill-${key}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={`var(--color-${key})`} stopOpacity={0.8} />
-                    <stop offset="95%" stopColor={`var(--color-${key})`} stopOpacity={0.08} />
+                {SERIES.map((key) => (
+                  <linearGradient key={key} id={`trend-fill-${key}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={`var(--color-${key})`} stopOpacity={0.5} />
+                    <stop offset="95%" stopColor={`var(--color-${key})`} stopOpacity={0.05} />
                   </linearGradient>
                 ))}
               </defs>
-              <CartesianGrid vertical={false} />
+              <CartesianGrid vertical={false} strokeOpacity={0.5} />
               <XAxis
                 dataKey="date"
                 tickLine={false}
@@ -68,13 +73,35 @@ export function ActivityTrendChart({ data, loading }: ActivityTrendChartProps) {
                 minTickGap={28}
                 tickFormatter={formatDay}
               />
-              <ChartTooltip
-                cursor={false}
-                content={<ChartTooltipContent labelFormatter={(value) => formatDay(String(value))} indicator="dot" />}
+              <YAxis
+                tickLine={false}
+                axisLine={false}
+                width={46}
+                tickMargin={4}
+                allowDecimals={false}
+                tickFormatter={(value) => formatAxisTick(Number(value))}
               />
-              <Area dataKey="article" type="natural" fill="url(#fill-article)" stroke="var(--color-article)" stackId="a" />
-              <Area dataKey="qa" type="natural" fill="url(#fill-qa)" stroke="var(--color-qa)" stackId="a" />
-              <Area dataKey="agent" type="natural" fill="url(#fill-agent)" stroke="var(--color-agent)" stackId="a" />
+              <ChartTooltip
+                cursor={{ strokeOpacity: 0.4 }}
+                content={
+                  <ChartTooltipContent
+                    labelFormatter={(value) => formatDay(String(value))}
+                    indicator="dot"
+                  />
+                }
+              />
+              {/* 每层带 2px 同色描边，堆叠区之间不靠边框而靠这条线分隔 */}
+              {SERIES.map((key) => (
+                <Area
+                  key={key}
+                  dataKey={key}
+                  type="monotone"
+                  fill={`url(#trend-fill-${key})`}
+                  stroke={`var(--color-${key})`}
+                  strokeWidth={2}
+                  stackId="activity"
+                />
+              ))}
               <ChartLegend content={<ChartLegendContent />} />
             </AreaChart>
           </ChartContainer>
