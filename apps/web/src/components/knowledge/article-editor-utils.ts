@@ -56,18 +56,17 @@ export function isPdfFileName(fileName: string): boolean {
   return /\.pdf$/i.test(fileName.trim())
 }
 
-export type DocumentImportKind = "pdf" | "docx"
+/** 知识库文档导入只支持 PDF：文字层由 pdf-inspector 本地抽取，扫描页才走多模态兜底。 */
+export type DocumentImportKind = "pdf"
 
 export function resolveDocumentImportKind(fileName: string): DocumentImportKind | null {
-  if (isPdfFileName(fileName)) return "pdf"
-  if (isDocxFileName(fileName)) return "docx"
-  return null
+  return isPdfFileName(fileName) ? "pdf" : null
 }
 
-/** 校验「文档导入（多模态）」入口的文件（PDF / Word） */
+/** 校验「文档导入」入口的文件（仅 PDF） */
 export function validateDocumentImportFile(file: { name: string; size: number }): string | null {
   if (!resolveDocumentImportKind(file.name)) {
-    return "请选择 .pdf 或 .docx 格式的文档"
+    return "请选择 .pdf 格式的文档"
   }
   if (file.size > DOCUMENT_IMPORT_MAX_FILE_BYTES) {
     return "文档过大，单个文件不能超过 100 MB"
@@ -80,7 +79,7 @@ export function validateDocumentImportFile(file: { name: string; size: number })
 
 export function removeDocumentImportFileExtension(fileName: string): string {
   const name = fileName.split(/[\\/]/).pop() || fileName
-  return name.replace(/\.(pdf|docx)$/i, "").trim()
+  return name.replace(/\.pdf$/i, "").trim()
 }
 
 export function validateMarkdownImportFile(file: { name: string; size: number }): string | null {

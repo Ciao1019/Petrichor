@@ -238,7 +238,7 @@ export function DocumentImportJobsPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold">文档导入任务</h1>
-          <p className="text-sm text-muted-foreground">查看 PDF / Word 导入进度，重试失败页或手动合并文章。</p>
+          <p className="text-sm text-muted-foreground">查看 PDF 导入进度，重试失败的扫描页或手动合并文章。</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {selectedIds.length > 0 ? (

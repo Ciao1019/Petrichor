@@ -23,22 +23,22 @@ import {
   removeDocumentImportFileExtension,
   validateDocumentImportFile,
 } from "@/components/knowledge/article-editor-utils"
-import { rasterizeDocument } from "@/components/knowledge/document-rasterizer"
+import { rasterizePdfPages } from "@/components/knowledge/document-rasterizer"
 import {
   aiModelConfigApi,
   documentImportApi,
   knowledgeBaseNodeApi,
   uploadApi,
   type AiModelConfigResponse,
-  type DocumentImportSourceType,
   type KnowledgeBaseTreeNode,
 } from "@/lib/api"
 
 type ImportItemStatus =
   | "pending"
-  | "rendering"
   | "uploading"
-  | "creating"
+  | "extracting"
+  | "rendering"
+  | "sending"
   | "done"
   | "failed"
 
@@ -50,7 +50,17 @@ interface ImportItem {
   pageDone: number
   pageTotal: number
   jobId?: string
+  /** 需要多模态兜底的扫描页数；0 表示纯本地抽取完成 */
+  ocrPages?: number
+  /** 无扫描页时服务端已直接生成文章 */
+  articleId?: string | null
   error?: string
+}
+
+interface ImportItemResult {
+  ok: boolean
+  /** 需要多模态兜底的页数，0 表示纯本地抽取 */
+  ocrPages: number
 }
 
 interface FlatFolderOption {
@@ -60,10 +70,11 @@ interface FlatFolderOption {
 
 const ITEM_STATUS_LABEL: Record<ImportItemStatus, string> = {
   pending: "等待中",
-  rendering: "渲染页面中",
-  uploading: "上传页面中",
-  creating: "创建任务中",
-  done: "已创建",
+  uploading: "上传文档中",
+  extracting: "本地解析中",
+  rendering: "渲染扫描页",
+  sending: "提交识别任务",
+  done: "已完成",
   failed: "失败",
 }
 
@@ -94,17 +105,25 @@ function flattenFolders(nodes: KnowledgeBaseTreeNode[], depth = 0, acc: FlatFold
   return acc
 }
 
-async function uploadPageBlob(blob: Blob, pageNo: number): Promise<string> {
-  const presign = await uploadApi.presignPut({ filename: `import-page-${pageNo}.jpg` })
+async function putToStorage(filename: string, body: Blob, contentType: string, label: string): Promise<string> {
+  const presign = await uploadApi.presignPut({ filename })
   const putResponse = await fetch(presign.data.presignedUrl, {
     method: "PUT",
-    body: blob,
-    headers: { "Content-Type": "image/jpeg" },
+    body,
+    headers: { "Content-Type": contentType },
   })
   if (!putResponse.ok) {
-    throw new Error(`第 ${pageNo} 页图片上传失败：HTTP ${putResponse.status}`)
+    throw new Error(`${label}上传失败：HTTP ${putResponse.status}`)
   }
   return presign.data.objectKey
+}
+
+function uploadSourcePdf(file: File): Promise<string> {
+  return putToStorage(file.name, file, "application/pdf", "文档")
+}
+
+function uploadPageBlob(blob: Blob, pageNo: number): Promise<string> {
+  return putToStorage(`import-page-${pageNo}.jpg`, blob, "image/jpeg", `第 ${pageNo} 页图片`)
 }
 
 const CONCURRENCY_OPTIONS = [1, 2, 3, 4, 6, 8]
@@ -151,7 +170,7 @@ export function DocumentImportDialog({
   const [modelsLoading, setModelsLoading] = React.useState(false)
 
   const [running, setRunning] = React.useState(false)
-  const [notice, setNotice] = React.useState<{ created: number } | null>(null)
+  const [notice, setNotice] = React.useState<{ articles: number; queued: number } | null>(null)
   const fileInputRef = React.useRef<HTMLInputElement | null>(null)
 
   const busy = running
@@ -216,7 +235,7 @@ export function DocumentImportDialog({
       valid.push(file)
     }
     if (invalidCount > 0) {
-      toast.error(`已忽略 ${invalidCount} 个不支持的文件（仅支持 .pdf / .docx，单个 ≤ 100MB）`)
+      toast.error(`已忽略 ${invalidCount} 个不支持的文件（仅支持 .pdf，单个 ≤ 100MB）`)
     }
     if (valid.length === 0) return
 
@@ -261,26 +280,65 @@ export function DocumentImportDialog({
   }, [])
 
   const processItem = React.useCallback(
-    async (item: ImportItem): Promise<boolean> => {
-      const kind = resolveDocumentImportKind(item.file.name)
-      if (!kind) {
-        updateItem(item.id, { status: "failed", error: "仅支持 .pdf 或 .docx 格式" })
-        return false
+    async (item: ImportItem): Promise<ImportItemResult> => {
+      if (!resolveDocumentImportKind(item.file.name)) {
+        updateItem(item.id, { status: "failed", error: "仅支持 .pdf 格式" })
+        return { ok: false, ocrPages: 0 }
       }
       const trimmedTitle = item.title.trim() || removeDocumentImportFileExtension(item.file.name) || "未命名文档"
 
       try {
-        updateItem(item.id, { status: "rendering", pageDone: 0, pageTotal: 0, error: undefined })
-        const rendered = await rasterizeDocument(item.file, kind, {
+        // 1) 原始 PDF 直传对象存储，服务端据此做本地抽取
+        updateItem(item.id, { status: "uploading", pageDone: 0, pageTotal: 0, error: undefined })
+        const sourceKey = await uploadSourcePdf(item.file)
+
+        // 2) 服务端 pdf-inspector 逐页抽取；无扫描页时这一步就已经生成文章
+        updateItem(item.id, { status: "extracting" })
+        const createRes = await documentImportApi.createJob({
+          knowledgeBaseId,
+          parentId,
+          fileName: item.file.name,
+          title: trimmedTitle,
+          sourceKey,
+          modelConfigId,
+          concurrency,
+        })
+        const { job, ocrPageNos, articleId } = createRes.data
+        const jobId = job.id
+        onJobCreated?.(jobId)
+
+        if (ocrPageNos.length === 0) {
+          updateItem(item.id, {
+            status: "done",
+            jobId,
+            ocrPages: 0,
+            articleId,
+            title: trimmedTitle,
+            pageDone: job.totalPages,
+            pageTotal: job.totalPages,
+            error: undefined,
+          })
+          return { ok: true, ocrPages: 0 }
+        }
+
+        // 3) 只有扫描页需要栅格化 + 走多模态
+        if (!modelConfigId) {
+          throw new Error(
+            `该文档有 ${ocrPageNos.length} 页是扫描件，需要多模态模型识别，请先选择模型`
+          )
+        }
+
+        updateItem(item.id, { status: "rendering", pageTotal: ocrPageNos.length, pageDone: 0 })
+        const rendered = await rasterizePdfPages(item.file, ocrPageNos, {
           onProgress: (done, total) => {
             updateItem(item.id, { pageDone: done, pageTotal: total })
           },
         })
         if (rendered.length === 0) {
-          throw new Error("未能从文档中解析出任何页面")
+          throw new Error("扫描页渲染失败，未能生成任何页面图片")
         }
 
-        updateItem(item.id, { status: "uploading", pageTotal: rendered.length, pageDone: 0 })
+        updateItem(item.id, { status: "sending", pageTotal: rendered.length, pageDone: 0 })
         const pages: { pageNo: number; imageKey: string }[] = []
         let uploaded = 0
         await runPool(rendered, concurrency, async (page) => {
@@ -291,25 +349,20 @@ export function DocumentImportDialog({
         })
         pages.sort((a, b) => a.pageNo - b.pageNo)
 
-        updateItem(item.id, { status: "creating" })
-        const createRes = await documentImportApi.createJob({
-          knowledgeBaseId,
-          parentId,
-          sourceType: kind as DocumentImportSourceType,
-          fileName: item.file.name,
+        await documentImportApi.attachOcrPages({ jobId, pages, concurrency })
+        updateItem(item.id, {
+          status: "done",
+          jobId,
+          ocrPages: ocrPageNos.length,
+          articleId: null,
           title: trimmedTitle,
-          modelConfigId,
-          concurrency,
-          pages,
+          error: undefined,
         })
-        const jobId = createRes.data.job.id
-        updateItem(item.id, { status: "done", jobId, title: trimmedTitle, error: undefined })
-        onJobCreated?.(jobId)
-        return true
+        return { ok: true, ocrPages: ocrPageNos.length }
       } catch (error) {
         const message = resolveApiErrorMessage(error, "导入失败")
         updateItem(item.id, { status: "failed", error: message })
-        return false
+        return { ok: false, ocrPages: 0 }
       }
     },
     [concurrency, knowledgeBaseId, modelConfigId, onJobCreated, parentId, updateItem]
@@ -318,10 +371,7 @@ export function DocumentImportDialog({
   const runImport = React.useCallback(
     async (targets: ImportItem[]) => {
       if (targets.length === 0) return
-      if (!modelConfigId) {
-        toast.error("请先选择一个多模态模型（可在「模型配置 → 多模态」中新增）")
-        return
-      }
+      // 不强制要求选模型：纯文字 PDF 走本地抽取，只有出现扫描页时才会在 processItem 里报错。
 
       setRunning(true)
       setItems((prev) =>
@@ -332,33 +382,39 @@ export function DocumentImportDialog({
         )
       )
 
-      let succeeded = 0
+      let articles = 0
+      let queued = 0
       let failed = 0
-      // 文件之间串行处理，单个文件内部的页面按 concurrency 并行，避免一次性打满上传/识别
+      // 文件之间串行处理，单个文件内部的扫描页按 concurrency 并行上传
       for (const target of targets) {
-        const okResult = await processItem(target)
-        if (okResult) succeeded += 1
-        else failed += 1
+        const result = await processItem(target)
+        if (!result.ok) failed += 1
+        else if (result.ocrPages > 0) queued += 1
+        else articles += 1
       }
 
       setRunning(false)
 
       if (failed === 0) {
-        toast.success(`已创建 ${succeeded} 个导入任务`)
-        setNotice({ created: succeeded })
+        toast.success(
+          queued === 0
+            ? `已导入 ${articles} 篇文章`
+            : `已完成 ${articles + queued} 个文档，其中 ${queued} 个含扫描页需后台识别`
+        )
+        setNotice({ articles, queued })
         onOpenChange(false)
         resetState()
       } else {
-        toast.error(`成功 ${succeeded} 个，失败 ${failed} 个，可重试失败项`)
+        toast.error(`成功 ${articles + queued} 个，失败 ${failed} 个，可重试失败项`)
       }
     },
-    [modelConfigId, onOpenChange, processItem, resetState]
+    [onOpenChange, processItem, resetState]
   )
 
   const handleStart = React.useCallback(() => {
     const targets = items.filter((item) => item.status !== "done")
     if (targets.length === 0) {
-      toast.error("请先选择 PDF 或 Word 文档")
+      toast.error("请先选择 PDF 文档")
       return
     }
     void runImport(targets)
@@ -379,8 +435,8 @@ export function DocumentImportDialog({
         if (!next) resetState()
         onOpenChange(next)
       }}
-      title="导入文档（PDF / Word）"
-      description="可一次选择多个文件批量导入，每个文档每一页交给多模态模型识别为文章内容。"
+      title="导入文档（PDF）"
+      description="文字版 PDF 直接在服务端本地抽取，不消耗模型额度；只有扫描页才会交给多模态模型识别。"
       disableClose={busy}
       contentClassName="sm:max-w-xl"
       footer={
@@ -415,7 +471,7 @@ export function DocumentImportDialog({
             ref={fileInputRef}
             type="file"
             multiple
-            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            accept=".pdf,application/pdf"
             className="hidden"
             onChange={(e) => {
               handlePickFiles(Array.from(e.target.files ?? []))
@@ -457,7 +513,7 @@ export function DocumentImportDialog({
               className="flex w-full flex-col items-center gap-2 rounded-md border border-dashed px-4 py-6 text-sm text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground"
             >
               <UploadCloud className="size-6" />
-              点击选择 PDF 或 Word 文档（可多选，单个 ≤ 100MB）
+              点击选择 PDF 文档（可多选，单个 ≤ 100MB）
             </button>
           )}
         </div>
@@ -485,7 +541,7 @@ export function DocumentImportDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>多模态模型</Label>
+            <Label>多模态模型（扫描页兜底）</Label>
             <Select
               value={modelConfigId ?? ""}
               disabled={busy || modelsLoading}
@@ -503,15 +559,18 @@ export function DocumentImportDialog({
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              仅用于识别扫描页。纯文字 PDF 不会调用模型。
+            </p>
             {!modelsLoading && models.length === 0 ? (
               <p className="text-xs text-destructive">
-                还没有多模态模型，请先到「模型配置 → 多模态」新增并启用。
+                还没有多模态模型，遇到扫描件会导入失败，可到「模型配置 → 多模态」新增并启用。
               </p>
             ) : null}
           </div>
 
           <div className="space-y-2">
-            <Label>并发页数</Label>
+            <Label>扫描页并发数</Label>
             <Select
               value={String(concurrency)}
               disabled={busy}
@@ -529,7 +588,7 @@ export function DocumentImportDialog({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              同时识别的页数。本地 Ollama 受 OLLAMA_NUM_PARALLEL 限制，过高不会更快。
+              同时识别的扫描页数。本地 Ollama 受 OLLAMA_NUM_PARALLEL 限制，过高不会更快。
             </p>
           </div>
         </div>
@@ -540,8 +599,8 @@ export function DocumentImportDialog({
       onOpenChange={(next) => {
         if (!next) setNotice(null)
       }}
-      title="导入任务已创建"
-      description="文档会在后台继续识别，全部页面成功后会自动创建文章。"
+      title="导入完成"
+      description="文字页已本地抽取完成；含扫描页的文档会在后台继续识别。"
       contentClassName="sm:max-w-md"
       footer={
         <div className="flex w-full items-center justify-end gap-2">
@@ -560,9 +619,12 @@ export function DocumentImportDialog({
       }
     >
       <div className="space-y-2 px-1 py-1 text-sm text-muted-foreground">
-        <p>
-          {notice ? `已创建 ${notice.created} 个导入任务，正在后台排队识别。` : "文档已进入导入队列。"}
-        </p>
+        {notice && notice.articles > 0 ? (
+          <p>{`${notice.articles} 个文档已本地抽取完成并直接生成文章，未调用多模态模型。`}</p>
+        ) : null}
+        {notice && notice.queued > 0 ? (
+          <p>{`${notice.queued} 个文档含扫描页，正在后台排队识别，全部页面成功后会自动生成文章。`}</p>
+        ) : null}
         <p>
           进度、目标知识库、目标文件夹和失败页重试都可以在左侧菜单的「导入任务列表」中查看。
         </p>
@@ -583,9 +645,13 @@ function ImportItemRow({
   onTitleChange: (title: string) => void
   onRemove: () => void
 }) {
-  const active = item.status === "rendering" || item.status === "uploading" || item.status === "creating"
+  const active =
+    item.status === "uploading" ||
+    item.status === "extracting" ||
+    item.status === "rendering" ||
+    item.status === "sending"
   const progressPercent =
-    item.pageTotal > 0 ? Math.round((item.pageDone / item.pageTotal) * 100) : item.status === "creating" ? 100 : 0
+    item.pageTotal > 0 ? Math.round((item.pageDone / item.pageTotal) * 100) : item.status === "extracting" ? 60 : 0
 
   return (
     <div className="rounded-md border px-3 py-2 text-sm">
@@ -608,7 +674,7 @@ function ImportItemRow({
             )}
           >
             {ITEM_STATUS_LABEL[item.status]}
-            {(item.status === "rendering" || item.status === "uploading") && item.pageTotal > 0
+            {(item.status === "rendering" || item.status === "sending") && item.pageTotal > 0
               ? ` ${item.pageDone}/${item.pageTotal}`
               : ""}
           </span>
@@ -639,7 +705,7 @@ function ImportItemRow({
         <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
           <div
             className="h-full rounded-full bg-primary transition-all"
-            style={{ width: `${item.status === "rendering" && item.pageTotal === 0 ? 15 : progressPercent}%` }}
+            style={{ width: `${item.status === "uploading" ? 20 : progressPercent}%` }}
           />
         </div>
       ) : null}

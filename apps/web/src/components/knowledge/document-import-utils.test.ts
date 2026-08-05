@@ -8,10 +8,10 @@ import {
 } from "./article-editor-utils"
 
 describe("document import file helpers", () => {
-    it("识别 pdf/docx 文件类型", () => {
+    it("只识别 pdf 文件类型", () => {
         expect(isPdfFileName("report.PDF")).toBe(true)
         expect(resolveDocumentImportKind("a.pdf")).toBe("pdf")
-        expect(resolveDocumentImportKind("a.docx")).toBe("docx")
+        expect(resolveDocumentImportKind("a.docx")).toBeNull()
         expect(resolveDocumentImportKind("a.txt")).toBeNull()
     })
 
@@ -24,6 +24,6 @@ describe("document import file helpers", () => {
 
     it("去除文档扩展名", () => {
         expect(removeDocumentImportFileExtension("/path/年度报告.pdf")).toBe("年度报告")
-        expect(removeDocumentImportFileExtension("notes.docx")).toBe("notes")
+        expect(removeDocumentImportFileExtension("notes.docx")).toBe("notes.docx")
     })
 })

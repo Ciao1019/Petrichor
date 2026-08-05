@@ -131,6 +131,12 @@ export function DocumentImportJobDetailPage() {
     [pages, pageIndex, pageSize],
   )
 
+  // 本地抽取页不消耗多模态额度，单独统计出来便于直观看到省下多少调用
+  const localExtractedCount = React.useMemo(
+    () => pages.filter((page) => page.extractedBy === "pdf").length,
+    [pages],
+  )
+
   const unfinishedPages = job ? Math.max(0, job.totalPages - job.donePages) : 0
   const canFinalize = Boolean(
     job &&
@@ -236,8 +242,13 @@ export function DocumentImportJobDetailPage() {
           </div>
 
           <div className="rounded-lg border">
-            <div className="border-b px-4 py-2 text-sm font-medium text-muted-foreground">
-              页面识别明细（{pages.length}）
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b px-4 py-2 text-sm font-medium text-muted-foreground">
+              <span>页面明细（{pages.length}）</span>
+              {pages.length > 0 ? (
+                <span className="text-xs font-normal">
+                  本地抽取 {localExtractedCount} 页 · 模型识别 {pages.length - localExtractedCount} 页
+                </span>
+              ) : null}
             </div>
             <ul className="divide-y">
               {visiblePages.map((page) => (
@@ -255,7 +266,13 @@ export function DocumentImportJobDetailPage() {
                       >
                         {page.status === "done" ? "已完成" : page.status === "failed" ? "失败" : "待处理"}
                       </span>
+                      <span className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        {page.extractedBy === "pdf" ? "本地抽取" : "模型识别"}
+                      </span>
                     </span>
+                    {page.status === "pending" && page.extractedBy === "vision" && !page.imageKey ? (
+                      <span className="shrink-0 text-xs text-muted-foreground">等待上传页面图片</span>
+                    ) : null}
                     {page.status === "failed" ? (
                       <Button size="sm" variant="ghost" disabled={busy} onClick={() => retryPage(page.pageNo)}>
                         重试

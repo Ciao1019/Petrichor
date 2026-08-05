@@ -1829,7 +1829,10 @@ export const uploadApi = {
 
 // ===== 文档导入（PDF / Word → 多模态 → 文章） =====
 
-export type DocumentImportSourceType = "pdf" | "docx"
+export type DocumentImportSourceType = "pdf"
+
+/** 页内容来源：pdf = pdf-inspector 本地抽取，vision = 多模态识别兜底 */
+export type DocumentImportExtractedBy = "pdf" | "vision"
 
 export type DocumentImportJobStatus =
   | "pending"
@@ -1864,7 +1867,9 @@ export interface DocumentImportJobResponse {
 
 export interface DocumentImportPageResponse {
   pageNo: number
-  imageKey: string
+  /** 仅 OCR 兜底页有整页图，本地抽取的文字页为 null */
+  imageKey: string | null
+  extractedBy: DocumentImportExtractedBy
   status: DocumentImportPageStatus
   markdown: string | null
   error: string | null
@@ -1873,12 +1878,22 @@ export interface DocumentImportPageResponse {
 export interface DocumentImportCreateRequest {
   knowledgeBaseId: string
   parentId?: string | null
-  sourceType: DocumentImportSourceType
   fileName: string
   title: string
+  /** 原始 PDF 预签名直传后的对象 key */
+  sourceKey: string
   modelConfigId?: string | null
   concurrency?: number
-  pages: { pageNo: number; imageKey: string }[]
+}
+
+export interface DocumentImportCreateResponse {
+  job: DocumentImportJobResponse
+  /** 需要多模态兜底的 1-indexed 页码；为空表示本地抽取已全量完成 */
+  ocrPageNos: number[]
+  /** 检测到表格或多栏排版 */
+  isComplex: boolean
+  /** 无 OCR 页时服务端已直接生成文章 */
+  articleId: string | null
 }
 
 export interface DocumentImportConvertResponse {
@@ -1889,7 +1904,12 @@ export interface DocumentImportConvertResponse {
 
 export const documentImportApi = {
   createJob: (data: DocumentImportCreateRequest) =>
-    api.post<{ job: DocumentImportJobResponse }>("/kb/import/create", data),
+    api.post<DocumentImportCreateResponse>("/kb/import/create", data),
+  attachOcrPages: (data: {
+    jobId: string
+    pages: { pageNo: number; imageKey: string }[]
+    concurrency?: number
+  }) => api.post<{ attached: number; status: DocumentImportJobStatus }>("/kb/import/attach-ocr", data),
   convertPage: (data: { jobId: string; pageNo: number }) =>
     api.post<DocumentImportConvertResponse>("/kb/import/page-convert", data),
   retryPage: (data: { jobId: string; pageNo: number }) =>

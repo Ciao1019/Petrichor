@@ -1,12 +1,15 @@
-export type ImportSourceType = "pdf" | "docx"
+export type ImportSourceType = "pdf"
 
 export type ImportJobStatus = "pending" | "processing" | "completed" | "failed" | "canceled"
 
 export type ImportPageStatus = "pending" | "done" | "failed"
 
+/** 页内容的来源：本地 PDF 抽取，还是多模态识别兜底。 */
+export type ImportPageExtractedBy = "pdf" | "vision"
+
 export function parseImportSourceType(raw: unknown): ImportSourceType | null {
     const value = String(raw ?? "").trim().toLowerCase()
-    return value === "pdf" || value === "docx" ? value : null
+    return value === "pdf" ? value : null
 }
 
 /**

@@ -11,7 +11,7 @@ describe("document import logic", () => {
     it("解析受支持的来源类型", () => {
         expect(parseImportSourceType("pdf")).toBe("pdf")
         expect(parseImportSourceType("PDF")).toBe("pdf")
-        expect(parseImportSourceType("docx")).toBe("docx")
+        expect(parseImportSourceType("docx")).toBeNull()
         expect(parseImportSourceType("doc")).toBeNull()
         expect(parseImportSourceType(undefined)).toBeNull()
     })

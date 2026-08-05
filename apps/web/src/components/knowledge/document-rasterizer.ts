@@ -1,11 +1,10 @@
 "use client"
 
 /**
- * 浏览器端把 PDF / Word 文档的「每一页」渲染成图片，
- * 供后续上传 S3 + 多模态识别使用。
+ * 浏览器端把 PDF 的指定页渲染成图片，供多模态 OCR 兜底使用。
  *
- * - PDF：pdfjs-dist 将每页绘制到 canvas（单层扫描件 / 双层文本件统一栅格化）。
- * - Word：docx-preview 渲染成分页 DOM，再用 html2canvas-pro 逐页截图。
+ * 导入流程里 PDF 文字页由服务端 pdf-inspector 本地抽取，不需要图片；
+ * 只有被判定为 needsOcr 的扫描页才会走到这里，因此按页号选择性渲染。
  */
 
 export interface RasterizedPage {
@@ -55,7 +54,20 @@ function computeScale(width: number, height: number, maxEdge: number): number {
     return maxEdge / longest
 }
 
-export async function rasterizePdf(file: File, options: RasterizeOptions = {}): Promise<RasterizedPage[]> {
+/**
+ * 渲染 PDF 中指定的若干页（1-indexed）。
+ * pageNos 为空数组时直接返回空结果，不会加载 pdfjs。
+ */
+export async function rasterizePdfPages(
+    file: File,
+    pageNos: number[],
+    options: RasterizeOptions = {},
+): Promise<RasterizedPage[]> {
+    const targets = [...new Set(pageNos)].sort((a, b) => a - b)
+    if (targets.length === 0) {
+        return []
+    }
+
     const maxEdge = options.maxEdgePx ?? DEFAULT_MAX_EDGE
     const quality = options.quality ?? DEFAULT_QUALITY
 
@@ -68,10 +80,13 @@ export async function rasterizePdf(file: File, options: RasterizeOptions = {}): 
     const loadingTask = pdfjs.getDocument({ data })
     const pdf = await loadingTask.promise
     try {
-        const total = pdf.numPages
+        const total = targets.length
         const pages: RasterizedPage[] = []
-        for (let pageNo = 1; pageNo <= total; pageNo++) {
+        for (const pageNo of targets) {
             throwIfAborted(options.signal)
+            if (pageNo < 1 || pageNo > pdf.numPages) {
+                continue
+            }
             const page = await pdf.getPage(pageNo)
             const baseViewport = page.getViewport({ scale: 1 })
             const scale = computeScale(baseViewport.width, baseViewport.height, maxEdge)
@@ -92,72 +107,10 @@ export async function rasterizePdf(file: File, options: RasterizeOptions = {}): 
             const blob = await canvasToBlob(canvas, quality)
             pages.push({ pageNo, blob })
             page.cleanup()
-            options.onProgress?.(pageNo, total)
+            options.onProgress?.(pages.length, total)
         }
         return pages
     } finally {
         await loadingTask.destroy()
     }
-}
-
-export async function rasterizeDocx(file: File, options: RasterizeOptions = {}): Promise<RasterizedPage[]> {
-    const quality = options.quality ?? DEFAULT_QUALITY
-    const maxEdge = options.maxEdgePx ?? DEFAULT_MAX_EDGE
-
-    const [{ renderAsync }, html2canvasModule] = await Promise.all([
-        import("docx-preview"),
-        import("html2canvas-pro"),
-    ])
-    const html2canvas = html2canvasModule.default
-
-    const container = document.createElement("div")
-    container.style.position = "fixed"
-    container.style.left = "-10000px"
-    container.style.top = "0"
-    container.style.background = "#ffffff"
-    document.body.appendChild(container)
-
-    try {
-        await renderAsync(await file.arrayBuffer(), container, undefined, {
-            inWrapper: true,
-            ignoreWidth: false,
-            ignoreHeight: false,
-            breakPages: true,
-            useBase64URL: true,
-        })
-        throwIfAborted(options.signal)
-
-        // docx-preview 把每一页渲染为 section.docx 节点
-        const sections = Array.from(container.querySelectorAll<HTMLElement>("section.docx"))
-        const pageNodes = sections.length > 0 ? sections : [container]
-        const total = pageNodes.length
-        const pages: RasterizedPage[] = []
-
-        for (let index = 0; index < total; index++) {
-            throwIfAborted(options.signal)
-            const node = pageNodes[index]
-            const rect = node.getBoundingClientRect()
-            const scale = computeScale(rect.width, rect.height, maxEdge) * (window.devicePixelRatio || 1)
-            const rendered = await html2canvas(node, {
-                backgroundColor: "#ffffff",
-                scale: Math.max(0.5, scale),
-                useCORS: true,
-                logging: false,
-            })
-            const blob = await canvasToBlob(rendered, quality)
-            pages.push({ pageNo: index + 1, blob })
-            options.onProgress?.(index + 1, total)
-        }
-        return pages
-    } finally {
-        container.remove()
-    }
-}
-
-export async function rasterizeDocument(
-    file: File,
-    kind: "pdf" | "docx",
-    options: RasterizeOptions = {},
-): Promise<RasterizedPage[]> {
-    return kind === "pdf" ? rasterizePdf(file, options) : rasterizeDocx(file, options)
 }

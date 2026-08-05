@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, isNull } from "drizzle-orm"
+import { and, asc, count, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm"
 import { after, type NextRequest } from "next/server"
 import { z } from "zod"
 import { requireCurrentUser } from "@/server/auth/current-user"
@@ -19,12 +19,11 @@ import {
     countProcessedPages,
     deriveJobStatus,
     mergePageMarkdown,
-    parseImportSourceType,
     type ImportPageStatus,
 } from "@/server/kb/import-logic"
 import { callVisionCompletion, resolveVisionConfig } from "@/server/ai/vision"
 import { fetchS3ObjectBytes, toImageDataUrl } from "@/server/upload/s3-fetch"
-import { embedExtractedImages } from "@/server/kb/import-image-extract"
+import { extractPdfPages, PdfExtractError } from "@/server/kb/pdf-extract"
 
 type Db = ReturnType<typeof getDb>
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
@@ -63,10 +62,16 @@ const optionalIdSchema = z.preprocess((value) => {
 const createJobSchema = z.object({
     knowledgeBaseId: idSchema,
     parentId: optionalIdSchema.optional(),
-    sourceType: z.string(),
     fileName: z.string().trim().min(1).max(500),
     title: z.string().trim().min(1).max(200),
+    /** 原始 PDF 在对象存储中的 key，由前端预签名直传后回传 */
+    sourceKey: z.string().trim().min(1),
     modelConfigId: optionalIdSchema.optional(),
+    concurrency: z.coerce.number().int().positive().max(MAX_IMPORT_CONCURRENCY).optional(),
+})
+
+const attachOcrPagesSchema = z.object({
+    jobId: idSchema,
     concurrency: z.coerce.number().int().positive().max(MAX_IMPORT_CONCURRENCY).optional(),
     pages: z.array(z.object({
         pageNo: z.coerce.number().int().positive(),
@@ -230,6 +235,7 @@ function toPageResponse(page: KnowledgeBaseImportJobPageRecord) {
     return {
         pageNo: page.pageNo,
         imageKey: page.imageKey,
+        extractedBy: page.extractedBy,
         status: page.status,
         markdown: page.markdown,
         error: page.error,
@@ -317,61 +323,153 @@ async function loadJobDecorations(db: Db, userId: number, jobs: KnowledgeBaseImp
     return result
 }
 
+/**
+ * 创建导入任务：服务端拉取原始 PDF，用 pdf-inspector 本地逐页抽取 Markdown。
+ *
+ * - 带文字层的页当场落库为 done，完全不调用多模态模型。
+ * - 只有 needsOcr 的页（扫描件 / 纯图片页）留 pending，等前端把整页图传上来后走 vision 兜底。
+ * - 全部页都是文字页时直接合并生成文章，一次请求就结束。
+ */
 export async function createImportJob(request: NextRequest) {
     return withUser(request, async (user) => {
         const input = createJobSchema.parse(await readJson(request))
-        const sourceType = parseImportSourceType(input.sourceType)
-        if (!sourceType) {
-            throw badRequest("不支持的文档类型，仅支持 pdf / docx")
-        }
         const db = getDb()
         const knowledgeBase = await assertKnowledgeBaseOwner(db, user.id, input.knowledgeBaseId)
         const parentFolder = await assertFolderParent(db, user.id, input.knowledgeBaseId, input.parentId ?? null)
 
-        // 页码去重并排序，保证 (job_id, page_no) 唯一约束
-        const seen = new Set<number>()
-        const pages = input.pages
-            .filter((page) => {
-                if (seen.has(page.pageNo)) return false
-                seen.add(page.pageNo)
-                return true
-            })
-            .sort((a, b) => a.pageNo - b.pageNo)
+        let source: Awaited<ReturnType<typeof fetchS3ObjectBytes>>
+        try {
+            source = await fetchS3ObjectBytes(input.sourceKey)
+        } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error)
+            throw badRequest(`读取上传的 PDF 失败：${detail}`)
+        }
 
+        let extracted: ReturnType<typeof extractPdfPages>
+        try {
+            extracted = extractPdfPages(source.data)
+        } catch (error) {
+            if (error instanceof PdfExtractError) {
+                throw badRequest(error.message)
+            }
+            throw error
+        }
+
+        const ocrPageNos = extracted.ocrPageNos
         const [job] = await db
             .insert(knowledgeBaseImportJobs)
             .values({
                 userId: user.id,
                 knowledgeBaseId: input.knowledgeBaseId,
                 parentNodeId: input.parentId ?? null,
-                sourceType,
+                sourceType: "pdf",
                 fileName: input.fileName,
+                sourceKey: input.sourceKey,
                 title: input.title,
-                totalPages: pages.length,
-                processedPages: 0,
+                totalPages: extracted.pages.length,
+                processedPages: extracted.pages.length - ocrPageNos.length,
                 status: "processing",
                 modelConfigId: input.modelConfigId ?? null,
             })
             .returning()
 
         await db.insert(knowledgeBaseImportJobPages).values(
-            pages.map((page) => ({
+            extracted.pages.map((page) => ({
                 jobId: job.id,
                 pageNo: page.pageNo,
-                imageKey: page.imageKey,
-                status: "pending" as const,
+                imageKey: null,
+                extractedBy: page.needsOcr ? ("vision" as const) : ("pdf" as const),
+                status: page.needsOcr ? ("pending" as const) : ("done" as const),
+                markdown: page.needsOcr ? null : page.markdown,
             })),
         )
 
-        scheduleImportJobProcessing(user, job.id, resolveImportConcurrency(input.concurrency))
+        // 没有扫描页：本地抽取已经全量完成，直接合并成文章，零模型调用。
+        if (ocrPageNos.length === 0) {
+            const finalized = await finalizeJobToArticle(db, user, job)
+            const [completed] = await db
+                .select()
+                .from(knowledgeBaseImportJobs)
+                .where(eq(knowledgeBaseImportJobs.id, job.id))
+                .limit(1)
+            return ok({
+                job: toJobResponse(completed ?? job, {
+                    knowledgeBaseName: knowledgeBase.name,
+                    parentFolderName: parentFolder?.name ?? null,
+                    pageStats: { donePages: extracted.pages.length, failedPages: 0, pendingPages: 0 },
+                }),
+                ocrPageNos: [],
+                isComplex: extracted.isComplex,
+                articleId: String(finalized.articleId),
+            })
+        }
 
         return ok({
             job: toJobResponse(job, {
                 knowledgeBaseName: knowledgeBase.name,
                 parentFolderName: parentFolder?.name ?? null,
-                pageStats: emptyPageStats(pages.length),
+                pageStats: {
+                    donePages: extracted.pages.length - ocrPageNos.length,
+                    failedPages: 0,
+                    pendingPages: ocrPageNos.length,
+                },
             }),
+            ocrPageNos,
+            isComplex: extracted.isComplex,
+            articleId: null,
         })
+    })
+}
+
+/**
+ * 前端把 needsOcr 页栅格化上传后回传 imageKey，绑定到页记录并启动多模态识别。
+ * 只接受本来就标记为 vision 的待处理页，避免覆盖本地抽取好的文字页。
+ */
+export async function attachImportOcrPages(request: NextRequest) {
+    return withUser(request, async (user) => {
+        const input = attachOcrPagesSchema.parse(await readJson(request))
+        const db = getDb()
+        const job = await loadJobOwned(db, user.id, input.jobId)
+        if (job.status === "canceled") {
+            throw badRequest("任务已取消")
+        }
+        if (job.articleId != null) {
+            throw badRequest("任务已完成，无法再补充页面图片")
+        }
+
+        const ocrPages = await db
+            .select()
+            .from(knowledgeBaseImportJobPages)
+            .where(and(
+                eq(knowledgeBaseImportJobPages.jobId, job.id),
+                eq(knowledgeBaseImportJobPages.extractedBy, "vision"),
+            ))
+        const ocrPageNos = new Set(ocrPages.map((page) => page.pageNo))
+
+        // 页码去重，并丢弃不属于本任务 OCR 页的页码
+        const seen = new Set<number>()
+        const accepted = input.pages.filter((page) => {
+            if (seen.has(page.pageNo) || !ocrPageNos.has(page.pageNo)) return false
+            seen.add(page.pageNo)
+            return true
+        })
+        if (accepted.length === 0) {
+            throw badRequest("没有匹配的待识别页面")
+        }
+
+        for (const page of accepted) {
+            await db
+                .update(knowledgeBaseImportJobPages)
+                .set({ imageKey: page.imageKey, status: "pending", error: null, updatedAt: new Date() })
+                .where(and(
+                    eq(knowledgeBaseImportJobPages.jobId, job.id),
+                    eq(knowledgeBaseImportJobPages.pageNo, page.pageNo),
+                ))
+        }
+
+        scheduleImportJobProcessing(user, job.id, resolveImportConcurrency(input.concurrency))
+
+        return ok({ attached: accepted.length, status: "processing" as const })
     })
 }
 
@@ -404,23 +502,23 @@ async function convertSinglePage(db: Db, user: User, job: KnowledgeBaseImportJob
     if (!page) {
         throw notFound("导入任务页不存在")
     }
+    if (page.extractedBy !== "vision") {
+        throw badRequest("该页由 PDF 本地抽取，无需模型识别")
+    }
+    if (!page.imageKey) {
+        throw badRequest("该页尚未上传整页图片")
+    }
 
     try {
-        // 整页图字节既用于多模态识别，也用于按 bbox 裁剪页内嵌入图，避免重复下载。
         const pageImage = await fetchS3ObjectBytes(page.imageKey)
         const result = await callVisionCompletion({
             userId: user.id,
             configId: job.modelConfigId,
             imageDataUrl: toImageDataUrl(pageImage),
         })
-        const markdown = await embedExtractedImages({
-            userId: user.id,
-            markdown: result.markdown,
-            pageImage,
-        })
         await db
             .update(knowledgeBaseImportJobPages)
-            .set({ status: "done", markdown, error: null, updatedAt: new Date() })
+            .set({ status: "done", markdown: result.markdown, error: null, updatedAt: new Date() })
             .where(eq(knowledgeBaseImportJobPages.id, page.id))
     } catch (error) {
         const message = error instanceof Error ? error.message : "页面识别失败"
@@ -507,10 +605,15 @@ async function processImportJobInBackground(user: User, jobId: number, concurren
             .set({ status: "processing", error: null, updatedAt: new Date() })
             .where(eq(knowledgeBaseImportJobs.id, job.id))
 
+        // 只处理已经拿到整页图的待识别页；图片还没传上来的页留到 attach 之后再跑。
         const pages = await db
             .select()
             .from(knowledgeBaseImportJobPages)
-            .where(and(eq(knowledgeBaseImportJobPages.jobId, job.id), eq(knowledgeBaseImportJobPages.status, "pending")))
+            .where(and(
+                eq(knowledgeBaseImportJobPages.jobId, job.id),
+                eq(knowledgeBaseImportJobPages.status, "pending"),
+                isNotNull(knowledgeBaseImportJobPages.imageKey),
+            ))
             .orderBy(asc(knowledgeBaseImportJobPages.pageNo))
 
         await runImportPool(pages, concurrency, async (page) => {
@@ -581,6 +684,24 @@ export async function retryImportPage(request: NextRequest) {
         let job = await loadJobOwned(db, user.id, input.jobId)
         if (job.status === "canceled") {
             throw badRequest("任务已取消")
+        }
+        // 本地抽取的文字页没有整页图，重试无意义；先拦下来避免把页状态改坏。
+        const [target] = await db
+            .select()
+            .from(knowledgeBaseImportJobPages)
+            .where(and(
+                eq(knowledgeBaseImportJobPages.jobId, job.id),
+                eq(knowledgeBaseImportJobPages.pageNo, input.pageNo),
+            ))
+            .limit(1)
+        if (!target) {
+            throw notFound("导入任务页不存在")
+        }
+        if (target.extractedBy !== "vision") {
+            throw badRequest("该页由 PDF 本地抽取，无需重试")
+        }
+        if (!target.imageKey) {
+            throw badRequest("该页尚未上传整页图片")
         }
         // 重试改用当前默认多模态模型
         job = await switchJobToDefaultVisionModel(db, user, job)

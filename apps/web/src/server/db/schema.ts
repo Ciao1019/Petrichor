@@ -883,6 +883,8 @@ export const knowledgeBaseImportJobs = pgTable("petrichor_kb_import_job", {
     parentNodeId: bigint("parent_node_id", { mode: "number" }),
     sourceType: text("source_type").notNull(),
     fileName: text("file_name").notNull(),
+    // 原始 PDF 在对象存储中的 key：服务端据此取字节做本地抽取，也用于失败页重新栅格化。
+    sourceKey: text("source_key"),
     title: text("title").notNull(),
     totalPages: integer("total_pages").notNull().default(0),
     processedPages: integer("processed_pages").notNull().default(0),
@@ -900,7 +902,10 @@ export const knowledgeBaseImportJobPages = pgTable("petrichor_kb_import_job_page
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     jobId: bigint("job_id", { mode: "number" }).notNull(),
     pageNo: integer("page_no").notNull(),
-    imageKey: text("image_key").notNull(),
+    // 仅 OCR 兜底页有整页图；本地抽取出来的文字页为 null。
+    imageKey: text("image_key"),
+    // "pdf" = pdf-inspector 本地抽取，"vision" = 多模态识别兜底
+    extractedBy: text("extracted_by").notNull().default("vision"),
     status: text("status").notNull().default("pending"),
     markdown: text("markdown"),
     error: text("error"),
