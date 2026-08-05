@@ -1,0 +1,2430 @@
+<!doctype html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>向量化 · 入库索引 · 召回 · Petrichor 检索链路可视化</title>
+        <meta
+            name="description"
+            content="拆开 Petrichor 的检索链路：Markdown 目录树切块、章节摘要与指纹缓存、1024 维嵌入与 HNSW 索引、三块索引空间（知识库章节 / 对话消息 / 文档分片）、八条召回路径、混合去重与阈值、脱敏与逐级降级矩阵。"
+        />
+        <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/lxgwwenkai-regular.css" />
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/lxgwwenkai-bold.css" />
+        <style>
+            :root {
+                --paper: #faf7f0;
+                --paper-alt: #fffdf8;
+                --ink: #35322b;
+                --ink-soft: #6f6a5e;
+                --ink-faint: #a8a191;
+                --line: #cfc8b8;
+                --amber: #d9930d;
+                --blue: #3b6ec9;
+                --teal: #0e9d84;
+                --red: #d64550;
+                --purple: #8958d8;
+                --font-hand: "LXGW WenKai", "Xiaolai SC", "KaiTi", "STKaiti", "AR PL UKai CN", cursive;
+                --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+                --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+                --wobble-a: 255px 15px 225px 15px / 15px 225px 15px 255px;
+                --wobble-b: 15px 225px 15px 255px / 255px 15px 225px 15px;
+            }
+            :root[data-theme="dark"] {
+                --paper: #232830;
+                --paper-alt: #2a303a;
+                --ink: #e9e4d8;
+                --ink-soft: #a8a294;
+                --ink-faint: #7c766a;
+                --line: #4a4f58;
+                --amber: #e8b34b;
+                --blue: #6f9ee8;
+                --teal: #3ec9ad;
+                --red: #e8707a;
+                --purple: #ab8ae8;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+            html {
+                scroll-behavior: smooth;
+            }
+            body {
+                margin: 0;
+                background: var(--paper);
+                color: var(--ink);
+                font-family: var(--font-hand);
+                font-size: 17px;
+                line-height: 1.75;
+                transition: background 0.3s var(--ease), color 0.3s var(--ease);
+            }
+            code {
+                font-family: var(--font-mono);
+                font-size: 0.86em;
+                background: color-mix(in srgb, var(--ink) 7%, transparent);
+                padding: 1px 5px;
+                border-radius: 5px;
+            }
+            a {
+                color: var(--teal);
+            }
+            .skip-link {
+                position: absolute;
+                left: -9999px;
+                top: 0;
+                background: var(--paper-alt);
+                padding: 8px 14px;
+                z-index: 99;
+            }
+            .skip-link:focus {
+                left: 12px;
+            }
+            .container {
+                max-width: 1080px;
+                margin: 0 auto;
+                padding: 34px 22px 60px;
+            }
+
+            /* ── 入场动画 ─────────────────────────────── */
+            .anim-in {
+                animation: fade-in-up 0.6s var(--ease) both;
+                animation-delay: calc(var(--i, 0) * 0.12s);
+            }
+            @keyframes fade-in-up {
+                from {
+                    opacity: 0;
+                    transform: translateY(14px);
+                }
+                to {
+                    opacity: 1;
+                    transform: none;
+                }
+            }
+
+            /* ── 头部 ─────────────────────────────────── */
+            .header-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                gap: 18px;
+                flex-wrap: wrap;
+            }
+            .eyebrow {
+                margin: 0 0 6px;
+                font-size: 13.5px;
+                letter-spacing: 0.14em;
+                color: var(--ink-faint);
+            }
+            h1 {
+                margin: 0 0 10px;
+                font-size: clamp(28px, 4.6vw, 42px);
+                line-height: 1.25;
+                font-weight: 700;
+            }
+            .subtitle {
+                margin: 0;
+                max-width: 660px;
+                color: var(--ink-soft);
+                font-size: 16.5px;
+            }
+            .header-actions {
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+                padding-top: 6px;
+            }
+            .btn {
+                display: inline-block;
+                font-family: inherit;
+                font-size: 14.5px;
+                color: var(--ink);
+                background: var(--paper-alt);
+                border: 1.6px solid var(--ink);
+                border-radius: var(--wobble-b);
+                padding: 7px 15px;
+                cursor: pointer;
+                text-decoration: none;
+                transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease);
+            }
+            .btn:hover {
+                transform: translateY(-2px) rotate(-0.4deg);
+                box-shadow: 2px 3px 0 color-mix(in srgb, var(--ink) 25%, transparent);
+            }
+            .btn.primary {
+                background: var(--ink);
+                color: var(--paper);
+                border-color: var(--ink);
+            }
+
+            .thesis {
+                display: flex;
+                gap: 18px;
+                align-items: center;
+                flex-wrap: wrap;
+                margin-top: 26px;
+                padding: 18px 22px;
+                border: 1.6px solid var(--ink);
+                border-radius: var(--wobble-a);
+                background: var(--paper-alt);
+            }
+            .thesis-mark {
+                flex: 0 0 auto;
+                width: 58px;
+                height: 58px;
+                display: grid;
+                place-items: center;
+                font-size: 30px;
+                font-weight: 700;
+                color: var(--teal);
+                border: 1.8px solid var(--teal);
+                border-radius: 50% 46% 52% 48% / 48% 52% 46% 54%;
+                transform: rotate(-4deg);
+            }
+            .thesis > div:nth-child(2) {
+                flex: 1 1 340px;
+            }
+            .thesis strong {
+                font-size: 17.5px;
+            }
+            .thesis p {
+                margin: 4px 0 0;
+                color: var(--ink-soft);
+                font-size: 15.5px;
+            }
+            .thesis-path {
+                flex: 0 0 auto;
+                font-family: var(--font-mono);
+                font-size: 12.5px;
+                color: var(--purple);
+                border: 1.4px dashed var(--purple);
+                border-radius: 12px;
+                padding: 8px 12px;
+                white-space: nowrap;
+            }
+
+            /* ── 分节 ─────────────────────────────────── */
+            section {
+                margin-top: 64px;
+            }
+            .section-head {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-end;
+                gap: 16px;
+                flex-wrap: wrap;
+                margin-bottom: 18px;
+            }
+            .section-head h2 {
+                margin: 0 0 6px;
+                font-size: clamp(22px, 3.2vw, 30px);
+            }
+            .section-head > div > p:last-child {
+                margin: 0;
+                color: var(--ink-soft);
+                font-size: 15.5px;
+                max-width: 720px;
+            }
+            .legend {
+                display: flex;
+                gap: 14px;
+                flex-wrap: wrap;
+                font-size: 13.5px;
+                color: var(--ink-soft);
+            }
+            .legend-item {
+                display: inline-flex;
+                align-items: center;
+                gap: 7px;
+            }
+            .legend-line {
+                display: inline-block;
+                width: 30px;
+                height: 0;
+                border-top: 2px solid var(--ink-soft);
+            }
+            .legend-line.dashed {
+                border-top-style: dashed;
+            }
+
+            /* ── 框图 ─────────────────────────────────── */
+            .panel,
+            .card,
+            .diagram {
+                border: 1.6px solid var(--ink);
+                border-radius: var(--wobble-a);
+                background: var(--paper-alt);
+            }
+            .stepper {
+                display: flex;
+                gap: 9px;
+                flex-wrap: wrap;
+                margin-bottom: 14px;
+            }
+            .step-btn {
+                font-family: inherit;
+                font-size: 14px;
+                color: var(--ink-soft);
+                background: var(--paper-alt);
+                border: 1.5px solid var(--line);
+                border-radius: var(--wobble-b);
+                padding: 5px 13px;
+                cursor: pointer;
+                transition: all 0.2s var(--ease);
+            }
+            .step-btn .no {
+                font-weight: 700;
+                margin-right: 4px;
+                color: var(--ink-faint);
+            }
+            .step-btn:hover {
+                border-color: var(--ink);
+                color: var(--ink);
+                transform: translateY(-1px);
+            }
+            .step-btn.is-active {
+                border-color: var(--ink);
+                background: var(--ink);
+                color: var(--paper);
+            }
+            .step-btn.is-active .no {
+                color: var(--amber);
+            }
+
+            .diagram-wrap {
+                overflow-x: auto;
+            }
+            .diagram {
+                min-width: 940px;
+                padding: 10px 8px 4px;
+            }
+            .diagram svg {
+                display: block;
+                width: 100%;
+                height: auto;
+            }
+
+            .node {
+                cursor: pointer;
+                outline: none;
+                transition: opacity 0.3s var(--ease);
+            }
+            .node .box {
+                fill: none;
+                stroke: var(--c, var(--ink));
+                stroke-width: 1.8;
+                transition: stroke-width 0.2s var(--ease);
+            }
+            .node .fill {
+                fill: var(--c, var(--ink));
+                opacity: 0.08;
+            }
+            .node:hover .box,
+            .node:focus-visible .box {
+                stroke-width: 3.2;
+            }
+            .node.is-active .box {
+                stroke-width: 3;
+            }
+            .node-label {
+                fill: var(--ink);
+                font-family: var(--font-hand);
+                font-size: 15.5px;
+                font-weight: 700;
+                text-anchor: middle;
+                pointer-events: none;
+            }
+            .node-sub {
+                fill: var(--ink-soft);
+                font-family: var(--font-hand);
+                font-size: 11.5px;
+                text-anchor: middle;
+                pointer-events: none;
+            }
+            .diagram.has-focus .node.is-dimmed {
+                opacity: 0.2;
+            }
+
+            .edge {
+                transition: opacity 0.3s var(--ease);
+            }
+            .edge .shaft,
+            .edge .arrow {
+                fill: none;
+                stroke: var(--ink-soft);
+                stroke-width: 1.7;
+                stroke-linecap: round;
+                stroke-linejoin: round;
+                transition: stroke 0.2s var(--ease);
+            }
+            .edge.dashed .shaft {
+                stroke-dasharray: 7 6;
+            }
+            .edge-label {
+                fill: var(--ink-soft);
+                font-family: var(--font-hand);
+                font-size: 11.5px;
+                text-anchor: middle;
+                paint-order: stroke;
+                stroke: var(--paper-alt);
+                stroke-width: 5px;
+                stroke-linejoin: round;
+            }
+            .edge.is-active .shaft,
+            .edge.is-active .arrow {
+                stroke: var(--c, var(--teal));
+            }
+            .edge.is-active .shaft {
+                stroke-dasharray: 8 7;
+                animation: flow 0.8s linear infinite;
+            }
+            .edge.is-active .edge-label {
+                fill: var(--ink);
+                font-weight: 700;
+            }
+            .diagram.has-focus .edge.is-dimmed {
+                opacity: 0.12;
+            }
+            @keyframes flow {
+                to {
+                    stroke-dashoffset: -15;
+                }
+            }
+
+            .diagram-note {
+                margin-top: 10px;
+                font-size: 14px;
+                color: var(--ink-soft);
+                min-height: 1.6em;
+            }
+            .step-panel {
+                margin-top: 14px;
+                padding: 16px 20px;
+                border: 1.6px solid var(--ink);
+                border-radius: var(--wobble-b);
+                background: var(--paper-alt);
+            }
+            .step-panel.panel-swap {
+                animation: fade-in-up 0.3s var(--ease) both;
+            }
+            .step-panel .step-title {
+                margin: 0 0 6px;
+                font-size: 17px;
+                font-weight: 700;
+            }
+            .step-panel .step-title .no {
+                color: var(--amber);
+                margin-right: 8px;
+            }
+            .step-panel p {
+                margin: 0;
+                color: var(--ink-soft);
+                font-size: 15.5px;
+            }
+            .tour-controls {
+                display: flex;
+                gap: 10px;
+                align-items: center;
+                flex-wrap: wrap;
+                margin-top: 14px;
+            }
+            .tour-hint {
+                font-size: 13px;
+                color: var(--ink-faint);
+            }
+
+            /* ── 实验室 ───────────────────────────────── */
+            .lab-grid {
+                display: grid;
+                grid-template-columns: minmax(300px, 1fr) minmax(300px, 1fr);
+                gap: 16px;
+                align-items: stretch;
+            }
+            @media (max-width: 900px) {
+                .lab-grid {
+                    grid-template-columns: 1fr;
+                }
+            }
+            .lab-panel {
+                padding: 18px 20px;
+                min-width: 0;
+            }
+            .lab-panel h3 {
+                margin: 0 0 12px;
+                font-size: 16.5px;
+            }
+            .control {
+                margin-bottom: 14px;
+            }
+            .control label {
+                display: flex;
+                justify-content: space-between;
+                font-size: 14.5px;
+                color: var(--ink-soft);
+                margin-bottom: 4px;
+            }
+            .control output {
+                font-family: var(--font-mono);
+                font-size: 13px;
+                color: var(--ink);
+            }
+            textarea,
+            input[type="text"] {
+                width: 100%;
+                font-family: var(--font-mono);
+                font-size: 13px;
+                line-height: 1.65;
+                color: var(--ink);
+                background: var(--paper);
+                border: 1.6px solid var(--ink);
+                border-radius: var(--wobble-b);
+                padding: 10px 13px;
+                resize: vertical;
+            }
+            input[type="text"] {
+                font-family: inherit;
+                font-size: 15px;
+            }
+            textarea:focus,
+            input[type="text"]:focus {
+                outline: 2px solid var(--teal);
+                outline-offset: 1px;
+            }
+            input[type="range"] {
+                width: 100%;
+                accent-color: var(--teal);
+            }
+            .preset-row {
+                display: flex;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
+            .preset-btn {
+                font-family: inherit;
+                font-size: 13.5px;
+                color: var(--ink-soft);
+                background: var(--paper-alt);
+                border: 1.5px solid var(--line);
+                border-radius: var(--wobble-b);
+                padding: 4px 12px;
+                cursor: pointer;
+                transition: all 0.2s var(--ease);
+            }
+            .preset-btn:hover {
+                border-color: var(--ink);
+                color: var(--ink);
+            }
+            .preset-btn.is-active {
+                border-color: var(--teal);
+                color: var(--teal);
+                font-weight: 700;
+            }
+            .readouts {
+                margin-top: 14px;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+            }
+            .readout {
+                border: 1.4px dashed var(--line);
+                border-radius: 12px;
+                padding: 8px 12px;
+                min-width: 0;
+            }
+            .readout .k {
+                display: block;
+                font-size: 12px;
+                color: var(--ink-faint);
+                letter-spacing: 0.06em;
+            }
+            .readout .v {
+                font-size: 15px;
+                font-weight: 700;
+                color: var(--c, var(--ink));
+                overflow-wrap: anywhere;
+            }
+            .readout .v small {
+                font-weight: 400;
+                font-size: 12px;
+                color: var(--ink-soft);
+            }
+
+            /* ── 切块结果树 ───────────────────────────── */
+            .tree-out {
+                max-height: 380px;
+                overflow: auto;
+                border: 1.4px dashed var(--line);
+                border-radius: 12px;
+                padding: 10px 12px;
+                background: var(--paper);
+            }
+            .tnode {
+                display: grid;
+                grid-template-columns: 30px 1fr auto;
+                gap: 8px;
+                align-items: baseline;
+                padding: 4px 0;
+                border-top: 1.2px dashed color-mix(in srgb, var(--line) 60%, transparent);
+                font-size: 13px;
+            }
+            .tnode:first-child {
+                border-top: none;
+            }
+            .tnode .pos {
+                font-family: var(--font-mono);
+                font-size: 11px;
+                color: var(--amber);
+            }
+            .tnode .ttl {
+                color: var(--ink);
+                overflow-wrap: anywhere;
+            }
+            .tnode .ttl small {
+                display: block;
+                color: var(--ink-faint);
+                font-family: var(--font-mono);
+                font-size: 10.5px;
+            }
+            .tnode .tok {
+                font-family: var(--font-mono);
+                font-size: 11px;
+                color: var(--ink-soft);
+                white-space: nowrap;
+            }
+            .tnode.is-root .ttl {
+                font-weight: 700;
+                color: var(--teal);
+            }
+            .tnode.is-empty .ttl {
+                color: var(--ink-faint);
+            }
+
+            /* ── 打分器 ───────────────────────────────── */
+            .score-out {
+                border: 1.4px dashed var(--line);
+                border-radius: 12px;
+                padding: 10px 14px;
+                background: var(--paper);
+                font-size: 13.5px;
+                color: var(--ink-soft);
+            }
+            .score-out .big {
+                display: block;
+                font-size: 26px;
+                font-weight: 700;
+                color: var(--teal);
+                line-height: 1.3;
+            }
+            .score-out .branch {
+                display: inline-block;
+                font-family: var(--font-mono);
+                font-size: 11.5px;
+                border: 1.4px solid var(--purple);
+                color: var(--purple);
+                border-radius: var(--wobble-b);
+                padding: 1px 9px;
+                margin: 6px 6px 0 0;
+            }
+            .term-list {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px;
+                margin-top: 8px;
+            }
+            .term {
+                font-family: var(--font-mono);
+                font-size: 11px;
+                border: 1.3px solid var(--line);
+                color: var(--ink-faint);
+                border-radius: 6px;
+                padding: 1px 7px;
+            }
+            .term.hit {
+                border-color: var(--teal);
+                color: var(--teal);
+            }
+
+            /* ── 卡片 ─────────────────────────────────── */
+            .card-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+                gap: 16px;
+            }
+            .card-grid.two-col {
+                grid-template-columns: repeat(auto-fit, minmax(min(430px, 100%), 1fr));
+            }
+            .card {
+                padding: 18px 20px;
+                min-width: 0;
+            }
+            .card:nth-child(even) {
+                border-radius: var(--wobble-b);
+            }
+            .card h3 {
+                margin: 0 0 10px;
+                font-size: 17.5px;
+            }
+            .card h3 .dot {
+                display: inline-block;
+                width: 11px;
+                height: 11px;
+                border-radius: 50% 42% 55% 45%;
+                background: var(--c, var(--ink));
+                margin-right: 9px;
+                transform: rotate(8deg);
+            }
+            .card h3 code {
+                font-size: 12.5px;
+                font-weight: 400;
+            }
+            .card h3 .idx {
+                float: right;
+                font-family: var(--font-mono);
+                font-size: 11.5px;
+                font-weight: 400;
+                color: var(--c, var(--ink));
+                border: 1.4px solid var(--c, var(--ink));
+                border-radius: var(--wobble-b);
+                padding: 0 8px;
+            }
+            .card p,
+            .card li {
+                color: var(--ink-soft);
+                font-size: 15px;
+            }
+            .card p {
+                margin: 0 0 8px;
+            }
+            .card ol,
+            .card ul {
+                margin: 0;
+                padding-left: 22px;
+            }
+            .card li + li {
+                margin-top: 6px;
+            }
+            .kv {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 14px;
+            }
+            .kv td {
+                padding: 6px 4px;
+                border-top: 1.2px dashed var(--line);
+                color: var(--ink-soft);
+                vertical-align: top;
+                /* 多列卡片下每格只有约 300px；不许断行会把整张表撑出卡片，
+                   右列文字溢出后被相邻卡片的背景盖住 */
+                overflow-wrap: anywhere;
+            }
+            .kv tr:first-child td {
+                border-top: none;
+            }
+            .kv td:first-child {
+                font-family: var(--font-mono);
+                font-size: 12px;
+                color: var(--ink);
+                padding-right: 12px;
+                /* 首选宽度，窄容器下仍可继续收缩 */
+                width: 38%;
+            }
+            .kv code {
+                overflow-wrap: anywhere;
+            }
+
+            /* ── SQL 片段 ─────────────────────────────── */
+            .sql {
+                margin: 8px 0 0;
+                font-family: var(--font-mono);
+                font-size: 11.5px;
+                line-height: 1.7;
+                color: var(--ink-soft);
+                background: color-mix(in srgb, var(--ink) 5%, transparent);
+                border-left: 3px solid var(--c, var(--teal));
+                border-radius: 0 8px 8px 0;
+                padding: 9px 12px;
+                overflow-x: auto;
+                white-space: pre;
+            }
+
+            /* ── 宽表 ─────────────────────────────────── */
+            .table-wrap {
+                overflow-x: auto;
+                border: 1.6px solid var(--ink);
+                border-radius: var(--wobble-a);
+                background: var(--paper-alt);
+            }
+            table.matrix {
+                width: 100%;
+                min-width: 720px;
+                border-collapse: collapse;
+                font-size: 13.5px;
+            }
+            table.matrix th,
+            table.matrix td {
+                padding: 10px 14px;
+                text-align: left;
+                vertical-align: top;
+                border-top: 1.2px dashed var(--line);
+                color: var(--ink-soft);
+            }
+            table.matrix thead th {
+                border-top: none;
+                color: var(--ink);
+                font-size: 14px;
+                white-space: nowrap;
+            }
+            table.matrix tbody th {
+                color: var(--ink);
+                font-weight: 700;
+                white-space: nowrap;
+            }
+            table.matrix code {
+                font-size: 11.5px;
+            }
+            table.matrix .yes {
+                color: var(--teal);
+                font-weight: 700;
+            }
+            table.matrix .no {
+                color: var(--red);
+            }
+            table.matrix .part {
+                color: var(--amber);
+            }
+
+            /* ── 召回路径 ─────────────────────────────── */
+            .path-list {
+                counter-reset: path;
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(min(330px, 100%), 1fr));
+                gap: 14px;
+                margin: 0;
+                padding: 0;
+                list-style: none;
+            }
+            .path-list li {
+                counter-increment: path;
+                position: relative;
+                min-width: 0;
+                border: 1.6px solid var(--c, var(--ink));
+                border-radius: var(--wobble-a);
+                background: color-mix(in srgb, var(--c, var(--ink)) 5%, var(--paper-alt));
+                padding: 14px 18px 14px 54px;
+            }
+            .path-list li:nth-child(even) {
+                border-radius: var(--wobble-b);
+            }
+            .path-list li::before {
+                content: counter(path);
+                position: absolute;
+                left: 14px;
+                top: 14px;
+                width: 27px;
+                height: 27px;
+                display: grid;
+                place-items: center;
+                font-family: var(--font-mono);
+                font-size: 13px;
+                font-weight: 700;
+                color: var(--c, var(--ink));
+                border: 1.6px solid var(--c, var(--ink));
+                border-radius: 50% 44% 54% 46%;
+            }
+            .path-list h3 {
+                margin: 0 0 4px;
+                font-size: 16px;
+            }
+            .path-list h3 code {
+                display: block;
+                font-weight: 400;
+                font-size: 11.5px;
+                color: var(--ink-faint);
+                background: none;
+                padding: 0;
+                margin-top: 2px;
+                overflow-wrap: anywhere;
+            }
+            .path-list p {
+                margin: 6px 0 0;
+                font-size: 14px;
+                color: var(--ink-soft);
+            }
+            .path-list p code {
+                overflow-wrap: anywhere;
+            }
+            .path-tag {
+                display: inline-block;
+                font-family: var(--font-mono);
+                font-size: 10.5px;
+                border-radius: var(--wobble-b);
+                padding: 1px 8px;
+                margin-right: 5px;
+                border: 1.3px solid var(--tg, var(--ink-faint));
+                color: var(--tg, var(--ink-faint));
+            }
+            .path-tag.vec {
+                --tg: var(--teal);
+            }
+            .path-tag.kw {
+                --tg: var(--blue);
+            }
+            .path-tag.llm {
+                --tg: var(--purple);
+            }
+            .path-tag.graph {
+                --tg: var(--amber);
+            }
+
+            .boundaries {
+                margin-top: 18px;
+                padding: 16px 20px;
+                border: 1.6px solid var(--red);
+                border-radius: var(--wobble-b);
+                background: color-mix(in srgb, var(--red) 4%, var(--paper-alt));
+            }
+            .boundaries h3 {
+                margin: 0 0 8px;
+                font-size: 16.5px;
+                color: var(--red);
+            }
+            .boundaries ul {
+                margin: 0;
+                padding-left: 22px;
+                color: var(--ink-soft);
+                font-size: 15px;
+            }
+            .boundaries li + li {
+                margin-top: 5px;
+            }
+
+            .cross-link {
+                margin-top: 18px;
+                padding: 15px 20px;
+                border: 1.6px dashed var(--purple);
+                border-radius: var(--wobble-a);
+                background: color-mix(in srgb, var(--purple) 5%, var(--paper-alt));
+                font-size: 15px;
+                color: var(--ink-soft);
+            }
+            .cross-link strong {
+                color: var(--ink);
+            }
+
+            footer {
+                margin-top: 70px;
+                padding-top: 18px;
+                border-top: 1.4px dashed var(--line);
+                display: flex;
+                justify-content: space-between;
+                gap: 14px;
+                flex-wrap: wrap;
+                font-size: 13.5px;
+                color: var(--ink-faint);
+            }
+            kbd {
+                font-family: var(--font-mono);
+                font-size: 11.5px;
+                border: 1.2px solid var(--line);
+                border-bottom-width: 2.4px;
+                border-radius: 6px;
+                padding: 1px 6px;
+                color: var(--ink-soft);
+            }
+
+            @media (max-width: 640px) {
+                .container {
+                    padding: 22px 14px 46px;
+                }
+                body {
+                    font-size: 16px;
+                }
+                code,
+                .diagram-note {
+                    overflow-wrap: anywhere;
+                    word-break: break-word;
+                }
+                /* 手机端首列不再单独占 34%，让长常量串自己换行 */
+                .kv td:first-child {
+                    width: auto;
+                }
+                .thesis-path {
+                    flex: 1 1 100%;
+                    white-space: normal;
+                    overflow-wrap: anywhere;
+                }
+                .readouts {
+                    grid-template-columns: 1fr;
+                }
+                .tnode {
+                    grid-template-columns: 26px 1fr;
+                }
+                .tnode .tok {
+                    grid-column: 2;
+                }
+            }
+            @media (prefers-reduced-motion: reduce) {
+                .anim-in,
+                .panel-swap {
+                    animation: none;
+                }
+                .edge.is-active .shaft {
+                    animation: none;
+                    stroke-dasharray: none;
+                }
+                html {
+                    scroll-behavior: auto;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <a class="skip-link" href="#main">跳到主要内容</a>
+        <div class="container">
+            <header class="anim-in">
+                <div class="header-row">
+                    <div>
+                        <p class="eyebrow">Petrichor 技术可视化 · Vectorize · Index · Recall</p>
+                        <h1>向量化 · 入库索引 · 召回</h1>
+                        <p class="subtitle">
+                            Petrichor 没有独立的向量数据库：切块跟着 Markdown 目录树走，向量只是目录树上多出来的一列。
+                            这一篇把整条链路摊开——怎么切、怎么摘、怎么嵌、存哪张表、建什么索引，
+                            以及八条召回路径分别在什么条件下生效、什么条件下静默降级。代码在
+                            <code>src/server/kb/</code>、<code>src/server/assistant/</code> 与 <code>src/server/ai/embedding.ts</code>。
+                        </p>
+                    </div>
+                    <div class="header-actions" aria-label="页面操作">
+                        <a class="btn" href="/">← 返回文章列表</a>
+                        <a class="btn" href="./architecture.html">← Agent 架构</a>
+                        <a class="btn" href="https://github.com/Ciao1019/Petrichor" target="_blank" rel="noreferrer">GitHub ↗</a>
+                        <button class="btn" id="theme-btn" type="button">切换黑板</button>
+                        <button class="btn primary" id="restart-btn" type="button">从头走一遍</button>
+                    </div>
+                </div>
+                <div class="thesis">
+                    <div class="thesis-mark" aria-hidden="true">索</div>
+                    <div>
+                        <strong>一句话本质：向量是可选增强项，不是必需品——所以每一处都必须能优雅地不工作。</strong>
+                        <p>
+                            用户没配嵌入模型、本地跑在 SQLite、嵌入接口报错——这三件事随时可能发生。
+                            于是全链路 best effort：能向量就向量，不能就退回关键词、退回 LLM 目录导航、退回 ilike，
+                            <strong>但绝不因为向量不可用而让一次回答失败</strong>。
+                        </p>
+                    </div>
+                    <div class="thesis-path">split → summarize → embed → hnsw → recall → prompt</div>
+                </div>
+            </header>
+
+            <main id="main" tabindex="-1">
+                <noscript>
+                    <p class="panel" style="margin-top: 24px; padding: 16px 20px">
+                        交互框图与两个实验室需要启用 JavaScript；下面的常量表、索引对照表、八条召回路径与降级矩阵仍可直接阅读。
+                    </p>
+                </noscript>
+
+                <!-- ═══ 01 · 全景 ═══ -->
+                <section id="tour" class="anim-in" style="--i: 1">
+                    <div class="section-head">
+                        <div>
+                            <p class="eyebrow">01 · 全景数据流</p>
+                            <h2>四种源、三块索引、一个出口</h2>
+                            <p>点步骤或框图节点逐层聚焦。左边四种数据源各自走不同的归一化路线，中间只有一个共用的嵌入模型，右边是三类索引，最终都汇进同一处：系统提示词。</p>
+                        </div>
+                        <div class="legend" aria-label="图例">
+                            <span class="legend-item"><i class="legend-line"></i>写入 / 建索引</span>
+                            <span class="legend-item"><i class="legend-line dashed"></i>查询时召回</span>
+                        </div>
+                    </div>
+
+                    <div class="stepper" id="stepper" aria-label="检索链路步骤"></div>
+
+                    <div class="diagram-wrap">
+                        <div class="diagram" id="diagram">
+                            <svg viewBox="0 0 1000 720" role="img" aria-label="Petrichor 向量化与召回链路框图">
+                                <defs>
+                                    <filter id="rough" x="-4%" y="-4%" width="108%" height="108%">
+                                        <feTurbulence type="fractalNoise" baseFrequency="0.022" numOctaves="2" seed="11" result="n" />
+                                        <feDisplacementMap in="SourceGraphic" in2="n" scale="2.6" />
+                                    </filter>
+                                </defs>
+
+                                <!-- 连线：源 → 归一化 -->
+                                <g class="edge" data-edge="a1" style="--c: var(--teal)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M192,88 L246,88" />
+                                        <path class="arrow" d="M238,83 L248,88 L238,93" />
+                                    </g>
+                                </g>
+                                <g class="edge" data-edge="a2" style="--c: var(--purple)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M192,218 L246,218" />
+                                        <path class="arrow" d="M238,213 L248,218 L238,223" />
+                                    </g>
+                                </g>
+                                <g class="edge" data-edge="a3" style="--c: var(--blue)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M192,348 L246,348" />
+                                        <path class="arrow" d="M238,343 L248,348 L238,353" />
+                                    </g>
+                                </g>
+                                <g class="edge" data-edge="a4" style="--c: var(--amber)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M192,483 L246,483" />
+                                        <path class="arrow" d="M238,478 L248,483 L238,488" />
+                                    </g>
+                                </g>
+
+                                <!-- 归一化 → 嵌入 -->
+                                <g class="edge" data-edge="b1" style="--c: var(--teal)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M440,96 C470,102 476,124 496,138" />
+                                        <path class="arrow" d="M487,136 L498,140 L489,147" />
+                                    </g>
+                                    <text class="edge-label" x="466" y="98">标题+摘要+正文</text>
+                                </g>
+                                <g class="edge" data-edge="b2" style="--c: var(--purple)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M440,214 C470,208 476,190 496,178" />
+                                        <path class="arrow" d="M488,177 L498,175 L491,185" />
+                                    </g>
+                                    <text class="edge-label" x="466" y="228">≤500 字摘录</text>
+                                </g>
+                                <g class="edge" data-edge="b3" style="--c: var(--teal)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M700,158 L744,158" />
+                                        <path class="arrow" d="M736,153 L746,158 L736,163" />
+                                    </g>
+                                    <text class="edge-label" x="722" y="144">1024 维</text>
+                                </g>
+
+                                <!-- 关键词 / 图索引 -->
+                                <g class="edge" data-edge="c1" style="--c: var(--purple)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M440,246 C560,278 640,286 744,290" />
+                                        <path class="arrow" d="M735,285 L746,290 L735,295" />
+                                    </g>
+                                    <text class="edge-label" x="580" y="272">excerpt 建 GIN</text>
+                                </g>
+                                <g class="edge" data-edge="c2" style="--c: var(--blue)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M440,350 C560,340 640,310 744,300" />
+                                        <path class="arrow" d="M735,296 L746,300 L736,306" />
+                                    </g>
+                                </g>
+                                <g class="edge" data-edge="c3" style="--c: var(--amber)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M440,470 C560,462 650,448 744,440" />
+                                        <path class="arrow" d="M735,436 L746,440 L736,446" />
+                                    </g>
+                                    <text class="edge-label" x="584" y="440">邻接表 + 关系表</text>
+                                </g>
+
+                                <!-- 召回 → 提示词 -->
+                                <g class="edge dashed" data-edge="d1" style="--c: var(--teal)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M744,180 C700,300 706,470 700,596" />
+                                        <path class="arrow" d="M694,586 L700,599 L707,586" />
+                                    </g>
+                                    <text class="edge-label" x="676" y="352">余弦 top-k</text>
+                                </g>
+                                <g class="edge dashed" data-edge="d2" style="--c: var(--purple)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M744,326 C696,388 660,500 638,596" />
+                                        <path class="arrow" d="M632,585 L637,599 L645,587" />
+                                    </g>
+                                    <text class="edge-label" x="668" y="470">ts_rank · trgm</text>
+                                </g>
+                                <g class="edge dashed" data-edge="d3" style="--c: var(--amber)">
+                                    <g filter="url(#rough)">
+                                        <path class="shaft" d="M744,474 C690,510 620,556 574,594" />
+                                        <path class="arrow" d="M572,583 L570,597 L582,592" />
+                                    </g>
+                                    <text class="edge-label" x="640" y="556">N 跳链路</text>
+                                </g>
+
+                                <!-- 节点：数据源 -->
+                                <g class="node" id="n-kb" data-step="0" tabindex="0" role="button" style="--c: var(--teal)"
+                                    data-tip="知识库源文章 contentMd。编译 Wiki（ingestKnowledgeBaseWiki）时顺带构建目录树，结构指纹未变则整篇跳过，不重复消耗模型额度。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="24" y="50" width="168" height="76" rx="12" />
+                                        <rect class="box" x="24" y="50" width="168" height="76" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="108" y="80">知识库文章</text>
+                                    <text class="node-sub" x="108" y="102">Markdown 正文</text>
+                                </g>
+                                <g class="node" id="n-msg" data-step="5" tabindex="0" role="button" style="--c: var(--purple)"
+                                    data-tip="petrichor_assistant_message：用户消息进门即存，助手消息流结束时落库。折叠区消息的脱敏摘录才会被向量化。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="24" y="180" width="168" height="76" rx="12" />
+                                        <rect class="box" x="24" y="180" width="168" height="76" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="108" y="210">助手对话消息</text>
+                                    <text class="node-sub" x="108" y="232">assistant_message</text>
+                                </g>
+                                <g class="node" id="n-docsrc" data-step="6" tabindex="0" role="button" style="--c: var(--blue)"
+                                    data-tip="文档库上传解析后的文本分片 doc_chunk（≤4000 条 / 单片 ≤4000 字）。这条线完全不入向量，只走 pg_trgm。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="24" y="310" width="168" height="76" rx="12" />
+                                        <rect class="box" x="24" y="310" width="168" height="76" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="108" y="340">文档库分片</text>
+                                    <text class="node-sub" x="108" y="362">doc_chunk</text>
+                                </g>
+                                <g class="node" id="n-pubsrc" data-step="7" tabindex="0" role="button" style="--c: var(--amber)"
+                                    data-tip="已公开分享的文章：既是全站星图抽取 Agent 的输入，也是前台公开问答全文检索的范围。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="24" y="440" width="168" height="86" rx="12" />
+                                        <rect class="box" x="24" y="440" width="168" height="86" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="108" y="472">公开文章</text>
+                                    <text class="node-sub" x="108" y="494">已分享 · 未过期</text>
+                                    <text class="node-sub" x="108" y="511">无密码</text>
+                                </g>
+
+                                <!-- 节点：归一化 -->
+                                <g class="node" id="n-tree" data-step="0" tabindex="0" role="button" style="--c: var(--teal)"
+                                    data-tip="parseMarkdownTree：按 Markdown 标题层级切块，围栏代码块里的 # 不算标题；首个标题之前的引言归入 depth=0 根节点。每个节点带面包屑路径、行号区间与 token 估算。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="250" y="40" width="190" height="96" rx="12" />
+                                        <rect class="box" x="250" y="40" width="190" height="96" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="345" y="70">目录树切块</text>
+                                    <text class="node-sub" x="345" y="92">parseMarkdownTree</text>
+                                    <text class="node-sub" x="345" y="109">+ 一次 LLM 批量摘要</text>
+                                    <text class="node-sub" x="345" y="126">contentHash 指纹缓存</text>
+                                </g>
+                                <g class="node" id="n-excerpt" data-step="5" tabindex="0" role="button" style="--c: var(--purple)"
+                                    data-tip="sanitizeRecallExcerpt：抽纯文本 → 抹掉 sk-*、api_key=、Bearer、确认卡明文 → 压空白 → 截 500 字。摘录长度 <8 字的消息直接不入库。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="250" y="176" width="190" height="86" rx="12" />
+                                        <rect class="box" x="250" y="176" width="190" height="86" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="345" y="206">脱敏摘录</text>
+                                    <text class="node-sub" x="345" y="228">sanitizeRecallExcerpt</text>
+                                    <text class="node-sub" x="345" y="245">≤500 字 · [redacted]</text>
+                                </g>
+                                <g class="node" id="n-trgm" data-step="6" tabindex="0" role="button" style="--c: var(--blue)"
+                                    data-tip="文档分片与公开文章都靠 pg_trgm：ILIKE 先粗召回，word_similarity / similarity 打分排序。对中文比原生全文分词更友好，也不需要额外模型。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="250" y="312" width="190" height="76" rx="12" />
+                                        <rect class="box" x="250" y="312" width="190" height="76" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="345" y="342">纯文本，不入向量</text>
+                                    <text class="node-sub" x="345" y="364">pg_trgm 相似度</text>
+                                </g>
+                                <g class="node" id="n-graphnode" data-step="7" tabindex="0" role="button" style="--c: var(--amber)"
+                                    data-tip="抽取 Agent 从公开文章归纳出的概念/实体节点与关系边，经实体对齐与校验后发布。详见 Agent 架构篇第 07 节。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="250" y="428" width="190" height="96" rx="12" />
+                                        <rect class="box" x="250" y="428" width="190" height="96" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="345" y="458">星图节点与关系</text>
+                                    <text class="node-sub" x="345" y="480">concept · entity · tag</text>
+                                    <text class="node-sub" x="345" y="497">reference / semantic</text>
+                                    <text class="node-sub" x="345" y="514">/ derived</text>
+                                </g>
+
+                                <!-- 节点：嵌入 -->
+                                <g class="node" id="n-embed" data-step="2" tabindex="0" role="button" style="--c: var(--teal)"
+                                    data-tip="ai/embedding.ts：读用户默认启用的 EMBEDDING 配置，解密 API Key，用 OpenAI 兼容协议建模型。embedMany 批量、embed 单条。缺配置直接 badRequest，调用方按 best effort 吞掉。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="500" y="106" width="200" height="106" rx="12" />
+                                        <rect class="box" x="500" y="106" width="200" height="106" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="600" y="138">嵌入模型</text>
+                                    <text class="node-sub" x="600" y="160">EMBEDDING 配置 · 用户自备</text>
+                                    <text class="node-sub" x="600" y="177">embedTexts / embedQuery</text>
+                                    <text class="node-sub" x="600" y="194">推荐 bge-m3 · 1024 维</text>
+                                </g>
+
+                                <!-- 节点：索引 -->
+                                <g class="node" id="n-vecidx" data-step="3" tabindex="0" role="button" style="--c: var(--teal)"
+                                    data-tip="两处 vector(1024) 列：kb_wiki_tree_node.embedding 与 assistant_message_embedding.embedding，都建 hnsw (vector_cosine_ops)。列不在 Drizzle schema 里声明，只走原生 SQL 读写。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="748" y="98" width="228" height="118" rx="12" />
+                                        <rect class="box" x="748" y="98" width="228" height="118" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="862" y="130">pgvector 列</text>
+                                    <text class="node-sub" x="862" y="152">vector(1024)</text>
+                                    <text class="node-sub" x="862" y="169">hnsw · vector_cosine_ops</text>
+                                    <text class="node-sub" x="862" y="186">tree_node · message_embedding</text>
+                                </g>
+                                <g class="node" id="n-kwidx" data-step="6" tabindex="0" role="button" style="--c: var(--purple)"
+                                    data-tip="关键词索引两类：message_embedding.excerpt_md 上的 GIN to_tsvector('simple')，以及文章/分片上的 pg_trgm。全都不依赖任何模型。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="748" y="252" width="228" height="96" rx="12" />
+                                        <rect class="box" x="748" y="252" width="228" height="96" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="862" y="284">关键词索引</text>
+                                    <text class="node-sub" x="862" y="306">GIN to_tsvector('simple')</text>
+                                    <text class="node-sub" x="862" y="323">pg_trgm similarity</text>
+                                </g>
+                                <g class="node" id="n-graphidx" data-step="7" tabindex="0" role="button" style="--c: var(--amber)"
+                                    data-tip="不引图数据库：层级走 parent_id 邻接表，跨树关系单独一张表，子树与 N 跳邻域用 PostgreSQL 递归 CTE；助手侧则直接在缓存载荷上做内存 BFS。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="748" y="400" width="228" height="96" rx="12" />
+                                        <rect class="box" x="748" y="400" width="228" height="96" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="862" y="432">图索引</text>
+                                    <text class="node-sub" x="862" y="454">邻接表 + 关系表</text>
+                                    <text class="node-sub" x="862" y="471">递归 CTE / 内存 BFS</text>
+                                </g>
+
+                                <!-- 节点：出口 -->
+                                <g class="node" id="n-prompt" data-step="8" tabindex="0" role="button" style="--c: var(--red)"
+                                    data-tip="buildInstructionsWithContextExtras：基础提示词 + 上下文摘要 + 向量召回片段（标注相关度）；工具检索结果则以工具返回值的形态进入对话，二者路径不同。">
+                                    <g filter="url(#rough)">
+                                        <rect class="fill" x="470" y="600" width="330" height="92" rx="12" />
+                                        <rect class="box" x="470" y="600" width="330" height="92" rx="12" />
+                                    </g>
+                                    <text class="node-label" x="635" y="632">系统提示词 + 工具结果</text>
+                                    <text class="node-sub" x="635" y="654">摘要 · 召回片段（带相关度）</text>
+                                    <text class="node-sub" x="635" y="671">检索工具返回值 · 引用卡</text>
+                                </g>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="diagram-note" id="diagram-note">
+                        <strong>交互提示：</strong>悬停节点查看职责与源文件；点击节点跳到对应讲解步骤。
+                    </div>
+
+                    <div class="step-panel" id="step-panel" hidden>
+                        <p class="step-title"><span class="no" id="step-no"></span><span id="step-title"></span></p>
+                        <p id="step-body"></p>
+                    </div>
+
+                    <div class="tour-controls" aria-label="导览控制">
+                        <button class="btn" id="prev-btn" type="button">← 上一步</button>
+                        <button class="btn" id="next-btn" type="button">下一步 →</button>
+                        <button class="btn" id="play-btn" type="button">▶ 自动导览</button>
+                        <span class="tour-hint">键盘：<kbd>←</kbd> <kbd>→</kbd> 切步骤 · <kbd>P</kbd> 播放 · <kbd>Esc</kbd> 退出聚焦</span>
+                    </div>
+                </section>
+
+                <!-- ═══ 02 · 切块实验室 ═══ -->
+                <section id="chunk" class="anim-in" style="--i: 2">
+                    <div class="section-head">
+                        <div>
+                            <p class="eyebrow">02 · 切块实验室</p>
+                            <h2>不按固定字数切，按目录切</h2>
+                            <p>
+                                业界常见做法是「每 500 字一刀」，代价是切断语义。这里换了个思路（PageIndex 式）：
+                                <strong>按 Markdown 标题层级切成一棵目录树</strong>，每个节点天然带标题、面包屑路径与行号区间——
+                                既是嵌入单位，也是「让 LLM 在目录上导航」的单位。下面的编辑器完整复刻
+                                <code>parseMarkdownTree</code>（同一套正则、同一套祖先栈），改一改标题层级就能看出切法。
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="lab-grid">
+                        <div class="panel lab-panel">
+                            <h3>粘一段 Markdown 试试</h3>
+                            <div class="control">
+                                <label for="md-input">源文档正文 <output id="md-len">0 字</output></label>
+                                <textarea id="md-input" rows="18" spellcheck="false"></textarea>
+                            </div>
+                            <div class="control" style="margin-bottom: 0">
+                                <label>预置样例</label>
+                                <div class="preset-row" id="md-presets" role="group" aria-label="预置样例">
+                                    <button class="preset-btn is-active" type="button" data-sample="a">带围栏代码块</button>
+                                    <button class="preset-btn" type="button" data-sample="b">深层嵌套标题</button>
+                                    <button class="preset-btn" type="button" data-sample="c">无标题纯正文</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="panel lab-panel">
+                            <h3>切出来的目录树</h3>
+                            <div class="tree-out" id="tree-out"></div>
+                            <div class="readouts">
+                                <div class="readout" style="--c: var(--teal)">
+                                    <span class="k">节点数（= 嵌入条数）</span>
+                                    <span class="v" id="ro-nodes">—</span>
+                                </div>
+                                <div class="readout" style="--c: var(--purple)">
+                                    <span class="k">LLM 批量摘要</span>
+                                    <span class="v" id="ro-sum">—</span>
+                                </div>
+                                <div class="readout" style="--c: var(--blue)">
+                                    <span class="k">推理式导航可用</span>
+                                    <span class="v" id="ro-outline">—</span>
+                                </div>
+                                <div class="readout" style="--c: var(--amber)">
+                                    <span class="k">最长节点 token 估算</span>
+                                    <span class="v" id="ro-token">—</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card-grid" style="margin-top: 16px">
+                        <div class="card" style="--c: var(--teal)">
+                            <h3><span class="dot"></span>切块规则 <code>parseMarkdownTree</code></h3>
+                            <table class="kv">
+                                <tr><td>标题正则</td><td><code>/^(#{1,6})\s+(.+?)\s*#*\s*$/</code>，支持收尾的闭合井号</td></tr>
+                                <tr><td>围栏保护</td><td>遇到 <code>```</code> 或 <code>~~~</code> 翻转状态，围栏内的 <code>#</code> 不当标题——否则代码注释会把文档切碎</td></tr>
+                                <tr><td>根节点</td><td>position 0、depth 0，标题取文章标题，正文是首个标题之前的引言</td></tr>
+                                <tr><td>父子关系</td><td>维护 (depth → position) 祖先栈，弹掉所有 depth ≥ 当前层级的祖先，栈顶即父节点</td></tr>
+                                <tr><td>正文区间</td><td>标题行的下一行 → 下一个标题行之前；同时记录 startLine / endLine</td></tr>
+                                <tr><td>业务键</td><td><code>a{articleId}-{position}</code>，全库唯一；从 nodeKey 能反解出 articleId</td></tr>
+                                <tr><td>token 估算</td><td>中日韩字符算 1 token，其余按 0.25，向上取整——只用于展示与预算判断</td></tr>
+                            </table>
+                        </div>
+                        <div class="card" style="--c: var(--purple)">
+                            <h3><span class="dot"></span>摘要与指纹缓存 <code>buildArticleTree</code></h3>
+                            <p>切完之后再花<strong>一次</strong>模型调用给所有章节写摘要，而不是每节点一次：</p>
+                            <table class="kv">
+                                <tr><td>≤40 个节点</td><td>有正文的节点超过 <code>MAX_NODES_FOR_LLM_SUMMARY</code> 就整篇退回本地摘要，不发请求</td></tr>
+                                <tr><td>每节点 ≤400 字</td><td>送进摘要提示词的正文上限，超出截断</td></tr>
+                                <tr><td>一句话 ≤60 字</td><td>要求模型逐节点输出「这一节回答了什么」，JSON 形态 <code>{ summaries: { position: 文本 } }</code></td></tr>
+                                <tr><td>本地兜底</td><td>失败 / JSON 解析不出来 / 单节点缺失 → <code>localSummary</code>：剥掉代码块、图片、链接与 Markdown 记号后截 120 字</td></tr>
+                                <tr><td>根节点存树指纹</td><td>sha256(position|depth|title|content 全表)，作为整篇结构的缓存判据</td></tr>
+                                <tr><td>跳过重建</td><td>指纹一致且节点数相同且非强制 → 整篇跳过，不重复消耗模型额度</td></tr>
+                                <tr><td>重建即替换</td><td>需要重建时在一个事务里先删该文章全部节点再整批插入，不做增量 diff</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ═══ 03 · 向量化入库 ═══ -->
+                <section id="embed" class="anim-in" style="--i: 3">
+                    <div class="section-head">
+                        <div>
+                            <p class="eyebrow">03 · 向量化与入库</p>
+                            <h2>一个模型配置，两条写入路径</h2>
+                            <p>
+                                全站只有一处嵌入模型入口 <code>ai/embedding.ts</code>：读用户在后台配的那条默认启用的
+                                <code>EMBEDDING</code> 配置，解密 API Key，按 OpenAI 兼容协议建模型。<strong>模型是用户自备的</strong>，
+                                所以「没配」是常态而不是异常——两条写入路径对此的处理方式不同。
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="card-grid two-col">
+                        <div class="card" style="--c: var(--teal)">
+                            <h3><span class="dot"></span>路径 A：知识库章节<span class="idx">主动 + 顺带</span></h3>
+                            <p>嵌入文本由三段拼成，中间用换行连接后截断：</p>
+                            <p class="sql" style="--c: var(--teal)">[title, summary ?? "", contentMd]
+  .map(trim).filter(Boolean)
+  .join("\n")
+  .slice(0, 4000)</p>
+                            <table class="kv">
+                                <tr><td>64 条/批</td><td><code>KB_EMBED_BATCH_SIZE</code>，一次 <code>embedMany</code> 后逐条 update</td></tr>
+                                <tr><td>2000 条/次请求</td><td><code>KB_MAX_EMBED_PER_REQUEST</code>：避免超大知识库把接口拖超时，剩余可再点一次或跑 backfill</td></tr>
+                                <tr><td>4000 字</td><td>单节点嵌入文本上限 <code>KB_EMBED_MAX_CHARS</code></td></tr>
+                                <tr><td>只补空缺</td><td>只查 <code>embedding is null</code> 的节点；已有向量不重算</td></tr>
+                                <tr><td>手动入口</td><td>后台「生成向量」按钮 → <code>embedKnowledgeBaseTreeNodes</code>，缺配置直接报错并给出建议（推荐 bge-m3）</td></tr>
+                                <tr><td>自动入口</td><td>编译 Wiki 之后 <code>embedKnowledgeBaseTreeNodesBestEffort</code>：无配置 / SQLite / 出错一律静默跳过，只往 warnings 里加一条，绝不影响编译结果</td></tr>
+                                <tr><td>可观测</td><td><code>getKbWikiEmbeddingStatus</code> 返回 total / embedded / pending，后台直接显示「已向量化 N / M」</td></tr>
+                            </table>
+                        </div>
+                        <div class="card" style="--c: var(--purple)">
+                            <h3><span class="dot"></span>路径 B：对话消息<span class="idx">后台异步</span></h3>
+                            <p>这条路径在<strong>回答的热路径上</strong>，所以设计目标是「一秒都不能拖」：</p>
+                            <table class="kv">
+                                <tr><td>先查后补</td><td>召回时只读已有向量；缺向量的补齐用 <code>void ... .catch()</code> 丢进后台，不 await</td></tr>
+                                <tr><td>扫描上限 200</td><td>按时间正序取该线程最近 200 条消息作候选</td></tr>
+                                <tr><td>排除窗口内</td><td>还在原文窗口里的消息不入向量（它们本来就在上下文里）</td></tr>
+                                <tr><td>≥8 字才入库</td><td>脱敏后不足 8 字的摘录直接丢弃，避免「好的」「收到」污染向量空间</td></tr>
+                                <tr><td>16 条/批</td><td><code>CONTEXT_RECALL_EMBED_BATCH</code>，每次最多补 16 条，余量下轮再补</td></tr>
+                                <tr><td>幂等写入</td><td><code>on conflict (message_id) do update</code>，摘录与向量一起覆盖</td></tr>
+                            </table>
+                            <p class="sql" style="--c: var(--purple)">insert into petrichor_assistant_message_embedding
+  (message_id, thread_id, user_id, excerpt_md, embedding, created_at)
+values ($1, $2, $3, $4, $5::vector, now())
+on conflict (message_id) do update set
+  excerpt_md = excluded.excerpt_md,
+  embedding  = excluded.embedding</p>
+                        </div>
+                    </div>
+
+                    <div class="card-grid two-col" style="margin-top: 16px">
+                        <div class="card" style="--c: var(--blue)">
+                            <h3><span class="dot"></span>模型配置 <code>ai/embedding.ts · config-logic.ts</code></h3>
+                            <table class="kv">
+                                <tr><td>configType</td><td>四类之一：<code>CHAT</code> / <code>VISION</code> / <code>DOC_QA</code> / <code>EMBEDDING</code>，各自独立选默认</td></tr>
+                                <tr><td>解析规则</td><td><code>resolveChatConfig(userId, null, "EMBEDDING")</code>：取该用户 <code>isDefault && enabled</code> 的那条</td></tr>
+                                <tr><td>协议</td><td>统一用 <code>createOpenAI({ apiKey, baseURL, name })</code> 建 provider，再取 <code>textEmbeddingModel(config.model)</code></td></tr>
+                                <tr><td>必填校验</td><td>缺 API Key 或 BaseUrl 直接 400；API Key 加密落库，用时才解密</td></tr>
+                                <tr><td>探测</td><td><code>hasEmbeddingConfig(userId)</code> 只查一行 id，用于所有 best-effort 分支的前置判断</td></tr>
+                                <tr><td>维度</td><td><code>EMBEDDING_DIMENSIONS = 1024</code>，与两处 <code>vector(1024)</code> 列绑定——换维度要改迁移</td></tr>
+                            </table>
+                        </div>
+                        <div class="card" style="--c: var(--amber)">
+                            <h3><span class="dot"></span>索引 DDL <code>full-migration.ts</code></h3>
+                            <p>两个扩展、两个 HNSW、一个 GIN，全部 <code>if not exists</code>：</p>
+                            <p class="sql" style="--c: var(--amber)">create extension if not exists pg_trgm;
+create extension if not exists vector;
+
+alter table petrichor_kb_wiki_tree_node
+  add column if not exists embedding vector(1024);
+create index if not exists idx_petrichor_kb_wiki_tree_node_embedding
+  on petrichor_kb_wiki_tree_node
+  using hnsw (embedding vector_cosine_ops);
+
+create index if not exists idx_petrichor_assistant_message_embedding
+  on petrichor_assistant_message_embedding
+  using hnsw (embedding vector_cosine_ops);
+
+create index if not exists petrichor_assistant_message_embedding_fts_idx
+  on petrichor_assistant_message_embedding
+  using gin (to_tsvector('simple', coalesce(excerpt_md, '')));</p>
+                            <p style="margin-top: 10px">
+                                注意 <code>kb_wiki_tree_node.embedding</code> <strong>故意不在 Drizzle schema 里声明</strong>：
+                                声明了会让 <code>select()</code> 全列查询在没有该列的 SQLite 本地库上直接报错。这一列只走原生 SQL 读写。
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ═══ 04 · 索引空间对照 ═══ -->
+                <section id="spaces" class="anim-in" style="--i: 4">
+                    <div class="section-head">
+                        <div>
+                            <p class="eyebrow">04 · 三块索引空间</p>
+                            <h2>哪些东西真的被向量化了</h2>
+                            <p>一句话答案：<strong>只有两处</strong>。文档库分片、公开文章、星图节点都不入向量——它们各有更合适的索引方式。</p>
+                        </div>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table class="matrix">
+                            <thead>
+                                <tr>
+                                    <th></th>
+                                    <th>知识库章节</th>
+                                    <th>对话消息</th>
+                                    <th>文档库分片</th>
+                                    <th>公开文章 / 星图</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th>表</th>
+                                    <td><code>kb_wiki_tree_node</code></td>
+                                    <td><code>assistant_message_embedding</code></td>
+                                    <td><code>doc_chunk</code></td>
+                                    <td><code>kb_article</code> · <code>site_graph_node/edge</code></td>
+                                </tr>
+                                <tr>
+                                    <th>切块单位</th>
+                                    <td>Markdown 标题章节</td>
+                                    <td>一条消息 → 一条摘录</td>
+                                    <td>解析产出的文本片（≤4000 字，≤4000 条）</td>
+                                    <td>整篇文章 / 概念节点</td>
+                                </tr>
+                                <tr>
+                                    <th>向量列</th>
+                                    <td class="yes">✓ vector(1024)</td>
+                                    <td class="yes">✓ vector(1024)</td>
+                                    <td class="no">✗ 无</td>
+                                    <td class="no">✗ 无</td>
+                                </tr>
+                                <tr>
+                                    <th>关键词索引</th>
+                                    <td class="part">内存打分（scoreSearchFields）</td>
+                                    <td class="yes">GIN to_tsvector('simple')</td>
+                                    <td class="yes">pg_trgm word_similarity</td>
+                                    <td class="yes">pg_trgm similarity 加权</td>
+                                </tr>
+                                <tr>
+                                    <th>额外索引</th>
+                                    <td>目录树本身（LLM 可导航）</td>
+                                    <td>—</td>
+                                    <td>—</td>
+                                    <td>邻接表 + 关系表 + 递归 CTE</td>
+                                </tr>
+                                <tr>
+                                    <th>写入时机</th>
+                                    <td>编译 Wiki 后自动补 + 后台按钮手动补</td>
+                                    <td>召回时后台异步补</td>
+                                    <td>上传解析时一次写入</td>
+                                    <td>后台点「生成图谱」时全量重跑</td>
+                                </tr>
+                                <tr>
+                                    <th>隔离维度</th>
+                                    <td>user_id + knowledge_base_id</td>
+                                    <td>user_id + thread_id</td>
+                                    <td>user_id + library_id</td>
+                                    <td>站点级单例（图谱按 user_id 存但只有站长发布）</td>
+                                </tr>
+                                <tr>
+                                    <th>没有嵌入模型时</th>
+                                    <td class="part">退回目录导航 + 关键词</td>
+                                    <td class="part">召回整段跳过</td>
+                                    <td class="yes">不受影响</td>
+                                    <td class="yes">不受影响</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="card-grid two-col" style="margin-top: 18px">
+                        <div class="card" style="--c: var(--red)">
+                            <h3><span class="dot"></span>还有一列向量，但已经没人读了</h3>
+                            <p>
+                                迁移脚本里还有第三处 <code>vector(1024)</code>：<code>petrichor_agent_memory.embedding</code>，
+                                连同它的 HNSW 索引一起保留在 <code>full-migration.ts</code> 里，原本用于旧问答 Agent 长期记忆的<strong>语义去重</strong>。
+                            </p>
+                            <p>
+                                但当前代码路径已经不再读写它——站内助手的操作员记忆走的是
+                                <code>assistant_operator_profile</code>（两块 Markdown 短文）与
+                                <code>assistant_message_embedding</code>（情景检索），与这张旧表互不相干。
+                                <strong>列与索引留着，代码没有引用</strong>：这是事实，不是遗漏说明。
+                            </p>
+                        </div>
+                        <div class="card" style="--c: var(--blue)">
+                            <h3><span class="dot"></span>为什么文档分片不做向量</h3>
+                            <p>不是做不了，是这条线上向量的性价比不高：</p>
+                            <ul>
+                                <li>文档分片是<strong>定位</strong>而非<strong>理解</strong>：用户往往已经知道要查哪份文件，需要的是「第几页、哪一段」，<code>locator</code> 与 <code>page</code> 比语义相似度更有用。</li>
+                                <li>分片量级远大于章节（单文档上限 4000 片），全量嵌入的成本与延迟都由用户的 API 额度承担。</li>
+                                <li><code>pg_trgm</code> 的 <code>word_similarity(query, text)</code> 对中文子串友好，且 SQLite 分支也能用 LIKE + 词频兜底，零依赖。</li>
+                                <li>真需要语义时，用户可以把文档导入知识库——那条线是有向量的。</li>
+                            </ul>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ═══ 05 · 八条召回路径 ═══ -->
+                <section id="recall" class="anim-in" style="--i: 5">
+                    <div class="section-head">
+                        <div>
+                            <p class="eyebrow">05 · 召回路径</p>
+                            <h2>八条召回路径，只有三条真的用向量</h2>
+                            <p>每条路径都标了它的触发条件与关键常量。注意第 1、2 条会被 <code>search_knowledge</code> 合并成一次工具调用，第 5、6 条是同一张表的两种读法。</p>
+                        </div>
+                    </div>
+
+                    <ol class="path-list">
+                        <li style="--c: var(--purple)">
+                            <h3>推理式目录导航<code>wiki-tree.ts · retrieveTreeNodesForAgent</code></h3>
+                            <p><span class="path-tag llm">LLM</span>把整棵目录（<code>[nodeKey] 标题 — 摘要</code>）渲染给模型，让它<strong>推理</strong>该看哪几节，并要求给出 reason。</p>
+                            <p>目录超过 <code>MAX_OUTLINE_NODES = 200</code> 个节点直接不发请求；返回 JSON 解析失败、nodeKey 不在目录里、或重复的一律丢弃；全空则回退关键词打分。limit 夹在 1–12（默认 6），单节点正文截 1600 字。</p>
+                        </li>
+                        <li style="--c: var(--teal)">
+                            <h3>章节向量语义检索<code>wiki-tree.ts · semanticSearchTreeNodes</code></h3>
+                            <p><span class="path-tag vec">向量</span>把查询嵌入后按余弦距离排序取前 N，再回填面包屑路径。</p>
+                            <p class="sql" style="--c: var(--teal)">select node_key
+from petrichor_kb_wiki_tree_node
+where user_id = $1 and knowledge_base_id = $2
+  and embedding is not null
+order by embedding &lt;=&gt; $3::vector
+limit $4</p>
+                            <p>SQLite 环境直接抛错（由调用方吞掉）；<strong>不设分数阈值</strong>，靠 limit 控量。</p>
+                        </li>
+                        <li style="--c: var(--blue)">
+                            <h3>跨知识库模糊检索<code>wiki-agent-logic.ts · searchWikiPagesAcrossKbs</code></h3>
+                            <p><span class="path-tag kw">关键词</span><code>search_knowledge</code> 不传 knowledgeBaseId 且无 focus 默认库时走这条：Wiki 页与源文章各拉最近 500 条，在内存里用 <code>scoreSearchFields</code> 打分合并去重。</p>
+                            <p>为中文整句查询专门做了 n-gram 近邻（见下一节的打分器）——「全部歌曲下载进度」也能命中「歌曲下载进度」。</p>
+                        </li>
+                        <li style="--c: var(--blue)">
+                            <h3>文档分片检索<code>doc-library/library-logic.ts · searchChunks</code></h3>
+                            <p><span class="path-tag kw">关键词</span>查询按空白切最多 5 个词，ILIKE OR 先粗召回，再用 <code>word_similarity(keyword, text)</code> 排序，同分按 chunkIndex 升序。</p>
+                            <p>返回带 <code>locator</code>（形如 <code>p.12</code>）与 page，片段截 600 字。SQLite 分支退化为 LIKE + JS 词频打分。</p>
+                        </li>
+                        <li style="--c: var(--teal)">
+                            <h3>线程内向量召回<code>context-recall.ts · recallRelevantHistory</code></h3>
+                            <p><span class="path-tag vec">向量</span>被折叠出窗口的旧对话，靠这条重新被想起来。</p>
+                            <p class="sql" style="--c: var(--teal)">select message_id, excerpt_md,
+       (1 - (embedding &lt;=&gt; $q::vector))::float8 as score
+from petrichor_assistant_message_embedding
+where thread_id = $1 and user_id = $2
+  and embedding is not null
+  and message_id not in (窗口内消息)
+order by embedding &lt;=&gt; $q::vector
+limit 4</p>
+                            <p>阈值 <code>score ≥ 0.25</code>，查询文本截 4000 字。整条链路 try/catch 包住，任何异常都只打日志返回空数组。</p>
+                        </li>
+                        <li style="--c: var(--purple)">
+                            <h3>跨线程情景检索<code>operator-episodic.ts · searchOperatorHistory</code></h3>
+                            <p><span class="path-tag vec">向量</span><span class="path-tag kw">关键词</span>操作员专属，跨自己全部线程。三种模式：</p>
+                            <p><strong>keyword</strong> 走 <code>to_tsvector('simple') @@ plainto_tsquery('simple')</code> + <code>ts_rank</code>；<strong>semantic</strong> 走 pgvector（阈值同样 0.25）；<strong>both</strong>（默认）两路 <code>Promise.all</code> 并行，按 <code>threadId:messageId</code> 去重合并，<strong>语义结果排在前面</strong>。默认排除当前线程，limit 夹在 1–20，SQLite 退化为 ilike。</p>
+                        </li>
+                        <li style="--c: var(--amber)">
+                            <h3>全站星图检索<code>site-graph/qa-retrieval.ts · retrieveFromGraph</code></h3>
+                            <p><span class="path-tag graph">图谱</span>把问句按标点切词，逐词对概念/实体节点打分（名称精确 100 / 别名精确 95 / 互含 <code>60×长度比+20</code> / 别名互含 55 / 属性 40 / 摘要 30），取每节点最高分排前 5。</p>
+                            <p>再从入口做限跳 BFS（默认 2 跳，上限 3；节点上限 60、链路上限 12），<strong>结构边不参与扩散</strong>，最后回溯出「概念 → … → 文章」的可读链路。读的是缓存后的公开载荷，不重查库。</p>
+                        </li>
+                        <li style="--c: var(--blue)">
+                            <h3>公开文章全文检索<code>kb/public-qa-logic.ts · searchPublicArticles</code></h3>
+                            <p><span class="path-tag kw">关键词</span>前台公开问答用，四字段加权相似度：</p>
+                            <p class="sql" style="--c: var(--blue)">similarity(title, $q) * 4
++ similarity(coalesce(public_excerpt, ''), $q) * 2
++ similarity(coalesce(ai_summary, ''),    $q) * 2
++ similarity(coalesce(content_md, ''),    $q)</p>
+                            <p>先用 ILIKE 四字段 OR 过滤，取 <code>limit × 3</code> 行再逐条过一遍应用层可见性（未列出 / 已过期 / 带密码全部剔除），最后截到 limit（默认 8，上限 20）。</p>
+                        </li>
+                    </ol>
+                </section>
+
+                <!-- ═══ 06 · 打分器实验室 ═══ -->
+                <section id="scorer" class="anim-in" style="--i: 6">
+                    <div class="section-head">
+                        <div>
+                            <p class="eyebrow">06 · 关键词打分器</p>
+                            <h2>中文整句查询为什么还能命中</h2>
+                            <p>
+                                中文用户习惯把整句话当查询（无空格），精确 <code>includes</code> 一定漏。
+                                <code>search-terms.ts</code> 的做法是：整句命中给高分，不命中就退到<strong>二元组覆盖率</strong>，
+                                按覆盖比例给部分分。下面完整复刻了 <code>scoreSearchFields</code>，改改候选文本就能看出分数从哪来。
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="lab-grid">
+                        <div class="panel lab-panel">
+                            <h3>查询与候选</h3>
+                            <div class="control">
+                                <label for="q-input">查询</label>
+                                <input type="text" id="q-input" value="全部歌曲下载进度" autocomplete="off" spellcheck="false" />
+                            </div>
+                            <div class="control">
+                                <label for="t-input">候选标题</label>
+                                <input type="text" id="t-input" value="歌曲下载进度" autocomplete="off" spellcheck="false" />
+                            </div>
+                            <div class="control">
+                                <label for="s-input">候选摘要</label>
+                                <input type="text" id="s-input" value="记录每首歌的下载状态与失败重试" autocomplete="off" spellcheck="false" />
+                            </div>
+                            <div class="control" style="margin-bottom: 0">
+                                <label for="c-input">候选正文（节选）</label>
+                                <input type="text" id="c-input" value="进度条按批次刷新，失败项会单独列出。" autocomplete="off" spellcheck="false" />
+                            </div>
+                        </div>
+                        <div class="panel lab-panel">
+                            <h3>打分结果</h3>
+                            <div class="score-out">
+                                <span class="big" id="score-big">0</span>
+                                <span id="score-why">—</span>
+                                <div id="score-branches"></div>
+                                <p style="margin: 10px 0 0; font-size: 12.5px; color: var(--ink-faint)">
+                                    tokenizeSearchQuery 展开出的词项（命中标题的高亮）：
+                                </p>
+                                <div class="term-list" id="term-list"></div>
+                            </div>
+                            <table class="kv" style="margin-top: 12px">
+                                <tr><td>整句命中</td><td><code>100 + 查询长度 × 4</code>，命中标题再 <code>+40</code></td></tr>
+                                <tr><td>整词命中</td><td>标题 <code>×6</code> / 摘要 <code>×3</code> / 正文 <code>×1</code>，按词长加权</td></tr>
+                                <tr><td>中文近邻</td><td>整词不中且为 ≥3 字中文时展开 bigram：标题覆盖率 ≥0.5 → <code>词长×5×覆盖率</code>；全字段覆盖率 ≥0.6 → <code>词长×2×覆盖率</code></td></tr>
+                                <tr><td>tokenize</td><td>按空白与标点切词；≥3 字的中文词额外展开 2 / 3 字 n-gram</td></tr>
+                                <tr><td>用在哪</td><td>目录导航的关键词回退、跨库模糊检索的排序</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ═══ 07 · 合并与注入 ═══ -->
+                <section id="merge" class="anim-in" style="--i: 7">
+                    <div class="section-head">
+                        <div>
+                            <p class="eyebrow">07 · 合并、去重与注入</p>
+                            <h2>两路结果怎么合，合完怎么进提示词</h2>
+                            <p>混合检索的难点从来不是「多查一路」，而是「合起来之后还能解释」。这里的选择是：<strong>不做重排、不做分数归一，只做顺序拼接 + 去重</strong>。</p>
+                        </div>
+                    </div>
+
+                    <div class="card-grid two-col">
+                        <div class="card" style="--c: var(--teal)">
+                            <h3><span class="dot"></span>search_knowledge 的合并 <code>tools/knowledge.ts</code></h3>
+                            <p>指定了知识库（或有 focus 默认库）时，两路都跑，然后按 <code>nodeKey</code> 去重：</p>
+                            <ol>
+                                <li>先跑推理式导航 <code>retrieveTreeNodesForAgent</code>（LLM 选节点）</li>
+                                <li>再跑向量语义 <code>semanticSearchTreeNodes</code>，用 <code>try/catch</code> 包住并记下 <code>semanticAvailable</code></li>
+                                <li>把 <code>[...treeHits, ...semanticHits]</code> 灌进 Map，<strong>先到者胜</strong>——导航结果天然排在前面</li>
+                                <li>截到 limit，返回 <code>mode: "tree+semantic"</code> 或降级后的 <code>"tree"</code></li>
+                            </ol>
+                            <p style="margin-top: 8px">
+                                <code>mode</code> 字段是给模型看的：它能据此知道这次到底有没有语义检索兜底。
+                                不传 knowledgeBaseId 时则走完全不同的 <code>mode: "cross_kb"</code> 分支。
+                            </p>
+                        </div>
+                        <div class="card" style="--c: var(--purple)">
+                            <h3><span class="dot"></span>注入提示词 <code>buildInstructionsWithContextExtras</code></h3>
+                            <p>召回片段不是伪装成对话，而是明确标注来源与可信度：</p>
+                            <p class="sql" style="--c: var(--purple)">{基础系统提示词}
+
+以下是本对话较早内容的摘要（已折叠细节，仅供连贯理解；
+最近几轮原文仍在消息中）：
+{contextSummaryMd}
+
+以下是与当前问题相关的较早对话片段
+（向量召回，供参考，非完整历史）：
+1. (相关度 0.62) …
+2. (相关度 0.41) …</p>
+                            <p style="margin-top: 10px">
+                                两段都是<strong>可选的</strong>：没有摘要就不写摘要段，没有召回就不写召回段。
+                                而工具检索的结果走的是另一条路——它们以工具返回值的形态进入对话，由模型自行决定引用哪些，
+                                最终必须调 <code>show_citations</code> 出引用卡，字段不得改写。
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ═══ 08 · 脱敏与降级 ═══ -->
+                <section id="degrade" class="anim-in" style="--i: 8">
+                    <div class="section-head">
+                        <div>
+                            <p class="eyebrow">08 · 脱敏与降级</p>
+                            <h2>把「不可用」当成常态来设计</h2>
+                            <p>向量这条线上有三个随时可能缺席的前提：Postgres、嵌入配置、嵌入接口本身。每一条召回路径都得回答「它们不在时怎么办」。</p>
+                        </div>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table class="matrix">
+                            <thead>
+                                <tr>
+                                    <th>场景</th>
+                                    <th>章节语义检索</th>
+                                    <th>线程内召回</th>
+                                    <th>跨线程情景检索</th>
+                                    <th>关键词 / 图谱</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th>跑在 SQLite</th>
+                                    <td class="part">抛 400「需要 PostgreSQL」，被 search_knowledge 吞成 <code>mode: "tree"</code></td>
+                                    <td class="part">直接 <code>return []</code></td>
+                                    <td class="part">keyword 退 ilike，semantic 返回空</td>
+                                    <td class="yes">图查询有等价内存遍历兜底</td>
+                                </tr>
+                                <tr>
+                                    <th>没配 EMBEDDING</th>
+                                    <td class="part">检索侧 <code>embedQuery</code> 抛错 → 被吞成 <code>mode: "tree"</code>；写入侧手动按钮报错并提示去配（推荐 bge-m3），自动补写静默跳过</td>
+                                    <td class="part"><code>hasEmbeddingConfig</code> 为假直接返回空</td>
+                                    <td class="part">semantic 分支返回空，只剩 FTS</td>
+                                    <td class="yes">不受影响</td>
+                                </tr>
+                                <tr>
+                                    <th>嵌入接口报错</th>
+                                    <td class="part">异常上抛 → 调用方 catch → 降级为 tree</td>
+                                    <td class="part">catch 打日志返回空</td>
+                                    <td class="part">catch 打日志返回空</td>
+                                    <td class="yes">不受影响</td>
+                                </tr>
+                                <tr>
+                                    <th>目录树没建</th>
+                                    <td class="no">无节点可查，返回空</td>
+                                    <td class="yes">无关</td>
+                                    <td class="yes">无关</td>
+                                    <td class="part">跨库检索仍可用（走 Wiki 页与源文章）</td>
+                                </tr>
+                                <tr>
+                                    <th>星图未发布</th>
+                                    <td class="yes">无关</td>
+                                    <td class="yes">无关</td>
+                                    <td class="yes">无关</td>
+                                    <td class="part">载荷为空 → <code>emptyMessage</code> 指引改用全文检索</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="card-grid two-col" style="margin-top: 18px">
+                        <div class="card" style="--c: var(--red)">
+                            <h3><span class="dot"></span>入库前脱敏 <code>sanitizeRecallExcerpt</code></h3>
+                            <p>对话摘录会长期留在向量表里，所以清洗必须发生在<strong>入库前</strong>，而不是展示时：</p>
+                            <table class="kv">
+                                <tr><td>sk-…</td><td><code>/sk-[a-zA-Z0-9]{10,}/g</code> → <code>[redacted]</code></td></tr>
+                                <tr><td>键值对</td><td><code>api_key</code> / <code>token</code> / <code>secret</code> / <code>password</code> / <code>cookie</code> 后跟 <code>:</code> 或 <code>=</code> 的值 → <code>键=[redacted]</code></td></tr>
+                                <tr><td>Bearer</td><td><code>/bearer\s+[a-zA-Z0-9._\-]+/gi</code> → <code>Bearer [redacted]</code></td></tr>
+                                <tr><td>确认卡</td><td><code>executionOutcome</code> 之后 200 字 → <code>[confirmation omitted]</code>，避免删除操作的完整参数被记住</td></tr>
+                                <tr><td>压缩空白</td><td>连续空白折成单空格，再截 500 字并补省略号</td></tr>
+                                <tr><td>二次防御</td><td>跨线程检索取出结果后<strong>再过一遍</strong>同一函数，历史脏数据也不会漏</td></tr>
+                            </table>
+                        </div>
+                        <div class="card" style="--c: var(--teal)">
+                            <h3><span class="dot"></span>另一处脱敏：步骤落档 <code>redactAssistantStepInput</code></h3>
+                            <p>
+                                工具调用的入参会原样写进 <code>assistant_step.input</code> 用于回放，
+                                所以落库前会递归遍历对象，把敏感键名的值换成 <code>[redacted]</code>，数组与嵌套对象一并处理。
+                            </p>
+                            <p>
+                                两处脱敏的目标不同：这一处防的是<strong>运维回放时看到密钥</strong>，
+                                上一处防的是<strong>密钥被向量化后在别的对话里被召回出来</strong>——后者更隐蔽，也更重要。
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="boundaries">
+                        <h3>检索链路的设计边界（known limits）</h3>
+                        <ul>
+                            <li>向量维度硬编码 1024，与两处 <code>vector(1024)</code> 列绑定。换嵌入模型必须选同维度的，否则要出迁移。</li>
+                            <li>章节语义检索<strong>不设分数阈值</strong>，只靠 limit 控量——查询与库内容完全无关时也会返回「最不差」的几节；判断相关性的责任交给模型。</li>
+                            <li>混合检索不做重排（rerank）也不做分数归一：两路结果按顺序拼接去重，导航结果天然优先。可解释性换掉了一点召回质量。</li>
+                            <li>跨库模糊检索是内存打分，各拉 500 条封顶。知识库规模远超这个量级时，尾部内容可能进不了候选集。</li>
+                            <li>目录树重建是「先删后插」的整篇替换，没有节点级 diff；结构指纹一变就重跑一次摘要。</li>
+                            <li>对话向量的补写每轮最多 16 条，长线程需要多轮对话才能把历史补齐；补齐前召回结果会偏少。</li>
+                            <li>嵌入模型是用户自备的，成本与速率限制都由用户的额度承担——这也是所有批量上限存在的原因。</li>
+                        </ul>
+                    </div>
+
+                    <div class="cross-link">
+                        <strong>配套阅读：</strong>这一篇讲的是「索引与召回」。这些召回结果最终被谁调用、怎么进上下文、
+                        危险操作与子代理如何调度——全部拆在 <a href="./architecture.html">《Agent 架构可视化》</a>，
+                        同样带可交互的意图打分台与上下文折叠实验室。
+                    </div>
+                </section>
+            </main>
+
+            <footer>
+                <span>键盘：<kbd>←</kbd> <kbd>→</kbd> 切换全景步骤 · <kbd>P</kbd> 自动导览 · <kbd>Esc</kbd> 退出聚焦</span>
+                <span>常量与 SQL 均取自 src/server/kb/、src/server/assistant/、src/server/ai/ 源码 · Apache-2.0</span>
+            </footer>
+        </div>
+
+        <script>
+            "use strict";
+
+            /* ── 主题切换（纸张 ⇄ 黑板） ─────────────── */
+            (function () {
+                const KEY = "petrichor-viz-theme";
+                const root = document.documentElement;
+                const btn = document.getElementById("theme-btn");
+                const saved = localStorage.getItem(KEY);
+                const apply = (dark) => {
+                    root.dataset.theme = dark ? "dark" : "light";
+                    btn.textContent = dark ? "切换纸张" : "切换黑板";
+                };
+                apply(saved === "dark");
+                btn.addEventListener("click", () => {
+                    const dark = root.dataset.theme !== "dark";
+                    apply(dark);
+                    localStorage.setItem(KEY, dark ? "dark" : "light");
+                });
+            })();
+
+            /* ── 01 · 全景：分步聚焦导览 ──────────────── */
+            const STEPS = [
+                {
+                    short: "按目录切块",
+                    title: "切块：不按字数切，按 Markdown 目录切",
+                    body: "parseMarkdownTree 把源文档解析成层级目录树：先扫一遍找出所有标题（围栏代码块内的 # 不算），首个标题之前的引言归入 depth=0 的根节点；每个标题成为一个节点，正文是该标题行之后、下一个标题行之前的内容；用一个 (depth → position) 的祖先栈确定父节点。每个节点带标题、面包屑路径、行号区间与 token 估算（中日韩字符按 1、其余按 0.25）。业务键是 a{articleId}-{position}，全库唯一且可反解出 articleId。",
+                    nodes: ["n-kb", "n-tree"],
+                    edges: ["a1"],
+                },
+                {
+                    short: "摘要与缓存",
+                    title: "章节摘要：一次调用摘全篇，指纹一致就整篇跳过",
+                    body: "切完之后花一次 LLM 调用给所有章节写摘要——有正文的节点超过 40 个就整篇退回本地摘要不发请求；每节点送 ≤400 字正文，要求逐节点输出不超过 60 字的「这一节回答了什么」，JSON 形态 { summaries: { position: 文本 } }。失败、解析不出、或某个 position 缺失，都逐节点退回 localSummary（剥掉代码块、图片、链接与 Markdown 记号后截 120 字）。根节点的 contentHash 存的是整棵树的指纹（sha256 of position|depth|title|content），指纹一致且节点数相同就直接跳过重建，不重复消耗模型额度；需要重建时在一个事务里先删该文章全部节点再整批插入。",
+                    nodes: ["n-tree"],
+                    edges: [],
+                },
+                {
+                    short: "嵌入模型",
+                    title: "嵌入：全站只有一个模型入口，而且是用户自备的",
+                    body: "ai/embedding.ts 读该用户「默认启用」的那条 EMBEDDING 配置，解密 API Key，用 createOpenAI({ apiKey, baseURL }) 建 provider 后取 textEmbeddingModel。批量走 embedMany（embedTexts），单条走 embed（embedQuery）。缺 API Key 或 BaseUrl 直接 400。因为模型是用户自备的，「没配」是常态而非异常——所有调用方都先用 hasEmbeddingConfig 探一下，为假就走降级分支。维度常量 EMBEDDING_DIMENSIONS = 1024，与数据库里两处 vector(1024) 列绑定。",
+                    nodes: ["n-tree", "n-excerpt", "n-embed"],
+                    edges: ["b1", "b2"],
+                },
+                {
+                    short: "入库与索引",
+                    title: "入库：两条写入路径，一个共同的 HNSW 索引",
+                    body: "知识库章节：嵌入文本 = 标题 + 摘要 + 正文（换行连接后截 4000 字），64 条一批调 embedMany，逐条 update 到 embedding 列；单次请求最多补 2000 条，只查 embedding is null 的节点。手动入口是后台「生成向量」按钮（缺配置直接报错），自动入口是编译 Wiki 之后的 best-effort 补写（无配置 / SQLite / 出错一律静默跳过，只记一条 warning）。对话消息：脱敏摘录 16 条一批，on conflict (message_id) do update 幂等写入。两张表的向量列都是 vector(1024) + hnsw (vector_cosine_ops)；kb_wiki_tree_node.embedding 故意不在 Drizzle schema 里声明，否则 select() 全列查询会在没有该列的 SQLite 上报错。",
+                    nodes: ["n-embed", "n-vecidx"],
+                    edges: ["b3"],
+                },
+                {
+                    short: "章节召回",
+                    title: "章节召回：LLM 在目录上导航，向量在旁边兜底",
+                    body: "search_knowledge 指定知识库时两路都跑。第一路是推理式导航：把整棵目录渲染成「[nodeKey] 标题 — 摘要」交给模型选节点并说明理由，目录超过 200 个节点就不发请求；返回的 nodeKey 必须在目录里出现过，重复的丢弃。第二路是向量语义：embedQuery 后按 embedding <=> query 排序取前 N，不设分数阈值、只靠 limit（1–12，默认 6）控量。两路结果灌进同一个 Map 按 nodeKey 去重、先到者胜，因此导航结果天然排在前面；返回体带 mode 字段（tree+semantic 或降级后的 tree），让模型知道这次有没有语义兜底。",
+                    nodes: ["n-vecidx", "n-tree", "n-prompt"],
+                    edges: ["d1"],
+                },
+                {
+                    short: "对话召回",
+                    title: "对话召回：折叠掉的历史怎么被找回来",
+                    body: "写入侧：被折叠出窗口的消息先抽纯文本，再过 sanitizeRecallExcerpt 抹掉 sk-*、api_key=、Bearer 与确认卡明文，压空白后截 500 字；不足 8 字直接丢弃。热路径只读已有向量，缺的丢到后台异步补（每次最多 16 条，扫描该线程最近 200 条消息）。读取侧有两个方向：线程内召回用最后一条用户消息做查询，余弦相似度 top 4、阈值 0.25、排除窗口内 message_id；跨线程情景检索则是操作员专属，keyword 走 GIN 上的 to_tsvector('simple') + ts_rank，semantic 走同一张表的向量列，both 模式两路并行后按 threadId:messageId 去重合并、语义优先，limit ≤ 20。",
+                    nodes: ["n-msg", "n-excerpt", "n-vecidx", "n-kwidx"],
+                    edges: ["a2", "c1"],
+                },
+                {
+                    short: "不入向量的两条",
+                    title: "关键词路线：文档分片与公开文章都不做向量",
+                    body: "文档库分片（doc_chunk，单文档上限 4000 片、单片 4000 字）走 pg_trgm：查询按空白切最多 5 个词，ILIKE OR 粗召回后用 word_similarity(keyword, text) 排序，同分按 chunkIndex 升序，返回带 locator 与 page，片段截 600 字；SQLite 分支退化为 LIKE + JS 词频打分。公开文章的全文检索则是四字段加权：标题 ×4、公开摘要 ×2、AI 摘要 ×2、正文 ×1，先 ILIKE 过滤取 limit×3 行，再逐条过一遍应用层可见性（未列出 / 已过期 / 带密码全部剔除）。这两条路完全不依赖任何模型，也因此在任何环境下都可用。",
+                    nodes: ["n-docsrc", "n-trgm", "n-kwidx", "n-prompt"],
+                    edges: ["a3", "c2", "d2"],
+                },
+                {
+                    short: "图谱路线",
+                    title: "图谱路线：不引图数据库，靠邻接表 + 递归 CTE",
+                    body: "全站星图是第三类索引：概念/实体/标签节点 + 关系边。层级走 site_graph_node.parent_id 自引用邻接表（structure 连线由它派生，不入关系表），跨树关系单独一张表；子树、N 跳邻域与祖先链都用 PostgreSQL 递归 CTE，depth 上界同时是递归终止条件，人工改出环也不会无限递归；SQLite 本地模式每个查询都配了等价内存遍历（图上限 1200 节点）。助手侧的 search_knowledge_graph 更直接：读缓存后的公开载荷，在内存里做限跳 BFS（默认 2 跳、上限 3，节点上限 60、链路上限 12），结构边不参与扩散，最后回溯出「概念 → … → 文章」的可读链路。",
+                    nodes: ["n-pubsrc", "n-graphnode", "n-graphidx", "n-prompt"],
+                    edges: ["a4", "c3", "d3"],
+                },
+                {
+                    short: "注入与降级",
+                    title: "注入提示词：标注来源，并随时准备不工作",
+                    body: "召回片段不伪装成对话，而是明确标注：摘要段写「已折叠细节，仅供连贯理解；最近几轮原文仍在消息中」，召回段写「向量召回，供参考，非完整历史」并逐条带相关度。两段都是可选的——没有就不写。工具检索的结果走另一条路：以工具返回值形态进入对话，模型据此作答并必须调 show_citations 出引用卡，字段不得改写或编造。整条链路的底线是 best effort：SQLite、没配嵌入模型、嵌入接口报错这三种情况随时可能发生，每一条向量路径都有对应的降级分支，但没有任何一条会让回答失败。",
+                    nodes: ["n-prompt", "n-vecidx", "n-kwidx", "n-graphidx"],
+                    edges: ["d1", "d2", "d3"],
+                },
+            ];
+
+            const diagram = document.getElementById("diagram");
+            const stepper = document.getElementById("stepper");
+            const stepPanel = document.getElementById("step-panel");
+            const stepNo = document.getElementById("step-no");
+            const stepTitle = document.getElementById("step-title");
+            const stepBody = document.getElementById("step-body");
+            const note = document.getElementById("diagram-note");
+            const noteDefault = note.innerHTML;
+            const playBtn = document.getElementById("play-btn");
+
+            let current = null;
+            let timer = null;
+
+            STEPS.forEach((s, i) => {
+                const b = document.createElement("button");
+                b.type = "button";
+                b.className = "step-btn";
+                b.innerHTML = '<span class="no">' + (i + 1) + "</span>" + s.short;
+                b.addEventListener("click", () => {
+                    stopPlay();
+                    setStep(current === i ? null : i);
+                });
+                stepper.appendChild(b);
+            });
+            const stepBtns = [...stepper.children];
+
+            function setStep(i) {
+                current = i;
+                const focused = i !== null;
+                diagram.classList.toggle("has-focus", focused);
+                stepBtns.forEach((b, k) => b.classList.toggle("is-active", k === i));
+
+                const activeNodes = focused ? new Set(STEPS[i].nodes) : null;
+                const activeEdges = focused ? new Set(STEPS[i].edges) : null;
+                diagram.querySelectorAll(".node").forEach((n) => {
+                    const on = focused && activeNodes.has(n.id);
+                    n.classList.toggle("is-active", on);
+                    n.classList.toggle("is-dimmed", focused && !on);
+                });
+                diagram.querySelectorAll(".edge").forEach((e) => {
+                    const on = focused && activeEdges.has(e.dataset.edge);
+                    e.classList.toggle("is-active", on);
+                    e.classList.toggle("is-dimmed", focused && !on);
+                });
+
+                if (focused) {
+                    const s = STEPS[i];
+                    stepNo.textContent = (i + 1 < 10 ? "0" : "") + (i + 1);
+                    stepTitle.textContent = s.title;
+                    stepBody.textContent = s.body;
+                    stepPanel.hidden = false;
+                    stepPanel.classList.remove("panel-swap");
+                    void stepPanel.offsetWidth;
+                    stepPanel.classList.add("panel-swap");
+                } else {
+                    stepPanel.hidden = true;
+                }
+            }
+
+            function move(delta) {
+                stopPlay();
+                const next = current === null ? (delta > 0 ? 0 : STEPS.length - 1) : (current + delta + STEPS.length) % STEPS.length;
+                setStep(next);
+            }
+            document.getElementById("prev-btn").addEventListener("click", () => move(-1));
+            document.getElementById("next-btn").addEventListener("click", () => move(1));
+
+            function startPlay() {
+                if (current === null) setStep(0);
+                playBtn.textContent = "⏸ 暂停";
+                timer = setInterval(() => setStep(current === null ? 0 : (current + 1) % STEPS.length), 5600);
+            }
+            function stopPlay() {
+                if (timer) clearInterval(timer);
+                timer = null;
+                playBtn.textContent = "▶ 自动导览";
+            }
+            playBtn.addEventListener("click", () => (timer ? stopPlay() : startPlay()));
+            document.getElementById("restart-btn").addEventListener("click", () => {
+                stopPlay();
+                document.getElementById("tour").scrollIntoView({ block: "start" });
+                setStep(0);
+                startPlay();
+            });
+            document.addEventListener("visibilitychange", () => {
+                if (document.hidden) stopPlay();
+            });
+
+            diagram.querySelectorAll(".node").forEach((n) => {
+                const activate = () => {
+                    stopPlay();
+                    setStep(Number(n.dataset.step));
+                };
+                n.addEventListener("click", activate);
+                n.addEventListener("keydown", (e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        activate();
+                    }
+                });
+                n.addEventListener("mouseenter", () => {
+                    note.innerHTML = "<strong>" + n.querySelector(".node-label").textContent + "：</strong>" + n.dataset.tip;
+                });
+                n.addEventListener("mouseleave", () => {
+                    note.innerHTML = noteDefault;
+                });
+            });
+
+            document.addEventListener("keydown", (e) => {
+                if (e.target.matches("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey) return;
+                if (e.key === "ArrowRight") move(1);
+                else if (e.key === "ArrowLeft") move(-1);
+                else if (e.key === "p" || e.key === "P") timer ? stopPlay() : startPlay();
+                else if (e.key === "Escape") {
+                    stopPlay();
+                    setStep(null);
+                }
+            });
+
+            /* ── 02 · 切块实验室：复刻 parseMarkdownTree ── */
+            const HEADING_PATTERN = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
+            const FENCE_PATTERN = /^\s*(```|~~~)/;
+            const MAX_NODES_FOR_LLM_SUMMARY = 40;
+            const MAX_OUTLINE_NODES = 200;
+            const KB_EMBED_MAX_CHARS = 4000;
+
+            function parseMarkdownTree(markdown, rootTitle) {
+                const lines = (markdown ?? "").split(/\r?\n/);
+                const headings = [];
+                let inFence = false;
+                for (let index = 0; index < lines.length; index += 1) {
+                    const line = lines[index];
+                    if (FENCE_PATTERN.test(line)) {
+                        inFence = !inFence;
+                        continue;
+                    }
+                    if (inFence) continue;
+                    const match = line.match(HEADING_PATTERN);
+                    if (match) headings.push({ level: match[1].length, title: match[2].trim(), line: index });
+                }
+
+                const preambleEnd = headings.length > 0 ? headings[0].line : lines.length;
+                const rootBody = lines.slice(0, preambleEnd).join("\n").trim();
+                const nodes = [{
+                    position: 0,
+                    depth: 0,
+                    title: rootTitle.trim() || "（无标题文档）",
+                    parentPosition: null,
+                    contentMd: rootBody,
+                    startLine: 1,
+                    endLine: preambleEnd,
+                }];
+
+                const ancestors = [{ depth: 0, position: 0 }];
+                for (let index = 0; index < headings.length; index += 1) {
+                    const heading = headings[index];
+                    const bodyStart = heading.line + 1;
+                    const bodyEnd = index + 1 < headings.length ? headings[index + 1].line : lines.length;
+                    const position = index + 1;
+                    while (ancestors.length > 0 && ancestors[ancestors.length - 1].depth >= heading.level) {
+                        ancestors.pop();
+                    }
+                    const parentPosition = ancestors.length > 0 ? ancestors[ancestors.length - 1].position : 0;
+                    nodes.push({
+                        position,
+                        depth: heading.level,
+                        title: heading.title || ("章节 " + position),
+                        parentPosition,
+                        contentMd: lines.slice(bodyStart, bodyEnd).join("\n").trim(),
+                        startLine: heading.line + 1,
+                        endLine: bodyEnd,
+                    });
+                    ancestors.push({ depth: heading.level, position });
+                }
+                return nodes;
+            }
+
+            /* 与 wiki-tree.ts 的 estimateTokens 同构 */
+            function estimateTokens(text) {
+                if (!text) return 0;
+                let tokens = 0;
+                for (const char of text) {
+                    const code = char.codePointAt(0) ?? 0;
+                    if ((code >= 0x4e00 && code <= 0x9fff) || (code >= 0x3040 && code <= 0x30ff) || (code >= 0xac00 && code <= 0xd7af)) {
+                        tokens += 1;
+                    } else {
+                        tokens += 0.25;
+                    }
+                }
+                return Math.max(0, Math.ceil(tokens));
+            }
+
+            const SAMPLES = {
+                a: [
+                    "本文记录 Petrichor 的检索链路设计。",
+                    "",
+                    "## 切块策略",
+                    "",
+                    "按 Markdown 标题切，而不是按固定字数。",
+                    "",
+                    "```python",
+                    "# 这一行是代码注释，不是标题",
+                    "def chunk(md):",
+                    "    return parse(md)",
+                    "```",
+                    "",
+                    "### 围栏保护",
+                    "",
+                    "遇到围栏就翻转状态，围栏内的井号一律不当标题。",
+                    "",
+                    "## 向量化",
+                    "",
+                    "嵌入文本 = 标题 + 摘要 + 正文，截断到 4000 字。",
+                    "",
+                    "### 批次上限",
+                    "",
+                    "64 条一批，单次请求最多补 2000 条。",
+                    "",
+                    "### 索引",
+                    "",
+                    "hnsw (embedding vector_cosine_ops)。",
+                    "",
+                    "## 降级",
+                    "",
+                    "没配嵌入模型就静默跳过，绝不拖垮回答。",
+                ].join("\n"),
+                b: [
+                    "# 一级标题也会成为独立节点",
+                    "",
+                    "引言之后的第一段。",
+                    "",
+                    "## 二级",
+                    "",
+                    "### 三级",
+                    "",
+                    "#### 四级",
+                    "",
+                    "##### 五级",
+                    "",
+                    "###### 六级 ######",
+                    "",
+                    "闭合井号会被正则吃掉，标题仍是「六级」。",
+                    "",
+                    "## 回到二级",
+                    "",
+                    "祖先栈会把三到六级全部弹出，父节点重新落回根。",
+                ].join("\n"),
+                c: [
+                    "整篇没有任何标题。",
+                    "",
+                    "这种情况下只会切出一个 depth=0 的根节点，",
+                    "标题取文章标题，正文是全文。",
+                    "",
+                    "对应到检索侧：目录导航退化成「只有一个选项」，",
+                    "向量检索则完全正常——它本来就不依赖标题层级。",
+                ].join("\n"),
+            };
+
+            const mdInput = document.getElementById("md-input");
+            const mdLen = document.getElementById("md-len");
+            const treeOut = document.getElementById("tree-out");
+            const roNodes = document.getElementById("ro-nodes");
+            const roSum = document.getElementById("ro-sum");
+            const roOutline = document.getElementById("ro-outline");
+            const roToken = document.getElementById("ro-token");
+
+            function renderChunkLab() {
+                const md = mdInput.value;
+                const nodes = parseMarkdownTree(md, "检索链路设计笔记");
+                mdLen.textContent = md.length + " 字";
+
+                treeOut.innerHTML = "";
+                let maxToken = 0;
+                for (const node of nodes) {
+                    const tokens = estimateTokens(node.contentMd);
+                    maxToken = Math.max(maxToken, tokens);
+                    const embedLen = [node.title, "", node.contentMd]
+                        .map((p) => p.trim())
+                        .filter(Boolean)
+                        .join("\n").length;
+
+                    const row = document.createElement("div");
+                    const cls = ["tnode"];
+                    if (node.position === 0) cls.push("is-root");
+                    if (!node.contentMd) cls.push("is-empty");
+                    row.className = cls.join(" ");
+                    const indent = "　".repeat(Math.max(0, node.depth - 1));
+                    row.innerHTML =
+                        '<span class="pos">' + node.position + "</span>" +
+                        '<span class="ttl">' + indent + escapeHtml(node.title) +
+                        "<small>depth " + node.depth +
+                        " · 父 " + (node.parentPosition === null ? "—" : node.parentPosition) +
+                        " · 行 " + node.startLine + "–" + node.endLine +
+                        " · 嵌入文本 " + Math.min(embedLen, KB_EMBED_MAX_CHARS) + " 字</small></span>" +
+                        '<span class="tok">' + tokens + " tok</span>";
+                    treeOut.appendChild(row);
+                }
+
+                const summarizable = nodes.filter((n) => n.contentMd.trim().length > 0).length;
+                roNodes.innerHTML = nodes.length + " 个 <small>含 depth 0 根节点</small>";
+                roSum.innerHTML = summarizable === 0 || summarizable > MAX_NODES_FOR_LLM_SUMMARY
+                    ? "退回本地摘要 <small>有正文节点 " + summarizable + "</small>"
+                    : "走 LLM <small>有正文节点 " + summarizable + " ≤ 40</small>";
+                roOutline.innerHTML = nodes.length > MAX_OUTLINE_NODES
+                    ? "不可用 <small>&gt; 200 节点</small>"
+                    : "可用 <small>≤ 200 节点</small>";
+                roToken.innerHTML = maxToken + " tok <small>CJK 计 1，其余 0.25</small>";
+            }
+
+            function escapeHtml(text) {
+                return text.replace(/[&<>"']/g, (ch) => ({
+                    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+                }[ch]));
+            }
+
+            mdInput.value = SAMPLES.a;
+            mdInput.addEventListener("input", () => {
+                document.querySelectorAll("#md-presets .preset-btn").forEach((b) => b.classList.remove("is-active"));
+                renderChunkLab();
+            });
+            document.querySelectorAll("#md-presets .preset-btn").forEach((btn) => {
+                btn.addEventListener("click", () => {
+                    document.querySelectorAll("#md-presets .preset-btn").forEach((b) => b.classList.remove("is-active"));
+                    btn.classList.add("is-active");
+                    mdInput.value = SAMPLES[btn.dataset.sample];
+                    renderChunkLab();
+                });
+            });
+            renderChunkLab();
+
+            /* ── 06 · 打分器：复刻 search-terms.ts ────── */
+            const CJK_CHAR = /[一-鿿]/;
+            const SPACE_OR_PUNCT = /[\s\p{P}\p{S}]+/u;
+
+            function makeNgrams(text, n) {
+                if (n < 1 || text.length < n) return [];
+                const grams = [];
+                for (let i = 0; i <= text.length - n; i += 1) grams.push(text.slice(i, i + n));
+                return grams;
+            }
+
+            function tokenizeSearchQuery(query) {
+                const normalized = query.trim().toLowerCase();
+                if (!normalized) return [];
+                const parts = normalized.split(SPACE_OR_PUNCT).filter(Boolean);
+                const terms = new Set();
+                for (const part of parts) {
+                    terms.add(part);
+                    if (CJK_CHAR.test(part) && part.length >= 3) {
+                        for (const n of [2, 3]) {
+                            for (const gram of makeNgrams(part, n)) terms.add(gram);
+                        }
+                    }
+                }
+                return Array.from(terms);
+            }
+
+            function scoreOnePart(fields, part) {
+                if (!part) return { score: 0, branch: null };
+                if (fields.title.includes(part)) return { score: part.length * 6, branch: "整词命中标题 ×6" };
+                if (fields.summary.includes(part) || fields.extra.includes(part)) {
+                    return { score: part.length * 3, branch: "整词命中摘要 ×3" };
+                }
+                if (fields.content.includes(part) || fields.haystack.includes(part)) {
+                    return { score: part.length * 1, branch: "整词命中正文 ×1" };
+                }
+                if (!CJK_CHAR.test(part) || part.length < 3) return { score: 0, branch: null };
+
+                const bigrams = makeNgrams(part, 2);
+                if (bigrams.length === 0) return { score: 0, branch: null };
+
+                const titleMatched = bigrams.filter((g) => fields.title.includes(g)).length;
+                const titleRatio = titleMatched / bigrams.length;
+                if (titleRatio >= 0.5) {
+                    return {
+                        score: Math.round(part.length * 5 * titleRatio),
+                        branch: "标题 bigram 覆盖 " + Math.round(titleRatio * 100) + "% ≥50%",
+                    };
+                }
+                const allMatched = bigrams.filter((g) => fields.haystack.includes(g)).length;
+                const allRatio = allMatched / bigrams.length;
+                if (allRatio >= 0.6) {
+                    return {
+                        score: Math.round(part.length * 2 * allRatio),
+                        branch: "全字段 bigram 覆盖 " + Math.round(allRatio * 100) + "% ≥60%",
+                    };
+                }
+                return { score: 0, branch: null };
+            }
+
+            function scoreSearchFields(raw, query) {
+                const normalized = query.trim().toLowerCase();
+                if (!normalized) return { score: 1, why: "空查询直接给 1 分", branches: [] };
+
+                const title = (raw.title ?? "").toLowerCase();
+                const summary = (raw.summary ?? "").toLowerCase();
+                const content = (raw.content ?? "").toLowerCase();
+                const extra = "";
+                const haystack = title + "\n" + summary + "\n" + content + "\n" + extra;
+
+                if (haystack.includes(normalized)) {
+                    const inTitle = title.includes(normalized);
+                    return {
+                        score: 100 + normalized.length * 4 + (inTitle ? 40 : 0),
+                        why: "整句命中" + (inTitle ? "（且在标题里，再 +40）" : "（在正文/摘要里）"),
+                        branches: ["100 + " + normalized.length + "×4" + (inTitle ? " + 40" : "")],
+                    };
+                }
+
+                const spaceParts = normalized.split(SPACE_OR_PUNCT).filter(Boolean);
+                if (spaceParts.length === 0) return { score: 0, why: "切不出任何词项", branches: [] };
+
+                let score = 0;
+                const branches = [];
+                for (const part of spaceParts) {
+                    const result = scoreOnePart({ title, summary, content, extra, haystack }, part);
+                    score += result.score;
+                    if (result.branch) branches.push("「" + part + "」" + result.branch + " → +" + result.score);
+                }
+                return {
+                    score,
+                    why: branches.length > 0 ? "整句未命中，逐词累加" : "整句与逐词都未命中",
+                    branches,
+                };
+            }
+
+            const qInput = document.getElementById("q-input");
+            const tInput = document.getElementById("t-input");
+            const sInput = document.getElementById("s-input");
+            const cInput = document.getElementById("c-input");
+            const scoreBig = document.getElementById("score-big");
+            const scoreWhy = document.getElementById("score-why");
+            const scoreBranches = document.getElementById("score-branches");
+            const termList = document.getElementById("term-list");
+
+            function renderScorer() {
+                const query = qInput.value;
+                const result = scoreSearchFields(
+                    { title: tInput.value, summary: sInput.value, content: cInput.value },
+                    query,
+                );
+                scoreBig.textContent = result.score;
+                scoreWhy.textContent = result.why;
+                scoreBranches.innerHTML = "";
+                for (const branch of result.branches) {
+                    const span = document.createElement("span");
+                    span.className = "branch";
+                    span.textContent = branch;
+                    scoreBranches.appendChild(span);
+                }
+
+                const title = tInput.value.toLowerCase();
+                termList.innerHTML = "";
+                for (const term of tokenizeSearchQuery(query)) {
+                    const span = document.createElement("span");
+                    span.className = "term" + (title.includes(term) ? " hit" : "");
+                    span.textContent = term;
+                    termList.appendChild(span);
+                }
+            }
+
+            [qInput, tInput, sInput, cInput].forEach((el) => el.addEventListener("input", renderScorer));
+            renderScorer();
+        </script>
+    </body>
+</html>
