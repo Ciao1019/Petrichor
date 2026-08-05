@@ -296,9 +296,10 @@ export function AssistantChatPage() {
   }, [])
 
   const hideThreadSidebar = React.useCallback(() => {
-    // 仅手机端自动收起：桌面保持用户手动控制
-    if (isMobile) setSidebarOpen(false)
-  }, [isMobile])
+    // 点右侧问答区（含聚焦输入框）就收起左侧对话列表，桌面与手机一致：
+    // 开始提问时把宽度让给聊天，之后由主区左上角的展开按钮手动恢复
+    setSidebarOpen(false)
+  }, [])
 
   const loadThread = React.useCallback(async (threadId: string) => {
     setThreadLoading(true)
