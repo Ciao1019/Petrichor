@@ -34,6 +34,11 @@ coverage/
 *.tsbuildinfo
 dev/
 
+# 宣传片工程：独立于 apps/web 构建，且带约 34MB 音频/截图/字体素材，
+# 不入仓库以免撑大 clone 体积。素材由 promo/scripts/capture-*.mjs 从本地
+# 演示模式重新抓取。
+promo/
+
 # Generated local files
 petrichor-init.sql
 *-init.sql
