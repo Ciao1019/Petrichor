@@ -95,7 +95,7 @@ export function PlateMarkdownPreview({
         <SignedUrlPublicAccessProvider publicAccess={publicMediaAccess}>
             <Plate editor={editor} readOnly>
                 <div ref={containerRef} className={cn("plate-article", className)}>
-                    <PlateContent className="plate-article-content" readOnly disabled />
+                    <PlateContent className="plate-article-content" readOnly />
                 </div>
             </Plate>
         </SignedUrlPublicAccessProvider>
