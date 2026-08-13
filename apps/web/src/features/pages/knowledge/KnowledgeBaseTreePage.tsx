@@ -133,12 +133,6 @@ function ArticleStatusBadges({ status }: { status: ArticleTreeStatus | undefined
     dots.push({ key: "mindmap", variant: "neutral", label: "思维导图" })
   }
 
-  if (status.wikiStatus === "ready") {
-    dots.push({ key: "wiki", variant: "accent", label: "Wiki 已同步" })
-  } else if (status.wikiStatus === "stale") {
-    dots.push({ key: "wiki", variant: "warning", label: "Wiki 待更新" })
-  }
-
   if (dots.length === 0) return null
 
   return (

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { FileText, Globe2, Library, Loader2, Trash2 } from "lucide-react"
+import { Globe2, Library, Loader2, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -113,11 +113,6 @@ export function ThreadButton({
               <span className="inline-flex shrink-0 items-center gap-0.5 rounded-sm bg-violet-500/10 px-1 py-px font-medium text-violet-600 dark:text-violet-300">
                 <Globe2 className="size-2.5" />
                 全部
-              </span>
-            ) : focus.kind === "doc_library" ? (
-              <span className="inline-flex min-w-0 max-w-[120px] shrink items-center gap-0.5 rounded-sm bg-muted px-1 py-px text-muted-foreground">
-                <FileText className="size-2.5 shrink-0" />
-                <span className="truncate">文档库</span>
               </span>
             ) : (
               <span className="inline-flex min-w-0 max-w-[120px] shrink items-center gap-0.5 rounded-sm bg-muted px-1 py-px text-muted-foreground">

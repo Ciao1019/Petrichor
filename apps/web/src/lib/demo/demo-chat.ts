@@ -188,7 +188,7 @@ function fallbackScript(userText: string): DemoScript {
                 text:
                     `关于「${userText.slice(0, 40)}」——演示模式里我只能按预设脚本回放，接不了真实模型，` +
                     "所以答不了开放问题。\n\n不过你可以试试这几个能完整走通的：\n\n" +
-                    "- **「我现在有多少个知识库和文档库？」** —— 看工具调用卡片\n" +
+                    "- **「我现在有多少个知识库和文件？」** —— 看工具调用卡片\n" +
                     "- **「把盘点我的知识库现状拆成可见计划，再逐步执行」** —— 看 Plan 侧栏\n" +
                     "- **「用一段话总结所有知识库的核心主题」** —— 看阅读工具 + 长文生成\n\n" +
                     "部署自己的实例后，这里就是接入你自己模型的完整助手了。",
@@ -201,7 +201,7 @@ function pickScript(userText: string): DemoScript {
     const text = userText.toLowerCase()
     if (/计划|拆成|拆解|plan|逐步/.test(text)) return planScript()
     if (/总结|主题|一段话/.test(text)) return summaryScript()
-    if (/知识库|文档库|多少|盘点|现状/.test(text)) return inventoryScript()
+    if (/知识库|文件|多少|盘点|现状/.test(text)) return inventoryScript()
     return fallbackScript(userText)
 }
 

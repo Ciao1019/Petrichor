@@ -28,7 +28,7 @@ const SKILL_PACKAGE_FILES: Array<{ path: string; description: string }> = [
   { path: "skills/docs.md", description: "知识库浏览与关键词 / 推理 / 语义三种检索" },
   { path: "skills/qa.md", description: "单库与跨库文档问答" },
   { path: "skills/share.md", description: "分享链接、密码与到期管理" },
-  { path: "skills/ai.md", description: "AI 摘要、思维导图、知识图谱生成" },
+  { path: "skills/ai.md", description: "AI 摘要与思维导图生成" },
   { path: "skills/wiki.md", description: "知识 Wiki 浏览、重建与体检" },
   { path: "scripts/petrichor", description: "零依赖 Python CLI（所有能力的统一入口）" },
   { path: "scripts/petrichor-api.sh", description: "curl 版回退脚本（无 Python 环境时）" },

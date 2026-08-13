@@ -3,7 +3,7 @@
 -- 适用：已有数据的线上库（Supabase / Postgres）
 --
 -- 背景：导入不再把每一页都栅格化后丢给多模态模型。改为服务端用
---      @firecrawl/pdf-inspector 本地逐页抽取 Markdown，只有 needsOcr
+--      PDF sidecar 本地逐页抽取 Markdown，只有 needsOcr
 --      的页（扫描件 / 纯图片页）才栅格化 + 走 VISION 模型。
 --      同时不再支持 Word 导入，也不再裁剪页内嵌入图。
 --

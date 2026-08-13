@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next"
 
-import { getPublicBaseUrl, toAbsolutePublicUrl } from "@/server/public-site/site-url"
+import { getPublicBaseUrl, toAbsolutePublicUrl } from "@/lib/public-site/site-url"
 
 export default function robots(): MetadataRoute.Robots {
     const baseUrl = getPublicBaseUrl()

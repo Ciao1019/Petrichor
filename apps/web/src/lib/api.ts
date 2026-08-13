@@ -24,7 +24,6 @@ function isAuthEndpoint(url: string) {
   return url.includes("/auth/login")
     || url.includes("/auth/register")
     || url.includes("/auth/linuxdo/callback")
-    || url.includes("/auth/two-factor/")
 }
 
 function shouldRedirectToLoginOnUnauthorized(pathname: string) {
@@ -84,7 +83,6 @@ export interface UserResponse {
 
 export interface UserProfileResponse extends UserResponse {
   signature?: string | null
-  twoFactorEnabled?: boolean
   createdAt: string
   updatedAt: string
 }
@@ -93,39 +91,6 @@ export interface AuthResponse {
   mode?: "login" | "bind"
   token: string
   user: UserResponse
-}
-
-export interface AuthLoginResponse {
-  mode?: "login" | "bind"
-  token?: string
-  user?: UserResponse
-  twoFactorRequired?: boolean
-}
-
-export interface TwoFactorEnableRequest {
-  password: string
-  issuer?: string
-}
-
-export interface TwoFactorEnableResponse {
-  totpURI: string
-  backupCodes: string[]
-}
-
-export interface TwoFactorVerifyTotpRequest {
-  code: string
-  trustDevice?: boolean
-}
-
-export interface TwoFactorVerifyBackupCodeRequest {
-  code: string
-  trustDevice?: boolean
-  disableSession?: boolean
-}
-
-export interface TwoFactorGenerateBackupCodesResponse {
-  status: boolean
-  backupCodes: string[]
 }
 
 export interface UserProfileUpdateRequest {
@@ -140,7 +105,7 @@ export interface ChangePasswordRequest {
 }
 
 export const authApi = {
-  login: (data: LoginRequest) => api.post<AuthLoginResponse>("/auth/login", data),
+  login: (data: LoginRequest) => api.post<AuthResponse>("/auth/login", data),
   register: (data: RegisterRequest) => api.post<AuthResponse>("/auth/register", data),
   logout: () => api.post("/auth/logout"),
   me: () => api.get<UserResponse>("/auth/me"),
@@ -148,19 +113,6 @@ export const authApi = {
   updateProfile: (data: UserProfileUpdateRequest) => api.post<UserProfileResponse>("/auth/profile/update", data),
   changePassword: (data: ChangePasswordRequest) => api.post<void>("/auth/password/change", data),
   linuxDoCallback: (code: string, state?: string | null) => api.post<AuthResponse>("/auth/linuxdo/callback", { code, state }),
-}
-
-export const twoFactorApi = {
-  enable: (data: TwoFactorEnableRequest) =>
-    api.post<TwoFactorEnableResponse>("/auth/two-factor/enable", data),
-  disable: (data: { password: string }) =>
-    api.post<{ status: boolean }>("/auth/two-factor/disable", data),
-  verifyTotp: (data: TwoFactorVerifyTotpRequest) =>
-    api.post<{ token: string; user: UserResponse }>("/auth/two-factor/verify-totp", data),
-  verifyBackupCode: (data: TwoFactorVerifyBackupCodeRequest) =>
-    api.post<{ token?: string; user: UserResponse }>("/auth/two-factor/verify-backup-code", data),
-  generateBackupCodes: (data: { password: string }) =>
-    api.post<TwoFactorGenerateBackupCodesResponse>("/auth/two-factor/generate-backup-codes", data),
 }
 
 // 登录会话（多地登录）管理相关类型
@@ -177,15 +129,14 @@ export interface AuthSessionItem {
 export interface AuthSessionListResponse {
   sessions: AuthSessionItem[]
   currentSessionId: string | null
-  twoFactorEnabled: boolean
 }
 
 export const authSessionApi = {
   list: () => api.get<AuthSessionListResponse>("/auth/sessions"),
-  revoke: (data: { sessionId: string; code: string }) =>
+  revoke: (data: { sessionId: string }) =>
     api.post<{ success: boolean }>("/auth/sessions/revoke", data),
-  revokeOthers: (data: { code: string }) =>
-    api.post<{ success: boolean; revokedCount: number }>("/auth/sessions/revoke-others", data),
+  revokeOthers: () =>
+    api.post<{ success: boolean; revokedCount: number }>("/auth/sessions/revoke-others", {}),
 }
 
 // 知识库相关类型
@@ -193,8 +144,36 @@ export interface KnowledgeBaseResponse {
   id: string
   name: string
   description: string
+  chunkStrategy: KnowledgeBaseChunkStrategy
+  chunkSize: number
+  chunkOverlap: number
+  chunkSeparators: string[]
+  enableParentChild: boolean
+  parentChunkSize: number
+  childChunkSize: number
+  chatModelId: string | null
+  embeddingModelId: string | null
+  rerankModelId: string | null
+  wikiEnabled: boolean
+  documentCount: number
+  wikiPageCount: number
   createdAt: string
   updatedAt: string
+}
+
+export type KnowledgeBaseChunkStrategy = "auto" | "heading" | "heuristic" | "recursive" | "paragraph" | "fixed"
+
+export interface ChunkPreviewItem {
+  chunkIndex: number
+  /** text 为可召回分片，parent_text 为仅回填上下文的父块。 */
+  chunkType: "text" | "parent_text"
+  text: string
+  charCount: number
+  tokenEstimate: number
+  startOffset: number
+  endOffset: number
+  contextHeader: string
+  parentChunkIndex: number | null
 }
 
 export interface KnowledgeBaseListRequest {
@@ -207,16 +186,39 @@ export interface KnowledgeBaseListRequest {
 export interface KnowledgeBaseCreateRequest {
   name: string
   description?: string | null
+  chunkStrategy?: KnowledgeBaseChunkStrategy
+  chunkSize?: number
+  chunkOverlap?: number
+  chunkSeparators?: string[]
+  enableParentChild?: boolean
+  parentChunkSize?: number
+  childChunkSize?: number
+  chatModelId?: string | null
+  embeddingModelId?: string | null
+  rerankModelId?: string | null
+  wikiEnabled?: boolean
 }
 
 export interface KnowledgeBaseUpdateRequest {
   knowledgeBaseId: string
   name: string
   description?: string | null
+  chunkStrategy?: KnowledgeBaseChunkStrategy
+  chunkSize?: number
+  chunkOverlap?: number
+  chunkSeparators?: string[]
+  enableParentChild?: boolean
+  parentChunkSize?: number
+  childChunkSize?: number
+  chatModelId?: string | null
+  embeddingModelId?: string | null
+  rerankModelId?: string | null
+  wikiEnabled?: boolean
 }
 
 export interface KnowledgeBaseDeleteResponse {
   knowledgeBaseId: string
+  storageCleanup: DocStorageCleanupSummary
 }
 
 export interface TableDataInfo<T> {
@@ -349,263 +351,6 @@ export const adminProjectShowcaseApi = {
   update: (data: ProjectShowcaseUpdateRequest) => api.post<ProjectShowcaseResponse>("/admin/projects", data),
 }
 
-// ===== 全站星图（Site Graph）=====
-
-export type SiteGraphNodeKind = "root" | "section" | "article" | "concept" | "entity" | "tag"
-export type SiteGraphEdgeKind = "reference" | "semantic" | "derived"
-export type SiteGraphStatus = "DRAFT" | "PUBLISHED" | "ARCHIVED"
-export type SiteGraphSource = "AGENT" | "MANUAL" | "SYSTEM"
-
-export interface SiteGraphAttribute {
-  name: string
-  value: string
-}
-
-export interface SiteGraphPayloadNode {
-  id: string
-  label: string
-  kind: SiteGraphNodeKind
-  route: string | null
-  summary: string
-  attributes: SiteGraphAttribute[]
-  /** 同义写法，供检索命中；渲染不用 */
-  aliases: string[]
-  parentId: string | null
-  topSectionId: string | null
-  weight: number
-}
-
-export interface SiteGraphPayloadLink {
-  source: string
-  target: string
-  kind: "structure" | SiteGraphEdgeKind
-  relation: string
-}
-
-export interface SiteGraphPayload {
-  nodes: SiteGraphPayloadNode[]
-  links: SiteGraphPayloadLink[]
-  stats: {
-    nodeCount: number
-    linkCount: number
-    articleCount: number
-    conceptCount: number
-  }
-  generatedAt: string | null
-}
-
-export interface SiteGraphAdminNode {
-  id: string
-  nodeKey: string
-  parentId: string | null
-  parentKey: string | null
-  kind: SiteGraphNodeKind
-  name: string
-  summary: string
-  route: string | null
-  articleId: string | null
-  attributes: SiteGraphAttribute[]
-  aliases: string[]
-  weight: number
-  sortOrder: number
-  status: SiteGraphStatus
-  source: SiteGraphSource
-  confidence: number
-  locked: boolean
-  depth: number
-  childCount: number
-  degree: number
-  updatedAt: string
-}
-
-export interface SiteGraphAdminEdge {
-  id: string
-  fromNodeId: string
-  fromNodeKey: string
-  fromNodeName: string
-  toNodeId: string
-  toNodeKey: string
-  toNodeName: string
-  relation: string
-  kind: SiteGraphEdgeKind
-  attributes: SiteGraphAttribute[]
-  weight: number
-  directed: boolean
-  status: SiteGraphStatus
-  source: SiteGraphSource
-  confidence: number
-  locked: boolean
-  updatedAt: string
-}
-
-export interface SiteGraphIssue {
-  severity: "error" | "warning" | "info"
-  code: string
-  target: string
-  message: string
-}
-
-export interface SiteGraphValidationReport {
-  score: number
-  passed: boolean
-  nodeCount: number
-  edgeCount: number
-  orphanCount: number
-  maxDepth: number
-  issues: SiteGraphIssue[]
-  checkedAt: string
-}
-
-export interface SiteGraphRunSummary {
-  id: string
-  status: "RUNNING" | "COMPLETED" | "FAILED"
-  mode: "FULL" | "INCREMENTAL"
-  modelName: string | null
-  articleCount: number
-  nodeCount: number
-  edgeCount: number
-  validation: SiteGraphValidationReport | null
-  warnings: string[]
-  errorMessage: string | null
-  startedAt: string
-  finishedAt: string | null
-}
-
-export interface SiteGraphNodeOption {
-  id: string
-  nodeKey: string
-  name: string
-  kind: SiteGraphNodeKind
-}
-
-/** 名称相近但未自动合并的实体对子，等后台确认 */
-export interface SiteGraphMergeCandidate {
-  id: string
-  sourceKey: string
-  sourceName: string
-  sourceNodeId: string | null
-  targetKey: string
-  targetName: string
-  targetNodeId: string | null
-  reason: string
-  score: number
-  detail: string | null
-  status: string
-  createdAt: string
-}
-
-export interface SiteGraphOverviewResponse {
-  nodes: SiteGraphAdminNode[]
-  edges: SiteGraphAdminEdge[]
-  runs: SiteGraphRunSummary[]
-  nodeOptions: SiteGraphNodeOption[]
-  validation: SiteGraphValidationReport
-  mergeCandidates: SiteGraphMergeCandidate[]
-  stats: {
-    nodeCount: number
-    edgeCount: number
-    publishedNodes: number
-    draftNodes: number
-    lockedNodes: number
-    manualNodes: number
-    articleNodes: number
-    conceptNodes: number
-  }
-}
-
-export interface SiteGraphGenerateResponse {
-  runId: string
-  validation: SiteGraphValidationReport
-  warnings: string[]
-  articleCount: number
-  nodeCount: number
-  edgeCount: number
-  lockedSkipped: number
-  autoAlignedCount: number
-  mergeCandidateCount: number
-  summary: string
-}
-
-export interface SiteGraphMergeResult {
-  targetKey: string
-  absorbedAliases: number
-  movedEdges: number
-  droppedEdges: number
-  movedChildren: number
-  attributeConflicts: number
-}
-
-export interface SiteGraphNodeSaveRequest {
-  id?: string | null
-  nodeKey?: string
-  parentId?: string | null
-  kind: SiteGraphNodeKind
-  name: string
-  summary?: string | null
-  route?: string | null
-  attributes?: SiteGraphAttribute[]
-  aliases?: string[]
-  weight?: number
-  status?: SiteGraphStatus
-  confidence?: number
-  locked?: boolean
-}
-
-export interface SiteGraphEdgeSaveRequest {
-  id?: string | null
-  fromNodeId: string
-  toNodeId: string
-  relation: string
-  kind: SiteGraphEdgeKind
-  attributes?: SiteGraphAttribute[]
-  weight?: number
-  directed?: boolean
-  status?: SiteGraphStatus
-  confidence?: number
-  locked?: boolean
-}
-
-export interface SiteGraphSubtreeResponse {
-  ancestors: Array<{ id: string; nodeKey: string; name: string }>
-  nodes: Array<SiteGraphAdminNode & { subtreeDepth: number }>
-  edges: SiteGraphAdminEdge[]
-}
-
-export const publicSiteGraphApi = {
-  detail: () => api.get<SiteGraphPayload>("/public/site-graph"),
-}
-
-export const adminSiteGraphApi = {
-  overview: () => api.get<SiteGraphOverviewResponse>("/admin/site-graph/overview"),
-  generate: (data: { configId?: string | null; mode?: "FULL" | "INCREMENTAL" } = {}) =>
-    api.post<SiteGraphGenerateResponse>("/admin/site-graph/generate", data),
-  validate: () =>
-    api.post<{ validation: SiteGraphValidationReport; summary: string }>("/admin/site-graph/validate", {}),
-  publish: () =>
-    api.post<{ publishedNodes: number; publishedEdges: number; archivedStaleNodes: number }>(
-      "/admin/site-graph/publish",
-      {},
-    ),
-  unpublish: () =>
-    api.post<{ unpublishedNodes: number; unpublishedEdges: number }>("/admin/site-graph/unpublish", {}),
-  clear: () => api.post<{ cleared: boolean }>("/admin/site-graph/clear", {}),
-  saveNode: (data: SiteGraphNodeSaveRequest) =>
-    api.post<{ id: string; nodeKey: string }>("/admin/site-graph/node/save", data),
-  deleteNode: (id: string) => api.post<{ id: string }>("/admin/site-graph/node/delete", { id }),
-  saveEdge: (data: SiteGraphEdgeSaveRequest) => api.post<{ id: string }>("/admin/site-graph/edge/save", data),
-  deleteEdge: (id: string) => api.post<{ id: string }>("/admin/site-graph/edge/delete", { id }),
-  confirmMerge: (sourceNodeId: string, targetNodeId: string) =>
-    api.post<SiteGraphMergeResult>("/admin/site-graph/merge/confirm", { sourceNodeId, targetNodeId }),
-  ignoreMerge: (id: string) => api.post<{ id: string }>("/admin/site-graph/merge/ignore", { id }),
-  subtree: (nodeId: string, depth?: number) =>
-    api.post<SiteGraphSubtreeResponse>("/admin/site-graph/subtree", { nodeId, depth }),
-  neighborhood: (nodeId: string, hops?: number) =>
-    api.post<{ nodes: SiteGraphAdminNode[]; edges: SiteGraphAdminEdge[] }>(
-      "/admin/site-graph/neighborhood",
-      { nodeId, hops },
-    ),
-}
-
 export interface SiteAppearanceResponse {
   publicQaEnabled: boolean
   createdAt?: string | null
@@ -709,14 +454,10 @@ export type KnowledgeBaseNodeType = "FOLDER" | "ARTICLE"
 /** 文章公开分享状态：未分享 / 已公开 / 需密码 / 已过期 */
 export type ArticleTreeShareStatus = "none" | "public" | "password" | "expired"
 
-/** 文章在 LLM Wiki 中的编译状态：未收录 / 已同步 / 源文已更新待重编 */
-export type ArticleTreeWikiStatus = "none" | "ready" | "stale"
-
 /** 文章节点在知识库树中的状态徽标数据 */
 export interface ArticleTreeStatus {
   hasMindmap: boolean
   shareStatus: ArticleTreeShareStatus
-  wikiStatus: ArticleTreeWikiStatus
 }
 
 export interface KnowledgeBaseTreeNode {
@@ -728,7 +469,7 @@ export interface KnowledgeBaseTreeNode {
   sortOrder: number
   hasChildren?: boolean
   children?: KnowledgeBaseTreeNode[]
-  /** 仅文章节点返回：分享 / 思维导图 / LLM Wiki 状态 */
+  /** 仅文章节点返回：分享 / 思维导图状态 */
   status?: ArticleTreeStatus
 }
 
@@ -1035,7 +776,7 @@ export interface ArticleMindMapGenerateRequest {
   mode?: ArticleMindMapMode
 }
 
-export type ArticleMindMapMode = "MINDMAP" | "KNOWLEDGE_GRAPH"
+export type ArticleMindMapMode = "MINDMAP"
 
 export interface ArticleMindMapGenerateResponse {
   articleId: string
@@ -1049,17 +790,30 @@ export const knowledgeBaseArticleMindMapApi = {
     api.post<ArticleMindMapGenerateResponse>("/kb/article/mindmap/generate", data),
 }
 
-// 文档问答 Agent / Wiki 编译层
-export type KnowledgeBaseWikiPageKind =
-  | "index"
-  | "source"
-  | "concept"
-  | "entity"
-  | "comparison"
-  | "answer"
-  | "log"
+// 知识库文件 Wiki 与页面双链
+export type KnowledgeBaseWikiPageKind = "index" | "summary" | "entity" | "concept"
 
-export type KnowledgeBaseWikiPatchStatus = "PENDING" | "APPLIED" | "REJECTED"
+export type KnowledgeBaseWikiJobStatus = "pending" | "running" | "completed" | "failed"
+export type KnowledgeBaseWikiJobPhase = "queued" | "mapping" | "applying" | "reducing" | "organizing" | "finalizing" | "completed" | "failed"
+
+export interface KnowledgeBaseWikiIngestJob {
+  jobId: string
+  knowledgeBaseId: string
+  status: KnowledgeBaseWikiJobStatus
+  totalDocuments: number
+  processedDocuments: number
+  phase: KnowledgeBaseWikiJobPhase
+  currentDocument?: string | null
+  totalPages: number
+  processedPages: number
+  warnings: string[]
+  error?: string | null
+  availableAt: string
+  startedAt?: string | null
+  finishedAt?: string | null
+  createdAt: string
+  updatedAt: string
+}
 
 export interface KnowledgeBaseWikiPageResponse {
   id: string
@@ -1071,17 +825,21 @@ export interface KnowledgeBaseWikiPageResponse {
   frontmatter: unknown
   summary?: string | null
   contentHash: string
+  /** 页面在 Wiki 目录树中的层级路径，空数组表示挂在根目录下。 */
+  categoryPath: string[]
+  sortOrder: number
   version: number
   archivedAt?: string | null
   createdAt: string | null
   updatedAt: string | null
 }
 
-export interface KnowledgeBaseWikiSourceRef {
+export interface KnowledgeBaseWikiDocumentRef {
   id: string
-  articleId: string
-  articleTitle: string
-  anchor?: string | null
+  documentId: string
+  documentTitle: string
+  fileName: string
+  chunkIndexes: number[]
   note?: string | null
 }
 
@@ -1092,26 +850,22 @@ export interface KnowledgeBaseWikiLink {
 }
 
 export interface KnowledgeBaseWikiPageDetailResponse extends KnowledgeBaseWikiPageResponse {
-  sourceRefs: KnowledgeBaseWikiSourceRef[]
+  documentRefs: KnowledgeBaseWikiDocumentRef[]
   links: KnowledgeBaseWikiLink[]
 }
 
-export interface KnowledgeBaseWikiPatchResponse {
-  id: string
-  knowledgeBaseId: string
-  threadId?: string | null
-  runId?: string | null
+export interface KnowledgeBaseWikiGraphNode {
   pageKey: string
   title: string
-  operation: "CREATE" | "UPDATE" | string
-  status: KnowledgeBaseWikiPatchStatus
-  beforeContentMd?: string | null
-  proposedContentMd: string
-  diffText: string
-  reason?: string | null
-  appliedAt?: string | null
-  createdAt: string | null
-  updatedAt: string | null
+  kind: KnowledgeBaseWikiPageKind
+  summary?: string | null
+  linkCount: number
+}
+
+export interface KnowledgeBaseWikiGraphEdge {
+  source: string
+  target: string
+  linkType: string
 }
 
 export interface KnowledgeBaseWikiLintIssue {
@@ -1126,49 +880,10 @@ export interface KnowledgeBaseWikiLintResponse {
   score: number
   pageCount: number
   linkCount: number
-  sourceRefCount: number
+  documentRefCount: number
   issueCount: number
   issues: KnowledgeBaseWikiLintIssue[]
   checkedAt: string
-}
-
-export interface KnowledgeBaseAgentThreadResponse {
-  id: string
-  knowledgeBaseId: string | null
-  knowledgeBaseName?: string | null
-  title: string
-  status: string
-  lastMessageAt?: string | null
-  metadata: unknown
-  createdAt: string | null
-  updatedAt: string | null
-}
-
-export interface KnowledgeBaseAgentMessageResponse {
-  id: string
-  role: "user" | "assistant" | "system" | "tool" | string
-  contentText: string
-  content: unknown
-  metadata: unknown
-  createdAt: string | null
-}
-
-export interface KnowledgeBaseAgentThreadDetailResponse {
-  thread: KnowledgeBaseAgentThreadResponse
-  messages: KnowledgeBaseAgentMessageResponse[]
-}
-
-export interface KnowledgeBaseAgentArtifactResponse {
-  id: string
-  threadId: string
-  runId?: string | null
-  knowledgeBaseId: string | null
-  artifactType: string
-  title: string
-  payload: unknown
-  contentMd?: string | null
-  createdAt: string | null
-  updatedAt: string | null
 }
 
 export interface KnowledgeBaseQaSummary {
@@ -1177,75 +892,17 @@ export interface KnowledgeBaseQaSummary {
   description?: string | null
 }
 
-export interface KnowledgeBaseWikiDashboardResponse {
-  knowledgeBase: KnowledgeBaseResponse | null
-  pages: KnowledgeBaseWikiPageResponse[]
-  threads: KnowledgeBaseAgentThreadResponse[]
-  pendingPatches: KnowledgeBaseWikiPatchResponse[]
-  lint: KnowledgeBaseWikiLintResponse
-  artifacts: KnowledgeBaseAgentArtifactResponse[]
-  treeNodeCount: number
-  embedding: KbWikiEmbeddingStatus
-}
-
-export interface KbWikiEmbeddingStatus {
-  supported: boolean
-  total: number
-  embedded: number
-  pending: number
-}
-
-export interface KbWikiEmbeddingRunResult {
-  embedded: number
-  total: number
-  pending: number
-}
-
-export interface KnowledgeBaseWikiTreeNode {
-  nodeKey: string
-  articleId: string
-  parentKey: string | null
-  depth: number
-  title: string
-  summary?: string | null
-  tokenEstimate: number
-}
-
-export interface KnowledgeBaseWikiTreeResponse {
-  knowledgeBaseId: string
-  articleId: string | null
-  nodes: KnowledgeBaseWikiTreeNode[]
-}
-
-export interface KnowledgeBaseWikiIngestResponse {
-  knowledgeBaseId: string
-  indexPage: KnowledgeBaseWikiPageResponse
-  pages: KnowledgeBaseWikiPageResponse[]
-  warnings: string[]
-}
-
 export const knowledgeBaseWikiAgentApi = {
-  dashboard: (knowledgeBaseId: string) =>
-    api.post<KnowledgeBaseWikiDashboardResponse>("/kb/wiki/dashboard", { knowledgeBaseId }),
   pages: (knowledgeBaseId: string) =>
     api.post<{ knowledgeBaseId: string; pages: KnowledgeBaseWikiPageResponse[] }>("/kb/wiki/page/list", { knowledgeBaseId }),
   pageDetail: (knowledgeBaseId: string, pageKey: string) =>
     api.post<KnowledgeBaseWikiPageDetailResponse>("/kb/wiki/page/detail", { knowledgeBaseId, pageKey }),
-  tree: (knowledgeBaseId: string, articleId?: string) =>
-    api.post<KnowledgeBaseWikiTreeResponse>("/kb/wiki/tree", { knowledgeBaseId, articleId }),
-  ingest: (data: { knowledgeBaseId: string; articleIds?: string[]; forceRebuild?: boolean }) =>
-    api.post<KnowledgeBaseWikiIngestResponse>("/kb/wiki/ingest", data),
-  embedWiki: (knowledgeBaseId: string) =>
-    api.post<KbWikiEmbeddingRunResult>("/kb/wiki/embedding/run", { knowledgeBaseId }),
-  patches: (knowledgeBaseId: string) =>
-    api.post<{ knowledgeBaseId: string; patches: KnowledgeBaseWikiPatchResponse[] }>("/kb/wiki/patch/list", { knowledgeBaseId }),
-  applyPatch: (knowledgeBaseId: string, patchId: string) =>
-    api.post<{ patch: KnowledgeBaseWikiPatchResponse; page: KnowledgeBaseWikiPageResponse }>("/kb/wiki/patch/apply", {
-      knowledgeBaseId,
-      patchId,
-    }),
-  rejectPatch: (knowledgeBaseId: string, patchId: string) =>
-    api.post<KnowledgeBaseWikiPatchResponse>("/kb/wiki/patch/reject", { knowledgeBaseId, patchId }),
+  documentIngest: (data: { knowledgeBaseId: string; documentIds?: string[]; forceRebuild?: boolean }) =>
+    api.post<KnowledgeBaseWikiIngestJob>("/kb/wiki/document-ingest", data),
+  ingestStatus: (knowledgeBaseId: string, jobId?: string) =>
+    api.post<{ job: KnowledgeBaseWikiIngestJob | null }>("/kb/wiki/ingest-status", { knowledgeBaseId, jobId }),
+  graph: (knowledgeBaseId: string) =>
+    api.post<{ nodes: KnowledgeBaseWikiGraphNode[]; edges: KnowledgeBaseWikiGraphEdge[] }>("/kb/wiki/graph", { knowledgeBaseId }),
   lint: (knowledgeBaseId: string) =>
     api.post<KnowledgeBaseWikiLintResponse>("/kb/wiki/lint", { knowledgeBaseId }),
 }
@@ -1266,23 +923,6 @@ export interface KnowledgeBaseQaModelInfo {
   availableModels: KnowledgeBaseQaModelOption[]
 }
 
-export interface KnowledgeBaseQaThreadListParams {
-  cursor?: number
-  limit?: number
-  q?: string
-  scope?: string
-}
-
-export interface KnowledgeBaseQaThreadListResponse {
-  threads: KnowledgeBaseAgentThreadResponse[]
-  nextCursor: number | null
-}
-
-export interface KnowledgeBaseQaThreadDeleteManyResponse {
-  deleted: string[]
-  failed: Array<{ id: string; reason: string }>
-}
-
 export const knowledgeBaseQaApi = {
   knowledgeBaseList: () =>
     api.post<{ knowledgeBases: KnowledgeBaseQaSummary[] }>("/kb/qa/knowledge-base/list", {}),
@@ -1291,7 +931,7 @@ export const knowledgeBaseQaApi = {
 }
 
 // AI 模型配置相关类型
-export type AiConfigType = "CHAT" | "VISION" | "DOC_QA" | "EMBEDDING"
+export type AiConfigType = "CHAT" | "VISION" | "EMBEDDING" | "RERANK" | "SPEECH"
 
 export type AiProtocol = "OPENAI" | "DEEPSEEK" | "OPENAI_COMPAT" | "SILICONFLOW" | "GEMINI"
 
@@ -1561,8 +1201,6 @@ export interface PublicSharedArticleDetailResponse {
   originalAuthorName?: string | null
   mindmapData?: unknown | null
   mindmapGeneratedAt?: string | null
-  knowledgeGraphData?: unknown | null
-  knowledgeGraphGeneratedAt?: string | null
 }
 
 export interface PublicArticleListItem {
@@ -2078,93 +1716,6 @@ export const dashboardApi = {
   overview: () => api.post<DashboardOverviewResponse>("/dashboard/overview", {}),
 }
 
-// ===== 文档库（Document Library） =====
-
-export type DocLibraryFileType = "pdf" | "docx" | "xlsx" | "csv"
-
-export interface DocLibrary {
-  id: string
-  name: string
-  description: string | null
-  color: string | null
-  icon: string | null
-  documentCount: number
-  createdAt: string
-  updatedAt: string
-}
-
-export interface DocFolderItem {
-  id: string
-  libraryId: string
-  parentId: string | null
-  name: string
-  sortOrder: number
-  createdAt: string
-  updatedAt: string
-}
-
-export type DocDocumentStatus = "pending" | "parsing" | "ready" | "failed"
-
-export interface DocDocument {
-  id: string
-  libraryId: string
-  folderId: string | null
-  fileName: string
-  title: string
-  fileType: DocLibraryFileType
-  contentType: string | null
-  objectKey: string
-  sizeBytes: number | null
-  pageCount: number | null
-  status: DocDocumentStatus
-  createdAt: string
-  updatedAt: string
-}
-
-export interface DocDocumentChunk {
-  chunkIndex: number
-  page: number | null
-  locator: string | null
-  text: string
-}
-
-export interface DocDocumentDetail extends DocDocument {
-  charCount: number | null
-  blocks: unknown[]
-  chunks: DocDocumentChunk[]
-  summary: string | null
-}
-
-export interface DocLibrarySaveRequest {
-  id?: string | null
-  name: string
-  description?: string | null
-  color?: string | null
-  icon?: string | null
-}
-
-export interface DocFolderSaveRequest {
-  id?: string | null
-  libraryId: string
-  parentId?: string | null
-  name: string
-}
-
-export interface DocDocumentRegisterRequest {
-  libraryId: string
-  folderId?: string | null
-  fileName: string
-  title?: string | null
-  fileType: DocLibraryFileType
-  contentType?: string | null
-  objectKey: string
-  sizeBytes?: number | null
-  pageCount?: number | null
-  blocks?: unknown[]
-  chunks?: { text: string; page?: number | null; locator?: string | null }[]
-  summary?: string | null
-}
-
 export interface DocStorageCleanupFailure {
   errorMessage: string
   objectKey: string
@@ -2181,69 +1732,207 @@ export interface DocDeleteResponse {
   storageCleanup: DocStorageCleanupSummary
 }
 
-export interface DocQaThreadResponse {
+// ===== 知识库文件语料 =====
+
+export type KBDocumentFileType = "md" | "markdown" | "pdf" | "docx" | "xlsx" | "xls" | "csv" | "tsv"
+export type KBDocumentStatus = "pending" | "processing" | "ready" | "partial" | "failed"
+
+export interface KBDocumentFolder {
   id: string
-  libraryId: string | null
-  title: string
-  status: string
-  lastMessageAt: string | null
-  metadata: Record<string, unknown> | null
+  knowledgeBaseId: string
+  parentId: string | null
+  name: string
+  sortOrder: number
   createdAt: string
   updatedAt: string
 }
 
-export interface DocQaThreadMessage {
+export interface KBDocument {
   id: string
-  role: string
-  contentText: string
-  content: Record<string, unknown> | null
-  metadata: Record<string, unknown> | null
+  knowledgeBaseId: string
+  folderId: string | null
+  fileName: string
+  title: string
+  fileType: KBDocumentFileType
+  contentType: string | null
+  objectKey: string
+  sizeBytes: number | null
+  pageCount: number | null
+  charCount: number | null
+  chunkCount: number
+  summary: string | null
+  status: KBDocumentStatus
+  error: string | null
+  tags?: string[] | null
   createdAt: string
+  updatedAt: string
 }
 
-export interface DocQaModelOption {
-  configId: string
-  modelId: string
-  modelName: string
-  contextWindow: number
-  isDefault: boolean
+export interface KBDocumentChunk {
+  id: string
+  chunkIndex: number
+  page: number | null
+  locator: string | null
+  contextHeader: string | null
+  startOffset: number | null
+  endOffset: number | null
+  text: string
+  charCount: number
+  tokenEstimate: number
+  /** text = 可召回文本片，parent_text = 只回填上下文，image = 多模态识别出的整页文本 */
+  chunkType?: string
+  /** 父块在同一文档内的 chunkIndex；开启父子分块时才有 */
+  parentChunkIndex?: number | null
+  /** AI 为该分片生成的辅助召回问题 */
+  questions?: KBChunkQuestion[] | null
 }
 
-export interface DocQaModelInfo {
-  configId: string | null
-  modelId: string | null
-  modelName: string | null
-  contextWindow: number | null
-  availableModels?: DocQaModelOption[]
+export interface KBChunkQuestion {
+  id: string
+  question: string
 }
 
-export interface DocQaThreadListParams {
-  cursor?: number
-  limit?: number
-  q?: string
-  libraryId?: string | null
-  scope?: "cross"
+export interface KBDocumentDetail extends KBDocument {
+  charCount: number | null
+  blocks: unknown[]
+  extractedText: string | null
+  chunks: KBDocumentChunk[]
+  summary: string | null
+  parseConfig?: KBDocumentParseConfig
+  parseAttempt?: number
 }
 
-export const docLibraryApi = {
-  listLibraries: () => api.get<{ libraries: DocLibrary[] }>("/doc-library/library/list"),
-  saveLibrary: (data: DocLibrarySaveRequest) => api.post<{ id: string }>("/doc-library/library/save", data),
-  deleteLibrary: (id: string) => api.post<DocDeleteResponse>("/doc-library/library/delete", { id }),
+/** 解析引擎：auto = 本地优先、扫描页交给图像处理，local = 只做本地抽取，scan = 整份按扫描件逐页识别 */
+export type KBParseEngine = "auto" | "local" | "scan"
 
-  listFolders: (libraryId: string) => api.post<{ folders: DocFolderItem[] }>("/doc-library/folder/list", { libraryId }),
-  saveFolder: (data: DocFolderSaveRequest) => api.post<{ id: string }>("/doc-library/folder/save", data),
-  deleteFolder: (id: string) => api.post<{ id: string }>("/doc-library/folder/delete", { id }),
-
-  listDocuments: (libraryId: string) => api.post<{ documents: DocDocument[] }>("/doc-library/document/list", { libraryId }),
-  registerDocument: (data: DocDocumentRegisterRequest) => api.post<{ id: string }>("/doc-library/document/register", data),
-  documentDetail: (id: string) => api.post<{ document: DocDocumentDetail }>("/doc-library/document/detail", { id }),
-  deleteDocument: (id: string) => api.post<DocDeleteResponse>("/doc-library/document/delete", { id }),
+export interface KBDocumentParseConfig {
+  tags?: string[]
+  parseEngine: KBParseEngine
+  chunking: {
+    strategy?: KnowledgeBaseChunkStrategy
+    chunkSize?: number
+    chunkOverlap?: number
+    separators?: string[]
+    enableParentChild?: boolean
+    parentChunkSize?: number
+    childChunkSize?: number
+  }
+  multimodal: { enabled: boolean; modelConfigId?: string | null }
+  questionGeneration: { enabled: boolean; questionCount: number; customInstructions?: string }
 }
 
-// 站内 Assistant（chat-first 壳）：形状对齐 src/server/assistant/thread-handlers.ts
+/** 浏览器栅格化后直传对象存储的整页图片，交给多模态识别阶段 */
+export interface KBDocumentPageImage {
+  pageNo: number
+  imageKey: string
+}
+
+export interface KBDocumentRegisterRequest {
+  knowledgeBaseId: string
+  folderId?: string | null
+  fileName: string
+  title?: string | null
+  fileType: KBDocumentFileType
+  contentType?: string | null
+  objectKey: string
+  sizeBytes?: number | null
+  pageCount?: number | null
+  blocks?: unknown[]
+  extractedText?: string | null
+  /** 正文里的页 / 工作表边界；分块由服务端按知识库配置执行。 */
+  segments?: { startOffset: number; page?: number | null; locator?: string | null }[]
+  summary?: string | null
+  parseConfig?: KBDocumentParseConfig
+  pageImages?: KBDocumentPageImage[]
+}
+
+// ===== 解析流水线 =====
+
+export type KBSpanKind = "root" | "stage" | "subspan" | "generation"
+export type KBSpanStatus = "pending" | "running" | "done" | "failed" | "skipped" | "cancelled"
+
+export interface KBSpanNode {
+  spanId: string
+  parentSpanId?: string
+  name: string
+  kind: KBSpanKind
+  status: KBSpanStatus
+  input?: unknown
+  output?: unknown
+  errorCode?: string
+  errorMessage?: string
+  startedAt?: string
+  finishedAt?: string
+  durationMs: number
+  /** 该阶段没有真实记录，只是为了让时间线保持五段而合成的占位节点 */
+  placeholder?: boolean
+  children?: KBSpanNode[]
+}
+
+export interface KBDocumentSpansResponse {
+  documentId: string
+  status: KBDocumentStatus
+  attempt: number
+  latestAttempt: number
+  currentStage: string
+  parseConfig: KBDocumentParseConfig
+  trace: KBSpanNode
+  lastError?: { stage: string; code: string; message: string }
+}
+
+export const knowledgeBaseDocumentApi = {
+  listFolders: (knowledgeBaseId: string) =>
+    api.post<{ folders: KBDocumentFolder[] }>("/kb/document-folder/list", { knowledgeBaseId }),
+  saveFolder: (data: { id?: string; knowledgeBaseId: string; parentId?: string | null; name: string }) =>
+    api.post<{ id: string }>("/kb/document-folder/save", data),
+  deleteFolder: (id: string, recursive = false) =>
+    api.post<{ id: string; movedDocuments: number; movedFolders: number }>("/kb/document-folder/delete", { id, recursive }),
+  listDocuments: (knowledgeBaseId: string) =>
+    api.post<{ documents: KBDocument[] }>("/kb/document/list", { knowledgeBaseId }),
+  /** 登记文件后立即返回；解析、向量化、多模态与问题生成在服务端后台跑，用 documentSpans 轮询进度。 */
+  registerDocument: (data: KBDocumentRegisterRequest) =>
+    api.post<{ id: string; attempt: number; status: KBDocumentStatus }>("/kb/document/register", data),
+  documentSpans: (id: string, attempt?: number) =>
+    api.post<KBDocumentSpansResponse>("/kb/document/spans", { id, attempt }),
+  /** 手工补一条辅助召回问题，服务端会立即向量化 */
+  addChunkQuestion: (chunkId: string, question: string) =>
+    api.post<{ chunkId: string; questions: KBChunkQuestion[] }>("/kb/chunk/question/add", { chunkId, question }),
+  deleteChunkQuestion: (id: string) =>
+    api.post<{ chunkId: string; questions: KBChunkQuestion[] }>("/kb/chunk/question/delete", { id }),
+  /** 只为这一个分片重新生成问题，不需要重解析整份文档 */
+  regenerateChunkQuestions: (chunkId: string) =>
+    api.post<{ chunkId: string; questions: KBChunkQuestion[] }>("/kb/chunk/question/regenerate", { chunkId }),
+  listTags: (knowledgeBaseId: string) =>
+    api.post<{ tags: Array<{ tag: string; count: number }> }>("/kb/document/tag/list", { knowledgeBaseId }),
+  saveTags: (id: string, tags: string[]) =>
+    api.post<{ id: string; tags: string[] }>("/kb/document/tag/save", { id, tags }),
+  documentDetail: (id: string) => api.post<{ document: KBDocumentDetail }>("/kb/document/detail", { id }),
+  moveDocument: (id: string, folderId: string | null) =>
+    api.post<{ id: string }>("/kb/document/move", { id, folderId }),
+  deleteDocument: (id: string) => api.post<DocDeleteResponse>("/kb/document/delete", { id }),
+  chunkPreview: (data: {
+    knowledgeBaseId: string
+    text: string
+    strategy?: KnowledgeBaseChunkStrategy
+    chunkSize?: number
+    chunkOverlap?: number
+    separators?: string[]
+    enableParentChild?: boolean
+    parentChunkSize?: number
+    childChunkSize?: number
+  }) => api.post<{ chunks: ChunkPreviewItem[]; retrievableCount: number }>("/kb/chunk/preview", data),
+  /** 重新解析：尝试号 +1 并重跑完整流水线，parseConfig 省略时沿用上次的配置。 */
+  rechunkDocument: (data: { id: string; parseConfig?: KBDocumentParseConfig; pageImages?: KBDocumentPageImage[] }) =>
+    api.post<{ id: string; attempt: number; status: KBDocumentStatus }>("/kb/document/rechunk", data),
+  embeddingStatus: (knowledgeBaseId: string) =>
+    api.post<{ status: { supported: boolean; total: number; embedded: number; pending: number } }>("/kb/document/embedding/status", { knowledgeBaseId }),
+  runEmbedding: (knowledgeBaseId: string, documentId?: string, rebuild = false) =>
+    api.post<{ embedded: number; status: { supported: boolean; total: number; embedded: number; pending: number } }>("/kb/document/embedding/run", { knowledgeBaseId, documentId, rebuild }),
+}
+
+// 站内 Assistant：类型形状与 Go API 的 assistant handlers 保持一致。
 export interface AssistantFocus {
   knowledgeBaseId?: string | null
-  libraryId?: string | null
   articleId?: string | null
   documentId?: string | null
 }

@@ -8,6 +8,7 @@ import { resolveAxiosErrorMessage } from "@/components/knowledge/article-share-u
 import { PlateMarkdownEditor, type PlateMarkdownEditorHandle } from "@/components/plate/PlateMarkdownEditor"
 import { ArticleShareDialog } from "@/components/knowledge/ArticleShareDialog"
 import { BurnLinkDialog } from "@/components/knowledge/BurnLinkDialog"
+import { EditorTocOverlay } from "@/components/knowledge/EditorTocOverlay"
 import {
   buildArticleSnapshotKey,
   buildMarkdownExportFileName,
@@ -1446,81 +1447,6 @@ function ArticleEditorLoadingCard() {
         <div className="h-3.5 w-2/3 rounded-lg bg-muted/60 animate-pulse" />
       </div>
     </div>
-  )
-}
-
-/* ─── Editor TOC overlay (portal + fixed) ──────────────── */
-
-const LINE_W: Record<number, number> = { 2: 14, 3: 10, 4: 7 }
-const LINE_W_ACTIVE: Record<number, number> = { 2: 22, 3: 18, 4: 13 }
-
-function EditorTocOverlay({
-  navToc,
-  activeHeadingId,
-  rightOffset,
-  topOffset,
-  onTocClick,
-}: {
-  navToc: TocItem[]
-  activeHeadingId: string
-  rightOffset: number
-  topOffset: number
-  onTocClick: (id: string) => void
-}) {
-  const containerRef = React.useRef<HTMLElement | null>(null)
-  const clickLockRef = React.useRef(false)
-
-  React.useEffect(() => {
-    if (clickLockRef.current) return
-    const container = containerRef.current
-    if (!container || !activeHeadingId) return
-    const el = container.querySelector<HTMLElement>(`[data-toc-id="${activeHeadingId}"]`)
-    if (!el) return
-    const scrollTarget = el.offsetTop - container.clientHeight / 2 + el.clientHeight / 2
-    container.scrollTo({ top: scrollTarget, behavior: "smooth" })
-  }, [activeHeadingId])
-
-  const handleClick = React.useCallback((id: string) => {
-    const container = containerRef.current
-    if (container) {
-      const el = container.querySelector<HTMLElement>(`[data-toc-id="${id}"]`)
-      if (el) {
-        const scrollTarget = el.offsetTop - container.clientHeight / 2 + el.clientHeight / 2
-        container.scrollTo({ top: scrollTarget, behavior: "smooth" })
-      }
-    }
-    clickLockRef.current = true
-    onTocClick(id)
-    setTimeout(() => { clickLockRef.current = false }, 900)
-  }, [onTocClick])
-
-  // Portal renders in <body>, so position:fixed is correctly relative to the real viewport.
-  // rightOffset anchors the TOC to the editor card's right inner edge.
-  return createPortal(
-    <nav
-      className="ftoc"
-      ref={containerRef}
-      aria-label="目录"
-      style={{ right: rightOffset, top: topOffset }}
-    >
-      {navToc.map((item) => {
-        const active = activeHeadingId === item.id
-        const w = active ? (LINE_W_ACTIVE[item.level] ?? 18) : (LINE_W[item.level] ?? 10)
-        return (
-          <div
-            key={item.id}
-            data-toc-id={item.id}
-            data-level={item.level}
-            className={cn("ftoc-item", active && "is-active")}
-            onClick={() => handleClick(item.id)}
-          >
-            <span className="ftoc-text">{item.text}</span>
-            <span className="ftoc-line" style={{ width: w }} />
-          </div>
-        )
-      })}
-    </nav>,
-    document.body
   )
 }
 

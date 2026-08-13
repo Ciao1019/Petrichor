@@ -1,3 +1,4 @@
+-- 历史迁移，已废弃：当前 Go API 不支持 2FA，新部署不要执行此文件。
 -- 增量迁移：Better Auth twoFactor 插件 TOTP + 备份码支持。
 -- 背景：账户页新增「二步验证」管理；邮箱密码登录后若已启用 2FA，先返回
 -- twoFactorRequired，前端再调 /api/auth/two-factor/verify-totp 或 /verify-backup-code。

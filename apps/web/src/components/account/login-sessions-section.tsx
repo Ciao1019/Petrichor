@@ -1,20 +1,14 @@
 "use client"
 
 import * as React from "react"
-import { Laptop, LogOut, MapPin, Monitor, RefreshCw, ShieldAlert, Smartphone } from "lucide-react"
+import { Laptop, LogOut, MapPin, Monitor, RefreshCw, Smartphone } from "lucide-react"
 import { toast } from "sonner"
 
 import { authSessionApi, type AuthSessionItem } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
-
-type Props = {
-  twoFactorEnabled: boolean
-}
 
 type RevokeTarget =
   | { kind: "single"; session: AuthSessionItem }
@@ -41,7 +35,6 @@ function formatDateTime(value?: string | null) {
   return date.toLocaleString()
 }
 
-// 根据 User-Agent 粗略识别设备与浏览器，仅用于展示，不追求绝对精确。
 function describeUserAgent(ua?: string | null): { device: string; isMobile: boolean } {
   const raw = (ua || "").trim()
   if (!raw) return { device: "未知设备", isMobile: false }
@@ -66,12 +59,10 @@ function describeUserAgent(ua?: string | null): { device: string; isMobile: bool
   return { device: parts.length ? parts.join(" · ") : "未知设备", isMobile }
 }
 
-export function LoginSessionsSection({ twoFactorEnabled }: Props) {
+export function LoginSessionsSection() {
   const [loading, setLoading] = React.useState(false)
   const [sessions, setSessions] = React.useState<AuthSessionItem[]>([])
-  const [serverTwoFactorEnabled, setServerTwoFactorEnabled] = React.useState(twoFactorEnabled)
   const [revokeTarget, setRevokeTarget] = React.useState<RevokeTarget | null>(null)
-  const [code, setCode] = React.useState("")
   const [submitting, setSubmitting] = React.useState(false)
 
   const fetchSessions = React.useCallback(async () => {
@@ -79,7 +70,6 @@ export function LoginSessionsSection({ twoFactorEnabled }: Props) {
     try {
       const res = await authSessionApi.list()
       setSessions(res.data.sessions)
-      setServerTwoFactorEnabled(res.data.twoFactorEnabled)
     } catch (e) {
       toast.error(normalizeAxiosError(e, "加载登录设备失败"))
     } finally {
@@ -92,42 +82,32 @@ export function LoginSessionsSection({ twoFactorEnabled }: Props) {
   }, [fetchSessions])
 
   const otherSessions = sessions.filter((s) => !s.current)
-  const twoFactorReady = serverTwoFactorEnabled && twoFactorEnabled
 
   const closeDialog = () => {
     if (submitting) return
     setRevokeTarget(null)
-    setCode("")
   }
 
   const openRevokeSingle = (session: AuthSessionItem) => {
-    setCode("")
     setRevokeTarget({ kind: "single", session })
   }
 
   const openRevokeOthers = () => {
-    setCode("")
     setRevokeTarget({ kind: "others", count: otherSessions.length })
   }
 
   const submitRevoke = async () => {
     if (!revokeTarget) return
-    const trimmed = code.trim()
-    if (!trimmed) {
-      toast.error("请输入 6 位 TOTP 验证码")
-      return
-    }
     setSubmitting(true)
     try {
       if (revokeTarget.kind === "single") {
-        await authSessionApi.revoke({ sessionId: revokeTarget.session.id, code: trimmed })
+        await authSessionApi.revoke({ sessionId: revokeTarget.session.id })
         toast.success("已下线该设备")
       } else {
-        const res = await authSessionApi.revokeOthers({ code: trimmed })
+        const res = await authSessionApi.revokeOthers()
         toast.success(`已下线 ${res.data.revokedCount} 个其他设备`)
       }
       setRevokeTarget(null)
-      setCode("")
       await fetchSessions()
     } catch (e) {
       toast.error(normalizeAxiosError(e, "下线失败，请重试"))
@@ -145,7 +125,7 @@ export function LoginSessionsSection({ twoFactorEnabled }: Props) {
             登录设备与地点
           </div>
           <div className="text-sm text-muted-foreground">
-            查看当前账户的所有登录会话，发现异地登录可下线对应设备。下线需验证 TOTP。
+            查看当前账户的所有登录会话，发现异地登录可下线对应设备。
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -158,20 +138,13 @@ export function LoginSessionsSection({ twoFactorEnabled }: Props) {
             variant="outline"
             size="sm"
             onClick={openRevokeOthers}
-            disabled={loading || otherSessions.length === 0 || !twoFactorReady}
+            disabled={loading || otherSessions.length === 0}
           >
             <LogOut className="h-4 w-4 mr-1" />
             一键下线其他设备
           </Button>
         </div>
       </div>
-
-      {!twoFactorReady ? (
-        <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
-          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>下线设备需要先启用二步验证（TOTP）。请在上方“二步验证”中开启后再操作。</span>
-        </div>
-      ) : null}
 
       <div className="mt-4 space-y-3">
         {loading && sessions.length === 0 ? (
@@ -218,7 +191,6 @@ export function LoginSessionsSection({ twoFactorEnabled }: Props) {
                     variant="outline"
                     size="sm"
                     onClick={() => openRevokeSingle(session)}
-                    disabled={!twoFactorReady}
                   >
                     <LogOut className="h-4 w-4 mr-1" />
                     下线
@@ -238,22 +210,10 @@ export function LoginSessionsSection({ twoFactorEnabled }: Props) {
             </DialogTitle>
             <DialogDescription>
               {revokeTarget?.kind === "others"
-                ? `将下线除当前设备外的 ${revokeTarget.count} 个登录会话，请输入 Authenticator 中的 6 位验证码确认。`
-                : "下线后该设备需要重新登录。请输入 Authenticator 中的 6 位验证码确认。"}
+                ? `将下线除当前设备外的 ${revokeTarget.count} 个登录会话。`
+                : "下线后该设备需要重新登录。"}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="revokeTotpCode">6 位验证码</Label>
-            <Input
-              id="revokeTotpCode"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              placeholder="123456"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              autoFocus
-            />
-          </div>
           <DialogFooter>
             <Button type="button" variant="outline" disabled={submitting} onClick={closeDialog}>取消</Button>
             <Button type="button" disabled={submitting} onClick={() => void submitRevoke()}>

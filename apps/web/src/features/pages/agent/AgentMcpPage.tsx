@@ -18,7 +18,7 @@ import {
 } from "./agent-shared"
 import { AgentCopyRow, AgentPageHeader, AgentScopeBadge, AgentStepList, AgentToolChips } from "./agent-ui"
 
-// 与 src/server/agent/mcp-tools.ts 的工具规格保持一致的展示层清单（服务端模块含原生依赖，不能在客户端引入）。
+// 与 Go API MCP 工具规格保持一致的展示层清单，避免在客户端重复拉取静态说明。
 const MCP_TOOL_GROUPS: Array<{ title: string; scopes: string[]; tools: string[] }> = [
   {
     title: "检索与阅读",
@@ -27,8 +27,6 @@ const MCP_TOOL_GROUPS: Array<{ title: string; scopes: string[]; tools: string[] 
       "list_knowledge_bases",
       "get_knowledge_base_tree",
       "search_documents",
-      "search_document_tree",
-      "semantic_search_document_tree",
       "view_document",
       "list_articles",
     ],

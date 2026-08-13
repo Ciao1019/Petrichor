@@ -8,15 +8,12 @@ export const dashboardRoutes = {
     notifications: `${DASHBOARD_ROOT}/notifications`,
     knowledge: `${DASHBOARD_ROOT}/knowledge`,
     imports: `${DASHBOARD_ROOT}/imports`,
-    wiki: `${DASHBOARD_ROOT}/wiki`,
     adminUsers: `${DASHBOARD_ROOT}/admin/users`,
     adminAbout: `${DASHBOARD_ROOT}/admin/about`,
     adminProjects: `${DASHBOARD_ROOT}/admin/projects`,
     adminAppearance: `${DASHBOARD_ROOT}/admin/appearance`,
-    adminSiteGraph: `${DASHBOARD_ROOT}/admin/site-graph`,
     aiConfig: `${DASHBOARD_ROOT}/ai/config`,
     aiReview: `${DASHBOARD_ROOT}/ai/review`,
-    docLibrary: `${DASHBOARD_ROOT}/doc-library`,
     agentKeys: `${DASHBOARD_ROOT}/agent/keys`,
     agentLogs: `${DASHBOARD_ROOT}/agent/logs`,
     agentMcp: `${DASHBOARD_ROOT}/agent/mcp`,
@@ -43,20 +40,16 @@ export function knowledgeBaseArticleMindMapPath(knowledgeBaseId: string, article
     return `${knowledgeBaseArticlePath(knowledgeBaseId, articleId)}/mindmap`
 }
 
+export function knowledgeBaseDocumentPath(knowledgeBaseId: string, documentId: string) {
+    return `${knowledgeBasePath(knowledgeBaseId)}/documents/${documentId}`
+}
+
 export function knowledgeBaseImportsPath(knowledgeBaseId: string) {
     return `${knowledgeBasePath(knowledgeBaseId)}/imports`
 }
 
 export function importJobDetailPath(jobId: string) {
     return `${dashboardRoutes.imports}/${jobId}`
-}
-
-export function docLibraryBrowsePath(libraryId: string) {
-    return `${dashboardRoutes.docLibrary}/${libraryId}`
-}
-
-export function docLibraryDocumentPath(libraryId: string, documentId: string) {
-    return `${docLibraryBrowsePath(libraryId)}?documentId=${encodeURIComponent(documentId)}`
 }
 
 export function isDashboardSectionPath(pathname: string, sectionPath: string) {
@@ -68,4 +61,7 @@ export function isDashboardSectionPath(pathname: string, sectionPath: string) {
    整页不产生 document 级滚动。其余页面仍走常规的整页滚动。 */
 export function isFixedViewportRoute(pathname: string) {
     return isDashboardSectionPath(pathname, "/assistant")
+        || new RegExp(`^${dashboardRoutes.knowledge}/[^/]+$`).test(pathname)
+        // 文档预览页里 PDF / Excel 查看器要一个确定高度的容器，滚动发生在内部。
+        || new RegExp(`^${dashboardRoutes.knowledge}/[^/]+/documents/[^/]+$`).test(pathname)
 }

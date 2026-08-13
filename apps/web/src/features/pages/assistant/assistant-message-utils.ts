@@ -7,17 +7,14 @@ export type AssistantUIMessage = NonNullable<UseChatRuntimeOptions["messages"]>[
 export type AssistantFocusSelection =
   | { kind: "none" }
   | { kind: "knowledge"; knowledgeBaseId: string }
-  | { kind: "doc_library"; libraryId: string }
 
 export function focusToRequestBody(focus: AssistantFocusSelection): AssistantFocus | null {
   if (focus.kind === "knowledge") return { knowledgeBaseId: focus.knowledgeBaseId }
-  if (focus.kind === "doc_library") return { libraryId: focus.libraryId }
   return null
 }
 
 export function focusFromThread(focus: AssistantFocus | null): AssistantFocusSelection {
   if (focus?.knowledgeBaseId) return { kind: "knowledge", knowledgeBaseId: String(focus.knowledgeBaseId) }
-  if (focus?.libraryId) return { kind: "doc_library", libraryId: String(focus.libraryId) }
   return { kind: "none" }
 }
 

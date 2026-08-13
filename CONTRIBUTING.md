@@ -90,6 +90,7 @@ git push origin feat/your-feature-name
 | --- | --- |
 | Node.js | ≥ 22 |
 | pnpm | 10.x（推荐 `corepack enable && corepack prepare pnpm@10.28.1 --activate`） |
+| Go | 以 `apps/api/go.mod` 为准 |
 | PostgreSQL | 16+（推荐直接用 Supabase 免费实例） |
 | S3 兼容存储 | Bitiful / S3 / MinIO 任选 |
 
@@ -97,13 +98,15 @@ git push origin feat/your-feature-name
 
 ```bash
 pnpm install
+cp apps/api/.env.example apps/api/.env.local
 cp apps/web/.env.example apps/web/.env.local
-# 编辑 apps/web/.env.local 填入真实值，详见 README
+# 服务端配置写入 apps/api/.env.local；Web 配置 Go API 代理地址
 
 pnpm --silent --filter @petrichor/web db:sql > petrichor-init.sql
 # 把上面生成的 SQL 在 Supabase SQL Editor 跑一遍
 
-pnpm dev
+pnpm dev:api  # 终端一
+pnpm dev      # 终端二
 ```
 
 ---
@@ -116,16 +119,12 @@ pnpm dev
 
 - 严格 TS，禁止 `any`，优先复用现有类型
 - 路径别名 `@/*` 指向 `apps/web/src/*`
-- 服务端文件多为 4 空格缩进；前端 / shadcn 组件按生成时风格
+- 前端 / shadcn 组件按现有文件风格
 
-### 后端 (Next.js Route Handler)
+### 后端（Go API）
 
-- `route.ts` 保持薄层，只导出对应 handler：
-  ```ts
-  export { listKnowledgeBases as POST } from "@/server/kb/handlers"
-  ```
-- 入参使用 **Zod** 校验；统一使用 `readJson`、`ok`、`tableData`、`toErrorResponse` 等响应工具
-- 需要登录的接口使用 `requireCurrentUser(request)`；管理员接口需再次校验 `SUPER_ADMIN`
+- 业务 API 仅实现于 `apps/api`，使用 Gin handler、ent 和现有业务 service
+- 新增或修改接口时，同步更新 `apps/web/src/lib/api.ts` 中的请求/响应类型
 - 错误响应统一为 `{ code, msg, path, timestamp }`，不要泄露内部错误细节
 
 ### 前端
@@ -183,6 +182,7 @@ feat(ai-review): 新增 AI 周报 / 月报功能
 pnpm typecheck       # TypeScript 类型检查
 pnpm lint            # ESLint
 pnpm test            # Vitest 单元测试
+pnpm test:api        # Go 测试
 ```
 
 涉及构建产物或路由变更时追加：

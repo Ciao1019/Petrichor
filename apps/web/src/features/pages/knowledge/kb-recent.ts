@@ -29,6 +29,10 @@ export function rememberKnowledgeBase(kb: {
   )
 }
 
+export function rememberKnowledgeBaseCrumb(id: string, name: string) {
+  rememberKnowledgeBase({ id, name })
+}
+
 export function getKnowledgeBaseCrumbName(id: string): string | null {
   if (!canUseSessionStorage()) return null
   try {

@@ -69,7 +69,7 @@ export function PipelineStatusPanel({ pipeline, loading }: PipelineStatusPanelPr
             <section className="flex flex-col gap-2.5">
               <div className="flex items-center gap-2">
                 <FileStack className="text-muted-foreground size-4 shrink-0" />
-                <span className="min-w-0 flex-1 text-sm font-medium">文档库</span>
+                <span className="min-w-0 flex-1 text-sm font-medium">知识库文件</span>
                 <span className="text-sm tabular-nums">
                   {formatCompact(pipeline.documentTotal)} 份
                 </span>

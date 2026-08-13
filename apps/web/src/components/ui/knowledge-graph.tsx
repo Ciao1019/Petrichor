@@ -100,10 +100,12 @@ function parseGraphData(data: MindElixirData, dark: boolean) {
     let color: string
     if (level === 0) {
       color = dark ? THEME_COLORS.dark.rootBg : THEME_COLORS.light.rootBg
+    } else if (node.branchColor) {
+      // 节点自己声明的颜色优先于从父级继承的分支色，
+      // 这样调用方可以按业务语义（例如 Wiki 页面类型）逐节点上色。
+      color = node.branchColor
     } else if (branch) {
       color = branch
-    } else if (node.branchColor) {
-      color = node.branchColor
     } else {
       color = palette[colorIdx++ % palette.length]
     }
@@ -624,9 +626,10 @@ interface KnowledgeGraphProps {
   data: MindElixirData
   className?: string
   children?: ReactNode
+  onNodeClick?: (nodeId: string) => void
 }
 
-export function KnowledgeGraph({ data, className, children }: KnowledgeGraphProps) {
+export function KnowledgeGraph({ data, className, children, onNodeClick }: KnowledgeGraphProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [isLoaded, setIsLoaded] = useState(false)
@@ -648,6 +651,7 @@ export function KnowledgeGraph({ data, className, children }: KnowledgeGraphProp
   const dragNodeRef = useRef<GNode | null>(null)
   const isPanningRef = useRef(false)
   const panStartRef = useRef({ mx: 0, my: 0, tx: 0, ty: 0 })
+  const pointerStartRef = useRef<{ x: number; y: number; nodeId: string | null } | null>(null)
 
   // Render function
   const render = useCallback(() => {
@@ -827,6 +831,7 @@ export function KnowledgeGraph({ data, className, children }: KnowledgeGraphProp
     const my = e.clientY - rect.top
 
     const node = nodeAtPoint(mx, my)
+    pointerStartRef.current = { x: mx, y: my, nodeId: node?.id ?? null }
     if (node) {
       isDraggingRef.current = true
       dragNodeRef.current = node
@@ -876,6 +881,18 @@ export function KnowledgeGraph({ data, className, children }: KnowledgeGraphProp
     const canvas = canvasRef.current
     if (canvas) canvas.releasePointerCapture(e.pointerId)
 
+    if (canvas && pointerStartRef.current?.nodeId) {
+      const rect = canvas.getBoundingClientRect()
+      const mx = e.clientX - rect.left
+      const my = e.clientY - rect.top
+      const distance = Math.hypot(mx - pointerStartRef.current.x, my - pointerStartRef.current.y)
+      const releasedNode = nodeAtPoint(mx, my)
+      if (distance <= 5 && releasedNode?.id === pointerStartRef.current.nodeId) {
+        onNodeClick?.(releasedNode.id)
+      }
+    }
+    pointerStartRef.current = null
+
     if (isDraggingRef.current && dragNodeRef.current) {
       dragNodeRef.current.fx = null
       dragNodeRef.current.fy = null
@@ -888,7 +905,7 @@ export function KnowledgeGraph({ data, className, children }: KnowledgeGraphProp
       isPanningRef.current = false
       if (canvasRef.current) canvasRef.current.style.cursor = "grab"
     }
-  }, [])
+  }, [nodeAtPoint, onNodeClick])
 
   const onPointerLeave = useCallback(() => {
     if (hoveredRef.current) {

@@ -1,18 +1,14 @@
 import * as React from "react"
 import {
   IconBook,
-  IconBookmarks,
   IconChartBar,
   IconFileImport,
-  IconFiles,
-  IconFolders,
   IconHistory,
   IconKey,
   IconListDetails,
   IconPackage,
   IconPlugConnected,
   IconPalette,
-  IconNetwork,
   IconRobot,
   IconSettings,
   IconSparkles,
@@ -71,10 +67,6 @@ function matchImportJobs(pathname: string) {
   return pathname === dashboardRoutes.imports || /^\/dashboard\/knowledge\/[^/]+\/imports$/.test(pathname)
 }
 
-function matchDocLibraryList(pathname: string) {
-  return isDashboardSectionPath(pathname, "doc-library")
-}
-
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [user, setUser] = React.useState<UserResponse | null>(null)
   const [userLoaded, setUserLoaded] = React.useState(false)
@@ -109,7 +101,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         icon: IconSparkles,
         isActive:
           isDashboardSectionPath(pathname, "assistant") ||
-          isDashboardSectionPath(pathname, "wiki") ||
           isDashboardSectionPath(pathname, "ai/review"),
         items: [
           {
@@ -118,28 +109,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             icon: IconRobot,
           },
           {
-            title: "知识 Wiki",
-            url: dashboardRoutes.wiki,
-            icon: IconBookmarks,
-          },
-          {
             title: "AI 回顾",
             url: dashboardRoutes.aiReview,
             icon: IconHistory,
-          },
-        ],
-      },
-      {
-        title: "文档库",
-        url: dashboardRoutes.docLibrary,
-        icon: IconFolders,
-        isActive: isDashboardSectionPath(pathname, "doc-library"),
-        items: [
-          {
-            title: "文档列表",
-            url: dashboardRoutes.docLibrary,
-            icon: IconFiles,
-            match: matchDocLibraryList,
           },
         ],
       },
@@ -216,12 +188,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         url: dashboardRoutes.adminAppearance,
         icon: IconPalette,
         isActive: isDashboardSectionPath(location.pathname, "admin/appearance"),
-      },
-      {
-        title: "全站星图",
-        url: dashboardRoutes.adminSiteGraph,
-        icon: IconNetwork,
-        isActive: isDashboardSectionPath(location.pathname, "admin/site-graph"),
       },
     ]
   }, [location.pathname, user?.systemRole])

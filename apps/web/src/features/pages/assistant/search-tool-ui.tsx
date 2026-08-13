@@ -21,7 +21,7 @@ import {
   toInternalAppPath,
 } from "./assistant-message-utils"
 
-type SearchKind = "knowledge" | "documents"
+type SearchKind = "knowledge"
 
 type ClusterMember = {
   toolCallId: string
@@ -144,12 +144,12 @@ function HitRows({ rows }: { rows: Record<string, unknown>[] }) {
 function useScopeNameMap(kind: SearchKind): Map<string, string> {
   const snapshot = useAuiState((state) => {
     const entries: Array<[string, string]> = []
-    const listTool = kind === "knowledge" ? "list_knowledge_bases" : "list_doc_libraries"
+    const listTool = "list_knowledge_bases"
     for (const part of state.message.parts) {
       if (part.type !== "tool-call" || part.toolName !== listTool) continue
       const rows = Array.isArray(part.result)
         ? part.result.map(asRecord).filter(isPresent)
-        : asRows(part.result, kind === "knowledge" ? "knowledgeBases" : "libraries")
+        : asRows(part.result, "knowledgeBases")
       for (const row of rows) {
         const id = row.id
         const name = row.name
@@ -225,33 +225,19 @@ function resolveScopeLabel(
   nameMap: Map<string, string>,
 ): string | null {
   const payload = asRecord(result)
-  if (kind === "knowledge") {
-    if (payload?.mode === "cross_kb") return "跨库"
-    const fromHit = asRows(result, "hits").find((row) => typeof row.knowledgeBaseName === "string")
-    if (typeof fromHit?.knowledgeBaseName === "string" && fromHit.knowledgeBaseName.trim()) {
-      return fromHit.knowledgeBaseName.trim()
-    }
-    if (typeof payload?.knowledgeBaseName === "string" && payload.knowledgeBaseName.trim()) {
-      return payload.knowledgeBaseName.trim()
-    }
-    const id = args?.knowledgeBaseId ?? payload?.knowledgeBaseId
-    if (id != null) {
-      const key = String(id)
-      return nameMap.get(key) ?? `库 ${key}`
-    }
-    return null
+  if (payload?.mode === "cross_kb") return "跨库"
+  const fromHit = asRows(result, "hits").find((row) => typeof row.knowledgeBaseName === "string")
+  if (typeof fromHit?.knowledgeBaseName === "string" && fromHit.knowledgeBaseName.trim()) {
+    return fromHit.knowledgeBaseName.trim()
   }
-
-  const fromHit = asRows(result, "hits").find((row) => typeof row.libraryName === "string" || typeof row.fileName === "string")
-  if (typeof fromHit?.libraryName === "string" && fromHit.libraryName.trim()) {
-    return fromHit.libraryName.trim()
+  if (typeof payload?.knowledgeBaseName === "string" && payload.knowledgeBaseName.trim()) {
+    return payload.knowledgeBaseName.trim()
   }
-  const id = args?.libraryId ?? payload?.libraryId
+  const id = args?.knowledgeBaseId ?? payload?.knowledgeBaseId
   if (id != null) {
     const key = String(id)
-    return nameMap.get(key) ?? `文档库 ${key}`
+    return nameMap.get(key) ?? `库 ${key}`
   }
-  if (args?.documentId != null) return `文档 ${String(args.documentId)}`
   return null
 }
 
@@ -286,7 +272,7 @@ function CompactSearchRow({
   hitCount?: number
   className?: string
 }) {
-  const verb = kind === "knowledge" ? "检索" : "检索文档"
+  const verb = "检索"
   const title = [
     verb,
     scope,
@@ -331,7 +317,7 @@ function SearchSummaryCard({
   const rows = asRows(result, "hits")
   const count = rows.length
   const payload = asRecord(result)
-  const verb = kind === "knowledge" ? "检索" : "检索文档"
+  const verb = "检索"
   const title = [
     query ? `${verb}「${query}」` : verb,
     scope,
@@ -374,7 +360,7 @@ function SearchClusterCard({
     members.map((member) => resolveQuery(member.args, member.result)).filter(Boolean),
   ))
   const queryLabel = queries.length === 1 ? queries[0] : null
-  const unit = kind === "knowledge" ? "知识库" : "范围"
+  const unit = "知识库"
   const summary = anyRunning
     ? `正在检索 ${members.length} 个${unit}${queryLabel ? ` ·「${queryLabel}」` : ""}`
     : `已检索 ${members.length} 个${unit}${queryLabel ? ` ·「${queryLabel}」` : ""} · 共 ${totalHits} 条`
@@ -493,20 +479,6 @@ export const SearchKnowledgeToolUI = makeAssistantToolUI({
     <SearchToolRender
       kind="knowledge"
       toolName="search_knowledge"
-      toolCallId={toolCallId}
-      args={args}
-      result={result}
-      status={status}
-    />
-  ),
-})
-
-export const SearchDocumentsToolUI = makeAssistantToolUI({
-  toolName: "search_documents",
-  render: ({ args, result, status, toolCallId }) => (
-    <SearchToolRender
-      kind="documents"
-      toolName="search_documents"
       toolCallId={toolCallId}
       args={args}
       result={result}

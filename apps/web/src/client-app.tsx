@@ -1,6 +1,6 @@
 "use client"
 
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useSearchParams, Outlet } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useSearchParams, Outlet, Link } from 'react-router-dom'
 import { LoginForm } from '@/components/login-form'
 import { AuthCallback } from '@/components/auth-callback'
 import { ThemeProvider } from '@/components/theme-provider'
@@ -11,15 +11,12 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/sonner'
 import { AppSidebar } from '@/components/app-sidebar'
 import { AppBreadcrumb } from '@/components/app-breadcrumb'
-import { TwoFactorEnforcementBanner } from '@/components/account/two-factor-enforcement-banner'
 import { AssistantChatPage } from '@/features/pages/assistant/AssistantChatPage'
 import { KnowledgeBasePage } from '@/features/pages/knowledge/KnowledgeBasePage'
+import { KnowledgeBaseDetailPage } from '@/features/pages/knowledge/KnowledgeBaseDetailPage'
+import { KnowledgeBaseDocumentPage } from '@/features/pages/knowledge/KnowledgeBaseDocumentPage'
 import { KnowledgeBaseArticleEditorPage } from '@/features/pages/knowledge/KnowledgeBaseArticleEditorPage'
-import { DocLibraryListPage } from '@/features/pages/doc-library/DocLibraryListPage'
-import { DocLibraryBrowsePage } from '@/features/pages/doc-library/DocLibraryBrowsePage'
-import { KnowledgeWikiPage } from '@/features/pages/knowledge/KnowledgeWikiPage'
 import { KnowledgeBaseArticleMindMapPage } from '@/features/pages/knowledge/KnowledgeBaseArticleMindMapPage'
-import { KnowledgeBaseTreePage } from '@/features/pages/knowledge/KnowledgeBaseTreePage'
 import { DocumentImportJobsPage } from '@/features/pages/knowledge/DocumentImportJobsPage'
 import { DocumentImportJobDetailPage } from '@/features/pages/knowledge/DocumentImportJobDetailPage'
 import { AiModelConfigPage } from '@/features/pages/ai/AiModelConfigPage'
@@ -30,7 +27,6 @@ import { AgentSkillPage } from '@/features/pages/agent/AgentSkillPage'
 import { AgentMcpPage } from '@/features/pages/agent/AgentMcpPage'
 import { BlogHomePage } from '@/features/pages/blog/BlogHomePage'
 import { TagsPage } from '@/features/pages/blog/TagsPage'
-import { SiteGraphPage } from '@/features/pages/graph/SiteGraphPage'
 import { AboutPage } from '@/features/pages/about/AboutPage'
 import { ProjectsPage } from '@/features/pages/projects/ProjectsPage'
 import { PetrichorPage } from '@/features/pages/petrichor/PetrichorPage'
@@ -48,7 +44,6 @@ import { enterDemoMode } from '@/lib/demo/demo-mode'
 import { DemoModeBanner } from '@/components/demo-mode-banner'
 import { isPublicSitePath } from '@/lib/public-theme-routes'
 import { SiteAppearanceConfigPage } from '@/features/pages/admin/SiteAppearanceConfigPage'
-import { SiteGraphConfigPage } from '@/features/pages/admin/SiteGraphConfigPage'
 
 function LoginPage() {
   const navigate = useNavigate()
@@ -72,9 +67,9 @@ function LoginPage() {
         <LoginForm className="w-full" onLoginSuccess={handleLoginSuccess} />
         <p className="mt-4 text-center text-xs text-muted-foreground">
           没有账号？
-          <a href="/demo" className="ml-1 underline underline-offset-4 hover:text-foreground">
+          <Link to="/demo" className="ml-1 underline underline-offset-4 hover:text-foreground">
             免登录进入演示模式
-          </a>
+          </Link>
         </p>
       </div>
     </div>
@@ -87,6 +82,7 @@ function DashboardLayout() {
   /* 助手这类应用型页面必须给外壳一个确定高度：默认的 min-h-svh 会让整条 flex 链高度为 auto，
      内部的 overflow-y-auto 永远不触发，长回答会把整页撑高，左侧会话列表被推出视口。 */
   const lockViewport = isFixedViewportRoute(location.pathname)
+  const isKnowledgeWorkspace = new RegExp(`^${dashboardRoutes.knowledge}/[^/]+$`).test(location.pathname)
 
   useEffect(() => {
     const token = searchParams.get('token')
@@ -110,9 +106,8 @@ function DashboardLayout() {
     <SidebarProvider className={lockViewport ? 'h-svh overflow-hidden' : undefined}>
       <AppSidebar variant="inset" />
       <SidebarInset>
-        <AppBreadcrumb />
+        {isKnowledgeWorkspace ? null : <AppBreadcrumb />}
         <DemoModeBanner />
-        <TwoFactorEnforcementBanner />
         <div className="flex min-h-0 flex-1 flex-col">
           <Outlet />
         </div>
@@ -141,7 +136,6 @@ function AppThemeScope() {
           <Routes>
             <Route path="/" element={<BlogHomePage />} />
             <Route path="/tags" element={<TagsPage />} />
-            <Route path="/graph" element={<SiteGraphPage />} />
             <Route path="/ask" element={<PublicQaPage />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
@@ -158,20 +152,17 @@ function AppThemeScope() {
               <Route path="account" element={<AccountPage />} />
               <Route path="notifications" element={<NotificationPage />} />
               <Route path="knowledge" element={<KnowledgeBasePage />} />
-              <Route path="knowledge/:knowledgeBaseId" element={<KnowledgeBaseTreePage />} />
+              <Route path="knowledge/:knowledgeBaseId" element={<KnowledgeBaseDetailPage />} />
+              <Route path="knowledge/:knowledgeBaseId/documents/:documentId" element={<KnowledgeBaseDocumentPage />} />
               <Route path="knowledge/:knowledgeBaseId/imports" element={<DocumentImportJobsPage />} />
               <Route path="imports" element={<DocumentImportJobsPage />} />
               <Route path="imports/:jobId" element={<DocumentImportJobDetailPage />} />
-              <Route path="doc-library" element={<DocLibraryListPage />} />
-              <Route path="doc-library/:libraryId" element={<DocLibraryBrowsePage />} />
-              <Route path="wiki" element={<KnowledgeWikiPage />} />
               <Route path="knowledge/:knowledgeBaseId/articles/:articleId" element={<KnowledgeBaseArticleEditorPage />} />
               <Route path="knowledge/:knowledgeBaseId/articles/:articleId/mindmap" element={<KnowledgeBaseArticleMindMapPage />} />
               <Route path="admin/users" element={<UserManagementPage />} />
               <Route path="admin/about" element={<AboutProfileConfigPage />} />
               <Route path="admin/projects" element={<ProjectsConfigPage />} />
               <Route path="admin/appearance" element={<SiteAppearanceConfigPage />} />
-              <Route path="admin/site-graph" element={<SiteGraphConfigPage />} />
               <Route path="ai/config" element={<AiModelConfigPage />} />
               <Route path="ai/review" element={<AiReviewPage />} />
               <Route path="agent" element={<AgentKeysPage />} />

@@ -20,10 +20,8 @@ import { asRecord, asRows, isPresent } from "./assistant-message-utils"
  */
 export const PROCESS_TOOL_NAMES = new Set([
   "read_knowledge_node",
-  "read_document",
   "save_answer_artifact",
   "list_knowledge_bases",
-  "list_doc_libraries",
   "list_system_overview",
 ])
 
@@ -80,7 +78,7 @@ function namesOf(rows: Record<string, unknown>[]): string[] {
 /**
  * 把一次工具调用压成一行。返回的对象必须是可 JSON 序列化的小结构——
  * 整个 cluster 每次 message 状态变化都会重新序列化，不能把
- * read_document 的全文正文这类大 payload 带进来。
+ * 阅读工具的全文正文这类大 payload 带进来。
  */
 function describeCall(
   toolName: string,
@@ -97,15 +95,6 @@ function describeCall(
         label: "阅读知识",
         target: firstString(payload?.title) ?? "知识节点",
         stats: firstString(payload?.kind),
-      }
-    }
-    case "read_document": {
-      const locator = payload?.locator ?? payload?.fromIndex
-      return {
-        status: chatStatus,
-        label: "阅读文档",
-        target: firstString(payload?.title, payload?.fileName) ?? "文档",
-        stats: locator != null ? String(locator) : undefined,
       }
     }
     case "save_answer_artifact": {
@@ -127,23 +116,11 @@ function describeCall(
         detail: names.length > 0 ? { kind: "names", items: names } : undefined,
       }
     }
-    case "list_doc_libraries": {
-      const names = namesOf(
-        Array.isArray(result) ? result.map(asRecord).filter(isPresent) : asRows(result, "libraries"),
-      )
-      return {
-        status: chatStatus,
-        label: "读取文档库",
-        target: `${names.length} 个`,
-        detail: names.length > 0 ? { kind: "names", items: names } : undefined,
-      }
-    }
     case "list_system_overview": {
       const num = (key: string) => Number(payload?.[key] ?? 0)
       const rows: [string, string][] = [
         ["知识库", String(num("knowledgeBases"))],
         ["文章", String(num("articles"))],
-        ["文档库", String(num("docLibraries"))],
         ["文档", String(num("documents"))],
         ["对话", String(num("assistantThreads"))],
         ["模型", `CHAT ${payload?.chatModelReady ? "就绪" : "未配"} · EMBED ${payload?.embeddingModelReady ? "就绪" : "未配"}`],

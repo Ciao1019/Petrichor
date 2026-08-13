@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next"
 
-import { loadPublicSiteArticles } from "@/server/public-site/articles"
-import { getPublicBaseUrl, toAbsolutePublicUrl } from "@/server/public-site/site-url"
+import { fetchPublicArticlesFromGo } from "@/lib/public-site/articles"
+import { getPublicBaseUrl, toAbsolutePublicUrl } from "@/lib/public-site/site-url"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 60
@@ -40,7 +40,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
             priority: 0.7,
         },
     ]
-    const articles = await loadPublicSiteArticles()
+    const articles = await fetchPublicArticlesFromGo()
     const articleRoutes: MetadataRoute.Sitemap = articles.map((article) => ({
         url: toAbsolutePublicUrl(article.href, baseUrl),
         lastModified: toDate(article.updatedAt),

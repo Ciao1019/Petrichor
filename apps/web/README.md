@@ -1,47 +1,47 @@
 # @petrichor/web
 
-Next.js + TypeScript 全栈应用，目标运行环境为 **Vercel**，数据层使用 **Supabase PostgreSQL**。
-
-> 📖 完整的简介、功能特性、Vercel 一键部署、环境变量速查表请看仓库根目录的 [`README.md`](../../README.md)。
+Petrichor 的 Next.js + React + TypeScript Web 应用。它负责客户端 SPA、SEO 页面和静态资源；业务 API、认证、数据库访问、AI、Feed 与上传逻辑都由 `apps/api` 的 Go 服务提供。
 
 ## 本地开发
 
 ```bash
 pnpm install
-pnpm dev
-```
-
-只运行当前应用：
-
-```bash
-pnpm --filter "@petrichor/web" dev
-```
-
-## 环境变量
-
-复制 `.env.example` 并填入数据库、Session、加密密钥和对象存储配置：
-
-```bash
 cp apps/web/.env.example apps/web/.env.local
 ```
 
-每一项的作用见根 README 的[环境变量速查表](../../README.md#-环境变量速查表)。
+Web 环境变量：
 
-## 初始化数据库
+```ini
+PETRICHOR_GO_API_URL="http://127.0.0.1:8080"
+NEXT_PUBLIC_APP_URL="http://localhost:3000"
+NEXT_PUBLIC_REGISTER_ENABLED="false"
+```
+
+先在另一个终端启动 Go API，再启动 Web：
+
+```bash
+pnpm dev:api
+pnpm --filter "@petrichor/web" dev
+```
+
+Next rewrite 会把 `/api/**`、Feed 和 `/healthz` 代理到 `PETRICHOR_GO_API_URL`。
+
+## 数据库工具
+
+Web 工作区仍保留纯 SQL 生成与显式 SQL 执行工具，它们只用于开发和迁移，不属于线上 TypeScript 后端：
 
 ```bash
 pnpm --silent --filter "@petrichor/web" db:sql > petrichor-init.sql
+pnpm --filter "@petrichor/web" db:run-sql -- path/to/migration.sql
 ```
 
-将输出 SQL 放到 Supabase SQL Editor 执行。SQL 会创建 Better Auth 认证表和业务表。
+数据库结构以 `apps/api/ent/schema` 和 `docs/migrations` 为准。
 
-认证使用 Better Auth + Drizzle，浏览器端通过 httpOnly Cookie 保持登录状态，不再依赖 `localStorage` token。
-
-## 质量检查
+## 验证
 
 ```bash
-pnpm test
-pnpm typecheck
-pnpm lint
-pnpm build
+pnpm --filter "@petrichor/web" test
+pnpm --filter "@petrichor/web" typecheck
+pnpm --filter "@petrichor/web" lint
+pnpm --filter "@petrichor/web" build
 ```

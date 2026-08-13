@@ -7,7 +7,7 @@ import { Link } from "react-router-dom"
 import { BlogSearchDialog, useBlogSearchHotkey } from "@/components/blog-search-dialog"
 import { StaticNoise } from "@/cuicui/other/creative-effects/animated-noise/static-noise"
 
-export type RetypesetSiteActiveSection = "articles" | "tags" | "graph" | "ask" | "projects" | "petrichor" | "about"
+export type RetypesetSiteActiveSection = "articles" | "tags" | "ask" | "projects" | "petrichor" | "about"
 type RetypesetSiteNavSection = RetypesetSiteActiveSection
 type RetypesetSiteNavItem = {
     section: RetypesetSiteNavSection
@@ -28,7 +28,6 @@ const retypesetSiteCopy = {
     siteSubtitle: "Knowledge, Articles & Inspiration",
     navLabel: "站点导航",
     navPosts: "文章",
-    navGraph: "星图",
     navAsk: "问答",
     navProjects: "开源",
     navPetrichor: "项目",
@@ -41,8 +40,7 @@ const RETYPESET_SITE_GITHUB_HREF = "https://github.com/Ciao1019/Petrichor"
 
 const retypesetSiteNavItems: RetypesetSiteNavItem[] = [
     { section: "articles", href: "/#articles", label: retypesetSiteCopy.navPosts, internal: true },
-    // 标签页不进导航栏（仍保留 /tags 路由，由文章标签与图谱标签节点跳入）
-    { section: "graph", href: "/graph", label: retypesetSiteCopy.navGraph, internal: true },
+    // 标签页不进导航栏（仍保留 /tags 路由，由文章标签跳入）
     { section: "projects", href: "/projects", label: retypesetSiteCopy.navProjects, internal: true },
     { section: "petrichor", href: "/petrichor", label: retypesetSiteCopy.navPetrichor, internal: true },
     { section: "about", href: "/about", label: retypesetSiteCopy.navAbout, internal: true },

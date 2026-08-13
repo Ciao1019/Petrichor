@@ -7,7 +7,6 @@ describe("public theme routes", () => {
     expect(isPublicSitePath("/")).toBe(true)
     expect(isPublicSitePath("/tags")).toBe(true)
     expect(isPublicSitePath("/tags/")).toBe(true)
-    expect(isPublicSitePath("/graph")).toBe(true)
     expect(isPublicSitePath("/about")).toBe(true)
     expect(isPublicSitePath("/ask")).toBe(true)
     expect(isPublicSitePath("/projects")).toBe(true)
@@ -27,9 +26,9 @@ describe("public theme routes", () => {
   // 否则会出现「脚本判为暗、React 判为亮」的闪烁回归
   it("防闪脚本的排除式判定与正向判定结论一致", () => {
     const appRoutes = [
-      "/", "/tags", "/tags/", "/graph", "/ask", "/about", "/projects", "/petrichor",
+      "/", "/tags", "/tags/", "/ask", "/about", "/projects", "/petrichor",
       "/p/shareCode123", "/b/burnCode123",
-      "/dashboard", "/dashboard/knowledge", "/dashboard/admin/site-graph",
+      "/dashboard", "/dashboard/knowledge",
       "/login", "/auth/callback", "/demo",
     ]
     for (const route of appRoutes) {

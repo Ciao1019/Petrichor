@@ -142,6 +142,14 @@ export function KnowledgeBasePage() {
           knowledgeBaseId: activeKb.id,
           name,
           description: description ? description : null,
+          chunkStrategy: activeKb.chunkStrategy,
+          chunkSize: activeKb.chunkSize,
+          chunkOverlap: activeKb.chunkOverlap,
+          chunkSeparators: activeKb.chunkSeparators,
+          chatModelId: activeKb.chatModelId,
+          embeddingModelId: activeKb.embeddingModelId,
+          rerankModelId: activeKb.rerankModelId,
+          wikiEnabled: activeKb.wikiEnabled,
         })
         toast.success("知识库已更新")
       }
@@ -171,8 +179,13 @@ export function KnowledgeBasePage() {
     if (saving) return
     setSaving(true)
     try {
-      await knowledgeBaseApi.delete(activeKb.id)
-      toast.success("知识库已删除")
+      const response = await knowledgeBaseApi.delete(activeKb.id)
+      const cleanupFailures = response.data.storageCleanup.failedObjectKeys.length
+      if (cleanupFailures > 0) {
+        toast.warning(`知识库已删除，但有 ${cleanupFailures} 个原文件未能从对象存储清理`)
+      } else {
+        toast.success("知识库已删除")
+      }
       setDeleteOpen(false)
       setDialogOpen(false)
       await fetchData()
@@ -287,14 +300,20 @@ export function KnowledgeBasePage() {
             >
               复制 ID
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => openEdit(data.find((item) => item.id === kb.id) ?? kb)}>
+            <DropdownMenuItem onClick={() => {
+              const item = data.find((entry) => entry.id === kb.id)
+              if (item) openEdit(item)
+            }}>
               编辑
             </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
               onClick={() => {
-                setActiveKb(data.find((item) => item.id === kb.id) ?? kb)
-                setDeleteOpen(true)
+                const item = data.find((entry) => entry.id === kb.id)
+                if (item) {
+                  setActiveKb(item)
+                  setDeleteOpen(true)
+                }
               }}
             >
               删除

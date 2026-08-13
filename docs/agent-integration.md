@@ -37,7 +37,7 @@
   - `skills/docs.md`：知识库列表、目录树、文档搜索、文档查看。
   - `skills/qa.md`：文档问答和引用结果使用。
   - `skills/share.md`：文章分享创建/撤销/查询、密码与到期管理。
-  - `skills/ai.md`：AI 摘要、思维导图、知识图谱生成。
+  - `skills/ai.md`：AI 摘要、思维导图生成。
   - `scripts/petrichor`、`scripts/petrichor-api.sh`、`references/endpoints.md` 全 skill 共用一份，并默认读取 `config.json`。
 - MCP Server：`/api/mcp`，无状态 Streamable HTTP，详见下方「MCP Server」一节。
 - API Key：平台账号页生成，服务端只存 `sha256` 哈希，明文只返回一次。
@@ -60,10 +60,7 @@
 - `POST /api/agent/article/create`：新建文章。
 - `POST /api/agent/article/update`：更新文章。
 - `POST /api/agent/article/delete`：删除文章。
-- `POST /api/agent/document/search`：搜索文档。
-- `POST /api/agent/document/tree`：章节目录树推理式检索。
-- `POST /api/agent/document/semantic-search`：章节目录树向量语义检索（需要
-  PostgreSQL + 向量模型）。
+- `POST /api/agent/document/search`：混合搜索文件分片、Wiki 页面与文章；可用时自动加入向量召回和重排。
 - `POST /api/agent/document/view`：查看源文章或 Wiki 页面。
 - `POST /api/agent/document/qa`：基于文档上下文问答。
 - `POST /api/agent/call-log/list`：登录用户查看外部调用日志。
@@ -71,18 +68,17 @@
 ## MCP Server
 
 `POST /api/mcp` 暴露一个无状态 Streamable HTTP MCP Server
-（实现在 `apps/web/app/api/mcp/route.ts`），是 REST 能力层之上的协议适配层：
-20 个 MCP 工具一一委托到对应的 `/api/agent/**` 端点，鉴权、scope 校验、调用
-审计日志全部复用现有实现。工具规格（名称、scope、目标端点、入参 schema）
-集中在 `apps/web/src/server/agent/mcp-tools.ts`，接线在
-`apps/web/src/server/agent/mcp.ts`。
+（实现在 `apps/api/internal/agent/mcp.go`），是 REST 能力层之上的协议适配层：
+18 个 MCP 工具一一委托到对应的 `/api/agent/**` 端点，鉴权、scope 校验、调用
+审计日志全部复用 Go API 的现有实现。工具规格（名称、scope、目标端点、入参 schema）
+也集中在该 Go 模块中。
 
 - 鉴权：与 REST 层同一套 API Key，请求头 `Authorization: Bearer <ptc_live_...>`；
   未带或无效 Key 一律 401（`initialize` 也不例外）。
 - 传输：仅 Streamable HTTP（POST）；未启用 SSE 传输，因此不需要 Redis，
-  可直接跑在 Vercel Serverless 上。
-- 工具覆盖：知识库/目录树浏览、关键词/推理/语义三种检索、文档阅读、文档问答、
-  文章与文件夹写操作、Wiki 编译/体检、文章分享管理。
+  可部署到普通 Go 服务或容器运行环境。
+- 工具覆盖：知识库/目录树浏览、文件分片/Wiki/文章混合检索、文档阅读、文档问答、
+  文章与文件夹写操作、文件 Wiki 重建/体检、文章分享管理。
 
 ### 客户端接入
 

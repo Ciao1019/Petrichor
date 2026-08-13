@@ -85,7 +85,7 @@ function createHeadingComponents(variant: MarkdownPreviewVariant): Components {
   }
 }
 
-function createAnchorComponent(variant: MarkdownPreviewVariant): NonNullable<Components["a"]> {
+export function createAnchorComponent(variant: MarkdownPreviewVariant): NonNullable<Components["a"]> {
   return (props) => {
     const { className, href, ...rest } = withoutNode(props)
     const isHashLink = typeof href === "string" && href.startsWith("#")

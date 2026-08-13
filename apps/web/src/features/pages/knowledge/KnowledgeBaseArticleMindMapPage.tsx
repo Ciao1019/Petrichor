@@ -4,11 +4,9 @@ import { useNavigate, useParams } from "react-router-dom"
 import type { MindElixirData } from "mind-elixir"
 import { Suspense, useMemo } from "react"
 
-import { KnowledgeGraph, KnowledgeGraphControls } from "@/components/ui/knowledge-graph"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   knowledgeBaseArticleApi,
   knowledgeBaseArticleMindMapApi,
@@ -60,7 +58,7 @@ export function KnowledgeBaseArticleMindMapPage() {
   const navigate = useNavigate()
 
   const [article, setArticle] = React.useState<ArticleDetailResponse | null>(null)
-  const [mode, setMode] = React.useState<ArticleMindMapMode>("MINDMAP")
+  const mode: ArticleMindMapMode = "MINDMAP"
 
   type ModeState = {
     data: MindElixirData | null
@@ -84,7 +82,6 @@ export function KnowledgeBaseArticleMindMapPage() {
   const [stateByMode, setStateByMode] = React.useState<Record<ArticleMindMapMode, ModeState>>(
     () => ({
       MINDMAP: createEmptyModeState(),
-      KNOWLEDGE_GRAPH: createEmptyModeState(),
     }),
   )
 
@@ -92,7 +89,6 @@ export function KnowledgeBaseArticleMindMapPage() {
   // 用 ref 做互斥锁，避免依赖 generating 导致 useEffect 循环触发
   const generatingRef = React.useRef<Record<ArticleMindMapMode, boolean>>({
     MINDMAP: false,
-    KNOWLEDGE_GRAPH: false,
   })
 
   React.useEffect(() => {
@@ -123,9 +119,8 @@ export function KnowledgeBaseArticleMindMapPage() {
   React.useEffect(() => {
     setStateByMode({
       MINDMAP: createEmptyModeState(),
-      KNOWLEDGE_GRAPH: createEmptyModeState(),
     })
-    generatingRef.current = { MINDMAP: false, KNOWLEDGE_GRAPH: false }
+    generatingRef.current = { MINDMAP: false }
   }, [articleId, createEmptyModeState])
 
   const updateModeState = React.useCallback(
@@ -202,7 +197,7 @@ export function KnowledgeBaseArticleMindMapPage() {
   const error = currentState.error
 
   const title = article?.title || "思维导图"
-  const modeLabel = mode === "MINDMAP" ? "思维导图" : "知识图谱"
+  const modeLabel = "思维导图"
 
   return (
     <div className="w-full p-4 lg:p-6">
@@ -227,17 +222,6 @@ export function KnowledgeBaseArticleMindMapPage() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <Tabs
-            value={mode}
-            onValueChange={(v) => setMode(v as ArticleMindMapMode)}
-            className="mr-1"
-          >
-            <TabsList>
-              <TabsTrigger value="MINDMAP">思维导图</TabsTrigger>
-              <TabsTrigger value="KNOWLEDGE_GRAPH">知识图谱</TabsTrigger>
-            </TabsList>
-          </Tabs>
-
           <Button
             variant="outline"
             onClick={() => {
@@ -307,16 +291,8 @@ export function KnowledgeBaseArticleMindMapPage() {
           )}
         >
           {mindmapData ? (
-            <>
-              {mode === "KNOWLEDGE_GRAPH" ? (
-                <KnowledgeGraph data={mindmapData}>
-                  <KnowledgeGraphControls position="top-right" />
-                </KnowledgeGraph>
-              ) : (
-                <MindMapPanel data={mindmapData} />
-              )}
-            </>
-	          ) : (
+            <MindMapPanel data={mindmapData} />
+          ) : (
 	            <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm">
 	              {generating ? "正在生成思维导图..." : "暂无思维导图数据"}
 	            </div>

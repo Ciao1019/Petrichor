@@ -166,7 +166,7 @@ const Composer: FC = () => {
           <ComposerPrimitive.Input
             id="kb-agent-message-input"
             name="message"
-            placeholder="询问文档内容、要求对比分析，或让 Agent 提出 Wiki 补丁..."
+            placeholder="询问文件内容、要求对比分析，或让 Agent 检索 Wiki 页面..."
             className="aui-composer-input max-h-32 min-h-10 w-full resize-none bg-transparent px-1.75 py-1 text-sm outline-none placeholder:text-muted-foreground/80"
             rows={1}
             autoFocus

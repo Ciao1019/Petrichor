@@ -12,7 +12,7 @@ WORKDIR /app
 # ---- deps: install with the lockfile only, so this layer caches across
 # source-only changes -------------------------------------------------------
 FROM base AS deps
-# native modules (better-sqlite3, sharp, msgpackr-extract, unrs-resolver) may
+# native modules (sharp, msgpackr-extract, unrs-resolver) may
 # need to compile from source if no prebuilt binary matches the base image.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 make g++ \
@@ -26,10 +26,7 @@ FROM base AS builder
 COPY --from=deps /app /app
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-# DATABASE_URL / SESSION_SECRET are only read lazily at request time
-# (see apps/web/src/config/server.ts), so the build does not need them.
-# If a page ever starts reading env at build/SSG time, pass dummy values
-# here via ARG/ENV so `next build` doesn't fail on a fresh Vercel builder.
+# 业务服务端环境变量由 Go API 读取；Web 构建只需要公开配置和代理目标。
 RUN pnpm --filter @petrichor/web build
 
 # ---- runner: minimal runtime image ----------------------------------------

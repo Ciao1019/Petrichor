@@ -34,7 +34,6 @@ const routeMap: Record<string, BreadcrumbItem[]> = {
   [dashboardRoutes.account]: [{ label: "个人中心" }, { label: "账号资料" }],
   [dashboardRoutes.knowledge]: [{ label: "知识库" }],
   [dashboardRoutes.imports]: [{ label: "导入任务" }],
-  [dashboardRoutes.wiki]: [{ label: "知识 Wiki" }],
   [dashboardRoutes.notifications]: [{ label: "消息中心" }],
   [`${dashboardRoutes.knowledge}/articles`]: [{ label: "知识库", href: dashboardRoutes.knowledge }, { label: "文章列表" }],
   [`${dashboardRoutes.knowledge}/categories`]: [{ label: "知识库", href: dashboardRoutes.knowledge }, { label: "分类管理" }],
@@ -48,7 +47,6 @@ const routeMap: Record<string, BreadcrumbItem[]> = {
   [dashboardRoutes.adminUsers]: [{ label: "系统管理" }, { label: "用户管理" }],
   [dashboardRoutes.adminAbout]: [{ label: "系统管理" }, { label: "关于我配置" }],
   [dashboardRoutes.adminProjects]: [{ label: "系统管理" }, { label: "开源项目" }],
-  [dashboardRoutes.adminSiteGraph]: [{ label: "系统管理" }, { label: "全站星图" }],
 }
 
 function resolveBreadcrumbItems(pathname: string): BreadcrumbItem[] | undefined {
@@ -68,6 +66,13 @@ function resolveBreadcrumbItems(pathname: string): BreadcrumbItem[] | undefined 
     return [
       { label: "知识库", href: dashboardRoutes.knowledge },
       { label: "文章编辑" },
+    ]
+  }
+
+  if (new RegExp(`^${dashboardRoutes.knowledge}/[^/]+/documents/[^/]+$`).test(pathname)) {
+    return [
+      { label: "知识库", href: dashboardRoutes.knowledge },
+      { label: "文档预览" },
     ]
   }
 

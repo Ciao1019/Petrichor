@@ -96,34 +96,39 @@ function safeTrim(value: string) {
 
 function configTypeLabel(configType: AiConfigType) {
   if (configType === "CHAT") return "对话（Chat）"
-  if (configType === "VISION") return "多模态（Vision）"
-  if (configType === "DOC_QA") return "文档库问答（Doc QA）"
+  if (configType === "VISION") return "视觉（Vision）"
   if (configType === "EMBEDDING") return "向量嵌入（Embedding）"
+  if (configType === "RERANK") return "重排（Rerank）"
+  if (configType === "SPEECH") return "语音（Speech）"
   return configType
 }
 
 const CONFIG_TYPE_TABS: { value: AiConfigType; label: string }[] = [
   { value: "CHAT", label: "对话（Chat）" },
-  { value: "VISION", label: "多模态（Vision）" },
-  { value: "DOC_QA", label: "文档库问答（Doc QA）" },
+  { value: "VISION", label: "视觉（Vision）" },
   { value: "EMBEDDING", label: "向量嵌入（Embedding）" },
+  { value: "RERANK", label: "重排（Rerank）" },
+  { value: "SPEECH", label: "语音（Speech）" },
 ]
 
 function buildEditorDescription() {
-  return "对话配置用于文章摘要、思维导图和知识图谱生成。"
+  return "对话配置用于问答、文章摘要、思维导图和 Wiki 生成。"
 }
 
 function buildTypeSummary(configType: AiConfigType) {
   if (configType === "VISION") {
     return "负责将 PDF / Word 每一页图片识别转写为文章内容。"
   }
-  if (configType === "DOC_QA") {
-    return "负责文档库问答：基于文档库里的文件内容进行 agentic 检索与回答。"
-  }
   if (configType === "EMBEDDING") {
-    return "负责文档库语义检索：把文档分块和查询转成向量用于相似度召回（推荐 bge-m3，1024 维）。"
+    return "负责知识库语义检索：把文件分片和查询转成向量用于相似度召回（推荐 1024 维模型）。"
   }
-  return "负责文章摘要、思维导图和知识图谱等生成能力。"
+  if (configType === "RERANK") {
+    return "负责对知识库的初步召回结果重新排序，提高最终上下文的相关性。"
+  }
+  if (configType === "SPEECH") {
+    return "负责语音识别或语音合成，供音频内容解析与语音交互使用。"
+  }
+  return "负责问答、文章摘要、思维导图和 Wiki 等生成能力。"
 }
 
 function buildModelPlaceholder() {

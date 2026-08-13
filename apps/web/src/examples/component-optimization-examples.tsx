@@ -80,7 +80,12 @@ export function LazyImage({ src, alt }: { src: string; alt: string }) {
 /**
  * 示例 4: 使用 useMemo 优化昂贵计算
  */
-export function ArticleStats({ articles }: { articles: any[] }) {
+interface ArticleStatsItem {
+    isPublic: boolean
+    wordCount?: number
+}
+
+export function ArticleStats({ articles }: { articles: ArticleStatsItem[] }) {
     const stats = useMemo(() => {
         return {
             total: articles.length,

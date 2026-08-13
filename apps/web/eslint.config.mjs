@@ -9,7 +9,6 @@ export default tseslint.config(
         ignores: [
             ".next/**",
             "node_modules/**",
-            "drizzle/**",
             "src/assets/**",
             "src/components/**",
             "src/cuicui/**",

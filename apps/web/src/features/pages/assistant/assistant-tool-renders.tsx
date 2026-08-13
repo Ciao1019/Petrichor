@@ -18,7 +18,6 @@ import {
   Gauge,
   ListTree,
   Loader2,
-  Network,
   Pencil,
   Search,
   Square,
@@ -26,7 +25,6 @@ import {
 import { toast } from "sonner"
 
 import { QaPreparing } from "@/features/pages/knowledge/QaMarkdown"
-import { GraphRetrievalBody, parseGraphRetrievalResult } from "@/components/site-graph/GraphPathChain"
 import { CitationList } from "@/components/tool-ui/citation"
 import { safeParseSerializableCitation } from "@/components/tool-ui/citation/schema"
 import { DataTable } from "@/components/tool-ui/data-table"
@@ -274,39 +272,8 @@ export const ListKbToolUI = makeAssistantToolUI({
   render: ({ toolCallId }) => <ProcessToolGroup toolCallId={toolCallId} />,
 })
 
-export const ListDocLibrariesToolUI = makeAssistantToolUI({
-  toolName: "list_doc_libraries",
-  render: ({ toolCallId }) => <ProcessToolGroup toolCallId={toolCallId} />,
-})
-
-export const SearchGraphToolUI = makeAssistantToolUI({
-  toolName: "search_knowledge_graph",
-  render: ({ result, status }) => {
-    const { matched, paths, graphNodes, graphLinks, emptyMessage } = parseGraphRetrievalResult(result)
-
-    if (paths.length === 0 && matched.length === 0) {
-      return (
-        <ToolStatusCard title="星图检索" status={status} icon={<Network className="size-4" />}>
-          {emptyMessage ? <p className="text-xs text-muted-foreground">{emptyMessage}</p> : null}
-        </ToolStatusCard>
-      )
-    }
-
-    return (
-      <ToolStatusCard title="星图检索" status={status} icon={<Network className="size-4" />} collapsible defaultOpen={false}>
-        <GraphRetrievalBody matched={matched} paths={paths} graphNodes={graphNodes} graphLinks={graphLinks} />
-      </ToolStatusCard>
-    )
-  },
-})
-
 export const ReadKnowledgeToolUI = makeAssistantToolUI({
   toolName: "read_knowledge_node",
-  render: ({ toolCallId }) => <ProcessToolGroup toolCallId={toolCallId} />,
-})
-
-export const ReadDocumentToolUI = makeAssistantToolUI({
-  toolName: "read_document",
   render: ({ toolCallId }) => <ProcessToolGroup toolCallId={toolCallId} />,
 })
 
@@ -532,7 +499,6 @@ export const ContextCompressDataUI = makeAssistantDataUI({
 
 const INTENT_DOMAIN_LABELS: Record<string, string> = {
   knowledge: "知识库",
-  doc_library: "文档库",
   system: "系统",
   content_write: "内容写入",
   admin: "管理",

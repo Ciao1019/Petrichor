@@ -2,7 +2,7 @@
  * 前台公开页统一强制暗色主题（配色对齐后台右侧内容区），不再提供浅色版本。
  * 后台 /dashboard 不在此列，仍由用户自行切换明暗。
  */
-const PUBLIC_SITE_PATHS = new Set(["/", "/about", "/tags", "/graph", "/ask", "/projects", "/petrichor"])
+const PUBLIC_SITE_PATHS = new Set(["/", "/about", "/tags", "/ask", "/projects", "/petrichor"])
 
 function normalizePathname(pathname: string) {
   if (pathname.length > 1 && pathname.endsWith("/")) {

@@ -9,7 +9,6 @@ import { authApi, type UserProfileResponse } from "@/lib/api"
 import { PasswordFields } from "@/components/account/PasswordFields"
 import { validatePasswordStrength } from "@/components/account/password-utils"
 import { LoginSessionsSection } from "@/components/account/login-sessions-section"
-import { TwoFactorSection } from "@/components/account/two-factor-section"
 import { NoticeToast } from "@/components/petrichor-ui/notice-toast"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -463,9 +462,7 @@ export function AccountPage() {
                   </div>
                 </div>
 
-                <TwoFactorSection profile={profile} onChanged={() => void fetchProfile()} />
-
-                <LoginSessionsSection twoFactorEnabled={Boolean(profile.twoFactorEnabled)} />
+                <LoginSessionsSection />
 
                 <Dialog open={editOpen} onOpenChange={handleEditOpenChange}>
                   <DialogContent showCloseButton={!savingProfile}>

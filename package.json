@@ -9,11 +9,12 @@
     ],
     "scripts": {
         "dev": "pnpm --filter @petrichor/web dev",
+        "dev:api": "cd apps/api && go run ./cmd/server",
         "build": "pnpm --filter @petrichor/web build",
-        "db:backfill-public-article-metadata": "pnpm --filter @petrichor/web db:backfill-public-article-metadata",
         "db:sql": "pnpm --filter @petrichor/web db:sql",
         "lint": "pnpm --filter @petrichor/web lint",
         "test": "pnpm --filter @petrichor/web test",
+        "test:api": "cd apps/api && go test ./...",
         "typecheck": "pnpm --filter @petrichor/web typecheck"
     },
     "engines": {
@@ -22,7 +23,6 @@
     },
     "pnpm": {
         "onlyBuiltDependencies": [
-            "better-sqlite3",
             "esbuild",
             "msgpackr-extract",
             "sharp",

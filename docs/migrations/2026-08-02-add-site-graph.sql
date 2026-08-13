@@ -2,7 +2,7 @@
 -- 不引入图数据库：
 --   * 树形骨架用邻接表（petrichor_site_graph_node.parent_id 自引用）
 --   * 跨树关系单独放 petrichor_site_graph_edge
---   * 子树 / N 跳邻域查询用 PostgreSQL 递归 CTE（见 src/server/site-graph/graph-query.ts）
+--   * 子树 / N 跳邻域查询用 PostgreSQL 递归 CTE（当前实现见 apps/api/internal/sitegraph）
 -- 执行顺序：可独立执行，仅依赖 petrichor_user 与 petrichor_kb_article。
 
 create table if not exists petrichor_site_graph_node (

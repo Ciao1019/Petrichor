@@ -7,24 +7,34 @@ const turbopackRoot = fs.existsSync(path.join(workspaceRoot, "pnpm-workspace.yam
     ? workspaceRoot
     : process.cwd()
 
+const goApiURL = process.env.PETRICHOR_GO_API_URL?.trim()
+
 const nextConfig: NextConfig = {
     reactStrictMode: true,
     // Docker 部署用：产出精简的 standalone server（含 node_modules 裁剪），
     // 追踪根设为 monorepo 根，避免把 pnpm-lock.yaml 所在目录之外的文件误判进/出依赖树。
     output: "standalone",
     outputFileTracingRoot: turbopackRoot,
+    // 业务 API 已迁至 Go：必须设置 PETRICHOR_GO_API_URL，将 /api 与 Feed 代理过去。
+    async rewrites() {
+        const base = (goApiURL || "http://127.0.0.1:8080").replace(/\/$/, "")
+        if (!goApiURL) {
+            console.warn(
+                "[petrichor] PETRICHOR_GO_API_URL 未设置，默认代理到 http://127.0.0.1:8080。请启动 pnpm dev:api。",
+            )
+        }
+        return [
+            { source: "/api/:path*", destination: `${base}/api/:path*` },
+            { source: "/rss.xml", destination: `${base}/rss.xml` },
+            { source: "/atom.xml", destination: `${base}/atom.xml` },
+            { source: "/healthz", destination: `${base}/healthz` },
+        ]
+    },
     turbopack: {
         root: turbopackRoot,
-        // Mastra 可选依赖的原生绑定：Turbopack 无法打包，构建期用空 stub。
-        // 路径相对 turbopack.root（monorepo 根），不是 apps/web。
-        resolveAlias: {
-            "@ast-grep/napi": "./apps/web/src/server/stubs/ast-grep-napi.ts",
-        },
     },
-    // 原生 / 非 ESM 可打包模块交给运行时 require，不要打进 server bundle。
-    // @ast-grep/napi：Mastra 依赖，Turbopack/webpack 都无法正确打包其原生绑定。
-    // @firecrawl/pdf-inspector：napi-rs 原生绑定，按平台走 optionalDependencies 解析。
-    serverExternalPackages: ["better-sqlite3", "sharp", "@ast-grep/napi", "@firecrawl/pdf-inspector"],
+    // Next 图片优化在 Node 运行时使用 sharp，不打进业务 bundle。
+    serverExternalPackages: ["sharp"],
     typedRoutes: false,
     // Vercel 上偶发卡在 "Running TypeScript ..." 直到 45min 超时；类型检查交给 CI/本地 typecheck。
     typescript: {

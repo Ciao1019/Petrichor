@@ -63,7 +63,6 @@ export const DEMO_USER: UserProfileResponse = {
     nickname: "演示访客",
     avatar: null,
     signature: "这是一个演示账号，改什么都不会保存。",
-    twoFactorEnabled: false,
     createdAt: daysAgo(30),
     updatedAt: daysAgo(1),
 }
@@ -79,6 +78,7 @@ const knowledgeBases: KnowledgeBaseResponse[] = [
         id: KB_PRODUCT,
         name: "Petrichor 产品手记",
         description: "这套系统本身的设计决策、路线图与踩坑记录。",
+        chunkStrategy: "auto", chunkSize: 512, chunkOverlap: 80, chunkSeparators: ["\n\n", "\n", "。"], enableParentChild: false, parentChunkSize: 0, childChunkSize: 0, chatModelId: null, embeddingModelId: null, rerankModelId: null, wikiEnabled: true, documentCount: 3, wikiPageCount: 4,
         createdAt: daysAgo(28),
         updatedAt: daysAgo(0),
     },
@@ -86,6 +86,7 @@ const knowledgeBases: KnowledgeBaseResponse[] = [
         id: KB_ENGINEERING,
         name: "前端工程笔记",
         description: "React / TypeScript / 构建链路的日常沉淀。",
+        chunkStrategy: "auto", chunkSize: 512, chunkOverlap: 80, chunkSeparators: ["\n\n", "\n", "。"], enableParentChild: false, parentChunkSize: 0, childChunkSize: 0, chatModelId: null, embeddingModelId: null, rerankModelId: null, wikiEnabled: false, documentCount: 2, wikiPageCount: 0,
         createdAt: daysAgo(21),
         updatedAt: daysAgo(2),
     },
@@ -93,6 +94,7 @@ const knowledgeBases: KnowledgeBaseResponse[] = [
         id: KB_READING,
         name: "读书摘录",
         description: "非虚构类读书笔记，按书拆篇。",
+        chunkStrategy: "paragraph", chunkSize: 900, chunkOverlap: 80, chunkSeparators: ["\n\n", "\n"], enableParentChild: false, parentChunkSize: 0, childChunkSize: 0, chatModelId: null, embeddingModelId: null, rerankModelId: null, wikiEnabled: false, documentCount: 1, wikiPageCount: 0,
         createdAt: daysAgo(14),
         updatedAt: daysAgo(5),
     },
@@ -195,7 +197,7 @@ for await (const step of runAgentLoop(messages, tools)) {
 
 ## 排队中
 
-- [ ] 知识图谱视图 v2
+- [ ] Wiki 双链交互增强
 - [ ] 移动端适配二轮
 - [ ] 导入器支持 EPUB
 

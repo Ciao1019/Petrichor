@@ -9,7 +9,6 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
-  FileText,
   Globe2,
   Library,
   Square,
@@ -38,7 +37,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import {
-  type DocLibrary,
   type KnowledgeBaseQaModelInfo,
   type KnowledgeBaseQaModelOption,
   type KnowledgeBaseQaSummary,
@@ -58,7 +56,6 @@ import {
 export function GrokComposer({
   placeholder,
   knowledgeBases,
-  docLibraries,
   focusSelection,
   onFocusChange,
   scopeLabel,
@@ -69,7 +66,6 @@ export function GrokComposer({
 }: {
   placeholder: string
   knowledgeBases: KnowledgeBaseQaSummary[]
-  docLibraries: DocLibrary[]
   focusSelection: AssistantFocusSelection
   onFocusChange: (next: AssistantFocusSelection) => void
   scopeLabel: string
@@ -105,7 +101,6 @@ export function GrokComposer({
 
             <InlineScopeSelector
               knowledgeBases={knowledgeBases}
-              docLibraries={docLibraries}
               value={focusSelection}
               onChange={onFocusChange}
               scopeLabel={scopeLabel}
@@ -170,14 +165,12 @@ export function ComposerContextBar({ contextWindow }: { contextWindow: number })
 
 export function InlineScopeSelector({
   knowledgeBases,
-  docLibraries,
   value,
   onChange,
   scopeLabel,
   isEmpty,
 }: {
   knowledgeBases: KnowledgeBaseQaSummary[]
-  docLibraries: DocLibrary[]
   value: AssistantFocusSelection
   onChange: (next: AssistantFocusSelection) => void
   scopeLabel: string
@@ -185,7 +178,7 @@ export function InlineScopeSelector({
 }) {
   const [open, setOpen] = React.useState(false)
   const isAll = value.kind === "none"
-  const ScopeIcon = value.kind === "doc_library" ? FileText : isAll ? Globe2 : Library
+  const ScopeIcon = isAll ? Globe2 : Library
 
   const triggerRef = React.useRef<HTMLButtonElement | null>(null)
   const innerRef = React.useRef<HTMLDivElement | null>(null)
@@ -257,7 +250,7 @@ export function InlineScopeSelector({
       </PopoverTrigger>
       <PopoverContent align="end" side="top" sideOffset={8} className="w-[min(320px,calc(100vw-2rem))] p-0">
         <Command>
-          <CommandInput placeholder="搜索知识库或文档库..." />
+          <CommandInput placeholder="搜索知识库..." />
           <CommandList>
             <CommandEmpty>没有找到范围</CommandEmpty>
             <CommandGroup heading="范围">
@@ -287,24 +280,6 @@ export function InlineScopeSelector({
                     <Library className="size-3.5 text-muted-foreground" />
                     <span className="flex-1 truncate">{kb.name}</span>
                     {value.kind === "knowledge" && value.knowledgeBaseId === kb.id ? <Check className="size-3.5 text-primary" /> : null}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            ) : null}
-            {docLibraries.length > 0 ? (
-              <CommandGroup heading="文档库">
-                {docLibraries.map((lib) => (
-                  <CommandItem
-                    key={`lib-${lib.id}`}
-                    value={`lib ${lib.name} ${lib.id}`}
-                    onSelect={() => {
-                      onChange({ kind: "doc_library", libraryId: lib.id })
-                      setOpen(false)
-                    }}
-                  >
-                    <FileText className="size-3.5 text-muted-foreground" />
-                    <span className="flex-1 truncate">{lib.name}</span>
-                    {value.kind === "doc_library" && value.libraryId === lib.id ? <Check className="size-3.5 text-primary" /> : null}
                   </CommandItem>
                 ))}
               </CommandGroup>

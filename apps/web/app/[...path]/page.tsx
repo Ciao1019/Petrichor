@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
-import { loadPublicSiteArticles } from "@/server/public-site/articles"
-import { resolvePublicRouteMetadata } from "@/server/public-site/metadata"
+import { resolvePublicRouteMetadata } from "@/lib/public-site/metadata"
+import { fetchPublicArticlesFromGo } from "@/lib/public-site/articles"
 import { SpaEntry } from "../spa-entry"
 
 type CatchAllParams = {
@@ -15,7 +15,7 @@ export async function generateMetadata({ params }: CatchAllPageProps): Promise<M
     const resolvedParams = await params
     const pathSegments = resolvedParams.path ?? []
     const articles = pathSegments[0] === "p"
-        ? await loadPublicSiteArticles({ includeNonIndexable: true })
+        ? await fetchPublicArticlesFromGo()
         : []
 
     return resolvePublicRouteMetadata(pathSegments, articles)

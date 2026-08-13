@@ -9,13 +9,10 @@ import {
   CircleAlert,
   FileText,
   Library,
-  ListTree,
   Loader2,
-  Network,
   Search,
 } from "lucide-react"
 
-import { GraphRetrievalBody, parseGraphRetrievalResult } from "@/components/site-graph/GraphPathChain"
 import { CitationList } from "@/components/tool-ui/citation"
 import { safeParseSerializableCitation } from "@/components/tool-ui/citation/schema"
 import { DataTable } from "@/components/tool-ui/data-table"
@@ -244,102 +241,6 @@ const SearchArticlesToolUI = makeAssistantToolUI({
   render: ({ result, status }) => <SearchArticlesRender result={result} status={status} />,
 })
 
-const SearchTreeToolUI = makeAssistantToolUI({
-  toolName: "search_document_tree",
-  render: ({ result, status }) => {
-    const rows = Array.isArray(result) ? result.map(asRecord).filter(isPresent) : []
-    if (rows.length === 0) {
-      return <ToolStatusCard title="推理式检索" status={status} icon={<ListTree className="size-4" />} />
-    }
-    return (
-      <ToolStatusCard title="推理式检索" status={status} icon={<ListTree className="size-4" />} collapsible defaultOpen={false}>
-        <div className="space-y-1.5">
-          {rows.slice(0, 8).map((row, index) => {
-            const path = typeof row.path === "string" ? row.path : ""
-            const title = String(row.title ?? row.nodeKey ?? "章节")
-            const summary = typeof row.summary === "string" ? row.summary : ""
-            const reason = typeof row.reason === "string" ? row.reason : ""
-            return (
-              <div key={String(row.nodeKey ?? index)} className="rounded-md border border-white/10 bg-white/5 px-3 py-2">
-                {path ? <p className="truncate text-[10px] text-white/60">{path}</p> : null}
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-sm font-medium">{title}</span>
-                  {typeof row.depth === "number" ? (
-                    <Badge variant="outline" className="shrink-0 text-[10px]">L{row.depth}</Badge>
-                  ) : null}
-                </div>
-                {summary ? <p className="mt-1 line-clamp-2 text-xs text-white/60">{summary}</p> : null}
-                {reason ? <p className="mt-1 line-clamp-1 text-[11px] text-yellow-300">命中理由：{reason}</p> : null}
-              </div>
-            )
-          })}
-        </div>
-      </ToolStatusCard>
-    )
-  },
-})
-
-const SearchGraphToolUI = makeAssistantToolUI({
-  toolName: "search_knowledge_graph",
-  render: ({ result, status }) => {
-    const { matched, paths, graphNodes, graphLinks, emptyMessage } = parseGraphRetrievalResult(result)
-
-    if (paths.length === 0 && matched.length === 0) {
-      return (
-        <ToolStatusCard title="星图检索" status={status} icon={<Network className="size-4" />}>
-          {emptyMessage ? <p className="text-xs text-white/60">{emptyMessage}</p> : null}
-        </ToolStatusCard>
-      )
-    }
-
-    return (
-      <ToolStatusCard title="星图检索" status={status} icon={<Network className="size-4" />} collapsible defaultOpen={false}>
-        <GraphRetrievalBody
-          matched={matched}
-          paths={paths}
-          graphNodes={graphNodes}
-          graphLinks={graphLinks}
-          onNavigate={(route) => window.location.assign(route)}
-        />
-      </ToolStatusCard>
-    )
-  },
-})
-
-const ReadTreeNodeToolUI = makeAssistantToolUI({
-  toolName: "read_tree_node",
-  render: ({ result, status }) => {
-    const payload = asRecord(result)
-    const title = typeof payload?.title === "string" ? payload.title : "目录节点"
-    const path = typeof payload?.path === "string" ? payload.path : ""
-    return (
-      <ToolStatusCard title="读取目录节点" status={status} icon={<FileText className="size-4" />}>
-        <div className="min-w-0">
-          {path ? <p className="truncate text-[10px] text-white/60">{path}</p> : null}
-          <span className="line-clamp-2 text-sm font-medium">{title}</span>
-        </div>
-      </ToolStatusCard>
-    )
-  },
-})
-
-const ReadWikiToolUI = makeAssistantToolUI({
-  toolName: "read_wiki_page",
-  render: ({ result, status }) => {
-    const payload = asRecord(result)
-    const title = typeof payload?.title === "string" ? payload.title : "Wiki 页面"
-    const pageKey = typeof payload?.pageKey === "string" ? payload.pageKey : ""
-    return (
-      <ToolStatusCard title="读取 Wiki 页面" status={status} icon={<FileText className="size-4" />}>
-        <div className="flex items-center justify-between gap-3">
-          <span className="min-w-0 truncate text-sm font-medium">{title}</span>
-          {pageKey ? <Badge variant="outline" className="text-[10px]">{pageKey}</Badge> : null}
-        </div>
-      </ToolStatusCard>
-    )
-  },
-})
-
 function ReadSourceRender({ result, status }: { result: unknown; status?: ToolCallMessagePartStatus }) {
   const navigate = useNavigate()
   const payload = asRecord(result)
@@ -374,10 +275,6 @@ export function PublicQaToolUIs() {
       <DataTableToolUI />
       <ListArticlesToolUI />
       <SearchArticlesToolUI />
-      <SearchGraphToolUI />
-      <SearchTreeToolUI />
-      <ReadTreeNodeToolUI />
-      <ReadWikiToolUI />
       <ReadSourceToolUI />
     </>
   )

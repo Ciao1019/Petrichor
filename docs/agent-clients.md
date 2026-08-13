@@ -9,7 +9,7 @@ Petrichor 提供两条把知识库能力接入外部 Agent（Claude Code、Codex
 | 适用客户端 | 原生支持 MCP 的工具（Claude Code / Codex / Cursor / Claude Desktop 等） | 任何能执行 shell 命令的 Agent |
 | 安装成本 | 一行配置，无需下载文件 | 下载 ZIP、解压、改包内 `config.json` |
 | 参数校验 | 工具入参带 JSON Schema，客户端调用前校验 | 由 CLI 的 argparse 校验 |
-| 能力范围 | 检索 / 阅读 / 问答 / 文章写操作 / Wiki / 分享（20 个工具） | 同 MCP，额外覆盖 AI 摘要 / 思维导图 / 知识图谱 |
+| 能力范围 | 检索 / 阅读 / 问答 / 文章写操作 / Wiki / 分享（18 个工具） | 同 MCP，额外覆盖 AI 摘要 / 思维导图 |
 | 推荐场景 | 客户端支持 MCP 时的默认选择 | 客户端不支持 MCP，或需要 AI 生成能力 |
 
 两条路径能力保持一致（Skill 是能力超集），可以同时启用。
@@ -81,12 +81,12 @@ MCP 配置文件，格式相同：
 
 | 分组 | 工具 | scope |
 | --- | --- | --- |
-| 检索与阅读 | `list_knowledge_bases` `get_knowledge_base_tree` `search_documents` `search_document_tree` `semantic_search_document_tree` `view_document` `list_articles` | `doc:read` |
+| 检索与阅读 | `list_knowledge_bases` `get_knowledge_base_tree` `search_documents` `view_document` `list_articles` | `doc:read` |
 | 文档问答 | `ask_documents` | `qa:read` |
 | 文章与文件夹 | `create_folder` `create_article` `update_article` `move_article` | `article:write` |
 | 文章删除 | `delete_article` | `article:delete` |
 | 知识 Wiki | `list_wiki_pages` `read_wiki_page` `wiki_lint` | `wiki:read` |
-| Wiki 编译 | `wiki_ingest` | `wiki:write` |
+| 文件 Wiki 重建 | `wiki_ingest` | `wiki:write` |
 | 文章分享 | `share_article` `get_article_share` `revoke_article_share` | `share:write` |
 
 ---
@@ -159,9 +159,7 @@ petrichor/scripts/petrichor doc tree --query "问题" --kb-id 1
 | --- | --- | --- | --- |
 | 列出知识库 | `list_knowledge_bases` | `kb list` | `POST /api/agent/knowledge-base/list` |
 | 知识库目录树 | `get_knowledge_base_tree` | `kb tree` | `POST /api/agent/knowledge-base/tree` |
-| 关键词搜索 | `search_documents` | `doc search` | `POST /api/agent/document/search` |
-| 目录树推理检索 | `search_document_tree` | `doc tree` | `POST /api/agent/document/tree` |
-| 向量语义检索 | `semantic_search_document_tree` | `doc semantic` | `POST /api/agent/document/semantic-search` |
+| 混合搜索文件分片 / Wiki / 文章 | `search_documents` | `doc search` | `POST /api/agent/document/search` |
 | 读取文档 / Wiki 页 | `view_document` | `doc view` | `POST /api/agent/document/view` |
 | 文档问答 | `ask_documents` | `doc ask` | `POST /api/agent/document/qa` |
 | 列出文章 | `list_articles` | `article list` | `POST /api/agent/article/list` |
@@ -173,15 +171,14 @@ petrichor/scripts/petrichor doc tree --query "问题" --kb-id 1
 | Wiki 页面列表 | `list_wiki_pages` | `wiki page list` | `POST /api/agent/wiki/page/list` |
 | 读取 Wiki 页面 | `read_wiki_page` | `wiki page detail` | `POST /api/agent/wiki/page/detail` |
 | Wiki 体检 | `wiki_lint` | `wiki lint` | `POST /api/agent/wiki/lint` |
-| Wiki 编译 | `wiki_ingest` | `wiki ingest` | `POST /api/agent/wiki/ingest` |
+| 从知识库文件重建 Wiki | `wiki_ingest` | `wiki ingest` | `POST /api/agent/wiki/ingest` |
 | 创建/更新分享 | `share_article` | `share create` | `POST /api/agent/article/share/create` |
 | 查询分享状态 | `get_article_share` | `share info` | `POST /api/agent/article/share/info` |
 | 撤销分享 | `revoke_article_share` | `share revoke` | `POST /api/agent/article/share/revoke` |
 | AI 摘要 | —（仅 Skill） | `summary generate` | `POST /api/agent/article/summary/generate` |
-| 思维导图 / 知识图谱 | —（仅 Skill） | `mindmap generate` | `POST /api/agent/article/mindmap/generate` |
+| 思维导图 | —（仅 Skill） | `mindmap generate` | `POST /api/agent/article/mindmap/generate` |
 
-> 语义检索需要服务端使用 PostgreSQL 并配置向量模型，否则返回 400，请回退到 `doc tree` /
-> `search_document_tree`。
+> `search_documents` 会统一执行文件分片关键词/向量召回与重排；向量或重排模型不可用时仍保留关键词结果。
 
 ## 四、安全建议
 
