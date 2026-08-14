@@ -1864,7 +1864,7 @@ export interface KBSpanNode {
   startedAt?: string
   finishedAt?: string
   durationMs: number
-  /** 该阶段没有真实记录，只是为了让时间线保持五段而合成的占位节点 */
+  /** 该阶段没有真实记录，只是为了让时间线保持六段而合成的占位节点 */
   placeholder?: boolean
   children?: KBSpanNode[]
 }

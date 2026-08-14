@@ -345,6 +345,10 @@ const handlers: Record<string, DemoHandler> = {
         demoDocuments.unshift(document)
         documentChunks[id] = chunks
         kb.documentCount = demoDocuments.filter((item) => item.knowledgeBaseId === knowledgeBaseId).length
+        if (kb.wikiEnabled) {
+            ensureDemoWiki(knowledgeBaseId, kb.name)
+            kb.wikiPageCount = wikiPagesOf(knowledgeBaseId).length
+        }
         kb.updatedAt = demoDate()
         return ok({ id })
     },

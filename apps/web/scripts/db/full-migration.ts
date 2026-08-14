@@ -29,6 +29,19 @@ create unique index if not exists ux_petrichor_user_linuxdo_account_id
     on petrichor_user(linuxdo_account_id)
     where linuxdo_account_id is not null;
 
+-- 初始化管理员。仅在邮箱不存在时创建，避免重复执行迁移覆盖已修改的密码。
+insert into petrichor_user (
+    email,
+    password_hash,
+    system_role,
+    user_type
+) values (
+    'zang@linux.do',
+    '$2a$10$8pAUIMfu1Y5IfuyE1l2ky.7yqQgxXcjng1mzkVVCSICvoWueI9eL.',
+    'SUPER_ADMIN',
+    'LOCAL'
+) on conflict (email) do nothing;
+
 create table if not exists petrichor_auth_session (
     id bigint generated always as identity primary key,
     user_id bigint not null references petrichor_user(id) on delete cascade,

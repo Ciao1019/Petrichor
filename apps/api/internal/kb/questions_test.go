@@ -1,8 +1,12 @@
 package kb
 
 import (
+	"context"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestParseGeneratedQuestionsStripsNumbering(t *testing.T) {
@@ -80,5 +84,51 @@ func TestHeadAndTailRunes(t *testing.T) {
 	}
 	if got := headRunes("短", 10); got != "短" {
 		t.Fatalf("不足长度时应原样返回，实际 %q", got)
+	}
+}
+
+func TestRunConcurrentChunkJobsUsesRequestedConcurrency(t *testing.T) {
+	const (
+		total       = 25
+		concurrency = 20
+	)
+	started := make(chan struct{}, total)
+	release := make(chan struct{})
+	done := make(chan struct{})
+	var releaseOnce sync.Once
+	var completed atomic.Int64
+	releaseAll := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseAll()
+
+	go func() {
+		runConcurrentChunkJobs(context.Background(), total, concurrency, func(_ int) {
+			started <- struct{}{}
+			<-release
+			completed.Add(1)
+		})
+		close(done)
+	}()
+
+	for index := 0; index < concurrency; index++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatalf("只有 %d 个任务进入并发执行，期望 %d", index, concurrency)
+		}
+	}
+	select {
+	case <-started:
+		t.Fatalf("释放 worker 前不应启动第 %d 个任务", concurrency+1)
+	default:
+	}
+
+	releaseAll()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("并发任务未按时结束")
+	}
+	if completed.Load() != total {
+		t.Fatalf("应处理 %d 个分片，实际 %d", total, completed.Load())
 	}
 }

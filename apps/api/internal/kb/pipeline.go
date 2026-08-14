@@ -15,6 +15,7 @@ import (
 	"github.com/Ciao1019/Petrichor/apps/api/ent/kbdocument"
 	"github.com/Ciao1019/Petrichor/apps/api/ent/kbdocumentchunk"
 	"github.com/Ciao1019/Petrichor/apps/api/ent/kbdocumentspan"
+	"github.com/Ciao1019/Petrichor/apps/api/ent/kbwikiingestjob"
 	"github.com/Ciao1019/Petrichor/apps/api/internal/ai"
 	"github.com/Ciao1019/Petrichor/apps/api/internal/upload"
 )
@@ -49,12 +50,12 @@ func (s *Service) startDocumentPipeline(userID, documentID int64, attempt int, i
 	}()
 }
 
-// runDocumentPipeline 依次跑完五个阶段，并把每段的状态、耗时、入参出参写成 span。
+// runDocumentPipeline 依次跑完文档处理阶段，在文档 ready 后可靠提交可选的 Wiki 后台阶段。
 //
 // 阶段划分与依赖：
 //
 //	文档解析 → 分块 → 向量化 ┐
-//	              └→ 多模态识别 ┴→ 后处理
+//	              └→ 多模态识别 ┴→ 后处理 → Wiki（可选异步）
 //
 // 多模态不依赖向量化：它产出的是独立的图片分片，跑完再补一次向量化。
 func (s *Service) runDocumentPipeline(ctx context.Context, userID, documentID int64, attempt int, input pipelineInput) {
@@ -197,8 +198,28 @@ func (s *Service) runDocumentPipeline(ctx context.Context, userID, documentID in
 		SetStatus("ready").SetChunkCount(total).ClearError().Save(ctx); err != nil {
 		s.log.Warn("回写文档状态失败", zap.Int64("document_id", documentID), zap.Error(err))
 	}
+
+	// ---- 阶段 6：Wiki 构建 ----
+	// 自动 Wiki 必须由服务端在文档真正 ready 后入队，不能依赖上传页面再发一次请求：
+	// 页面刷新、网络中断或前端持有旧设置都不应导致任务丢失。
+	var wikiJobID string
+	if kbRow.WikiEnabled {
+		job, queueErr := s.QueueKnowledgeBaseDocumentsWiki(
+			ctx, userID, doc.KnowledgeBaseID, []string{fmt.Sprintf("%d", documentID)}, false,
+		)
+		if queueErr != nil {
+			wikiSpan := tracker.BeginStage(ctx, StageWiki, map[string]any{"automatic": true})
+			tracker.FailSpan(ctx, wikiSpan, "WIKI_QUEUE_FAILED", queueErr)
+			s.log.Warn("自动 Wiki 入队失败", zap.Int64("document_id", documentID), zap.Error(queueErr))
+		} else {
+			wikiJobID = fmt.Sprintf("%d", job.ID)
+		}
+	} else {
+		wikiSpan := tracker.BeginStage(ctx, StageWiki, map[string]any{"automatic": false})
+		tracker.SkipSpan(ctx, wikiSpan, "知识库未开启自动 Wiki")
+	}
 	tracker.FinishRoot(ctx, false, "", nil, map[string]any{
-		"chunks": total, "questions": questionCount, "imageChunks": imageChunks,
+		"chunks": total, "questions": questionCount, "imageChunks": imageChunks, "wikiJobId": wikiJobID,
 	})
 }
 
@@ -448,6 +469,18 @@ func (s *Service) LoadDocumentSpans(ctx context.Context, userID, documentID int6
 		}
 	}
 	tree, currentStage, failure := buildSpanTree(rows, doc.Status)
+	rootStartedAt := doc.CreatedAt
+	for _, row := range rows {
+		if row.Kind == SpanKindRoot && row.StartedAt != nil {
+			rootStartedAt = *row.StartedAt
+			break
+		}
+	}
+	wikiJob, err := s.latestWikiJobForDocument(ctx, userID, doc.KnowledgeBaseID, documentID, rootStartedAt)
+	if err != nil {
+		return nil, err
+	}
+	currentStage, failure = attachWikiStage(tree, doc.Status, wikiJob, currentStage, failure)
 	payload := map[string]any{
 		"documentId":    fmt.Sprintf("%d", doc.ID),
 		"status":        doc.Status,
@@ -467,4 +500,122 @@ func (s *Service) LoadDocumentSpans(ctx context.Context, userID, documentID int6
 		}
 	}
 	return payload, nil
+}
+
+// latestWikiJobForDocument 找到本次解析开始后创建或合并过、且与该文档关联的最新 Wiki 任务。
+// document_ids_json 是历史既有字段；在不做数据库结构变更的前提下，这也能把手动任务
+// 和自动任务统一映射回文档流水线，并兼容已经在运行的旧任务。
+func (s *Service) latestWikiJobForDocument(
+	ctx context.Context, userID, knowledgeBaseID, documentID int64, since time.Time,
+) (*ent.KBWikiIngestJob, error) {
+	jobs, err := s.client.KBWikiIngestJob.Query().Where(
+		kbwikiingestjob.UserIDEQ(userID),
+		kbwikiingestjob.KnowledgeBaseIDEQ(knowledgeBaseID),
+		kbwikiingestjob.KindEQ("ingest"),
+		kbwikiingestjob.UpdatedAtGTE(since),
+	).Order(ent.Desc(kbwikiingestjob.FieldUpdatedAt), ent.Desc(kbwikiingestjob.FieldID)).Limit(200).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, job := range jobs {
+		if wikiJobContainsAllDocuments(job, []int64{documentID}) {
+			return job, nil
+		}
+	}
+	return nil, nil
+}
+
+func attachWikiStage(
+	root *SpanNode, documentStatus string, job *ent.KBWikiIngestJob, currentStage string, failure *SpanNode,
+) (string, *SpanNode) {
+	if root == nil {
+		return currentStage, failure
+	}
+	index := -1
+	for childIndex, child := range root.Children {
+		if child.Kind == SpanKindStage && child.Name == StageWiki {
+			index = childIndex
+			break
+		}
+	}
+	if index < 0 {
+		return currentStage, failure
+	}
+	if job == nil {
+		stage := root.Children[index]
+		if !stage.Placeholder {
+			return currentStage, failure
+		}
+		switch documentStatus {
+		case "ready":
+			stage.Status = SpanStatusSkipped
+			stage.Output = map[string]any{"reason": "本次解析没有关联 Wiki 构建任务"}
+		case "failed":
+			stage.Status = SpanStatusCancelled
+			stage.Output = map[string]any{"reason": "文档处理失败，未构建 Wiki"}
+		default:
+			stage.Status = SpanStatusPending
+		}
+		return currentStage, failure
+	}
+
+	stage := wikiJobSpanNode(job, root.SpanID)
+	root.Children[index] = stage
+	if stage.Status == SpanStatusPending || stage.Status == SpanStatusRunning {
+		currentStage = StageWiki
+	} else if currentStage == StageWiki {
+		currentStage = ""
+	}
+	if stage.Status == SpanStatusFailed {
+		failure = stage
+	}
+	return currentStage, failure
+}
+
+func wikiJobSpanNode(job *ent.KBWikiIngestJob, parentSpanID string) *SpanNode {
+	status := SpanStatusPending
+	switch job.Status {
+	case "running":
+		status = SpanStatusRunning
+	case "completed":
+		status = SpanStatusDone
+	case "failed":
+		status = SpanStatusFailed
+	}
+	startedAt := job.CreatedAt
+	if job.StartedAt != nil {
+		startedAt = *job.StartedAt
+	}
+	var finishedAt *string
+	duration := int64(0)
+	if job.FinishedAt != nil {
+		finishedAt = formatTimePtr(job.FinishedAt)
+		duration = job.FinishedAt.Sub(startedAt).Milliseconds()
+	}
+	warnings := []string{}
+	_ = json.Unmarshal([]byte(job.WarningsJSON), &warnings)
+	node := &SpanNode{
+		SpanID:       fmt.Sprintf("wiki-job-%d", job.ID),
+		ParentSpanID: parentSpanID,
+		Name:         StageWiki,
+		Kind:         SpanKindStage,
+		Status:       status,
+		StartedAt:    formatTimePtr(&startedAt),
+		FinishedAt:   finishedAt,
+		DurationMs:   duration,
+		Input: map[string]any{
+			"jobId": fmt.Sprintf("%d", job.ID), "automatic": !job.ForceRebuild,
+			"forceRebuild": job.ForceRebuild, "totalDocuments": job.TotalDocuments,
+		},
+		Output: map[string]any{
+			"phase": job.Phase, "processedDocuments": job.ProcessedDocuments,
+			"totalDocuments": job.TotalDocuments, "processedPages": job.ProcessedPages,
+			"totalPages": job.TotalPages, "currentDocument": job.CurrentDocument, "warnings": warnings,
+		},
+	}
+	if job.Error != nil {
+		node.ErrorCode = "WIKI_BUILD_FAILED"
+		node.ErrorMessage = *job.Error
+	}
+	return node
 }

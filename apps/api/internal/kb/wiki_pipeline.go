@@ -202,6 +202,10 @@ func (s *Service) QueueKnowledgeBaseDocumentsWiki(ctx context.Context, userID, k
 	if _, err := s.GetOwned(ctx, userID, kbID); err != nil {
 		return nil, err
 	}
+	// 多份文档可能在同一时刻结束解析；串行化“查询现有任务 → 合并/创建”，
+	// 避免两个 goroutine 同时看不到 pending 任务而各建一条。
+	s.wikiSubmitMu.Lock()
+	defer s.wikiSubmitMu.Unlock()
 	if len(rawIDs) > 500 {
 		return nil, response.BadRequest("documentIds 数量不能超过 500")
 	}
@@ -232,10 +236,60 @@ func (s *Service) QueueKnowledgeBaseDocumentsWiki(ctx context.Context, userID, k
 	if len(ids) > 0 && len(documents) != len(ids) {
 		return nil, response.BadRequest("部分文件不存在或不属于该知识库")
 	}
+	for _, document := range documents {
+		if document.Status != "ready" {
+			return nil, response.BadRequest(fmt.Sprintf("文件 %s 仍在解析，请等待处理流水线完成后再构建 Wiki", document.Title))
+		}
+	}
 	ids = ids[:0]
 	for _, document := range documents {
 		ids = append(ids, document.ID)
 	}
+
+	activeJobs, err := s.client.KBWikiIngestJob.Query().Where(
+		kbwikiingestjob.UserIDEQ(userID), kbwikiingestjob.KnowledgeBaseIDEQ(kbID),
+		kbwikiingestjob.KindEQ("ingest"), kbwikiingestjob.StatusIn("pending", "running"),
+	).Order(ent.Desc(kbwikiingestjob.FieldCreatedAt), ent.Desc(kbwikiingestjob.FieldID)).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, active := range activeJobs {
+		if wikiJobContainsAllDocuments(active, ids) && (!force || active.ForceRebuild || active.Status == "running") {
+			return active, nil
+		}
+		if force && active.Status == "running" {
+			// 同一知识库不能同时做两轮全局 Reduce；手动重建直接跟踪正在运行的任务。
+			return active, nil
+		}
+	}
+
+	// 同一知识库在防抖窗口内完成的文档合并到一个 pending 任务。这样批量上传时
+	// 不会每个文档各自跑一轮全局 Reduce；手动全量重建则升级已有 pending 任务并立即执行。
+	for _, pending := range activeJobs {
+		if pending.Status != "pending" {
+			continue
+		}
+		merged := mergeWikiDocumentIDs(wikiJobDocumentIDs(pending), ids)
+		availableAt := pending.AvailableAt
+		forceRebuild := pending.ForceRebuild || force
+		if forceRebuild {
+			availableAt = time.Now().UTC()
+		} else {
+			availableAt = time.Now().UTC().Add(wikiAutomaticDebounce)
+		}
+		job, updateErr := pending.Update().
+			SetDocumentIdsJSON(marshalWikiDocumentIDs(merged)).
+			SetTotalDocuments(len(merged)).
+			SetForceRebuild(forceRebuild).
+			SetAvailableAt(availableAt).
+			Save(ctx)
+		if updateErr != nil {
+			return nil, updateErr
+		}
+		s.wakeWikiWorker()
+		return job, nil
+	}
+
 	raw, _ := json.Marshal(ids)
 	availableAt := time.Now().UTC()
 	if !force {
@@ -247,11 +301,67 @@ func (s *Service) QueueKnowledgeBaseDocumentsWiki(ctx context.Context, userID, k
 		return nil, err
 	}
 	s.log.Info("wiki ingest queued", zap.Int64("job_id", job.ID), zap.Int64("knowledge_base_id", kbID), zap.Int("documents", len(ids)), zap.Time("available_at", availableAt))
+	s.wakeWikiWorker()
+	return job, nil
+}
+
+func (s *Service) wakeWikiWorker() {
 	select {
 	case s.wikiWake <- struct{}{}:
 	default:
 	}
-	return job, nil
+}
+
+func wikiJobDocumentIDs(job *ent.KBWikiIngestJob) []int64 {
+	if job == nil {
+		return nil
+	}
+	var ids []int64
+	if err := json.Unmarshal([]byte(job.DocumentIdsJSON), &ids); err != nil {
+		return nil
+	}
+	return ids
+}
+
+func wikiJobContainsAllDocuments(job *ent.KBWikiIngestJob, expected []int64) bool {
+	actual := wikiJobDocumentIDs(job)
+	if len(expected) == 0 || len(actual) < len(expected) {
+		return false
+	}
+	seen := make(map[int64]struct{}, len(actual))
+	for _, id := range actual {
+		seen[id] = struct{}{}
+	}
+	for _, id := range expected {
+		if _, ok := seen[id]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func mergeWikiDocumentIDs(groups ...[]int64) []int64 {
+	seen := map[int64]struct{}{}
+	merged := make([]int64, 0)
+	for _, ids := range groups {
+		for _, id := range ids {
+			if id <= 0 {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			merged = append(merged, id)
+		}
+	}
+	sort.Slice(merged, func(i, j int) bool { return merged[i] < merged[j] })
+	return merged
+}
+
+func marshalWikiDocumentIDs(ids []int64) string {
+	raw, _ := json.Marshal(ids)
+	return string(raw)
 }
 
 // QueueWikiCleanupAfterDocumentDelete 把"文档删除后的 Wiki 重整"排进后台队列。
@@ -310,13 +420,18 @@ func (s *Service) runWikiWorker(ctx context.Context) {
 
 func (s *Service) drainWikiJobs(ctx context.Context) error {
 	for {
+		// 与提交侧共用锁，保证 pending 任务不会在“读取旧 document_ids → claim”期间
+		// 被并发合并；先 claim 的任务只处理已冻结的文档集合，后来完成的文档进入下一条任务。
+		s.wikiSubmitMu.Lock()
 		job, err := s.client.KBWikiIngestJob.Query().Where(
 			kbwikiingestjob.StatusEQ("pending"), kbwikiingestjob.AvailableAtLTE(time.Now().UTC()),
 		).Order(ent.Asc(kbwikiingestjob.FieldAvailableAt), ent.Asc(kbwikiingestjob.FieldID)).First(ctx)
 		if ent.IsNotFound(err) {
+			s.wikiSubmitMu.Unlock()
 			return nil
 		}
 		if err != nil {
+			s.wikiSubmitMu.Unlock()
 			return err
 		}
 		now := time.Now().UTC()
@@ -324,8 +439,10 @@ func (s *Service) drainWikiJobs(ctx context.Context) error {
 			kbwikiingestjob.IDEQ(job.ID), kbwikiingestjob.StatusEQ("pending"),
 		).SetStatus("running").SetPhase(wikiClaimPhase(job.Kind)).SetStartedAt(now).ClearError().Save(ctx)
 		if err != nil {
+			s.wikiSubmitMu.Unlock()
 			return err
 		}
+		s.wikiSubmitMu.Unlock()
 		if claimed == 0 {
 			continue
 		}
@@ -436,8 +553,10 @@ func (s *Service) processWikiJob(ctx context.Context, jobID int64) error {
 	// 目录规划放在 Reduce 之后：此时页面标题和摘要都已定稿，一次规划就能让整批页面
 	// 落在同一棵目录树上。规划失败不应让整个构建作废，页面只是暂时留在根目录。
 	_, _ = s.client.KBWikiIngestJob.UpdateOneID(job.ID).SetPhase("organizing").ClearCurrentDocument().Save(ctx)
-	if err := s.assignWikiCategories(ctx, modelCfg, job.UserID, job.KnowledgeBaseID, affected); err != nil {
-		s.log.Warn("wiki taxonomy planning failed", zap.Int64("job_id", job.ID), zap.Error(err))
+	categoryWarnings, categoryErr := s.assignWikiCategories(ctx, modelCfg, job.UserID, job.KnowledgeBaseID, affected)
+	warnings = append(warnings, categoryWarnings...)
+	if categoryErr != nil {
+		s.log.Warn("wiki taxonomy planning failed", zap.Int64("job_id", job.ID), zap.Error(categoryErr))
 		warnings = append(warnings, "目录规划失败，页面暂时挂在根目录")
 	}
 	_, _ = s.client.KBWikiIngestJob.UpdateOneID(job.ID).SetPhase("finalizing").ClearCurrentDocument().Save(ctx)

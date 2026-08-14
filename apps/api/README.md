@@ -17,7 +17,7 @@
 - Auth：登录/注册/会话 + **LinuxDo OAuth**（无 2FA）
 - Admin / CMS：用户、About、Appearance、Projects
 - KB：知识库/树/文章/分享/烧链/Wiki/Import（含 Vision OCR）
-- 文档解析流水线：上传即返回，后台跑「文档解析 → 分块 → 向量化 → 多模态识别 → 后处理」五阶段，
+- 文档解析流水线：上传即返回，后台跑「文档解析 → 分块 → 向量化 → 多模态识别 → 后处理 → Wiki（可选异步）」六阶段，
   全程写 span（`/kb/document/spans` 供前端画时间线）；每次上传可覆盖解析引擎、分块、图像处理、
   AI 问题生成与文档标签
 - 公开面：文章列表/搜索/分享/烧链、Site Graph、Public QA 流式

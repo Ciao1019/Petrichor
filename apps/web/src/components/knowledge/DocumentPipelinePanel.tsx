@@ -5,7 +5,7 @@
  *
  * 行按「根 → 主流程阶段 → 子任务」层级缩进，右侧是按同一时间轴对齐的耗时条，
  * 因此哪一段最花时间、哪些子任务真正并行，一眼就能看出来。
- * 解析进行中每 2 秒轮询一次，跑完自动停。
+ * 文档解析或异步 Wiki 构建进行中时每 2 秒轮询一次，全部结束后自动停。
  */
 
 import * as React from "react"
@@ -94,7 +94,7 @@ export function DocumentPipelinePanel({
   const [now, setNow] = React.useState(() => Date.now())
   const finishedRef = React.useRef(false)
 
-  const running = data?.status === "pending" || data?.status === "processing"
+  const running = data?.status === "pending" || data?.status === "processing" || Boolean(data?.currentStage)
 
   const load = React.useCallback(
     async (id: string, silent: boolean) => {
@@ -102,7 +102,7 @@ export function DocumentPipelinePanel({
       try {
         const response = await knowledgeBaseDocumentApi.documentSpans(id)
         setData(response.data)
-        const done = response.data.status !== "pending" && response.data.status !== "processing"
+        const done = response.data.status !== "pending" && response.data.status !== "processing" && !response.data.currentStage
         if (done && !finishedRef.current) {
           finishedRef.current = true
           onFinished?.()

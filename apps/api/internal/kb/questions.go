@@ -13,16 +13,12 @@ import (
 	"github.com/Ciao1019/Petrichor/apps/api/ent/kbdocumentchunk"
 	"github.com/Ciao1019/Petrichor/apps/api/ent/kbdocumentchunkquestion"
 	"github.com/Ciao1019/Petrichor/apps/api/internal/ai"
+	appconfig "github.com/Ciao1019/Petrichor/apps/api/internal/config"
 	"github.com/Ciao1019/Petrichor/apps/api/internal/http/response"
 	"github.com/Ciao1019/Petrichor/apps/api/internal/vector"
 )
 
 const (
-	// 每个批次处理的分片数。按批而不是按片建子 span，
-	// 大文档才不会在时间线上炸出几百行。
-	questionBatchSize = 8
-	// 同时在跑的批次数，控制对模型服务的并发压力。
-	questionBatchConcurrency = 2
 	// 送进模型的单片正文上限，超出截断。
 	questionChunkMaxChars = 4000
 	// 前后文各取多少字符，帮助模型理解这一片在讲什么。
@@ -123,8 +119,13 @@ func (s *Service) runQuestionGenerationStage(
 	ctx context.Context, tracker *spanTracker, parent *pipelineSpan,
 	userID int64, doc *ent.KBDocument, kbRow *ent.KnowledgeBase, config QuestionGenerationConfig,
 ) int {
+	concurrency := appconfig.DefaultQuestionGenerationConcurrency
+	if s.cfg != nil && s.cfg.QuestionGenerationConcurrency > 0 {
+		concurrency = s.cfg.QuestionGenerationConcurrency
+	}
 	span := tracker.BeginSubSpan(ctx, parent, "postprocess.question", SpanKindSubSpan, map[string]any{
 		"questionCount": config.QuestionCount,
+		"concurrency":   concurrency,
 	})
 
 	// 多模态识别出的 image 分片同样是可召回内容，也值得配问题；
@@ -153,46 +154,32 @@ func (s *Service) runQuestionGenerationStage(
 		return 0
 	}
 
-	batches := make([][]*ent.KBDocumentChunk, 0, len(chunks)/questionBatchSize+1)
-	for offset := 0; offset < len(chunks); offset += questionBatchSize {
-		batches = append(batches, chunks[offset:minInt(offset+questionBatchSize, len(chunks))])
-	}
-
 	gen := ai.NewGeneration(s.cfg)
 	var mu sync.Mutex
 	written := 0
+	failed := 0
 
-	queue := make(chan int)
-	var workers sync.WaitGroup
-	for i := 0; i < minInt(questionBatchConcurrency, len(batches)); i++ {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
-			for batchIndex := range queue {
-				batch := batches[batchIndex]
-				batchSpan := tracker.BeginSubSpan(ctx, span,
-					fmt.Sprintf("postprocess.question.batch[%d]", batchIndex), SpanKindGeneration,
-					map[string]any{"chunks": len(batch)})
-				count, batchErr := s.generateQuestionsForBatch(ctx, gen, modelCfg, userID, doc, chunks, batch, config)
-				mu.Lock()
-				written += count
-				mu.Unlock()
-				if batchErr != nil {
-					tracker.FailSpan(ctx, batchSpan, "QUESTION_GENERATION_FAILED", batchErr)
-					continue
-				}
-				tracker.EndSpan(ctx, batchSpan, map[string]any{"questions": count})
-			}
-		}()
-	}
-	for index := range batches {
-		queue <- index
-	}
-	close(queue)
-	workers.Wait()
+	runConcurrentChunkJobs(ctx, len(chunks), concurrency, func(position int) {
+		chunk := chunks[position]
+		chunkSpan := tracker.BeginSubSpan(ctx, span,
+			fmt.Sprintf("postprocess.question.chunk[%d]", chunk.ChunkIndex), SpanKindGeneration,
+			map[string]any{"chunkId": fmt.Sprintf("%d", chunk.ID), "chunkIndex": chunk.ChunkIndex})
+		count, chunkErr := s.generateQuestionsForChunk(ctx, gen, modelCfg, userID, doc, chunks, position, config)
+		mu.Lock()
+		written += count
+		if chunkErr != nil {
+			failed++
+		}
+		mu.Unlock()
+		if chunkErr != nil {
+			tracker.FailSpan(ctx, chunkSpan, "QUESTION_GENERATION_FAILED", chunkErr)
+			return
+		}
+		tracker.EndSpan(ctx, chunkSpan, map[string]any{"questions": count})
+	})
 
 	if written == 0 {
-		tracker.EndSpan(ctx, span, map[string]any{"questions": 0})
+		tracker.EndSpan(ctx, span, map[string]any{"questions": 0, "failedChunks": failed})
 		return 0
 	}
 	embedded, embedErr := s.embedDocumentQuestions(ctx, userID, doc, kbRow)
@@ -202,50 +189,82 @@ func (s *Service) runQuestionGenerationStage(
 		tracker.FailSpan(ctx, span, "QUESTION_EMBEDDING_FAILED", embedErr)
 		return written
 	}
-	tracker.EndSpan(ctx, span, map[string]any{"questions": written, "embedded": embedded})
+	tracker.EndSpan(ctx, span, map[string]any{
+		"questions": written, "embedded": embedded, "failedChunks": failed,
+	})
 	return written
 }
 
-// generateQuestionsForBatch 为一批分片逐片生成问题并写库。
-func (s *Service) generateQuestionsForBatch(
+// runConcurrentChunkJobs 以固定 worker 数处理单分片任务。队列元素始终是一个分片，
+// 确保模型调用的并发粒度与可观测 span 都对应到真实请求。
+func runConcurrentChunkJobs(ctx context.Context, total, concurrency int, job func(position int)) {
+	if total <= 0 || job == nil {
+		return
+	}
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+
+	queue := make(chan int)
+	var workers sync.WaitGroup
+	for worker := 0; worker < minInt(concurrency, total); worker++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for position := range queue {
+				job(position)
+			}
+		}()
+	}
+
+enqueue:
+	for position := 0; position < total; position++ {
+		select {
+		case queue <- position:
+		case <-ctx.Done():
+			break enqueue
+		}
+	}
+	close(queue)
+	workers.Wait()
+}
+
+// generateQuestionsForChunk 为单个分片生成问题并写库。
+func (s *Service) generateQuestionsForChunk(
 	ctx context.Context, gen *ai.Generation, modelCfg *ent.AIModelConfig,
-	userID int64, doc *ent.KBDocument, all []*ent.KBDocumentChunk, batch []*ent.KBDocumentChunk,
+	userID int64, doc *ent.KBDocument, all []*ent.KBDocumentChunk, position int,
 	config QuestionGenerationConfig,
 ) (int, error) {
-	positions := make(map[int64]int, len(all))
-	for index, chunk := range all {
-		positions[chunk.ID] = index
+	if position < 0 || position >= len(all) {
+		return 0, fmt.Errorf("问题生成分片位置越界：%d", position)
 	}
+	chunk := all[position]
 	written := 0
-	for _, chunk := range batch {
-		content := chunk.Text
-		if runes := []rune(content); len(runes) > questionChunkMaxChars {
-			content = string(runes[:questionChunkMaxChars])
-		}
-		prev, next := "", ""
-		if position, ok := positions[chunk.ID]; ok {
-			if position > 0 {
-				prev = tailRunes(all[position-1].Text, questionContextChars)
-			}
-			if position+1 < len(all) {
-				next = headRunes(all[position+1].Text, questionContextChars)
-			}
-		}
-		prompt := BuildQuestionGenerationPrompt(doc.Title, content, prev, next, config.QuestionCount, config.CustomInstructions)
-		result, err := gen.Chat(ctx, modelCfg, []ai.ChatMessage{{Role: "user", Content: prompt}})
+	content := chunk.Text
+	if runes := []rune(content); len(runes) > questionChunkMaxChars {
+		content = string(runes[:questionChunkMaxChars])
+	}
+	prev, next := "", ""
+	if position > 0 {
+		prev = tailRunes(all[position-1].Text, questionContextChars)
+	}
+	if position+1 < len(all) {
+		next = headRunes(all[position+1].Text, questionContextChars)
+	}
+	prompt := BuildQuestionGenerationPrompt(doc.Title, content, prev, next, config.QuestionCount, config.CustomInstructions)
+	result, err := gen.Chat(ctx, modelCfg, []ai.ChatMessage{{Role: "user", Content: prompt}})
+	if err != nil {
+		return 0, err
+	}
+	questions := ParseGeneratedQuestions(result.Content, config.QuestionCount)
+	for _, question := range questions {
+		err := s.client.KBDocumentChunkQuestion.Create().
+			SetUserID(userID).SetKnowledgeBaseID(doc.KnowledgeBaseID).SetDocumentID(doc.ID).
+			SetChunkID(chunk.ID).SetQuestion(question).Exec(ctx)
 		if err != nil {
 			return written, err
 		}
-		questions := ParseGeneratedQuestions(result.Content, config.QuestionCount)
-		for _, question := range questions {
-			err := s.client.KBDocumentChunkQuestion.Create().
-				SetUserID(userID).SetKnowledgeBaseID(doc.KnowledgeBaseID).SetDocumentID(doc.ID).
-				SetChunkID(chunk.ID).SetQuestion(question).Exec(ctx)
-			if err != nil {
-				return written, err
-			}
-			written++
-		}
+		written++
 	}
 	return written, nil
 }

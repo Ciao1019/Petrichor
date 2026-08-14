@@ -248,13 +248,14 @@ export function KnowledgeBaseWikiTab({
           <div><h2 className="text-sm font-semibold">Wiki 页面双链</h2><p className="mt-1 text-xs text-muted-foreground">展示页面之间的引用关系，不构建实体知识图谱。</p></div>
           <BuildButton pages={pages} building={building} disabled={knowledgeBase.documentCount === 0} onClick={() => void buildWiki()} />
         </div>
+        {building && activeJob ? <WikiJobProgress job={activeJob} /> : null}
         {nodes.length === 0 ? <WikiEmpty building={building} disabled={knowledgeBase.documentCount === 0} onBuild={() => void buildWiki()} /> : <div className="relative min-h-0 flex-1 overflow-hidden border-t bg-background"><WikiGraphLegend /><KnowledgeGraph data={graphData} onNodeClick={openGraphPage}><KnowledgeGraphControls /></KnowledgeGraph></div>}
       </section>
     )
   }
 
   if (pages.length === 0) {
-    return <section className="flex min-h-0 flex-1 flex-col"><div className="flex justify-end pb-3"><BuildButton pages={pages} building={building} disabled={knowledgeBase.documentCount === 0} onClick={() => void buildWiki()} /></div><WikiEmpty building={building} disabled={knowledgeBase.documentCount === 0} onBuild={() => void buildWiki()} /></section>
+    return <section className="flex min-h-0 flex-1 flex-col"><div className="flex justify-end pb-3"><BuildButton pages={pages} building={building} disabled={knowledgeBase.documentCount === 0} onClick={() => void buildWiki()} /></div>{building && activeJob ? <WikiJobProgress job={activeJob} /> : null}<WikiEmpty building={building} disabled={knowledgeBase.documentCount === 0} onBuild={() => void buildWiki()} /></section>
   }
 
   return (

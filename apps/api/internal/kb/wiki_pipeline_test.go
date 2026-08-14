@@ -21,6 +21,29 @@ func TestWikiCitationResultAcceptsScalarStringLists(t *testing.T) {
 	}
 }
 
+func TestMergeWikiDocumentIDsSortsAndDeduplicates(t *testing.T) {
+	got := mergeWikiDocumentIDs([]int64{4, 2, 2}, []int64{3, 4, 1, 0})
+	want := []int64{1, 2, 3, 4}
+	if len(got) != len(want) {
+		t.Fatalf("合并文档 ID 数量异常：%#v", got)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("合并文档 ID 应为 %#v，实际 %#v", want, got)
+		}
+	}
+}
+
+func TestWikiJobContainsAllDocuments(t *testing.T) {
+	job := &ent.KBWikiIngestJob{DocumentIdsJSON: "[1,2,3]"}
+	if !wikiJobContainsAllDocuments(job, []int64{3, 1}) {
+		t.Fatal("任务应包含指定文档")
+	}
+	if wikiJobContainsAllDocuments(job, []int64{4}) {
+		t.Fatal("任务不应包含不存在的文档")
+	}
+}
+
 func TestLinkifyWikiContentSkipsCodeAndExistingMarkdownLinks(t *testing.T) {
 	content := "`Mole` [Mole](https://example.com)\n\nMole 支持 Homebrew。\n```sh\nHomebrew install\n```"
 	linked, changed := linkifyWikiContent(content, []wikiLinkRef{

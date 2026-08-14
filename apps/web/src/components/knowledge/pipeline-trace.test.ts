@@ -173,9 +173,9 @@ describe("summarizePostprocess", () => {
               kind: "subspan",
               status: "running",
               children: [
-                node({ spanId: "b0", name: "postprocess.question.batch[0]", kind: "generation", status: "done" }),
-                node({ spanId: "b1", name: "postprocess.question.batch[1]", kind: "generation", status: "failed" }),
-                node({ spanId: "b2", name: "postprocess.question.batch[2]", kind: "generation", status: "running" }),
+                node({ spanId: "b0", name: "postprocess.question.chunk[0]", kind: "generation", status: "done" }),
+                node({ spanId: "b1", name: "postprocess.question.chunk[1]", kind: "generation", status: "failed" }),
+                node({ spanId: "b2", name: "postprocess.question.chunk[2]", kind: "generation", status: "running" }),
               ],
             }),
             node({ spanId: "summary", name: "postprocess.summary", kind: "generation", status: "done" }),
@@ -194,6 +194,19 @@ describe("summarizePostprocess", () => {
       total: 0,
     })
   })
+
+  it("把 Wiki 后台阶段计入任务汇总", () => {
+    const trace = node({
+      spanId: "root",
+      name: "document_processing",
+      kind: "root",
+      status: "done",
+      children: [
+        node({ spanId: "wiki-job-1", name: "wiki", kind: "stage", status: "running", placeholder: false }),
+      ],
+    })
+    expect(summarizePostprocess(trace)).toEqual({ running: 1, failed: 0, completed: 0, total: 1 })
+  })
 })
 
 describe("formatDuration", () => {
@@ -208,6 +221,7 @@ describe("formatDuration", () => {
 describe("spanLabel", () => {
   it("阶段显示中文名，子任务保留原始 span 名", () => {
     expect(spanLabel(node({ spanId: "a", name: "multimodal", kind: "stage", status: "done" }))).toBe("多模态识别")
+    expect(spanLabel(node({ spanId: "wiki", name: "wiki", kind: "stage", status: "running" }))).toBe("Wiki 构建")
     expect(spanLabel(node({ spanId: "b", name: "document_processing", kind: "root", status: "done" }))).toBe("知识处理")
     expect(spanLabel(node({ spanId: "c", name: "multimodal.page[3]", kind: "generation", status: "done" }))).toBe(
       "multimodal.page[3]"

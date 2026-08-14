@@ -65,3 +65,41 @@ func TestFormatWikiTaxonomyTree(t *testing.T) {
 		t.Fatalf("目录树渲染不符：\n实际：\n%s\n期望：\n%s", got, expected)
 	}
 }
+
+func TestWikiTaxonomyKeyAliases(t *testing.T) {
+	items := []wikiTaxonomyItem{
+		{pageKey: "entity/openai", title: "OpenAI"},
+		{pageKey: "concept/rag", title: "检索增强生成"},
+	}
+	aliases := wikiTaxonomyKeyAliases(items)
+	for alias, expected := range map[string]string{
+		"entity/openai": "entity/openai",
+		"openai":        "entity/openai",
+		"concept/rag":   "concept/rag",
+		"rag":           "concept/rag",
+		"检索增强生成":        "concept/rag",
+	} {
+		if got := aliases[normalizeWikiPageKey(alias)]; got != expected {
+			t.Fatalf("别名 %q 匹配到 %q，期望 %q", alias, got, expected)
+		}
+	}
+}
+
+func TestWikiTaxonomyKeyAliasesRejectAmbiguousAlias(t *testing.T) {
+	aliases := wikiTaxonomyKeyAliases([]wikiTaxonomyItem{
+		{pageKey: "entity/shared", title: "实体一"},
+		{pageKey: "concept/shared", title: "概念一"},
+	})
+	if got := aliases["shared"]; got != "" {
+		t.Fatalf("歧义别名不应匹配，实际 %q", got)
+	}
+}
+
+func TestWikiTaxonomyFallbackPath(t *testing.T) {
+	if !isWikiTaxonomyFallbackPath([]string{wikiTaxonomyFallbackLabel}) {
+		t.Fatal("待整理目录应被识别为可重试的降级目录")
+	}
+	if isWikiTaxonomyFallbackPath([]string{"软件"}) {
+		t.Fatal("正常目录不应被识别为降级目录")
+	}
+}

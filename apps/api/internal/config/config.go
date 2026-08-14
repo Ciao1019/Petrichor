@@ -25,24 +25,27 @@ type LinuxDoConfig struct {
 	RedirectURI  string
 }
 
+const DefaultQuestionGenerationConcurrency = 20
+
 // Config 服务端运行配置。
 type Config struct {
-	HTTPAddr                  string
-	DatabaseURL               string
-	SessionCookieName         string
-	SessionExpire             time.Duration
-	RegisterEnabled           bool
-	RegisterDefaultSystemRole string
-	AppEnv                    string
-	EncryptKey                string
-	EncryptSalt               string
-	AppURL                    string
-	S3                        *S3Config
-	LocalStorageDir           string
-	RedisURL                  string
-	RedisToken                string
-	LinuxDo                   LinuxDoConfig
-	PDFInspectorURL           string
+	HTTPAddr                      string
+	DatabaseURL                   string
+	SessionCookieName             string
+	SessionExpire                 time.Duration
+	RegisterEnabled               bool
+	RegisterDefaultSystemRole     string
+	AppEnv                        string
+	EncryptKey                    string
+	EncryptSalt                   string
+	AppURL                        string
+	S3                            *S3Config
+	LocalStorageDir               string
+	RedisURL                      string
+	RedisToken                    string
+	LinuxDo                       LinuxDoConfig
+	PDFInspectorURL               string
+	QuestionGenerationConcurrency int
 }
 
 func Load() (*Config, error) {
@@ -67,6 +70,9 @@ func Load() (*Config, error) {
 			RedirectURI:  env("PETRICHOR_LINUXDO_REDIRECT_URI", strings.TrimSpace(os.Getenv("LINUXDO_REDIRECT_URI"))),
 		},
 		PDFInspectorURL: env("PETRICHOR_PDF_INSPECTOR_URL", "http://127.0.0.1:8091"),
+		QuestionGenerationConcurrency: envIntRange(
+			"PETRICHOR_QUESTION_GENERATION_CONCURRENCY", DefaultQuestionGenerationConcurrency, 1, 100,
+		),
 	}
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL 未配置")
@@ -141,4 +147,12 @@ func envInt(key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func envIntRange(key string, fallback, minimum, maximum int) int {
+	value := envInt(key, fallback)
+	if value < minimum || value > maximum {
+		return fallback
+	}
+	return value
 }

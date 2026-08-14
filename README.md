@@ -118,6 +118,7 @@ NEXT_PUBLIC_REGISTER_ENABLED="true"
 | `PETRICHOR_SESSION_*` | Cookie 名和会话有效期 |
 | `PETRICHOR_REGISTER_*` | 注册开关和默认角色 |
 | `PETRICHOR_ENCRYPT_KEY` / `PETRICHOR_ENCRYPT_SALT` | AI 提供商密钥加解密；产生真实数据后不要更换 |
+| `PETRICHOR_QUESTION_GENERATION_CONCURRENCY` | 文档后处理问题生成并发数，默认 `20`，范围 `1-100` |
 | `S3_*` / `PETRICHOR_STORAGE_DIR` | S3 兼容存储或本地存储目录 |
 | `UPSTASH_REDIS_REST_*` | 可选共享缓存 |
 | `PETRICHOR_LINUXDO_*` | 可选 LinuxDo OAuth |

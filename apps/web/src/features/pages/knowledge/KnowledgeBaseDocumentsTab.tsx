@@ -49,7 +49,6 @@ import { detectFileType, parseDocument, pickPagesNeedingVision } from "@/feature
 import {
   aiModelConfigApi,
   knowledgeBaseDocumentApi,
-  knowledgeBaseWikiAgentApi,
   uploadApi,
   type AiModelConfigResponse,
   type KBDocument,
@@ -135,7 +134,6 @@ export function KnowledgeBaseDocumentsTab({
   const [uploadOpen, setUploadOpen] = React.useState(false)
   const [uploading, setUploading] = React.useState(false)
   const [uploadMessage, setUploadMessage] = React.useState("")
-  const [pendingWikiJobId, setPendingWikiJobId] = React.useState<string | null>(null)
   const [tag, setTag] = React.useState("all")
   const [knownTags, setKnownTags] = React.useState<string[]>([])
   // 选好文件后先弹解析配置，确认了才真正上传。
@@ -341,20 +339,10 @@ export function KnowledgeBaseDocumentsTab({
         toast.error(apiError(error, `${file.name} 处理失败`))
       }
     }
-    if (knowledgeBase.wikiEnabled && documentIds.length > 0) {
-      setUploadMessage("正在提交 Wiki 构建任务…")
-      try {
-        const job = await knowledgeBaseWikiAgentApi.documentIngest({ knowledgeBaseId: knowledgeBase.id, documentIds, forceRebuild: false })
-        setPendingWikiJobId(job.data.jobId)
-        toast.success("文件已加入 Wiki 构建队列")
-      } catch (error) {
-        toast.warning(apiError(error, "文件已上传，但自动 Wiki 构建失败，可稍后在 Wiki 页重试"))
-      }
-    }
     setUploading(false)
     setUploadMessage("")
     if (success > 0) {
-      toast.success(`已提交 ${success} 个文件，正在后台解析`)
+      toast.success(`已提交 ${success} 个文件，正在后台解析${knowledgeBase.wikiEnabled ? "；完成后将自动构建 Wiki" : ""}`)
       setConfigOpen(false)
       setUploadOpen(false)
       setStagedFiles([])
@@ -377,25 +365,6 @@ export function KnowledgeBaseDocumentsTab({
     setUploadOpen(false)
     setConfigOpen(true)
   }, [visionModels])
-
-  // 文件摘要由后台 Wiki 任务生成后回写，任务跑完才刷新列表，
-  // 否则卡片会一直停在"已解析为 N 个分片"的占位文案上。
-  React.useEffect(() => {
-    if (!pendingWikiJobId) return
-    const timer = window.setInterval(() => {
-      void knowledgeBaseWikiAgentApi.ingestStatus(knowledgeBase.id, pendingWikiJobId).then(async (response) => {
-        const status = response.data.job?.status
-        if (status === "pending" || status === "running") return
-        window.clearInterval(timer)
-        setPendingWikiJobId(null)
-        await load()
-      }).catch(() => {
-        window.clearInterval(timer)
-        setPendingWikiJobId(null)
-      })
-    }, 4000)
-    return () => window.clearInterval(timer)
-  }, [knowledgeBase.id, load, pendingWikiJobId])
 
   const createFolder = React.useCallback(async () => {
     const name = folderName.trim()

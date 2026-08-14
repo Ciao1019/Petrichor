@@ -18,7 +18,7 @@ import (
 
 // Span 类型。词汇对齐可观测性系统，前端按 kind 决定行的渲染方式：
 //   - root       一次解析尝试的根，用来算总耗时
-//   - stage      主流程阶段，时间线上的五段
+//   - stage      主流程阶段，时间线上的六段
 //   - subspan    阶段内的子任务
 //   - generation 包了一次模型调用的子任务
 const (
@@ -39,7 +39,7 @@ const (
 	SpanStatusCancelled = "cancelled"
 )
 
-// 主流程阶段名。这是一个封闭集合，前端固定渲染五段；
+// 主流程阶段名。这是一个封闭集合，前端固定渲染六段；
 // 子任务名是自由的（如 multimodal.page[3]），不走这个列表。
 const (
 	StageExtract    = "extract"
@@ -47,16 +47,18 @@ const (
 	StageEmbedding  = "embedding"
 	StageMultimodal = "multimodal"
 	StagePostFinish = "postprocess"
+	StageWiki       = "wiki"
 )
 
 // AllPipelineStages 是阶段的规范顺序。API 层用它补齐没跑到的阶段，
-// 让时间线在解析刚开始时也能显示完整五段。
+// 让时间线在解析刚开始时也能显示完整六段。
 var AllPipelineStages = []string{
 	StageExtract,
 	StageChunking,
 	StageEmbedding,
 	StageMultimodal,
 	StagePostFinish,
+	StageWiki,
 }
 
 // stageDependencies 声明阶段之间的依赖，用于某段失败时把下游标记为 cancelled。
@@ -67,6 +69,7 @@ var stageDependencies = map[string][]string{
 	StageEmbedding:  {StageChunking},
 	StageMultimodal: {StageChunking},
 	StagePostFinish: {StageEmbedding, StageMultimodal},
+	StageWiki:       {StagePostFinish},
 }
 
 // pipelineSpan 是流水线执行时持有的句柄，End/Fail/Skip 靠它写回，不用再查库。
@@ -370,7 +373,7 @@ type SpanNode struct {
 }
 
 // buildSpanTree 把某次尝试的 span 行拼成树，并把没跑到的主流程阶段补成占位节点，
-// 保证时间线任何时刻都渲染五段。返回树根、当前正在跑的阶段名、最近一次失败。
+// 保证时间线任何时刻都渲染六段。返回树根、当前正在跑的阶段名、最近一次失败。
 func buildSpanTree(rows []*ent.KBDocumentSpan, documentStatus string) (*SpanNode, string, *SpanNode) {
 	nodes := make(map[string]*SpanNode, len(rows))
 	var root *SpanNode
@@ -461,7 +464,7 @@ func sortSpanChildren(node *SpanNode) {
 }
 
 // placeholderStatus 用文档自身的状态推断占位阶段该显示成什么，
-// 否则历史文档会永远显示"五段都在等待"。
+// 否则历史文档会永远显示"六段都在等待"。
 func placeholderStatus(documentStatus string) string {
 	switch documentStatus {
 	case "ready":

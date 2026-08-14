@@ -14,6 +14,7 @@ export const STAGE_LABEL: Record<string, string> = {
   embedding: "向量化",
   multimodal: "多模态识别",
   postprocess: "后处理",
+  wiki: "Wiki 构建",
 }
 
 export const STATUS_LABEL: Record<KBSpanStatus, string> = {
@@ -165,13 +166,13 @@ export function countFinishedStages(root: KBSpanNode | null | undefined): { done
 }
 
 /**
- * 统计后处理阶段的叶子任务，用于头部的「后台任务：运行中 x / 失败 y / 已完成 z」。
+ * 统计后处理与 Wiki 阶段的叶子任务，用于头部的「后台任务：运行中 x / 失败 y / 已完成 z」。
  * 只数叶子，父节点的状态是聚合出来的，重复计入会让数字虚高。
  */
 export function summarizePostprocess(root: KBSpanNode | null | undefined): PostprocessSummary {
   const summary: PostprocessSummary = { running: 0, failed: 0, completed: 0, total: 0 }
-  const postprocess = (root?.children ?? []).find((child) => child.name === "postprocess")
-  if (!postprocess) return summary
+  const backgroundStages = (root?.children ?? []).filter((child) => child.name === "postprocess" || child.name === "wiki")
+  if (backgroundStages.length === 0) return summary
 
   const countLeaves = (node: KBSpanNode) => {
     const children = node.children ?? []
@@ -184,7 +185,11 @@ export function summarizePostprocess(root: KBSpanNode | null | undefined): Postp
     else if (node.status === "failed") summary.failed += 1
     else summary.completed += 1
   }
-  ;(postprocess.children ?? []).forEach(countLeaves)
+  for (const stage of backgroundStages) {
+    const children = stage.children ?? []
+    if (children.length > 0) children.forEach(countLeaves)
+    else if (stage.name === "wiki" && !stage.placeholder) countLeaves(stage)
+  }
   return summary
 }
 
