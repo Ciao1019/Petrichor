@@ -85,7 +85,7 @@ function DashboardLayout() {
   const [searchParams] = useSearchParams()
   const location = useLocation()
   /* 助手这类应用型页面必须给外壳一个确定高度：默认的 min-h-svh 会让整条 flex 链高度为 auto，
-     内部的 overflow-y-auto 永远不触发，长回答会把整页撑高，左侧会话列表被推出视口。 */
+     内部的 overflow-y-auto 永远不触发，长回答会把整页撑高。高度使用 dvh，跟随手机浏览器工具栏和软键盘变化。 */
   const lockViewport = isFixedViewportRoute(location.pathname)
 
   useEffect(() => {
@@ -107,7 +107,7 @@ function DashboardLayout() {
   }, [lockViewport])
 
   return (
-    <SidebarProvider className={lockViewport ? 'h-svh overflow-hidden' : undefined}>
+    <SidebarProvider className={lockViewport ? 'h-dvh overflow-hidden' : undefined}>
       <AppSidebar variant="inset" />
       <SidebarInset>
         <AppBreadcrumb />
