@@ -5,7 +5,7 @@ import { LoginForm } from '@/components/login-form'
 import { AuthCallback } from '@/components/auth-callback'
 import { ThemeProvider } from '@/components/theme-provider'
 import { ThemeToggle } from '@/components/theme-toggle'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/sonner'
@@ -84,8 +84,9 @@ function LoginPage() {
 function DashboardLayout() {
   const [searchParams] = useSearchParams()
   const location = useLocation()
+  const viewportShellRef = useRef<HTMLDivElement>(null)
   /* 助手这类应用型页面必须给外壳一个确定高度：默认的 min-h-svh 会让整条 flex 链高度为 auto，
-     内部的 overflow-y-auto 永远不触发，长回答会把整页撑高。高度使用 dvh，跟随手机浏览器工具栏和软键盘变化。 */
+     内部的 overflow-y-auto 永远不触发，长回答会把整页撑高。dvh 作为首屏回退，运行时再对齐真实可视视口。 */
   const lockViewport = isFixedViewportRoute(location.pathname)
 
   useEffect(() => {
@@ -99,15 +100,57 @@ function DashboardLayout() {
     if (!lockViewport) return
     // 只锁 documentElement，body 留给 Radix 的 scroll lock，避免互相覆盖
     const root = document.documentElement
+    const shell = viewportShellRef.current
     const previousOverflow = root.style.overflow
+    let animationFrame = 0
+    let settleTimer = 0
+
+    const syncViewportHeight = () => {
+      window.cancelAnimationFrame(animationFrame)
+      animationFrame = window.requestAnimationFrame(() => {
+        if (!shell) return
+        const viewport = window.visualViewport
+        // iOS 软键盘收起后可能暂时保留可视视口偏移；用页面坐标中的可视底边才不会留白。
+        const viewportBottom = viewport
+          ? viewport.height + viewport.pageTop
+          : window.innerHeight
+        shell.style.height = `${Math.round(viewportBottom)}px`
+      })
+    }
+
+    const syncAfterFocusChange = () => {
+      syncViewportHeight()
+      window.clearTimeout(settleTimer)
+      // 空状态输入框在发送后会被对话输入框替换，需在键盘收起动画结束后再校准一次。
+      settleTimer = window.setTimeout(syncViewportHeight, 350)
+    }
+
     root.style.overflow = 'hidden'
+    syncViewportHeight()
+    window.addEventListener('resize', syncViewportHeight)
+    window.visualViewport?.addEventListener('resize', syncViewportHeight)
+    window.visualViewport?.addEventListener('scroll', syncViewportHeight)
+    document.addEventListener('focusin', syncAfterFocusChange)
+    document.addEventListener('focusout', syncAfterFocusChange)
+
     return () => {
+      window.cancelAnimationFrame(animationFrame)
+      window.clearTimeout(settleTimer)
+      window.removeEventListener('resize', syncViewportHeight)
+      window.visualViewport?.removeEventListener('resize', syncViewportHeight)
+      window.visualViewport?.removeEventListener('scroll', syncViewportHeight)
+      document.removeEventListener('focusin', syncAfterFocusChange)
+      document.removeEventListener('focusout', syncAfterFocusChange)
+      shell?.style.removeProperty('height')
       root.style.overflow = previousOverflow
     }
   }, [lockViewport])
 
   return (
-    <SidebarProvider className={lockViewport ? 'h-dvh overflow-hidden' : undefined}>
+    <SidebarProvider
+      ref={viewportShellRef}
+      className={lockViewport ? 'h-dvh min-h-0 overflow-hidden' : undefined}
+    >
       <AppSidebar variant="inset" />
       <SidebarInset>
         <AppBreadcrumb />
