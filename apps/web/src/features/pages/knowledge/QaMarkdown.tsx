@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useMessagePartText } from "@assistant-ui/react"
 import { Markdown, remarkVideo, ThemeProvider, type MarkdownProps } from "@lobehub/ui"
+import { ThinkingOrb, type OrbState } from "thinking-orbs"
 
 import { useTheme } from "@/components/theme-provider"
 import {
@@ -158,20 +159,38 @@ function useGentleReveal(text: string, isRunning: boolean, options: GentleReveal
 }
 
 /**
- * 首字到达前的"准备响应中"流光文字。
- * 纯 CSS：渐变 + background-clip:text + 扫光动画，明暗主题自适配（用 currentColor + color-mix），
- * 不引入额外依赖。关键帧用 <style> 内联，namespace 化避免冲突。
+ * 首字到达前的"准备响应中"提示：thinking-orbs 点阵球 + 流光文字。
+ *
+ * - 球体：thinking-orbs 的 2D canvas 渲染，state 表达当前在做什么（思考/检索/整理…）。
+ *   主题不走它的 auto 探测——/ask 前台强制暗色时 DOM 上仍是亮色 class，会判反；
+ *   这里直接把 useIsDark 的结论传进去。
+ * - 文字：渐变 + background-clip:text + 扫光动画，明暗自适配。
+ *   关键帧用 <style> 内联，namespace 化避免冲突。
  */
-export function QaPreparing({ label = "准备响应中" }: { label?: string }) {
+export function QaPreparing({
+  label = "准备响应中",
+  state = "breathing",
+}: {
+  label?: string
+  /** 见 thinking-orbs 九态；按当前阶段选：思考=working、检索=searching、整理=weaving… */
+  state?: OrbState
+}) {
   const isDark = useIsDark()
   // 用明确颜色而非 currentColor：之前 color:transparent 会把 currentColor 也解析成透明 → 整段不可见。
   const base = isDark ? "rgba(229,229,229,0.32)" : "rgba(13,13,13,0.30)"
   const hi = isDark ? "rgba(255,255,255,0.95)" : "rgba(13,13,13,0.92)"
   return (
-    <div className="py-1" role="status" aria-label={label}>
+    <div className="flex items-center gap-2 py-1" role="status" aria-label={label}>
       <style>{
         "@keyframes qa-shimmer{0%{background-position:200% center}100%{background-position:-200% center}}"
       }</style>
+      <ThinkingOrb
+        state={state}
+        size={20}
+        theme={isDark ? "dark" : "light"}
+        aria-hidden
+        className="shrink-0"
+      />
       <span
         className="inline-block select-none text-sm font-medium"
         style={{

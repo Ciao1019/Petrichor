@@ -24,14 +24,8 @@ import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdow
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { WheelSelect, type WheelSelectItem } from "@/components/ui/wheel-select"
 import {
   Table,
   TableBody,
@@ -52,6 +46,12 @@ import {
   type AiProviderResponse,
 } from "@/lib/api"
 import { ACCENT_CLASS, errorMessage, formatContextWindow, formatDateTime } from "./provider-ui"
+
+// 模型管理表格里每行一个滚筒，选项固定 —— 提到模块级避免每次渲染都新建数组
+const MODEL_KIND_ITEMS: WheelSelectItem[] = [
+  { value: "LANGUAGE", label: "语言" },
+  { value: "EMBEDDING", label: "向量" },
+]
 
 interface ProvidersTabProps {
   catalog: AiProviderCatalogItem[]
@@ -527,18 +527,13 @@ export function ProvidersTab({
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>供应商</Label>
-            <Select value={providerKey} onValueChange={handlePickProvider}>
-              <SelectTrigger>
-                <SelectValue placeholder="选择供应商" />
-              </SelectTrigger>
-              <SelectContent className="max-h-80">
-                {catalog.map((item) => (
-                  <SelectItem key={item.key} value={item.key}>
-                    {item.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <WheelSelect
+              value={providerKey}
+              onValueChange={handlePickProvider}
+              placeholder="选择供应商"
+              label="选择供应商"
+              items={catalog.map((item) => ({ value: item.key, label: item.name }))}
+            />
             {selectedCatalog ? (
               <p className="text-xs text-muted-foreground">
                 支持 {selectedCatalog.kinds.map((kind) => (kind === "LANGUAGE" ? "语言模型" : "向量模型")).join(" / ")}
@@ -579,24 +574,16 @@ export function ProvidersTab({
           {(selectedCatalog?.apiProtocols.length ?? 0) > 1 ? (
             <div className="space-y-2">
               <Label>接口协议</Label>
-              <Select
+              <WheelSelect
                 value={apiProtocol}
                 onValueChange={(value) => setApiProtocol(value as AiApiProtocol)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {selectedCatalog?.apiProtocols.map((protocol) => (
-                    <SelectItem key={protocol} value={protocol}>
-                      {protocol === "chat" ? "Chat Completions" : "Responses"}
-                      <span className="ml-2 font-mono text-xs text-muted-foreground">
-                        {protocol === "chat" ? "/chat/completions" : "/responses"}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                label="接口协议"
+                items={(selectedCatalog?.apiProtocols ?? []).map((protocol) => ({
+                  value: protocol,
+                  label: protocol === "chat" ? "Chat Completions" : "Responses",
+                  hint: protocol === "chat" ? "/chat/completions" : "/responses",
+                }))}
+              />
               <p className="text-xs text-muted-foreground">
                 中转网关、私有部署和本地推理服务通常只实现了 Chat Completions；
                 只有直连官方端点、且要用 Responses 专属能力时才切到 Responses。
@@ -606,21 +593,17 @@ export function ProvidersTab({
 
           <div className="space-y-2">
             <Label>凭证</Label>
-            <Select value={credentialId} onValueChange={setCredentialId}>
-              <SelectTrigger>
-                <SelectValue placeholder="选择一条凭证" />
-              </SelectTrigger>
-              <SelectContent>
-                {usableCredentials.map((item) => (
-                  <SelectItem key={item.id} value={item.id}>
-                    {item.name}
-                    <span className="ml-2 font-mono text-xs text-muted-foreground">
-                      {item.apiKeyMasked}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <WheelSelect
+              value={credentialId}
+              onValueChange={setCredentialId}
+              placeholder="选择一条凭证"
+              label="选择凭证"
+              items={usableCredentials.map((item) => ({
+                value: item.id,
+                label: item.name,
+                hint: item.apiKeyMasked ?? undefined,
+              }))}
+            />
             {usableCredentials.length === 0 ? (
               <p className="text-xs text-destructive">
                 没有适用于该供应商的凭证，请先到「凭证」页添加。
@@ -743,20 +726,15 @@ export function ProvidersTab({
 
                 <div className="space-y-2">
                   <Label>测试用模型</Label>
-                  <Select value={testModelId} onValueChange={setTestModelId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择一个语言模型用于测试" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-72">
-                      {draftModels
-                        .filter((model) => draftKindOf(model) === "LANGUAGE")
-                        .map((model) => (
-                          <SelectItem key={model.modelId} value={model.modelId}>
-                            {model.modelId}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
+                  <WheelSelect
+                    value={testModelId}
+                    onValueChange={setTestModelId}
+                    placeholder="选择一个语言模型用于测试"
+                    label="测试用模型"
+                    items={draftModels
+                      .filter((model) => draftKindOf(model) === "LANGUAGE")
+                      .map((model) => ({ value: model.modelId, label: model.modelId }))}
+                  />
                   <p className="text-xs text-muted-foreground">
                     「测试连通」会用这个模型发一次最小请求，一次性验出 Key、地址、模型名和鉴权方式。
                   </p>
@@ -975,7 +953,9 @@ function ModelManagerModal({ open, onOpenChange, provider, onSaved }: ModelManag
                       ) : null}
                     </TableCell>
                     <TableCell>
-                      <Select
+                      <WheelSelect
+                        size="sm"
+                        className="w-28"
                         value={kindOf(model)}
                         onValueChange={(value) =>
                           setKindOverrides((prev) => ({
@@ -983,15 +963,9 @@ function ModelManagerModal({ open, onOpenChange, provider, onSaved }: ModelManag
                             [model.modelId]: value as AiModelKind,
                           }))
                         }
-                      >
-                        <SelectTrigger size="sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="LANGUAGE">语言</SelectItem>
-                          <SelectItem value="EMBEDDING">向量</SelectItem>
-                        </SelectContent>
-                      </Select>
+                        label="模型类型"
+                        items={MODEL_KIND_ITEMS}
+                      />
                     </TableCell>
                     <TableCell className="text-right text-sm text-muted-foreground">
                       {kindOf(model) === "EMBEDDING"

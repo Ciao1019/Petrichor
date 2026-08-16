@@ -526,7 +526,8 @@ export const ContextCompressDataUI = makeAssistantDataUI({
     const label = typeof payload.label === "string" && payload.label.trim()
       ? payload.label.trim()
       : "正在整理对话上下文…"
-    return <QaPreparing label={label} />
+    // 压缩上下文 = 把多轮对话编织成一股：weaving（三股绳绕球）
+    return <QaPreparing label={label} state="weaving" />
   },
 })
 
@@ -558,7 +559,8 @@ function IntentRouteChips({ data }: { data: unknown }) {
     const label = typeof payload.label === "string" && payload.label.trim()
       ? payload.label.trim()
       : "正在识别意图…"
-    return <QaPreparing label={label} />
+    // 意图识别 = 分类归位：solving（色块打乱后归位）
+    return <QaPreparing label={label} state="solving" />
   }
   if (payload.status !== "done") return null
 

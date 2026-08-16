@@ -1201,15 +1201,17 @@ function UserMessageBubble() {
 }
 
 function AssistantPreparingStatus() {
-  const label = useAuiState((s) => {
-    const hasIntentDone = s.message.parts.some((part) => {
+  const hasIntentDone = useAuiState((s) =>
+    s.message.parts.some((part) => {
       if (part.type !== "data" || !("name" in part) || part.name !== "intent-route") return false
       const data = part.data
       return typeof data === "object" && data != null && "status" in data && (data as { status?: unknown }).status === "done"
-    })
-    return hasIntentDone ? "正在思考与检索…" : "准备响应中"
-  })
-  return <QaPreparing label={label} />
+    }),
+  )
+  // 意图已定 → 进入思考/检索（searching：扫描经线的点阵球）；未定 → 仅呼吸态待命
+  return hasIntentDone
+    ? <QaPreparing label="正在思考与检索…" state="searching" />
+    : <QaPreparing label="准备响应中" state="breathing" />
 }
 
 function AssistantMessageBubble() {

@@ -11,14 +11,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { WheelSelect } from "@/components/ui/wheel-select"
 import {
   aiBindingApi,
   type AiBindingSlot,
@@ -220,22 +214,19 @@ export function BindingsTab({ slots, models, loading, onChanged }: BindingsTabPr
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>模型</Label>
-            <Select value={modelRefId} onValueChange={setModelRefId}>
-              <SelectTrigger>
-                <SelectValue placeholder="选择模型" />
-              </SelectTrigger>
-              <SelectContent className="max-h-80">
-                {candidates.map((model) => (
-                  <SelectItem key={model.id} value={model.id}>
-                    {model.displayName || model.modelId}
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      {model.providerName}
-                      {model.kind === "EMBEDDING" && model.dimensions ? ` · ${model.dimensions} 维` : ""}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <WheelSelect
+              value={modelRefId}
+              onValueChange={setModelRefId}
+              placeholder="选择模型"
+              label="选择模型"
+              items={candidates.map((model) => ({
+                value: model.id,
+                label: model.displayName || model.modelId,
+                hint: `${model.providerName}${
+                  model.kind === "EMBEDDING" && model.dimensions ? ` · ${model.dimensions} 维` : ""
+                }`,
+              }))}
+            />
           </div>
 
           {target?.requiredKind === "LANGUAGE" ? (

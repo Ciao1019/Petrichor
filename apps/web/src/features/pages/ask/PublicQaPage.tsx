@@ -309,7 +309,7 @@ function AssistantMessageBubble() {
               )
             }
           >
-            <QaPreparing />
+            <QaPreparing state="searching" />
           </AuiIf>
           <div className="wrap-break-word text-white/90">
             <MessagePrimitive.Parts>

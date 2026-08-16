@@ -12,13 +12,7 @@ import { Button } from "@/components/ui/button"
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { WheelSelect } from "@/components/ui/wheel-select"
 import {
   Table,
   TableBody,
@@ -256,19 +250,15 @@ export function CredentialsTab({ catalog, credentials, loading, onChanged }: Cre
 
           <div className="space-y-2">
             <Label>限定供应商</Label>
-            <Select value={providerKey} onValueChange={setProviderKey}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ANY_PROVIDER}>通用（不限定）</SelectItem>
-                {catalog.map((item) => (
-                  <SelectItem key={item.key} value={item.key}>
-                    {item.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <WheelSelect
+              value={providerKey}
+              onValueChange={setProviderKey}
+              label="限定供应商"
+              items={[
+                { value: ANY_PROVIDER, label: "通用（不限定）" },
+                ...catalog.map((item) => ({ value: item.key, label: item.name })),
+              ]}
+            />
             <p className="text-xs text-muted-foreground">
               只影响供应商表单里的筛选提示，不做强制校验。Bedrock、Vertex、Azure 这类需要额外字段的供应商必须在这里选中才能填。
             </p>
