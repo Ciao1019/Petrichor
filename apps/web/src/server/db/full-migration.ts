@@ -846,29 +846,84 @@ create table if not exists petrichor_public_qa_rate_limit (
 create unique index if not exists ux_petrichor_public_qa_rate_limit_bucket
     on petrichor_public_qa_rate_limit(bucket_key);
 
-create table if not exists petrichor_ai_model_config (
+-- AI 模型接入改为四层结构（凭证 / 供应商 / 模型 / 用途绑定），旧的单表配置已废弃
+drop table if exists petrichor_ai_model_config;
+
+create table if not exists petrichor_ai_credential (
     id bigint generated always as identity primary key,
     user_id bigint not null references petrichor_user(id) on delete cascade,
-    config_type text not null,
-    protocol text not null,
     name text not null,
-    base_url text,
-    api_key_enc text,
-    model text not null,
-    enabled boolean not null default true,
-    is_default boolean not null default false,
-    extra_json text,
+    provider_key text,
+    api_key_enc text not null,
+    extra_enc text,
+    last_used_at timestamptz,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
-    unique (user_id, config_type, name)
+    unique (user_id, name)
 );
 
-create index if not exists petrichor_ai_model_config_user_type_idx
-    on petrichor_ai_model_config(user_id, config_type);
+create index if not exists idx_petrichor_ai_credential_user
+    on petrichor_ai_credential(user_id);
 
-create unique index if not exists petrichor_ai_model_config_default_idx
-    on petrichor_ai_model_config(user_id, config_type)
-    where is_default = true;
+create table if not exists petrichor_ai_provider (
+    id bigint generated always as identity primary key,
+    user_id bigint not null references petrichor_user(id) on delete cascade,
+    provider_key text not null,
+    name text not null,
+    base_url text,
+    credential_id bigint not null references petrichor_ai_credential(id) on delete restrict,
+    enabled boolean not null default true,
+    headers_json text,
+    options_json text,
+    last_checked_at timestamptz,
+    last_check_status text,
+    last_check_message text,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (user_id, name)
+);
+
+create index if not exists idx_petrichor_ai_provider_user
+    on petrichor_ai_provider(user_id);
+
+create index if not exists idx_petrichor_ai_provider_credential
+    on petrichor_ai_provider(credential_id);
+
+create table if not exists petrichor_ai_model (
+    id bigint generated always as identity primary key,
+    user_id bigint not null references petrichor_user(id) on delete cascade,
+    provider_id bigint not null references petrichor_ai_provider(id) on delete cascade,
+    model_id text not null,
+    display_name text,
+    kind text not null,
+    context_window integer,
+    dimensions integer,
+    capabilities_json text,
+    enabled boolean not null default true,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (provider_id, model_id)
+);
+
+create index if not exists idx_petrichor_ai_model_user_kind
+    on petrichor_ai_model(user_id, kind);
+
+create index if not exists idx_petrichor_ai_model_provider
+    on petrichor_ai_model(provider_id);
+
+create table if not exists petrichor_ai_binding (
+    id bigint generated always as identity primary key,
+    user_id bigint not null references petrichor_user(id) on delete cascade,
+    purpose text not null,
+    model_ref_id bigint not null references petrichor_ai_model(id) on delete cascade,
+    options_json text,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (user_id, purpose)
+);
+
+create index if not exists idx_petrichor_ai_binding_model
+    on petrichor_ai_binding(model_ref_id);
 
 create table if not exists petrichor_ai_review (
     id bigint generated always as identity primary key,

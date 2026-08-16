@@ -67,11 +67,11 @@ const adminOps: AssistantSkillDefinition = {
     instructions: `
 ## 管理面流程
 
-1. 查询：list_ai_configs / list_agent_api_keys / get_public_qa_setting。
-2. 设置默认模型：set_default_ai_config 可直接执行。
+1. 查询：list_ai_models / list_agent_api_keys / get_public_qa_setting。
+2. 绑定用途模型：bind_ai_model 可直接执行（purpose + modelRefId）。
 3. 危险操作必须 request_user_confirmation：
-   - delete_ai_config
-   - update_ai_config_credentials
+   - delete_ai_provider
+   - update_ai_credential
    - revoke_agent_api_key
    - set_public_qa_enabled
 4. 公开问答开关仅超级管理员可改；权限不足时如实说明。

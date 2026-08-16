@@ -153,7 +153,7 @@ const agentDocumentSemanticSearchSchema = z.object({
 })
 
 const agentDocumentQaSchema = z.object({
-    configId: idSchema.optional().nullable(),
+    modelRefId: idSchema.optional().nullable(),
     knowledgeBaseId: idSchema.optional().nullable(),
     limit: z.coerce.number().int().min(1).max(10).optional().default(6),
     question: z.string().trim().min(1).max(1000),
@@ -791,7 +791,7 @@ export async function agentAskDocument(request: NextRequest) {
 
         const completion = await callChatCompletion({
             userId: context.userId,
-            configId: input.configId ?? null,
+            modelRefId: input.modelRefId ?? null,
             systemPrompt: [
                 "你是 Petrichor 的外部文档问答接口。",
                 "只基于用户提供的文档上下文回答。",

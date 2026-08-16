@@ -263,7 +263,7 @@ export async function buildContextPack(input: {
     threadId: number
     messages: UIMessage[]
     tokenBudget: number
-    configId?: number | null
+    modelRefId?: number | null
     signal?: AbortSignal
     /** 确认 resume 等场景跳过摘要刷新，仍做窗口切分与 tool 压缩 */
     skipRefresh?: boolean
@@ -324,7 +324,7 @@ export async function buildContextPack(input: {
         const transcript = buildFoldableTranscript(foldable)
         const summaryMd = await summarizeContextWithTimeout({
             userId: input.userId,
-            configId: input.configId ?? null,
+            modelRefId: input.modelRefId ?? null,
             previousSummary: existingSummary,
             transcript,
             signal: input.signal,
@@ -432,7 +432,7 @@ async function findWatermarkMessageId(threadId: number, recentCount: number) {
 
 async function summarizeContextWithTimeout(input: {
     userId: number
-    configId: number | null
+    modelRefId: number | null
     previousSummary: string | null
     transcript: string
     signal?: AbortSignal
@@ -441,7 +441,7 @@ async function summarizeContextWithTimeout(input: {
 
     const completion = callChatCompletion({
         userId: input.userId,
-        configId: input.configId,
+        modelRefId: input.modelRefId,
         systemPrompt: [
             "你是对话上下文压缩器。把较早的多轮对话压成简洁中文摘要，保留：用户目标、已确认事实、未决任务、关键实体 ID/路径（如 articleId、knowledgeBaseId、documentId）。",
             "工具结果若已折叠，优先保留其中的 id 与错误码。",

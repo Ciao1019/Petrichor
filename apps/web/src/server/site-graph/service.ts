@@ -56,7 +56,7 @@ export interface SiteGraphGenerateResult {
  */
 export async function generateSiteGraph(input: {
     userId: number
-    configId?: number | null
+    modelRefId?: number | null
     mode?: SiteGraphRunMode
 }): Promise<SiteGraphGenerateResult> {
     const mode = input.mode ?? "FULL"
@@ -74,7 +74,7 @@ export async function generateSiteGraph(input: {
         const extraction = await runSiteGraphExtraction({
             userId: input.userId,
             articles,
-            configId: input.configId ?? null,
+            modelRefId: input.modelRefId ?? null,
             existingEntities,
         })
 

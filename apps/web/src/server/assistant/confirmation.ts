@@ -11,8 +11,8 @@ export const DANGEROUS_ACTION_WHITELIST = [
     "article.delete",
     "document.delete",
     "share.revoke",
-    "ai_config.delete",
-    "ai_config.update_credentials",
+    "ai_provider.delete",
+    "ai_credential.update",
     "agent_api_key.revoke",
     "public_qa.set_enabled",
 ] as const
@@ -24,8 +24,8 @@ export const DANGEROUS_TOOL_WHITELIST: Record<string, DangerousActionName> = {
     delete_article: "article.delete",
     revoke_article_share: "share.revoke",
     delete_document: "document.delete",
-    delete_ai_config: "ai_config.delete",
-    update_ai_config_credentials: "ai_config.update_credentials",
+    delete_ai_provider: "ai_provider.delete",
+    update_ai_credential: "ai_credential.update",
     revoke_agent_api_key: "agent_api_key.revoke",
     set_public_qa_enabled: "public_qa.set_enabled",
 }

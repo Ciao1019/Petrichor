@@ -111,7 +111,7 @@ export async function publicQaChat(request: NextRequest) {
             throw badRequest("公开问答暂不可用：站点尚未初始化站长账号")
         }
 
-        const { model } = await createChatLanguageModel({ userId: ownerUserId, configId: null })
+        const { model } = await createChatLanguageModel({ userId: ownerUserId, modelRefId: null })
         const scope = await loadPublicArticleScope()
         const tools = buildPublicQaTools(scope)
 

@@ -97,7 +97,7 @@ export async function runNestedAgentGenerate(options: NestedAgentRunOptions): Pr
 
     const { model } = await createChatLanguageModel({
         userId: options.ctx.userId,
-        configId: run?.modelConfigId ?? null,
+        modelRefId: run?.modelConfigId ?? null,
     })
 
     const agent = new Agent({

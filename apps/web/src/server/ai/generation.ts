@@ -1,360 +1,163 @@
-import { asc, and, eq } from "drizzle-orm"
-import { createOpenAI } from "@ai-sdk/openai"
-import { getDb } from "@/server/db/client"
-import { aiModelConfigs } from "@/server/db/schema"
-import { decodeApiKey, type AiConfigType, type AiProtocol } from "@/server/ai/config-logic"
+/**
+ * 语言模型调用入口。
+ *
+ * 所有请求都经由 AI SDK 的 provider 实例发出，不再手写 `/chat/completions` fetch，
+ * 因此 Anthropic 的 /v1/messages、Gemini 的原生接口、Bedrock 的 SigV4 都能正常工作。
+ */
+
+import { generateText } from "ai"
+import type { LanguageModel } from "ai"
 import {
-    isDeepSeekProtocolContext,
-    prepareDeepSeekChatBody,
-    resolveChatProtocolAdapter,
-    type ChatGenerationOptions,
-    type DeepSeekThinkingMode,
-    type ProtocolAdapterContext,
-} from "@/server/ai/protocol-adapters"
-import { badRequest, notFound } from "@/server/http/response"
+    resolveLanguageModel,
+    resolveModelForPurpose,
+    type ResolvedModel,
+} from "@/server/ai/resolution"
+import { guessContextWindow } from "@/server/ai/provider-catalog"
+import type { AiPurpose } from "@/server/ai/config-logic"
 
 export interface ChatCompletionMessage {
     role: "system" | "user" | "assistant"
     content: string
 }
 
-const SUPPORTED_CHAT_PROTOCOLS: AiProtocol[] = ["OPENAI", "DEEPSEEK", "OPENAI_COMPAT", "SILICONFLOW"]
+export interface ChatCompletionResult {
+    resolved: ResolvedModel
+    answer: string
+    modelName: string
+    reasoning: string | null
+    usage: {
+        inputTokens: number
+        outputTokens: number
+        totalTokens: number
+    }
+}
 
+/**
+ * 一次性文本生成（非流式）。用于摘要、Wiki 编译、上下文压缩这类后台任务。
+ */
 export async function callChatCompletion(input: {
     userId: number
-    configId?: number | null
+    purpose?: AiPurpose
+    modelRefId?: number | null
     systemPrompt?: string | null
     message?: string
     messages?: ChatCompletionMessage[]
-}) {
-    const config = await resolveChatConfig(input.userId, input.configId ?? null)
-    const apiKey = decodeApiKey(config.apiKeyEnc)
-    if (!apiKey) {
-        throw badRequest("CHAT 配置缺少 API Key")
-    }
-    if (config.protocol === "GEMINI") {
-        throw badRequest("GEMINI 协议已禁用，请使用 OPENAI / DEEPSEEK / OPENAI_COMPAT / SILICONFLOW")
-    }
-    if (!SUPPORTED_CHAT_PROTOCOLS.includes(config.protocol as AiProtocol)) {
-        throw badRequest("协议类型不能为空")
-    }
-
-    const baseUrl = config.baseUrl?.trim().replace(/\/+$/, "")
-    if (!baseUrl) {
-        throw badRequest("BaseUrl 不能为空")
-    }
-    if (!config.model.trim()) {
-        throw badRequest("模型名称不能为空")
-    }
-
-    const options = parseChatGenerationOptions(config.extraJson)
-    const adapter = resolveChatProtocolAdapter({
-        protocol: config.protocol as AiProtocol,
-        baseUrl,
-        model: config.model,
-        name: config.name,
-        options,
+    signal?: AbortSignal
+}): Promise<ChatCompletionResult> {
+    const purpose = input.purpose ?? "CHAT"
+    const { resolved, model } = await resolveLanguageModel({
+        userId: input.userId,
+        purpose,
+        modelRefId: input.modelRefId ?? null,
     })
 
-    const messages = input.messages?.length
-        ? input.messages.map((message) => ({ role: message.role, content: message.content }))
-        : [
-            ...(input.systemPrompt ? [{ role: "system" as const, content: input.systemPrompt }] : []),
-            { role: "user" as const, content: input.message ?? "" },
-        ]
-
-    const requestBody = adapter.prepareChatBody({
+    const { system, messages } = buildPrompt(input)
+    const result = await generateText({
+        model,
+        ...(system ? { system } : {}),
         messages,
-        model: config.model,
-        ...(options.maxTokens == null ? {} : { max_tokens: options.maxTokens }),
-        ...(options.temperature == null ? {} : { temperature: options.temperature }),
-        stream: false,
+        ...(resolved.options.maxTokens == null ? {} : { maxOutputTokens: resolved.options.maxTokens }),
+        ...(resolved.options.temperature == null ? {} : { temperature: resolved.options.temperature }),
+        ...(input.signal ? { abortSignal: input.signal } : {}),
     })
 
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-    })
-
-    if (!response.ok) {
-        throw badRequest(`调用 Chat 接口失败：HTTP ${response.status}`)
-    }
-
-    const data = await response.json() as {
-        model?: string
-        choices?: Array<{
-            message?: {
-                content?: string
-                reasoning_content?: string
-                reasoning?: string
-            }
-        }>
-        usage?: {
-            completion_tokens?: number
-            prompt_tokens?: number
-            total_tokens?: number
-        }
-    }
-    const message = data.choices?.[0]?.message
     return {
-        config,
-        answer: message?.content?.trim() ?? "",
-        modelName: data.model ?? config.model,
-        reasoning: adapter.extractReasoning(message),
+        resolved,
+        answer: result.text.trim(),
+        modelName: resolved.model.modelId,
+        reasoning: extractReasoningText(result.reasoning),
         usage: {
-            inputTokens: data.usage?.prompt_tokens ?? 0,
-            outputTokens: data.usage?.completion_tokens ?? 0,
-            totalTokens: data.usage?.total_tokens ?? 0,
+            inputTokens: result.usage.inputTokens ?? 0,
+            outputTokens: result.usage.outputTokens ?? 0,
+            totalTokens: result.usage.totalTokens ?? 0,
         },
     }
 }
 
+/**
+ * 拿到裸的 LanguageModel 实例，交给 Mastra Agent 或 AI SDK 流式接口使用。
+ */
 export async function createChatLanguageModel(input: {
     userId: number
-    configId?: number | null
-    configType?: AiConfigType
-}) {
-    const config = await resolveChatConfig(input.userId, input.configId ?? null, input.configType ?? "CHAT")
-    const apiKey = decodeApiKey(config.apiKeyEnc)
-    if (!apiKey) {
-        throw badRequest(`${config.configType} 配置缺少 API Key`)
-    }
-    const baseURL = config.baseUrl?.trim().replace(/\/+$/, "")
-    if (!baseURL) {
-        throw badRequest("BaseUrl 不能为空")
-    }
-    const options = parseChatGenerationOptions(config.extraJson)
-    const adapter = resolveChatProtocolAdapter({
-        protocol: config.protocol as AiProtocol,
-        baseUrl: baseURL,
-        model: config.model,
-        name: config.name,
-        options,
+    purpose?: AiPurpose
+    modelRefId?: number | null
+}): Promise<{ resolved: ResolvedModel; model: LanguageModel }> {
+    return resolveLanguageModel({
+        userId: input.userId,
+        purpose: input.purpose ?? "CHAT",
+        modelRefId: input.modelRefId ?? null,
     })
-    const compatibleFetch = adapter.createFetch()
-    const provider = createOpenAI({
-        apiKey,
-        baseURL,
-        name: config.protocol.toLowerCase(),
-        ...(compatibleFetch ? { fetch: compatibleFetch } : {}),
-    })
-    return {
-        config,
-        model: provider.chat(config.model),
-    }
 }
 
-export async function resolveChatConfig(userId: number, configId: number | null, configType: AiConfigType = "CHAT") {
-    if (configId != null) {
-        const [config] = await getDb()
-            .select()
-            .from(aiModelConfigs)
-            .where(and(eq(aiModelConfigs.id, configId), eq(aiModelConfigs.userId, userId)))
-            .limit(1)
-        if (!config) {
-            throw notFound(`${configType} 配置不存在`)
-        }
-        if (config.configType !== configType) {
-            throw badRequest(`配置类型不是 ${configType}`)
-        }
-        if (!config.enabled) {
-            throw badRequest(`${configType} 配置未启用`)
-        }
-        return config
-    }
-
-    const [config] = await getDb()
-        .select()
-        .from(aiModelConfigs)
-        .where(and(
-            eq(aiModelConfigs.userId, userId),
-            eq(aiModelConfigs.configType, configType),
-            eq(aiModelConfigs.isDefault, true),
-            eq(aiModelConfigs.enabled, true),
-        ))
-        .orderBy(asc(aiModelConfigs.id))
-        .limit(1)
-
-    if (!config) {
-        throw badRequest(`未找到可用的默认配置：${configType}`)
-    }
-    return config
+/** 只解析不实例化，用于只需要模型元信息（名称、上下文窗口）的场景 */
+export async function resolveChatModel(input: {
+    userId: number
+    purpose?: AiPurpose
+    modelRefId?: number | null
+}): Promise<ResolvedModel> {
+    return resolveModelForPurpose(input.userId, input.purpose ?? "CHAT", input.modelRefId ?? null)
 }
 
-function parseChatGenerationOptions(extraJson: string | null | undefined): ChatGenerationOptions {
-    const parsed = parseOptionalJsonObject(extraJson)
-    const deepSeek = isRecord(parsed?.deepseek) ? parsed.deepseek : null
-    return {
-        maxTokens: positiveIntegerOrNull(parsed?.maxTokens ?? parsed?.max_tokens),
-        temperature: numberOrNull(parsed?.temperature),
-        deepSeekThinking: normalizeDeepSeekThinking(
-            parsed?.deepSeekThinking
-            ?? parsed?.deepseekThinking
-            ?? deepSeek?.thinking
-            ?? parsed?.thinking,
-        ),
-        disableDeepSeekThinkingForTools: booleanOrDefault(
-            parsed?.disableDeepSeekThinkingForTools
-            ?? parsed?.deepSeekDisableThinkingForTools
-            ?? deepSeek?.disableThinkingForTools,
-            true,
-        ),
-    }
-}
-
+/**
+ * 模型上下文窗口：优先用模型记录上存的值（拉取列表时写入或用户手填），
+ * 没有就按模型名的家族特征推断。
+ */
 export function resolveModelContextWindow(input: {
     model: string
-    extraJson?: string | null
+    contextWindow?: number | null
 }): number {
-    const parsed = parseOptionalJsonObject(input.extraJson)
-    const override = positiveIntegerOrNull(parsed?.contextWindow ?? parsed?.context_window)
-    if (override != null) return override
-
-    const model = input.model.toLowerCase()
-    // Anthropic Claude
-    if (model.includes("claude-3.7") || model.includes("claude-4") || model.includes("claude-3.5") || model.includes("claude-3-")) return 200_000
-    if (model.startsWith("claude-")) return 200_000
-    // Gemini
-    if (model.includes("gemini-2") || model.includes("gemini-1.5-pro")) return 2_000_000
-    if (model.includes("gemini-1.5")) return 1_000_000
-    if (model.includes("gemini")) return 1_000_000
-    // DeepSeek
-    // 参考 https://api-docs.deepseek.com/zh-cn/quick_start/pricing
-    // 当前在售：deepseek-v4-flash / deepseek-v4-pro 均为 1M 上下文（最大输出 384K）
-    // deepseek-chat / deepseek-reasoner 现为 v4-flash 的非思考/思考别名，同为 1M
-    if (model.includes("deepseek-v4") || model.includes("deepseek-v5")) return 1_000_000
-    if (model === "deepseek-chat" || model.startsWith("deepseek-chat-")) return 1_000_000
-    if (model === "deepseek-reasoner" || model.startsWith("deepseek-reasoner-")) return 1_000_000
-    // 历史模型保留兼容（部分代理仍在提供）：v3 / r1 为 64k，其余按 128k 兜底
-    if (model.includes("deepseek-r1") || model.includes("deepseek-v3")) return 64_000
-    if (model.includes("deepseek")) return 128_000
-    // Qwen
-    // 通义千问 3.6 系列（含 flash）：1M 上下文
-    if (model.includes("qwen3.6") || model.includes("qwen-3.6")) return 1_000_000
-    if (model.includes("qwen3") || model.includes("qwen-3") || model.includes("qwen-max") || model.includes("qwen-plus")) return 128_000
-    if (model.includes("qwen2.5") || model.includes("qwen-2.5")) return 128_000
-    if (model.includes("qwen")) return 32_000
-    // GLM / Zhipu
-    if (model.includes("glm-5")) return 200_000
-    if (model.includes("glm-4")) return 128_000
-    // Moonshot / Kimi
-    if (model.includes("moonshot-128k") || model.includes("kimi-k2") || model.includes("kimi")) return 128_000
-    if (model.includes("moonshot")) return 32_000
-    // OpenAI
-    if (model.includes("gpt-4.1") || model.includes("gpt-4o") || model.includes("gpt-4-turbo") || model.includes("o1") || model.includes("o3") || model.includes("o4")) return 128_000
-    if (model.includes("gpt-3.5-turbo-16k") || model.includes("gpt-3.5-turbo-1106") || model.includes("gpt-3.5-turbo-0125")) return 16_385
-    if (model.includes("gpt-3.5")) return 4_096
-    if (model.includes("gpt-4")) return 8_192
-
-    return 128_000
+    if (input.contextWindow != null && input.contextWindow > 0) {
+        return input.contextWindow
+    }
+    return guessContextWindow(input.model)
 }
 
-function parseOptionalJsonObject(raw: string | null | undefined) {
-    const text = raw?.trim()
-    if (!text) {
-        return null
-    }
-    try {
-        const parsed = JSON.parse(text) as unknown
-        return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-            ? parsed as Record<string, unknown>
-            : null
-    } catch {
-        return null
-    }
-}
-
-/**
- * @deprecated 直接用 `resolveChatProtocolAdapter` 配合 protocol === "DEEPSEEK" 判定。
- * 保留导出仅为兼容旧测试。
- */
-export function isDeepSeekOpenAICompatibleConfig(input: {
-    baseURL: string
-    model: string
-    name: string
-    protocol: string
-}) {
-    const protocol = input.protocol.trim().toUpperCase() as AiProtocol
-    return isDeepSeekProtocolContext({
-        protocol,
-        baseUrl: input.baseURL,
-        model: input.model,
-        name: input.name,
-        options: {
-            maxTokens: null,
-            temperature: null,
-            deepSeekThinking: null,
-            disableDeepSeekThinkingForTools: true,
-        },
-    })
-}
-
-/**
- * @deprecated 直接调用 `resolveChatProtocolAdapter(...).prepareChatBody(body)`。
- * 保留导出仅为兼容旧测试。
- */
-export function prepareOpenAICompatibleChatBodyForProvider(input: {
-    body: unknown
-    context: {
-        isDeepSeekProvider: boolean
-        deepSeekThinking: DeepSeekThinkingMode | null
-        disableDeepSeekThinkingForTools: boolean
-    }
-}) {
-    if (!input.context.isDeepSeekProvider) {
-        return input.body
-    }
-    return prepareDeepSeekChatBody(input.body, {
-        maxTokens: null,
-        temperature: null,
-        deepSeekThinking: input.context.deepSeekThinking,
-        disableDeepSeekThinkingForTools: input.context.disableDeepSeekThinkingForTools,
-    })
-}
-
-function normalizeDeepSeekThinking(value: unknown): DeepSeekThinkingMode | null {
-    if (isRecord(value)) {
-        return normalizeDeepSeekThinking(value.type)
-    }
-    if (typeof value === "boolean") {
-        return value ? "enabled" : "disabled"
-    }
-    const text = typeof value === "string" ? value.trim().toLowerCase() : ""
-    return text === "enabled" || text === "disabled" ? text : null
-}
-
-function booleanOrDefault(value: unknown, defaultValue: boolean) {
-    if (typeof value === "boolean") {
-        return value
-    }
-    if (typeof value === "string") {
-        const text = value.trim().toLowerCase()
-        if (["true", "1", "yes", "on"].includes(text)) {
-            return true
-        }
-        if (["false", "0", "no", "off"].includes(text)) {
-            return false
+function buildPrompt(input: {
+    systemPrompt?: string | null
+    message?: string
+    messages?: ChatCompletionMessage[]
+}): { system: string | null; messages: { role: "user" | "assistant"; content: string }[] } {
+    if (input.messages?.length) {
+        // AI SDK 把 system 单独传，需要从 messages 里剥出来
+        const system = input.messages
+            .filter((message) => message.role === "system")
+            .map((message) => message.content)
+            .join("\n")
+            .trim()
+        const rest = input.messages
+            .filter((message): message is ChatCompletionMessage & { role: "user" | "assistant" } =>
+                message.role !== "system")
+            .map((message) => ({ role: message.role, content: message.content }))
+        return {
+            system: system || input.systemPrompt?.trim() || null,
+            messages: rest.length > 0 ? rest : [{ role: "user", content: "" }],
         }
     }
-    return defaultValue
+
+    return {
+        system: input.systemPrompt?.trim() || null,
+        messages: [{ role: "user", content: input.message ?? "" }],
+    }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value)
+/** AI SDK v7 的 reasoning 是 ReasoningPart[]，压平成纯文本 */
+function extractReasoningText(reasoning: unknown): string | null {
+    if (typeof reasoning === "string") {
+        return reasoning.trim() || null
+    }
+    if (!Array.isArray(reasoning)) {
+        return null
+    }
+    const text = reasoning
+        .map((part) => {
+            if (typeof part === "string") return part
+            if (part && typeof part === "object" && "text" in part) {
+                const value = (part as { text?: unknown }).text
+                return typeof value === "string" ? value : ""
+            }
+            return ""
+        })
+        .join("")
+        .trim()
+    return text || null
 }
-
-function positiveIntegerOrNull(value: unknown) {
-    const parsed = Number(value)
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : null
-}
-
-function numberOrNull(value: unknown) {
-    const parsed = Number(value)
-    return Number.isFinite(parsed) ? parsed : null
-}
-
-export type { ProtocolAdapterContext }

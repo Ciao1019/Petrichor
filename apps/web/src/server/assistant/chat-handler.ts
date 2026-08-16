@@ -13,8 +13,7 @@ import { PromptInjectionDetector, TokenLimiterProcessor } from "@mastra/core/pro
 import { z } from "zod"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { createChatLanguageModel } from "@/server/ai/generation"
-import { needsJsonPromptInjectionForStructuredOutput } from "@/server/ai/protocol-adapters"
-import type { AiProtocol } from "@/server/ai/config-logic"
+import { needsJsonPromptInjectionForStructuredOutput } from "@/server/ai/provider-quirks"
 import { HttpError, toErrorResponse } from "@/server/http/response"
 import type { AssistantToolContext, StepBudgetPartData } from "./domain-types"
 import {
@@ -119,7 +118,7 @@ export async function assistantChat(request: NextRequest) {
             })
         }
 
-        const { model, config } = await resolveAssistantModel(user.id, input.configId ?? null)
+        const { model, resolved } = await resolveAssistantModel(user.id, input.configId ?? null)
 
         const recentToolNames = await listRecentToolNames(thread.id)
         const recentIntentDomains = await listRecentIntentDomains(thread.id)
@@ -132,7 +131,7 @@ export async function assistantChat(request: NextRequest) {
         })
         const run = await createAssistantRun({
             threadId: thread.id,
-            modelConfigId: config.id,
+            modelConfigId: resolved.model.id,
             intentDomains: rulesRoute.domains,
         })
 
@@ -270,7 +269,7 @@ export async function assistantChat(request: NextRequest) {
                             threadId: thread.id,
                             messages: messagesForModel as UIMessage[],
                             tokenBudget: MAX_CONTEXT_TOKENS,
-                            configId: config.id,
+                            modelRefId: resolved.model.id,
                             signal: request.signal,
                             skipRefresh: isConfirmationResume,
                             onCompressStart: () => {
@@ -347,12 +346,10 @@ export async function assistantChat(request: NextRequest) {
                                     threshold: 0.85,
                                     detectionTypes: ["injection", "jailbreak", "system-override"],
                                     lastMessageOnly: true,
-                                    ...(needsJsonPromptInjectionForStructuredOutput({
-                                        protocol: config.protocol as AiProtocol,
-                                        baseUrl: config.baseUrl ?? "",
-                                        model: config.model,
-                                        name: config.name,
-                                    })
+                                    ...(needsJsonPromptInjectionForStructuredOutput(
+                                        resolved.provider.providerKey,
+                                        resolved.model.modelId,
+                                    )
                                         ? { structuredOutputOptions: { jsonPromptInjection: true } }
                                         : {}),
                                 }),
@@ -493,9 +490,9 @@ export async function assistantChat(request: NextRequest) {
     }
 }
 
-async function resolveAssistantModel(userId: number, configId: number | null) {
+async function resolveAssistantModel(userId: number, modelRefId: number | null) {
     try {
-        return await createChatLanguageModel({ userId, configId })
+        return await createChatLanguageModel({ userId, modelRefId })
     } catch (error) {
         if (error instanceof HttpError && (error.status === 400 || error.status === 404)) {
             throw new HttpError(409, error.message)

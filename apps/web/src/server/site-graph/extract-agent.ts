@@ -355,7 +355,7 @@ export function parseExtractionResult(rawText: string, context: SiteGraphExtract
 export async function runSiteGraphExtraction(input: {
     userId: number
     articles: SiteGraphArticleInput[]
-    configId?: number | null
+    modelRefId?: number | null
     /** 库里已有的概念/实体，用于跨次运行保持同一套规范键 */
     existingEntities?: EntityRegistryEntry[]
 }): Promise<SiteGraphExtractionResult> {
@@ -374,7 +374,7 @@ export async function runSiteGraphExtraction(input: {
         try {
             const response = await callChatCompletion({
                 userId: input.userId,
-                configId: input.configId ?? null,
+                modelRefId: input.modelRefId ?? null,
                 messages: [
                     { role: "system", content: buildExtractionSystemPrompt() },
                     {

@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, isNull } from "drizzle-orm"
+import { and, count, eq, isNull } from "drizzle-orm"
 import { z } from "zod"
 import { SerializableCitationSchema } from "@/components/tool-ui/citation/schema"
 import { SerializableDataTableSchema } from "@/components/tool-ui/data-table/schema"
@@ -6,7 +6,6 @@ import { SerializablePlanSchema } from "@/components/tool-ui/plan/schema"
 import { SerializableProgressTrackerSchema } from "@/components/tool-ui/progress-tracker/schema"
 import { getDb } from "@/server/db/client"
 import {
-    aiModelConfigs,
     assistantArtifacts,
     assistantThreads,
     docDocuments,
@@ -14,6 +13,7 @@ import {
     knowledgeBaseArticles,
     knowledgeBases,
 } from "@/server/db/schema"
+import { hasUsableBinding } from "@/server/ai/resolution"
 import type { AssistantToolContext, AssistantToolRegistration } from "../domain-types"
 import { upsertAssistantPlan } from "../plan-store"
 
@@ -56,16 +56,11 @@ export async function listSystemOverview(userId: number) {
         .select({ total: count() })
         .from(assistantThreads)
         .where(and(eq(assistantThreads.userId, userId), isNull(assistantThreads.deletedAt)))
-    const modelRows = await db
-        .select({ configType: aiModelConfigs.configType })
-        .from(aiModelConfigs)
-        .where(and(
-            eq(aiModelConfigs.userId, userId),
-            eq(aiModelConfigs.isDefault, true),
-            eq(aiModelConfigs.enabled, true),
-            inArray(aiModelConfigs.configType, ["CHAT", "EMBEDDING"]),
-        ))
-    const readyModelTypes = new Set(modelRows.map((row) => row.configType))
+    // 用途绑定 + 模型/供应商都启用才算就绪
+    const [chatModelReady, embeddingModelReady] = await Promise.all([
+        hasUsableBinding(userId, "CHAT"),
+        hasUsableBinding(userId, "EMBEDDING"),
+    ])
 
     return {
         knowledgeBases: Number(knowledgeBaseRow?.total ?? 0),
@@ -73,8 +68,8 @@ export async function listSystemOverview(userId: number) {
         docLibraries: Number(docLibraryRow?.total ?? 0),
         documents: Number(documentRow?.total ?? 0),
         assistantThreads: Number(assistantThreadRow?.total ?? 0),
-        chatModelReady: readyModelTypes.has("CHAT"),
-        embeddingModelReady: readyModelTypes.has("EMBEDDING"),
+        chatModelReady,
+        embeddingModelReady,
     }
 }
 

@@ -22,6 +22,8 @@ const ctx: AssistantToolContext = {
 
 type QueryChain = {
     from: ReturnType<typeof vi.fn>
+    innerJoin: ReturnType<typeof vi.fn>
+    limit: ReturnType<typeof vi.fn>
     returning: ReturnType<typeof vi.fn>
     then: Promise<unknown>["then"]
     values: ReturnType<typeof vi.fn>
@@ -31,6 +33,8 @@ type QueryChain = {
 function createQueryChain(result: unknown): QueryChain {
     const chain = {} as QueryChain
     chain.from = vi.fn(() => chain)
+    chain.innerJoin = vi.fn(() => chain)
+    chain.limit = vi.fn(() => chain)
     chain.returning = vi.fn(async () => result)
     chain.values = vi.fn(() => chain)
     chain.where = vi.fn(() => chain)
@@ -49,14 +53,16 @@ describe("system assistant tools", () => {
         vi.clearAllMocks()
     })
 
-    it("list_system_overview 返回当前用户计数与默认模型就绪状态", async () => {
+    it("list_system_overview 返回当前用户计数与用途绑定就绪状态", async () => {
+        // 前 5 次是各实体计数，后 2 次是 CHAT / EMBEDDING 的用途绑定探测
         const selectResults = [
             [{ total: 2 }],
             [{ total: 15 }],
             [{ total: 1 }],
             [{ total: 8 }],
             [{ total: 4 }],
-            [{ configType: "CHAT" }],
+            [{ id: 1 }],
+            [],
         ]
         let selectIndex = 0
         const db = {
@@ -73,7 +79,7 @@ describe("system assistant tools", () => {
             chatModelReady: true,
             embeddingModelReady: false,
         })
-        expect(db.select).toHaveBeenCalledTimes(6)
+        expect(db.select).toHaveBeenCalledTimes(7)
     })
 
     it("save_answer_artifact 把 thread/run/kind/title/content_json 写入既有表", async () => {

@@ -11,7 +11,7 @@ export const DANGER_ALLOWLIST_TTL_MS = 24 * 60 * 60 * 1000
 export const DESTRUCTIVE_CRITICAL_TOOL_NAMES = new Set([
     "delete_article",
     "delete_document",
-    "delete_ai_config",
+    "delete_ai_provider",
     "revoke_article_share",
     "revoke_agent_api_key",
     "set_public_qa_enabled",

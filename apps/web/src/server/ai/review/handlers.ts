@@ -217,7 +217,7 @@ async function generateAndPersist(input: {
             message: userMessage,
         })
         narrative = normalizeReviewNarrative(chatResult.answer)
-        modelConfigId = chatResult.config?.id ?? null
+        modelConfigId = chatResult.resolved.model.id
     }
 
     // 月报专属：认知演化时间线。任何环节失败都静默降级，不影响月报主体。

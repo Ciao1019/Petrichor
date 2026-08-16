@@ -21,7 +21,7 @@ import {
     mergePageMarkdown,
     type ImportPageStatus,
 } from "@/server/kb/import-logic"
-import { callVisionCompletion, resolveVisionConfig } from "@/server/ai/vision"
+import { callVisionCompletion, resolveVisionModel } from "@/server/ai/vision"
 import { fetchS3ObjectBytes, toImageDataUrl } from "@/server/upload/s3-fetch"
 import { extractPdfPages, PdfExtractError } from "@/server/kb/pdf-extract"
 
@@ -482,15 +482,15 @@ async function switchJobToDefaultVisionModel(
     user: User,
     job: KnowledgeBaseImportJobRecord,
 ): Promise<KnowledgeBaseImportJobRecord> {
-    const defaultConfig = await resolveVisionConfig(user.id, null)
-    if (job.modelConfigId === defaultConfig.id) {
+    const resolved = await resolveVisionModel(user.id, null)
+    if (job.modelConfigId === resolved.model.id) {
         return job
     }
     await db
         .update(knowledgeBaseImportJobs)
-        .set({ modelConfigId: defaultConfig.id, updatedAt: new Date() })
+        .set({ modelConfigId: resolved.model.id, updatedAt: new Date() })
         .where(eq(knowledgeBaseImportJobs.id, job.id))
-    return { ...job, modelConfigId: defaultConfig.id }
+    return { ...job, modelConfigId: resolved.model.id }
 }
 
 async function convertSinglePage(db: Db, user: User, job: KnowledgeBaseImportJobRecord, pageNo: number) {
@@ -513,7 +513,7 @@ async function convertSinglePage(db: Db, user: User, job: KnowledgeBaseImportJob
         const pageImage = await fetchS3ObjectBytes(page.imageKey)
         const result = await callVisionCompletion({
             userId: user.id,
-            configId: job.modelConfigId,
+            modelRefId: job.modelConfigId,
             imageDataUrl: toImageDataUrl(pageImage),
         })
         await db

@@ -69,8 +69,8 @@ const BLOCKED_WRITE_SUBAGENT_TOOLS = new Set([
     "delete_article",
     "revoke_article_share",
     "delete_document",
-    "set_default_ai_config",
-    "list_ai_configs",
+    "bind_ai_model",
+    "list_ai_models",
     "list_agent_api_keys",
     "get_public_qa_setting",
 ])

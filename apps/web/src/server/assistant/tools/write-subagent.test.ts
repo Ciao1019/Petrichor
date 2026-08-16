@@ -26,7 +26,7 @@ describe("write subagent helpers", () => {
             { toolName: "create_article", input: { knowledgeBaseId: 1, title: "A" }, reason: "新建" },
             { toolName: "move_article", input: { articleId: 9, targetKnowledgeBaseId: 2 } },
             { toolName: "delete_article", input: { articleId: 2 } },
-            { toolName: "delete_ai_config", input: { configId: 3 } },
+            { toolName: "delete_ai_provider", input: { providerId: 3 } },
             { toolName: "create_article", input: { knowledgeBaseId: 1, title: "A" } },
         ])).toEqual([
             {

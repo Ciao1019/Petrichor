@@ -691,22 +691,86 @@ export const publicQaRateLimits = pgTable("petrichor_public_qa_rate_limit", {
     uniqueIndex("ux_petrichor_public_qa_rate_limit_bucket").on(table.bucketKey),
 ])
 
-export const aiModelConfigs = pgTable("petrichor_ai_model_config", {
+// ===== AI 模型接入：凭证 / 供应商 / 模型 / 用途绑定 四层 =====
+
+// 凭证库：API Key 单独管理，一条凭证可以被多个供应商实例复用，避免重复粘贴
+export const aiCredentials = pgTable("petrichor_ai_credential", {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     userId: bigint("user_id", { mode: "number" }).notNull(),
-    configType: text("config_type").notNull(),
-    protocol: text("protocol").notNull(),
     name: text("name").notNull(),
-    baseUrl: text("base_url"),
-    apiKeyEnc: text("api_key_enc"),
-    model: text("model").notNull(),
-    enabled: boolean("enabled").notNull().default(true),
-    isDefault: boolean("is_default").notNull().default(false),
-    extraJson: text("extra_json"),
+    // 限定只能用于某个供应商；为空表示通用凭证（如聚合网关的 Key）
+    providerKey: text("provider_key"),
+    apiKeyEnc: text("api_key_enc").notNull(),
+    // 供应商额外凭证字段（Bedrock AK/SK、Vertex 服务账号），整体加密后的 JSON
+    extraEnc: text("extra_enc"),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     ...timestamps,
 }, (table) => [
-    index("idx_petrichor_ai_model_config_user_type").on(table.userId, table.configType),
-    uniqueIndex("ux_petrichor_ai_model_config_user_type_name").on(table.userId, table.configType, table.name),
+    index("idx_petrichor_ai_credential_user").on(table.userId),
+    uniqueIndex("ux_petrichor_ai_credential_user_name").on(table.userId, table.name),
+])
+
+// 供应商实例：目录里的某个供应商 + 一条凭证 + 可覆盖的 BaseUrl
+export const aiProviders = pgTable("petrichor_ai_provider", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    // 对应 provider-catalog 里的 key
+    providerKey: text("provider_key").notNull(),
+    name: text("name").notNull(),
+    // 为空表示使用目录里的默认 BaseUrl
+    baseUrl: text("base_url"),
+    credentialId: bigint("credential_id", { mode: "number" }).notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    // 自定义请求头，JSON 对象
+    headersJson: text("headers_json"),
+    // 供应商级选项（DeepSeek thinking 等），JSON 对象
+    optionsJson: text("options_json"),
+    // 最近一次连通性测试结果
+    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    lastCheckStatus: text("last_check_status"),
+    lastCheckMessage: text("last_check_message"),
+    ...timestamps,
+}, (table) => [
+    index("idx_petrichor_ai_provider_user").on(table.userId),
+    index("idx_petrichor_ai_provider_credential").on(table.credentialId),
+    uniqueIndex("ux_petrichor_ai_provider_user_name").on(table.userId, table.name),
+])
+
+// 供应商下已启用的模型：由「获取模型列表」写入，用户勾选启用
+export const aiModels = pgTable("petrichor_ai_model", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    providerId: bigint("provider_id", { mode: "number" }).notNull(),
+    // 调用时传给供应商的模型 id
+    modelId: text("model_id").notNull(),
+    displayName: text("display_name"),
+    // LANGUAGE | EMBEDDING
+    kind: text("kind").notNull(),
+    contextWindow: integer("context_window"),
+    // 向量模型的输出维度。不写死：由一次真实 embed 调用探测得到，探测前为 null
+    dimensions: integer("dimensions"),
+    // 能力标记数组，JSON
+    capabilitiesJson: text("capabilities_json"),
+    enabled: boolean("enabled").notNull().default(true),
+    ...timestamps,
+}, (table) => [
+    index("idx_petrichor_ai_model_user_kind").on(table.userId, table.kind),
+    index("idx_petrichor_ai_model_provider").on(table.providerId),
+    uniqueIndex("ux_petrichor_ai_model_provider_model").on(table.providerId, table.modelId),
+])
+
+// 用途绑定：每个用途（CHAT/VISION/DOC_QA/EMBEDDING）绑定一个模型，替代旧的 configType + isDefault
+export const aiBindings = pgTable("petrichor_ai_binding", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    purpose: text("purpose").notNull(),
+    modelRefId: bigint("model_ref_id", { mode: "number" }).notNull(),
+    // 该用途的生成参数（temperature / maxTokens / thinking），JSON
+    optionsJson: text("options_json"),
+    ...timestamps,
+}, (table) => [
+    uniqueIndex("ux_petrichor_ai_binding_user_purpose").on(table.userId, table.purpose),
+    index("idx_petrichor_ai_binding_model").on(table.modelRefId),
 ])
 
 // ===== 文档库（Document Library）：存放原始文件 + 针对文件内容的问答 =====
@@ -1089,7 +1153,10 @@ export type SiteGraphEdgeRecord = typeof siteGraphEdges.$inferSelect
 export type SiteGraphRunRecord = typeof siteGraphRuns.$inferSelect
 export type SiteGraphMergeCandidateRecord = typeof siteGraphMergeCandidates.$inferSelect
 export type PublicQaRateLimitRecord = typeof publicQaRateLimits.$inferSelect
-export type AiModelConfigRecord = typeof aiModelConfigs.$inferSelect
+export type AiCredentialRecord = typeof aiCredentials.$inferSelect
+export type AiProviderRecord = typeof aiProviders.$inferSelect
+export type AiModelRecord = typeof aiModels.$inferSelect
+export type AiBindingRecord = typeof aiBindings.$inferSelect
 export type AiReviewRecord = typeof aiReviews.$inferSelect
 export type KnowledgeBaseImportJobRecord = typeof knowledgeBaseImportJobs.$inferSelect
 export type KnowledgeBaseImportJobPageRecord = typeof knowledgeBaseImportJobPages.$inferSelect

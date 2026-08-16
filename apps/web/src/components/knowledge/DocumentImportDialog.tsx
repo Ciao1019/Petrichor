@@ -25,11 +25,12 @@ import {
 } from "@/components/knowledge/article-editor-utils"
 import { rasterizePdfPages } from "@/components/knowledge/document-rasterizer"
 import {
-  aiModelConfigApi,
+  aiModelApi,
+  aiBindingApi,
   documentImportApi,
   knowledgeBaseNodeApi,
   uploadApi,
-  type AiModelConfigResponse,
+  type AiModelResponse,
   type KnowledgeBaseTreeNode,
 } from "@/lib/api"
 
@@ -166,7 +167,7 @@ export function DocumentImportDialog({
   const [concurrency, setConcurrency] = React.useState(DEFAULT_CONCURRENCY)
 
   const [folders, setFolders] = React.useState<FlatFolderOption[]>([])
-  const [models, setModels] = React.useState<AiModelConfigResponse[]>([])
+  const [models, setModels] = React.useState<AiModelResponse[]>([])
   const [modelsLoading, setModelsLoading] = React.useState(false)
 
   const [running, setRunning] = React.useState(false)
@@ -200,12 +201,17 @@ export function DocumentImportDialog({
     void (async () => {
       setModelsLoading(true)
       try {
-        const res = await aiModelConfigApi.list({ configType: "VISION", pageNum: 1, pageSize: 100, enabled: true })
+        // 可选项 = 所有已启用的语言模型；默认项 = VISION 用途当前绑定的模型
+        const [modelRes, bindingRes] = await Promise.all([
+          aiModelApi.list({ kind: "LANGUAGE", enabledOnly: true }),
+          aiBindingApi.list(),
+        ])
         if (canceled) return
-        const rows = res.data.rows || []
+        const rows = modelRes.data.items || []
         setModels(rows)
-        const preferred = rows.find((row) => row.isDefault) || rows[0]
-        setModelConfigId((prev) => prev ?? (preferred ? preferred.id : null))
+        const boundId = bindingRes.data.items.find((slot) => slot.purpose === "VISION")?.binding?.modelRefId
+        const preferred = rows.find((row) => row.id === boundId) || rows[0]
+        setModelConfigId((prev: string | null) => prev ?? (preferred ? preferred.id : null))
       } catch {
         if (!canceled) setModels([])
       } finally {
@@ -553,8 +559,8 @@ export function DocumentImportDialog({
               <SelectContent>
                 {models.map((model) => (
                   <SelectItem key={model.id} value={model.id}>
-                    {model.name}
-                    {model.isDefault ? "（默认）" : ""}
+                    {model.displayName || model.modelId}
+                    {model.providerName ? ` · ${model.providerName}` : ""}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -564,7 +570,7 @@ export function DocumentImportDialog({
             </p>
             {!modelsLoading && models.length === 0 ? (
               <p className="text-xs text-destructive">
-                还没有多模态模型，遇到扫描件会导入失败，可到「模型配置 → 多模态」新增并启用。
+                还没有可用的语言模型，遇到扫描件会导入失败，可到「模型配置 → 供应商」接入后在「用途绑定」里绑定多模态。
               </p>
             ) : null}
           </div>

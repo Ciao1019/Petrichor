@@ -50,7 +50,7 @@ const attributeSchema = z.object({
 })
 
 const generateSchema = z.object({
-    configId: idSchema.optional().nullable(),
+    modelRefId: idSchema.optional().nullable(),
     mode: z.enum(["FULL", "INCREMENTAL"]).optional(),
 })
 
@@ -148,7 +148,7 @@ export async function adminSiteGraphGenerate(request: NextRequest) {
         const input = generateSchema.parse(await readJson(request))
         return ok(await generateSiteGraph({
             userId: user.id,
-            configId: input.configId ?? null,
+            modelRefId: input.modelRefId ?? null,
             mode: input.mode,
         }))
     })

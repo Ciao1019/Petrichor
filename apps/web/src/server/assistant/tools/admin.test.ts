@@ -23,15 +23,15 @@ const ctx: AssistantToolContext = {
 const ADMIN_MODEL_VISIBLE = [
     "get_public_qa_setting",
     "list_agent_api_keys",
-    "list_ai_configs",
-    "set_default_ai_config",
+    "list_ai_models",
+    "bind_ai_model",
 ].sort()
 
 const ADMIN_DANGEROUS = [
-    "delete_ai_config",
+    "delete_ai_provider",
     "revoke_agent_api_key",
     "set_public_qa_enabled",
-    "update_ai_config_credentials",
+    "update_ai_credential",
 ].sort()
 
 describe("admin assistant tools", () => {
@@ -57,8 +57,8 @@ describe("admin assistant tools", () => {
     })
 
     it("直接调用危险工具无副作用（拒绝对调）", async () => {
-        const deleteTool = adminAssistantTools.find((tool) => tool.name === "delete_ai_config")!
-        await expect(deleteTool.execute(ctx, { configId: 1 })).rejects.toThrow(/request_user_confirmation/)
+        const deleteTool = adminAssistantTools.find((tool) => tool.name === "delete_ai_provider")!
+        await expect(deleteTool.execute(ctx, { providerId: 1 })).rejects.toThrow(/request_user_confirmation/)
     })
 
     it("admin 提示含确认纪律与管理 skill", () => {
@@ -70,7 +70,7 @@ describe("admin assistant tools", () => {
 
     it("默认只读三域不含 admin", () => {
         expect(Object.keys(loadToolsForDomains(["system", "knowledge", "doc_library"], ctx)))
-            .not.toContain("list_ai_configs")
+            .not.toContain("list_ai_models")
         expect(allAssistantTools.some((tool) => tool.domain === "admin")).toBe(true)
     })
 })
