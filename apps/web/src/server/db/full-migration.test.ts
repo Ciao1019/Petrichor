@@ -64,7 +64,6 @@ describe("buildInitialMigrationSql", () => {
         expect(sql).not.toContain("create table if not exists petrichor_ai_chat_run")
         expect(sql).not.toContain("create table if not exists petrichor_ai_chat_message")
         expect(sql).not.toContain("create table if not exists petrichor_kb_embedding_chunk")
-        expect(sql).not.toContain("embedding_dimensions")
         expect(sql).not.toContain("extensions.vector")
         expect(sql).not.toContain("create table if not exists petrichor_kb_article_share_invite")
         expect(sql).not.toContain("create table if not exists petrichor_kb_resource_grant")
@@ -96,6 +95,45 @@ describe("buildInitialMigrationSql", () => {
         expect(sql).toContain("create table if not exists petrichor_assistant_confirmation")
         expect(sql).toContain("ux_petrichor_assistant_confirmation_key")
         expect(sql).toContain("create table if not exists petrichor_assistant_message_embedding")
-        expect(sql).toContain("idx_petrichor_assistant_message_embedding")
+    })
+
+    /**
+     * 向量列必须是无约束 `vector`，且不能有钉死维度的 HNSW 索引——
+     * 那样会把维度锁回 1024，换向量模型就得清库。索引按维度动态建，
+     * 见 server/retrieval/vector-space.ts。
+     */
+    it("向量列无维度约束，且不建固定维度索引", () => {
+        const sql = buildInitialMigrationSql()
+
+        // 只看 DDL，注释里提到 vector(1024) 是允许的
+        const ddl = sql.split("\n").filter((line) => !line.trimStart().startsWith("--")).join("\n")
+        expect(ddl).not.toMatch(/embedding\s+vector\(\d+\)/)
+        expect(ddl).not.toContain("using hnsw (embedding vector_cosine_ops)")
+
+        for (const table of [
+            "petrichor_kb_wiki_tree_node",
+            "petrichor_agent_memory",
+            "petrichor_assistant_message_embedding",
+        ]) {
+            expect(sql).toContain(`alter table ${table} alter column embedding type vector;`)
+        }
+        // 放宽列类型前必须先拆掉旧索引，否则维度仍被锁死
+        expect(sql.indexOf("drop index if exists idx_petrichor_kb_wiki_tree_node_embedding;"))
+            .toBeLessThan(sql.indexOf("alter table petrichor_kb_wiki_tree_node alter column embedding type vector;"))
+    })
+
+    it("目录树节点带向量生命周期元数据，用于换模型后判定重算", () => {
+        const sql = buildInitialMigrationSql()
+
+        for (const column of [
+            "embedding_status",
+            "embedding_model",
+            "embedding_dimensions",
+            "embedding_version",
+            "embedding_error",
+            "embedding_updated_at",
+        ]) {
+            expect(sql).toContain(`add column if not exists ${column}`)
+        }
     })
 })

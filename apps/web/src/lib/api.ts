@@ -1191,14 +1191,27 @@ export interface KnowledgeBaseWikiDashboardResponse {
 export interface KbWikiEmbeddingStatus {
   supported: boolean
   total: number
+  /** 用当前绑定模型写入且仍然新鲜的节点数 */
   embedded: number
   pending: number
+  failed: number
+  /** 当前 EMBEDDING 绑定的模型与维度；换模型后旧向量会被计入 pending */
+  model: string | null
+  dimensions: number | null
+  version: number | null
 }
 
 export interface KbWikiEmbeddingRunResult {
+  /** 本次实际写入的条数 */
   embedded: number
+  /** 写入后累计已就绪的条数 */
+  ready: number
   total: number
   pending: number
+  failed: number
+  model: string | null
+  dimensions: number | null
+  version: number | null
 }
 
 export interface KnowledgeBaseWikiTreeNode {
@@ -1533,8 +1546,8 @@ export interface AiProbeDimensionsResponse {
   id: string
   modelId: string
   dimensions: number
-  /** 维度与数据库向量列声明不一致时为 false，绑定后写入会失败 */
-  storable: boolean
+  /** 维度超过 pgvector 的 HNSW 上限时为 false，检索会退化为顺序扫描 */
+  indexable: boolean
   warning: string | null
 }
 

@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto"
 import { and, asc, eq, inArray, sql } from "drizzle-orm"
 import { callChatCompletion } from "@/server/ai/generation"
-import { embedQuery, embedTexts, hasEmbeddingConfig } from "@/server/ai/embedding"
+import { embedQuery, embedTexts, getEmbeddingProfile, hasEmbeddingConfig, type EmbeddingProfile } from "@/server/ai/embedding"
+import { cosineDistance, whereSameDimension } from "@/server/retrieval/vector-space"
 import { getDb, isSqliteDatabase } from "@/server/db/client"
 import {
     knowledgeBaseArticles,
@@ -403,17 +404,41 @@ function buildTreeNodeEmbedText(node: { title: string; summary: string | null; c
 async function writeTreeNodeEmbeddings(
     userId: number,
     rows: Array<{ id: number; title: string; summary: string | null; contentMd: string }>,
+    profile: EmbeddingProfile,
 ): Promise<number> {
     let written = 0
     for (let offset = 0; offset < rows.length; offset += KB_EMBED_BATCH_SIZE) {
         const batch = rows.slice(offset, offset + KB_EMBED_BATCH_SIZE)
-        const vectors = await embedTexts(userId, batch.map((node) => buildTreeNodeEmbedText(node)))
+        let vectors: number[][]
+        try {
+            vectors = await embedTexts(userId, batch.map((node) => buildTreeNodeEmbedText(node)))
+        } catch (error) {
+            // 记下失败原因再抛，避免这批节点在「待处理」里无声地反复重试
+            const message = error instanceof Error ? error.message.slice(0, 1000) : "向量生成失败"
+            for (const row of batch) {
+                await getDb().update(knowledgeBaseWikiTreeNodes).set({
+                    embeddingStatus: "failed",
+                    embeddingError: message,
+                    embeddingUpdatedAt: new Date(),
+                }).where(eq(knowledgeBaseWikiTreeNodes.id, row.id))
+            }
+            throw error
+        }
         for (let i = 0; i < batch.length; i += 1) {
             const vector = vectors[i]
             if (!vector) continue
             const literal = `[${vector.join(",")}]`
+            // 维度写实际长度而不是 profile.dimensions：首次调用时档案里可能还是 null
             await getDb().execute(sql`
-                update petrichor_kb_wiki_tree_node set embedding = ${literal}::vector where id = ${batch[i].id}
+                update petrichor_kb_wiki_tree_node
+                set embedding = ${literal}::vector,
+                    embedding_status = 'ready',
+                    embedding_model = ${profile.model},
+                    embedding_dimensions = ${vector.length},
+                    embedding_version = ${profile.version},
+                    embedding_error = null,
+                    embedding_updated_at = now()
+                where id = ${batch[i].id}
             `)
             written += 1
         }
@@ -421,7 +446,7 @@ async function writeTreeNodeEmbeddings(
     return written
 }
 
-async function loadPendingTreeNodeRows(userId: number, knowledgeBaseId: number) {
+async function loadPendingTreeNodeRows(userId: number, knowledgeBaseId: number, profile: EmbeddingProfile) {
     return await getDb()
         .select({
             id: knowledgeBaseWikiTreeNodes.id,
@@ -433,29 +458,68 @@ async function loadPendingTreeNodeRows(userId: number, knowledgeBaseId: number) 
         .where(and(
             eq(knowledgeBaseWikiTreeNodes.userId, userId),
             eq(knowledgeBaseWikiTreeNodes.knowledgeBaseId, knowledgeBaseId),
-            sql`${knowledgeBaseWikiTreeNodes.id} in (select id from petrichor_kb_wiki_tree_node where knowledge_base_id = ${knowledgeBaseId} and embedding is null)`,
+            // 换模型 / 换维度 / 元数据版本变了，都算待重算
+            sql`${knowledgeBaseWikiTreeNodes.id} in (
+                select id from petrichor_kb_wiki_tree_node
+                where knowledge_base_id = ${knowledgeBaseId}
+                  and (embedding is null or embedding_status <> 'ready'
+                    or embedding_model is distinct from ${profile.model}
+                    or embedding_dimensions is distinct from ${profile.dimensions}
+                    or embedding_version is distinct from ${profile.version})
+            )`,
         ))
         .orderBy(asc(knowledgeBaseWikiTreeNodes.articleId), asc(knowledgeBaseWikiTreeNodes.position))
         .limit(KB_MAX_EMBED_PER_REQUEST)
 }
 
+/** 取当前向量档案；没绑定或绑定已失效都返回 null，绝不抛错 */
+async function loadEmbeddingProfileOrNull(userId: number): Promise<EmbeddingProfile | null> {
+    try {
+        if (!(await hasEmbeddingConfig(userId))) return null
+        return await getEmbeddingProfile(userId)
+    } catch {
+        return null
+    }
+}
+
 // 知识库维度的向量化状态：目录树总节点数 / 已向量化数 / 待处理数。SQLite 不支持时返回 supported=false。
 export async function getKbWikiEmbeddingStatus(userId: number, knowledgeBaseId: number) {
     if (isSqliteDatabase()) {
-        return { supported: false, total: 0, embedded: 0, pending: 0 }
+        return { supported: false, total: 0, embedded: 0, pending: 0, failed: 0, model: null, dimensions: null, version: null }
     }
     await assertKnowledgeBaseOwner(getDb(), userId, knowledgeBaseId)
+    // 只读状态接口：绑定失效（模型被删、类型对不上）时按「未配置」处理，
+    // 不要把 Wiki 面板整个拖成 500——这是 master 上原本的行为，别因为多查一次档案而回退
+    const profile = await loadEmbeddingProfileOrNull(userId)
+    // 维度还没探测过 → 不可能有用该模型写入的向量，直接按 0 已向量化处理，
+    // 不要依赖 SQL 里 `= NULL` 恒假的隐式行为
+    const countable = profile?.dimensions != null ? profile : null
     const rows = await getDb().execute(sql`
-        select count(*)::int as total, count(embedding)::int as embedded
+        select count(*)::int as total,
+          count(*) filter (where ${countable ? sql`embedding is not null
+              and embedding_status = 'ready'
+              and embedding_model = ${countable.model}
+              and embedding_dimensions = ${countable.dimensions}
+              and embedding_version = ${countable.version}` : sql`false`})::int as embedded,
+          count(*) filter (where embedding_status = 'failed')::int as failed
         from petrichor_kb_wiki_tree_node
         where user_id = ${userId} and knowledge_base_id = ${knowledgeBaseId}
     `)
     const row = (rows as Iterable<Record<string, unknown>>)[Symbol.iterator]().next().value as
-        | { total?: unknown; embedded?: unknown }
+        | { total?: unknown; embedded?: unknown; failed?: unknown }
         | undefined
     const total = Number(row?.total ?? 0)
     const embedded = Number(row?.embedded ?? 0)
-    return { supported: true, total, embedded, pending: Math.max(total - embedded, 0) }
+    return {
+        supported: true,
+        total,
+        embedded,
+        pending: Math.max(total - embedded, 0),
+        failed: Number(row?.failed ?? 0),
+        model: profile?.model ?? null,
+        dimensions: profile?.dimensions ?? null,
+        version: profile?.version ?? null,
+    }
 }
 
 // 为整个知识库尚未向量化的目录树节点补写向量（单次最多 KB_MAX_EMBED_PER_REQUEST 条）。供「生成向量」按钮调用，缺配置时抛错。
@@ -467,19 +531,30 @@ export async function embedKnowledgeBaseTreeNodes(userId: number, knowledgeBaseI
     if (!(await hasEmbeddingConfig(userId))) {
         throw badRequest("未配置向量模型：请先在「AI 模型配置」新增并启用一条 EMBEDDING 配置（推荐 bge-m3）")
     }
-    const pending = await loadPendingTreeNodeRows(userId, knowledgeBaseId)
-    const embedded = await writeTreeNodeEmbeddings(userId, pending)
+    const profile = await getEmbeddingProfile(userId)
+    const pending = await loadPendingTreeNodeRows(userId, knowledgeBaseId, profile)
+    const embedded = await writeTreeNodeEmbeddings(userId, pending, profile)
     const status = await getKbWikiEmbeddingStatus(userId, knowledgeBaseId)
-    return { embedded, total: status.total, pending: status.pending }
+    return {
+        embedded,
+        ready: status.embedded,
+        total: status.total,
+        pending: status.pending,
+        failed: status.failed,
+        model: status.model,
+        dimensions: status.dimensions,
+        version: status.version,
+    }
 }
 
 // best-effort：编译 Wiki 后自动补写节点向量（无配置 / SQLite / 出错都静默跳过，绝不影响编译流程）。
 export async function embedKnowledgeBaseTreeNodesBestEffort(userId: number, knowledgeBaseId: number) {
     if (isSqliteDatabase()) return
     if (!(await hasEmbeddingConfig(userId))) return
-    const pending = await loadPendingTreeNodeRows(userId, knowledgeBaseId)
+    const profile = await getEmbeddingProfile(userId)
+    const pending = await loadPendingTreeNodeRows(userId, knowledgeBaseId, profile)
     if (pending.length === 0) return
-    await writeTreeNodeEmbeddings(userId, pending)
+    await writeTreeNodeEmbeddings(userId, pending, profile)
 }
 
 /** 向量语义检索：对章节节点做余弦相似度召回。作为 search_document_tree（推理式导航）的补充。 */
@@ -501,13 +576,23 @@ export async function semanticSearchTreeNodes(input: {
     const maxContentChars = input.maxContentChars ?? 1600
 
     const vec = await embedQuery(input.userId, keyword)
+    const profile = await getEmbeddingProfile(input.userId)
     const literal = `[${vec.join(",")}]`
+    // 用查询向量的实际长度，而不是档案里可能还没探测到的 dimensions
+    const dims = vec.length
+    // 维度过滤是硬性要求（跨维度 <=> 会直接报错）；
+    // model / version 过滤挡的是「维度相同但换了模型」这种更隐蔽的情况
     const rows = await getDb().execute(sql`
         select node_key
         from petrichor_kb_wiki_tree_node
         where user_id = ${input.userId} and knowledge_base_id = ${input.knowledgeBaseId} and embedding is not null
+          and ${whereSameDimension("embedding", dims)}
+          and embedding_status = 'ready'
+          and embedding_model = ${profile.model}
+          and embedding_dimensions = ${dims}
+          and embedding_version = ${profile.version}
           ${input.articleId != null ? sql`and article_id = ${input.articleId}` : sql``}
-        order by embedding <=> ${literal}::vector
+        order by ${cosineDistance("embedding", literal, dims)}
         limit ${limit}
     `)
     const orderedKeys: string[] = []

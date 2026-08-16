@@ -16,6 +16,13 @@ vi.mock("@/server/ai/resolution", () => resolutionMocks)
 const factoryMocks = vi.hoisted(() => ({ createTextEmbeddingModel: vi.fn() }))
 vi.mock("@/server/ai/model-factory", () => factoryMocks)
 
+const spaceMocks = vi.hoisted(() => ({
+    ensureVectorIndexes: vi.fn(async () => ({ created: [], indexed: true })),
+    isValidDimensions: (value: unknown) =>
+        Number.isInteger(value) && (value as number) >= 8 && (value as number) <= 16_000,
+}))
+vi.mock("@/server/retrieval/vector-space", () => spaceMocks)
+
 const dbMocks = vi.hoisted(() => ({ getDb: vi.fn() }))
 vi.mock("@/server/db/client", () => dbMocks)
 
@@ -33,9 +40,10 @@ function mockUpdateChain() {
     return chain
 }
 
-/** 断言维度被写回 ai_model 记录 */
+/** 断言维度被写回 ai_model 记录，并补齐了该维度的向量索引 */
 function expectPersistedDimensions(dimensions: number) {
     expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ dimensions }))
+    expect(spaceMocks.ensureVectorIndexes).toHaveBeenCalledWith(dimensions)
 }
 
 function resolvedModel(dimensions: number | null) {
@@ -141,5 +149,6 @@ describe("embedQuery", () => {
         await embedQuery(7, "q")
 
         expect(updateChain.set).not.toHaveBeenCalled()
+        expect(spaceMocks.ensureVectorIndexes).not.toHaveBeenCalled()
     })
 })

@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm"
 import { embedQuery, hasEmbeddingConfig } from "@/server/ai/embedding"
 import { getDb, isSqliteDatabase } from "@/server/db/client"
+import { cosineDistance, cosineSimilarity, whereSameDimension } from "@/server/retrieval/vector-space"
 import { CONTEXT_RECALL_MIN_SCORE, sanitizeRecallExcerpt } from "./context-recall"
 
 export type OperatorHistoryHit = {
@@ -106,25 +107,29 @@ export async function searchOperatorHistorySemantic(input: {
         const vector = await embedQuery(input.userId, query.slice(0, 4_000))
         if (!vector?.length) return []
         const literal = `[${vector.join(",")}]`
+        // 该表没有维度元数据列，按当前向量的实际长度过滤，避免跨维度比较报错
+        const dims = vector.length
         const exclude = input.excludeThreadId
         const rows = exclude
             ? await getDb().execute(sql`
                 select e.thread_id, e.message_id, e.excerpt_md,
-                    (1 - (e.embedding <=> ${literal}::vector))::float8 as score
+                    (${cosineSimilarity("e.embedding", literal, dims)})::float8 as score
                 from petrichor_assistant_message_embedding e
                 where e.user_id = ${input.userId}
                   and e.thread_id <> ${exclude}
                   and e.embedding is not null
-                order by e.embedding <=> ${literal}::vector
+                  and ${whereSameDimension("e.embedding", dims)}
+                order by ${cosineDistance("e.embedding", literal, dims)}
                 limit ${input.limit}
             `)
             : await getDb().execute(sql`
                 select e.thread_id, e.message_id, e.excerpt_md,
-                    (1 - (e.embedding <=> ${literal}::vector))::float8 as score
+                    (${cosineSimilarity("e.embedding", literal, dims)})::float8 as score
                 from petrichor_assistant_message_embedding e
                 where e.user_id = ${input.userId}
                   and e.embedding is not null
-                order by e.embedding <=> ${literal}::vector
+                  and ${whereSameDimension("e.embedding", dims)}
+                order by ${cosineDistance("e.embedding", literal, dims)}
                 limit ${input.limit}
             `)
         return mapHits(rows, "semantic").filter((hit) => hit.score >= CONTEXT_RECALL_MIN_SCORE)

@@ -375,7 +375,15 @@ export const knowledgeBaseWikiTreeNodes = pgTable("petrichor_kb_wiki_tree_node",
     endLine: integer("end_line"),
     tokenEstimate: integer("token_estimate").notNull().default(0),
     contentHash: text("content_hash").notNull(),
-    // 注意：embedding vector(1024) 列仅存在于 Postgres（见 full-migration / 迁移 SQL），
+    // 向量生命周期元数据。维度相同不代表向量空间相同，所以换模型的判定要靠
+    // model + dimensions + version 三者，而不是只看 vector_dims。
+    embeddingStatus: text("embedding_status").notNull().default("pending"),
+    embeddingModel: text("embedding_model"),
+    embeddingDimensions: integer("embedding_dimensions"),
+    embeddingVersion: integer("embedding_version").notNull().default(1),
+    embeddingError: text("embedding_error"),
+    embeddingUpdatedAt: timestamp("embedding_updated_at", { withTimezone: true }),
+    // 注意：embedding 列（无约束 vector）仅存在于 Postgres（见 full-migration / 迁移 SQL），
     // 且只通过原生 SQL 读写。故意不在 Drizzle schema 声明，避免 loadTreeNodes 等 select() 全列查询在 SQLite（无该列）报错。
     ...timestamps,
 }, (table) => [

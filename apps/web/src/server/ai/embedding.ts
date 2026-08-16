@@ -11,44 +11,20 @@ import {
 } from "@/server/ai/resolution"
 import { createTextEmbeddingModel } from "@/server/ai/model-factory"
 import type { ProviderRuntimeConfig } from "@/server/ai/model-factory"
+import { ensureVectorIndexes, isValidDimensions } from "@/server/retrieval/vector-space"
 
 /**
- * 向量维度：模型侧动态探测，存储侧仍然固定。
+ * 向量维度不写死：由模型自己决定。
  *
- * 模型的真实输出维度不写死，由两条路径得到，都不需要用户手填：
+ * 维度的来源有两条路径，都不需要用户手填：
  *   1. 主动探测：接入模型或绑定用途时调一次 `probeEmbeddingDimensions`，把结果写进 ai_model.dimensions；
  *   2. 被动自愈：真正 embed 时如果模型还没有记录维度，就从响应里学到并落库。
  *
- * 但数据库里的向量列目前仍是 `vector(1024)`（见 full-migration），
- * 因此实际可写入的只有 STORAGE_DIMENSIONS 维的向量。探测出来的维度对不上时，
- * 写入会被 pgvector 拒绝——这里在探测阶段就把维度亮出来，让用户在绑定前发现。
+ * 拿到维度后会顺带补齐该维度的 pgvector 部分索引（见 retrieval/vector-space）。
  */
 
 /** embedding 元数据版本。改动分块或归一化策略时 +1，使历史向量整体失效重算。 */
 export const EMBEDDING_VERSION = 1
-
-/** 数据库向量列声明的维度。换用其它维度的模型需要先迁移这些列。 */
-export const STORAGE_DIMENSIONS = 1024
-
-/**
- * @deprecated 用 `STORAGE_DIMENSIONS`。保留导出仅为兼容旧引用。
- */
-export const EMBEDDING_DIMENSIONS = STORAGE_DIMENSIONS
-
-/** 合法维度范围，用于校验探测结果 */
-export const MIN_DIMENSIONS = 8
-export const MAX_DIMENSIONS = 16_000
-
-export function isValidDimensions(value: unknown): value is number {
-    return Number.isInteger(value)
-        && (value as number) >= MIN_DIMENSIONS
-        && (value as number) <= MAX_DIMENSIONS
-}
-
-/** 探测到的维度能否直接存进现有向量列 */
-export function isStorableDimensions(dimensions: number): boolean {
-    return dimensions === STORAGE_DIMENSIONS
-}
 
 export interface EmbeddingProfile {
     /** 绑定的模型主键，参与向量新鲜度判定，换模型即失效 */
@@ -136,7 +112,8 @@ export async function probeEmbeddingDimensions(
 }
 
 /**
- * 把探测到的维度写回模型记录。返回最终生效的维度。
+ * 把探测到的维度写回模型记录，并补齐该维度的向量索引。
+ * 返回最终生效的维度。
  */
 export async function persistDimensions(modelRefId: number, dimensions: number): Promise<number> {
     if (!isValidDimensions(dimensions)) {
@@ -146,6 +123,8 @@ export async function persistDimensions(modelRefId: number, dimensions: number):
         .update(aiModels)
         .set({ dimensions, updatedAt: new Date() })
         .where(eq(aiModels.id, modelRefId))
+    // 新维度首次出现时补建部分索引；已存在则是一次无开销的 if not exists
+    await ensureVectorIndexes(dimensions)
     return dimensions
 }
 

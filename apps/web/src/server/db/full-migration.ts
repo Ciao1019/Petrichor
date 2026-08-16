@@ -429,6 +429,12 @@ create table if not exists petrichor_kb_wiki_tree_node (
     end_line integer,
     token_estimate integer not null default 0,
     content_hash text not null,
+    embedding_status text not null default 'pending',
+    embedding_model text,
+    embedding_dimensions integer,
+    embedding_version integer not null default 1,
+    embedding_error text,
+    embedding_updated_at timestamptz,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     unique (user_id, knowledge_base_id, node_key)
@@ -443,10 +449,21 @@ create index if not exists petrichor_kb_wiki_tree_node_article_idx
 create index if not exists petrichor_kb_wiki_tree_node_kb_idx
     on petrichor_kb_wiki_tree_node(user_id, knowledge_base_id, position);
 
-alter table petrichor_kb_wiki_tree_node add column if not exists embedding vector(1024);
+alter table petrichor_kb_wiki_tree_node add column if not exists embedding vector;
+alter table petrichor_kb_wiki_tree_node
+    add column if not exists embedding_status text not null default 'pending',
+    add column if not exists embedding_model text,
+    add column if not exists embedding_dimensions integer,
+    add column if not exists embedding_version integer not null default 1,
+    add column if not exists embedding_error text,
+    add column if not exists embedding_updated_at timestamptz;
 
-create index if not exists idx_petrichor_kb_wiki_tree_node_embedding
-    on petrichor_kb_wiki_tree_node using hnsw (embedding vector_cosine_ops);
+-- 向量索引不在这里建：列是无约束 vector，索引按实际用到的维度动态创建
+-- （每个维度一条部分表达式索引，见 server/retrieval/vector-space.ts）。
+-- 存量库里该列可能是固定维度的 vector(1024)：必须先拆掉钉死维度的旧索引再放宽列类型，
+-- 否则索引仍把维度锁在 1024，插入其它维度会报 different vector dimensions。
+drop index if exists idx_petrichor_kb_wiki_tree_node_embedding;
+alter table petrichor_kb_wiki_tree_node alter column embedding type vector;
 
 create table if not exists petrichor_kb_wiki_patch (
     id bigint generated always as identity primary key,
@@ -1167,10 +1184,11 @@ create table if not exists petrichor_agent_memory (
 create index if not exists idx_petrichor_agent_memory_user
     on petrichor_agent_memory(user_id, last_seen_at desc);
 
-alter table petrichor_agent_memory add column if not exists embedding vector(1024);
+alter table petrichor_agent_memory add column if not exists embedding vector;
 
-create index if not exists idx_petrichor_agent_memory_embedding
-    on petrichor_agent_memory using hnsw (embedding vector_cosine_ops);
+-- 同上：先拆固定维度索引再放宽列类型，索引按维度动态创建
+drop index if exists idx_petrichor_agent_memory_embedding;
+alter table petrichor_agent_memory alter column embedding type vector;
 
 create table if not exists petrichor_agent_memory_state (
     user_id bigint primary key,
@@ -1331,15 +1349,16 @@ create table if not exists petrichor_assistant_message_embedding (
     thread_id bigint not null,
     user_id bigint not null,
     excerpt_md text not null,
-    embedding vector(1024),
+    embedding vector,
     created_at timestamptz not null default now()
 );
 
 create index if not exists petrichor_assistant_message_embedding_thread_idx
     on petrichor_assistant_message_embedding(thread_id, user_id);
 
-create index if not exists idx_petrichor_assistant_message_embedding
-    on petrichor_assistant_message_embedding using hnsw (embedding vector_cosine_ops);
+-- 同上：先拆固定维度索引再放宽列类型，索引按维度动态创建
+drop index if exists idx_petrichor_assistant_message_embedding;
+alter table petrichor_assistant_message_embedding alter column embedding type vector;
 
 create index if not exists petrichor_assistant_message_embedding_fts_idx
     on petrichor_assistant_message_embedding

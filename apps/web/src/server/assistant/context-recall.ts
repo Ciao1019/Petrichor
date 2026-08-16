@@ -2,6 +2,7 @@ import { asc, eq, sql } from "drizzle-orm"
 import { embedQuery, embedTexts, hasEmbeddingConfig } from "@/server/ai/embedding"
 import { getDb, isSqliteDatabase } from "@/server/db/client"
 import { assistantMessages } from "@/server/db/schema"
+import { cosineDistance, cosineSimilarity, whereSameDimension } from "@/server/retrieval/vector-space"
 import { extractMessagePlainText } from "./message-text"
 
 export const CONTEXT_RECALL_TOP_K = 4
@@ -81,29 +82,33 @@ export async function recallRelevantHistory(input: {
         const vector = await embedQuery(input.userId, query.slice(0, 4_000))
         if (!vector?.length) return []
         const literal = `[${vector.join(",")}]`
+        // 该表没有维度元数据列，按当前向量的实际长度过滤，避免跨维度比较报错
+        const dims = vector.length
         const limit = input.limit ?? CONTEXT_RECALL_TOP_K
         const exclude = input.excludeMessageIds.filter((id) => Number.isFinite(id))
 
         const rows = exclude.length > 0
             ? await getDb().execute(sql`
                 select message_id, excerpt_md,
-                    (1 - (embedding <=> ${literal}::vector))::float8 as score
+                    (${cosineSimilarity("embedding", literal, dims)})::float8 as score
                 from petrichor_assistant_message_embedding
                 where thread_id = ${input.threadId}
                   and user_id = ${input.userId}
                   and embedding is not null
+                  and ${whereSameDimension("embedding", dims)}
                   and message_id not in (${sql.join(exclude.map((id) => sql`${id}`), sql`, `)})
-                order by embedding <=> ${literal}::vector
+                order by ${cosineDistance("embedding", literal, dims)}
                 limit ${limit}
             `)
             : await getDb().execute(sql`
                 select message_id, excerpt_md,
-                    (1 - (embedding <=> ${literal}::vector))::float8 as score
+                    (${cosineSimilarity("embedding", literal, dims)})::float8 as score
                 from petrichor_assistant_message_embedding
                 where thread_id = ${input.threadId}
                   and user_id = ${input.userId}
                   and embedding is not null
-                order by embedding <=> ${literal}::vector
+                  and ${whereSameDimension("embedding", dims)}
+                order by ${cosineDistance("embedding", literal, dims)}
                 limit ${limit}
             `)
 

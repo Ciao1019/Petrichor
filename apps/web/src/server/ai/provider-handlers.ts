@@ -37,13 +37,9 @@ import {
 } from "@/server/ai/provider-catalog"
 import { discoverProviderModels } from "@/server/ai/provider-models"
 import { createLanguageModel } from "@/server/ai/model-factory"
-import {
-    isStorableDimensions,
-    persistDimensions,
-    probeEmbeddingDimensions,
-    STORAGE_DIMENSIONS,
-} from "@/server/ai/embedding"
+import { persistDimensions, probeEmbeddingDimensions } from "@/server/ai/embedding"
 import { buildRuntimeConfig } from "@/server/ai/resolution"
+import { MAX_INDEXABLE_DIMENSIONS } from "@/server/retrieval/vector-space"
 import { generateText } from "ai"
 
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
@@ -366,16 +362,16 @@ export async function probeAiModelDimensions(request: NextRequest) {
                 row.model.modelId,
             )
             await persistDimensions(row.model.id, dimensions)
-            const storable = isStorableDimensions(dimensions)
+            const indexable = dimensions <= MAX_INDEXABLE_DIMENSIONS
             return ok({
                 id: String(row.model.id),
                 modelId: row.model.modelId,
                 dimensions,
-                storable,
-                // 向量列目前固定为 vector(1024)，维度对不上就写不进去
-                warning: storable
+                indexable,
+                // 超过 HNSW 上限只是退化为顺扫，功能仍然正确，所以是提示不是错误
+                warning: indexable
                     ? null
-                    : `该模型输出 ${dimensions} 维，当前向量列固定为 ${STORAGE_DIMENSIONS} 维，绑定后写入会失败`,
+                    : `该模型输出 ${dimensions} 维，超过 pgvector HNSW 索引上限 ${MAX_INDEXABLE_DIMENSIONS}，检索会退化为顺序扫描`,
             })
         } catch (error) {
             throw badRequest(`探测维度失败：${error instanceof Error ? error.message : "调用失败"}`)
