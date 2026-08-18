@@ -14,6 +14,8 @@
     "db:backfill-public-article-metadata": "tsx scripts/backfill-public-article-metadata.ts",
     "db:sql": "tsx scripts/print-initial-migration.ts",
     "db:run-sql": "tsx scripts/run-sql-file.ts",
+    "db:migrate": "tsx scripts/migrate-database.ts",
+    "db:migrate:vercel": "tsx scripts/migrate-database.ts --vercel-production-only",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",

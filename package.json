@@ -10,9 +10,12 @@
     "scripts": {
         "dev": "pnpm --filter @petrichor/web dev",
         "build": "pnpm --filter @petrichor/web build",
+        "vercel-build": "pnpm db:migrate:vercel && pnpm build",
         "db:backfill-public-article-metadata": "pnpm --filter @petrichor/web db:backfill-public-article-metadata",
         "db:sql": "pnpm --filter @petrichor/web db:sql",
         "db:run-sql": "pnpm --filter @petrichor/web db:run-sql",
+        "db:migrate": "pnpm --filter @petrichor/web db:migrate",
+        "db:migrate:vercel": "pnpm --filter @petrichor/web db:migrate:vercel",
         "lint": "pnpm --filter @petrichor/web lint",
         "test": "pnpm --filter @petrichor/web test",
         "typecheck": "pnpm --filter @petrichor/web typecheck"

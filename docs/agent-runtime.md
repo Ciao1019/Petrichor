@@ -76,7 +76,9 @@ StopPolicy / LoopDetection / Trace / Budget。
 
 ## 数据库迁移
 
-新增表与 BM25 索引列在 `docs/migrations/2026-08-18-agent-runtime-v2.sql`，幂等、可重复执行：
+新增表与 BM25 索引列在 `docs/migrations/2026-08-18-agent-runtime-v2.sql`，
+并已登记到 `docs/migrations/manifest.json`。Vercel production 部署会在构建前自动执行；
+本地或紧急情况下也可以手动执行：
 
 ```bash
 DATABASE_URL=... pnpm db:run-sql docs/migrations/2026-08-18-agent-runtime-v2.sql

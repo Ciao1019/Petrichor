@@ -90,6 +90,8 @@ pnpm --silent --filter "@petrichor/web" db:sql
 - Drizzle 表结构集中在 `apps/web/src/server/db/schema.ts`，SQL 生成逻辑在
   `apps/web/src/server/db/full-migration.ts` 和相关脚本中。
 - 增量数据库变更应放入 `docs/migrations/`，并在相关文档中说明执行顺序。
+- 需要在 Vercel 生产部署中自动执行的增量 SQL 必须登记到
+  `docs/migrations/manifest.json`；已执行的文件不可修改，应新增后续迁移。
 - Supabase transaction pooler 场景下保持 Postgres.js `prepare: false` 相关约束。
 - 涉及生产数据库删除、结构变更、批量更新前必须先说明影响范围并获得明确确认。
 

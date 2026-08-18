@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "migrations": [
+    {
+      "file": "2026-08-18-agent-runtime-v2.sql"
+    }
+  ]
+}
