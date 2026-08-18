@@ -461,6 +461,8 @@ function buildWikiSubSkillMarkdown() {
 5. 重建 / 增量 ingest：\`scripts/petrichor wiki ingest --kb-id <ID>\`。
    - 只想针对部分文章重建时加 \`--article-id\`（可重复）。
    - 想忽略缓存整体重建时加 \`--force\`。
+   - 想彻底重来时加 \`--full\`：先清空该知识库现有 Wiki（含问答沉淀的概念/答案页）再从零编译，
+     属于破坏性操作，必须先向用户确认，且不能与 \`--article-id\` 同时使用。
 6. ingest 会调用模型、可能产生费用，触发前先告诉用户。
 
 > 读取单篇 Wiki 页面正文也可以走 docs 子能力：\`scripts/petrichor doc view --kb-id <ID> --page-key <key>\`。
@@ -476,6 +478,7 @@ scripts/petrichor wiki lint --kb-id 1
 scripts/petrichor wiki ingest --kb-id 1
 scripts/petrichor wiki ingest --kb-id 1 --article-id 12 --article-id 34
 scripts/petrichor wiki ingest --kb-id 1 --force
+scripts/petrichor wiki ingest --kb-id 1 --full
 \`\`\`
 
 详细字段见 \`references/endpoints.md\`。
@@ -661,8 +664,10 @@ Authorization: Bearer <apiKey>
   - 返回 Wiki 体检结果（断链、缺页、待审批补丁等）。
 - \`POST /api/agent/wiki/ingest\`
   - scope: \`wiki:write\`
-  - body: \`{"knowledgeBaseId":"1","articleIds":["12","34"],"forceRebuild":false}\`
+  - body: \`{"knowledgeBaseId":"1","articleIds":["12","34"],"forceRebuild":false,"fullRebuild":false}\`
   - 省略 \`articleIds\` 时对整个知识库做增量 ingest；\`forceRebuild\` 为 \`true\` 时忽略缓存整体重建。
+  - \`fullRebuild\` 为 \`true\` 时先清空该知识库全部 Wiki 页面、链接与目录树再从零编译，
+    返回体里的 \`purged\` 会给出清空数量；该参数不能与 \`articleIds\` 同时传。
   - 会调用模型，可能产生费用。
 `
 }
@@ -1009,7 +1014,11 @@ def cmd_wiki_lint(args: argparse.Namespace) -> None:
 
 
 def cmd_wiki_ingest(args: argparse.Namespace) -> None:
-    body: Dict[str, Any] = {"knowledgeBaseId": _id(args.kb_id), "forceRebuild": bool(args.force)}
+    body: Dict[str, Any] = {
+        "knowledgeBaseId": _id(args.kb_id),
+        "forceRebuild": bool(args.force),
+        "fullRebuild": bool(args.full),
+    }
     if args.article_id:
         body["articleIds"] = [_id(value) for value in args.article_id]
     _print_json(_request("POST", "/api/agent/wiki/ingest", body))
@@ -1136,6 +1145,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--kb-id", type=int, required=True)
     p.add_argument("--article-id", type=int, action="append", help="可重复，只重建这些文章；省略则整库增量")
     p.add_argument("--force", action="store_true", help="忽略缓存整体重建")
+    p.add_argument("--full", action="store_true", help="完全重建：先清空该知识库现有 Wiki 再编译")
 
     return parser
 

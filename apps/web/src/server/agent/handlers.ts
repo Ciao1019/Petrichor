@@ -210,6 +210,7 @@ const agentWikiIngestSchema = z.object({
     knowledgeBaseId: idSchema,
     articleIds: z.array(idSchema).max(500).optional(),
     forceRebuild: z.boolean().optional().default(false),
+    fullRebuild: z.boolean().optional().default(false),
 })
 
 type AgentDocumentHit = {
@@ -1361,6 +1362,7 @@ export async function agentWikiIngest(request: NextRequest) {
             knowledgeBaseId: input.knowledgeBaseId,
             articleIds: input.articleIds,
             forceRebuild: input.forceRebuild,
+            fullRebuild: input.fullRebuild,
         }))
     })
 }

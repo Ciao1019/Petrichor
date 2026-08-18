@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CheckCircle2, Eye, FileStack, GitPullRequestArrow, ListTree, Loader2, RefreshCw, Sparkles, Wand2, X } from "@/components/iconimate"
+import { CheckCircle2, Eye, FileStack, GitPullRequestArrow, ListTree, Loader2, RefreshCw, RotateCcw, Sparkles, Wand2, X } from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
@@ -142,6 +142,8 @@ export function KnowledgeWikiPage() {
   const [dashboard, setDashboard] = React.useState<KnowledgeBaseWikiDashboardResponse | null>(null)
   const [loading, setLoading] = React.useState(false)
   const [ingesting, setIngesting] = React.useState(false)
+  const [fullRebuilding, setFullRebuilding] = React.useState(false)
+  const [fullRebuildOpen, setFullRebuildOpen] = React.useState(false)
   const [linting, setLinting] = React.useState(false)
   const [embedding, setEmbedding] = React.useState(false)
   const [patchBusyId, setPatchBusyId] = React.useState<string | null>(null)
@@ -205,20 +207,32 @@ export function KnowledgeWikiPage() {
     }
   }, [selectedKbId, loadDashboard])
 
-  const runIngest = React.useCallback(async () => {
+  /**
+   * 编译 Wiki。默认增量（命中缓存的文章跳过），
+   * fullRebuild 为 true 时先清空该知识库的全部 Wiki 再从零编译。
+   */
+  const runIngest = React.useCallback(async (options: { fullRebuild?: boolean } = {}) => {
     if (!selectedKbId) return
-    setIngesting(true)
+    const fullRebuild = Boolean(options.fullRebuild)
+    const setBusy = fullRebuild ? setFullRebuilding : setIngesting
+    setBusy(true)
     try {
-      const res = await knowledgeBaseWikiAgentApi.ingest({ knowledgeBaseId: selectedKbId })
-      toast.success(`已生成 ${res.data.pages.length} 个 Wiki 页面`)
+      const res = await knowledgeBaseWikiAgentApi.ingest({ knowledgeBaseId: selectedKbId, fullRebuild })
+      const purgedPageCount = res.data.purged?.pageCount ?? 0
+      toast.success(
+        fullRebuild
+          ? `已清空 ${purgedPageCount} 个旧页面，重新生成 ${res.data.pages.length} 个 Wiki 页面`
+          : `已生成 ${res.data.pages.length} 个 Wiki 页面`,
+      )
       if (res.data.warnings?.length) {
         toast.warning(res.data.warnings[0])
       }
+      setFullRebuildOpen(false)
       await loadDashboard(selectedKbId)
     } catch (error) {
-      toast.error(resolveApiErrorMessage(error, "生成 Wiki 失败"))
+      toast.error(resolveApiErrorMessage(error, fullRebuild ? "完全重建 Wiki 失败" : "生成 Wiki 失败"))
     } finally {
-      setIngesting(false)
+      setBusy(false)
     }
   }, [selectedKbId, loadDashboard])
 
@@ -318,7 +332,7 @@ export function KnowledgeWikiPage() {
   const lint = dashboard?.lint
   const pendingPatches = dashboard?.pendingPatches ?? []
   const pages = dashboard?.pages ?? []
-  const busy = ingesting || linting || embedding
+  const busy = ingesting || linting || embedding || fullRebuilding
   const embeddingStatus = dashboard?.embedding
 
   const PAGE_SIZE = 10
@@ -366,6 +380,16 @@ export function KnowledgeWikiPage() {
           <Button onClick={() => runIngest()} disabled={!selectedKbId || busy}>
             <Sparkles className={cn("mr-2 size-4", ingesting && "animate-spin")} />
             重新生成 Wiki
+          </Button>
+          <Button
+            variant="outline"
+            className="text-destructive hover:text-destructive"
+            onClick={() => setFullRebuildOpen(true)}
+            disabled={!selectedKbId || busy}
+            title="清空当前知识库的全部 Wiki 页面与目录树，再从源文章从零编译"
+          >
+            <RotateCcw className={cn("mr-2 size-4", fullRebuilding && "animate-spin")} />
+            {fullRebuilding ? "重建中…" : "完全重建"}
           </Button>
           {embeddingStatus?.supported ? (
             <Button
@@ -571,6 +595,49 @@ export function KnowledgeWikiPage() {
           ) : null}
         </>
       )}
+
+      {/* 完全重建确认弹窗 —— 破坏性操作，必须显式确认 */}
+      <ModalShell
+        open={fullRebuildOpen}
+        onOpenChange={(next) => {
+          if (!next && fullRebuilding) return
+          setFullRebuildOpen(next)
+        }}
+        disableClose={fullRebuilding}
+        title="确认完全重建 Wiki？"
+        description={`将清空「${knowledgeBases.find((kb) => kb.id === selectedKbId)?.name ?? "当前知识库"}」下的全部 Wiki 数据，再从源文章从零编译。`}
+        footer={
+          <>
+            <Button type="button" variant="secondary" disabled={fullRebuilding} onClick={() => setFullRebuildOpen(false)}>
+              取消
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={!selectedKbId || fullRebuilding}
+              onClick={() => runIngest({ fullRebuild: true })}
+            >
+              {fullRebuilding ? (
+                <Loader2 className="mr-1 size-4 animate-spin" />
+              ) : (
+                <RotateCcw className="mr-1 size-4" />
+              )}
+              {fullRebuilding ? "重建中…" : "确认完全重建"}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-2 px-1 py-1 text-sm text-muted-foreground">
+          <p>会被删除的内容：</p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>全部 Wiki 页面，包含索引页、源文档页，以及问答补丁沉淀的概念 / 答案页（共 {pages.length} 个）</li>
+            <li>全部页面链接与来源引用</li>
+            <li>全部文档目录树节点及其向量（共 {dashboard?.treeNodeCount ?? 0} 个，重建后需要重新生成向量）</li>
+          </ul>
+          <p>会被保留的内容：源文章本身、问答历史、待审批补丁（{pendingPatches.length} 个）与事件日志。</p>
+          <p className="text-destructive">此操作不可撤销，且会重新调用模型编译所有文章，可能产生较多耗时与费用。</p>
+        </div>
+      </ModalShell>
 
       {/* 补丁差异弹窗 */}
       <ModalShell

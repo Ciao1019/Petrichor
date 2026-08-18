@@ -1230,10 +1230,20 @@ export interface KnowledgeBaseWikiTreeResponse {
   nodes: KnowledgeBaseWikiTreeNode[]
 }
 
+/** 完全重建时被清空的 Wiki 数据量 */
+export interface KnowledgeBaseWikiPurgeSummary {
+  pageCount: number
+  linkCount: number
+  sourceRefCount: number
+  treeNodeCount: number
+}
+
 export interface KnowledgeBaseWikiIngestResponse {
   knowledgeBaseId: string
   indexPage: KnowledgeBaseWikiPageResponse
   pages: KnowledgeBaseWikiPageResponse[]
+  /** 仅完全重建时非 null */
+  purged: KnowledgeBaseWikiPurgeSummary | null
   warnings: string[]
 }
 
@@ -1246,7 +1256,13 @@ export const knowledgeBaseWikiAgentApi = {
     api.post<KnowledgeBaseWikiPageDetailResponse>("/kb/wiki/page/detail", { knowledgeBaseId, pageKey }),
   tree: (knowledgeBaseId: string, articleId?: string) =>
     api.post<KnowledgeBaseWikiTreeResponse>("/kb/wiki/tree", { knowledgeBaseId, articleId }),
-  ingest: (data: { knowledgeBaseId: string; articleIds?: string[]; forceRebuild?: boolean }) =>
+  ingest: (data: {
+    knowledgeBaseId: string
+    articleIds?: string[]
+    forceRebuild?: boolean
+    /** 完全重建：先清空该知识库现有 Wiki 再从零编译 */
+    fullRebuild?: boolean
+  }) =>
     api.post<KnowledgeBaseWikiIngestResponse>("/kb/wiki/ingest", data),
   embedWiki: (knowledgeBaseId: string) =>
     api.post<KbWikiEmbeddingRunResult>("/kb/wiki/embedding/run", { knowledgeBaseId }),

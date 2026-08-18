@@ -45,6 +45,15 @@ export type ArticleWikiDeletionTarget = {
 
 export type WikiPageKind = "index" | "source" | "concept" | "entity" | "comparison" | "answer" | "log"
 export type WikiPatchStatus = "PENDING" | "APPLIED" | "REJECTED"
+
+/** 完全重建时清空的 Wiki 数据量，用于回显给调用方。 */
+export type WikiPurgeSummary = {
+    pageCount: number
+    linkCount: number
+    sourceRefCount: number
+    treeNodeCount: number
+}
+
 export type AgentMediaKind = "image" | "video" | "audio" | "file"
 
 export type AgentImageReference = {
@@ -78,6 +87,8 @@ export const optionalKnowledgeBaseIdInputSchema = z.object({
 export const wikiIngestInputSchema = knowledgeBaseIdInputSchema.extend({
     articleIds: z.array(idSchema).optional(),
     forceRebuild: z.boolean().optional().default(false),
+    // 完全重建：清空该知识库下已有的 Wiki 页面/目录树后再从零编译
+    fullRebuild: z.boolean().optional().default(false),
 })
 
 export const wikiPageDetailInputSchema = knowledgeBaseIdInputSchema.extend({
@@ -343,14 +354,28 @@ export async function ingestKnowledgeBaseWiki(input: {
     knowledgeBaseId: number
     articleIds?: number[]
     forceRebuild?: boolean
+    /** 完全重建：先清空该知识库下的全部 Wiki 数据，再从源文章从零编译。 */
+    fullRebuild?: boolean
 }) {
     const db = getDb()
     const kb = await assertKnowledgeBaseOwner(db, input.userId, input.knowledgeBaseId)
+    if (input.fullRebuild && input.articleIds?.length) {
+        throw badRequest("完全重建会清空整个知识库的 Wiki，不能同时指定文章范围")
+    }
+
+    // 完全重建先清空旧数据，再走与增量一致的编译流程；清空后所有缓存判定自然失效，
+    // 但仍显式打开 forceRebuild，保证目录树等按结构指纹缓存的子流程也重新生成。
+    const purged = input.fullRebuild
+        ? await purgeKnowledgeBaseWiki(db, input.userId, input.knowledgeBaseId)
+        : null
+    const forceRebuild = Boolean(input.forceRebuild || input.fullRebuild)
+
     const graph = await loadKnowledgeBaseArticles(db, input.userId, input.knowledgeBaseId, input.articleIds)
     const pages: KnowledgeBaseWikiPageRecord[] = []
     const warnings: string[] = []
     let orphanedPageCount = 0
-    if (!input.articleIds?.length) {
+    // 完全重建已经清空了所有页面，不存在孤儿页，跳过这一步扫描。
+    if (!input.articleIds?.length && !purged) {
         orphanedPageCount = await pruneOrphanArticleWikiPages(
             db,
             input.userId,
@@ -361,21 +386,25 @@ export async function ingestKnowledgeBaseWiki(input: {
             warnings.push(`已清理 ${orphanedPageCount} 个失去源文章的 Wiki 页面`)
         }
     }
+    const eventType = input.fullRebuild ? "REBUILD" : "INGEST"
 
     if (graph.articles.length === 0) {
-        if (orphanedPageCount === 0) {
+        // 清空过内容时不再报错：知识库确实没有文章，但仍要把索引页重建成空索引。
+        if (orphanedPageCount === 0 && (purged?.pageCount ?? 0) === 0) {
             throw badRequest("知识库里还没有可编译的文章")
         }
         const indexPage = await rebuildWikiIndex(db, input.userId, input.knowledgeBaseId, kb.name)
-        await logWikiEvent(db, input.userId, input.knowledgeBaseId, "INGEST", indexPage.id, null, {
+        await logWikiEvent(db, input.userId, input.knowledgeBaseId, eventType, indexPage.id, null, {
             articleCount: 0,
             pageCount: 1,
+            purged,
             warnings,
         })
         return {
             knowledgeBaseId: String(input.knowledgeBaseId),
             indexPage: toWikiPageResponse(indexPage),
             pages: [],
+            purged,
             warnings,
         }
     }
@@ -385,7 +414,7 @@ export async function ingestKnowledgeBaseWiki(input: {
         const pageKey = buildArticleSourcePageKey(article.id)
         const existing = await loadWikiPage(db, input.userId, input.knowledgeBaseId, pageKey)
         let page: KnowledgeBaseWikiPageRecord
-        if (existing && getFrontmatterSourceHash(existing) === sourceHash && !input.forceRebuild) {
+        if (existing && getFrontmatterSourceHash(existing) === sourceHash && !forceRebuild) {
             page = existing
         } else {
             const draft = await generateArticleWikiDraft({
@@ -426,16 +455,17 @@ export async function ingestKnowledgeBaseWiki(input: {
             knowledgeBaseName: kb.name,
             pageId: page.id,
             article,
-            forceRebuild: input.forceRebuild,
+            forceRebuild,
         }).catch((error: unknown) => {
             warnings.push(error instanceof Error ? `目录树构建失败：${error.message}` : "目录树构建失败")
         })
     }
 
     const indexPage = await rebuildWikiIndex(db, input.userId, input.knowledgeBaseId, kb.name)
-    await logWikiEvent(db, input.userId, input.knowledgeBaseId, "INGEST", indexPage.id, null, {
+    await logWikiEvent(db, input.userId, input.knowledgeBaseId, eventType, indexPage.id, null, {
         articleCount: graph.articles.length,
         pageCount: pages.length + 1,
+        purged,
         warnings,
     })
 
@@ -448,8 +478,95 @@ export async function ingestKnowledgeBaseWiki(input: {
         knowledgeBaseId: String(input.knowledgeBaseId),
         indexPage: toWikiPageResponse(indexPage),
         pages: pages.map(toWikiPageResponse),
+        purged,
         warnings: [...new Set(warnings)].slice(0, 5),
     }
+}
+
+/**
+ * 清空知识库下的全部 Wiki 数据：页面（含问答沉淀的概念/答案页）、页面链接、
+ * 来源引用和 PageIndex 目录树节点（含其上的向量）。
+ *
+ * 两点刻意保留：
+ * - 事件日志作为审计记录保留，只解除对即将删除页面的引用（page_id 置空）；
+ * - 待审批补丁保持 PENDING，因为源文章仍在，重建后合并补丁会重新生成对应页面。
+ */
+async function purgeKnowledgeBaseWiki(
+    db: DbExecutor,
+    userId: number,
+    knowledgeBaseId: number,
+): Promise<WikiPurgeSummary> {
+    const pages = await db
+        .select({ id: knowledgeBaseWikiPages.id })
+        .from(knowledgeBaseWikiPages)
+        .where(and(
+            eq(knowledgeBaseWikiPages.userId, userId),
+            eq(knowledgeBaseWikiPages.knowledgeBaseId, knowledgeBaseId),
+        ))
+    const pageIds = pages.map((page) => page.id)
+
+    const [linkRow] = await db
+        .select({ value: count() })
+        .from(knowledgeBaseWikiLinks)
+        .where(and(
+            eq(knowledgeBaseWikiLinks.userId, userId),
+            eq(knowledgeBaseWikiLinks.knowledgeBaseId, knowledgeBaseId),
+        ))
+    const [treeNodeRow] = await db
+        .select({ value: count() })
+        .from(knowledgeBaseWikiTreeNodes)
+        .where(and(
+            eq(knowledgeBaseWikiTreeNodes.userId, userId),
+            eq(knowledgeBaseWikiTreeNodes.knowledgeBaseId, knowledgeBaseId),
+        ))
+    const sourceRefs = pageIds.length === 0
+        ? []
+        : await db
+            .select({ id: knowledgeBaseWikiSourceRefs.id })
+            .from(knowledgeBaseWikiSourceRefs)
+            .where(inArray(knowledgeBaseWikiSourceRefs.pageId, pageIds))
+
+    const summary: WikiPurgeSummary = {
+        pageCount: pageIds.length,
+        linkCount: linkRow?.value ?? 0,
+        treeNodeCount: treeNodeRow?.value ?? 0,
+        sourceRefCount: sourceRefs.length,
+    }
+
+    if (pageIds.length > 0) {
+        await db
+            .update(knowledgeBaseWikiEventLogs)
+            .set({ pageId: null })
+            .where(and(
+                eq(knowledgeBaseWikiEventLogs.userId, userId),
+                eq(knowledgeBaseWikiEventLogs.knowledgeBaseId, knowledgeBaseId),
+            ))
+        await db
+            .delete(knowledgeBaseWikiSourceRefs)
+            .where(inArray(knowledgeBaseWikiSourceRefs.pageId, pageIds))
+    }
+
+    // 子表先删，避免本地 SQLite（无级联）留下孤儿行。
+    await db
+        .delete(knowledgeBaseWikiLinks)
+        .where(and(
+            eq(knowledgeBaseWikiLinks.userId, userId),
+            eq(knowledgeBaseWikiLinks.knowledgeBaseId, knowledgeBaseId),
+        ))
+    await db
+        .delete(knowledgeBaseWikiTreeNodes)
+        .where(and(
+            eq(knowledgeBaseWikiTreeNodes.userId, userId),
+            eq(knowledgeBaseWikiTreeNodes.knowledgeBaseId, knowledgeBaseId),
+        ))
+    await db
+        .delete(knowledgeBaseWikiPages)
+        .where(and(
+            eq(knowledgeBaseWikiPages.userId, userId),
+            eq(knowledgeBaseWikiPages.knowledgeBaseId, knowledgeBaseId),
+        ))
+
+    return summary
 }
 
 /**

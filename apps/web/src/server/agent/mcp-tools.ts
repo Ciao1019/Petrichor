@@ -208,12 +208,13 @@ export const AGENT_MCP_TOOL_SPECS = [
     {
         name: "wiki_ingest",
         title: "编译 Wiki",
-        description: "把指定知识库的文章编译/增量更新为 Wiki 中间层（含目录树索引）。当 Wiki 尚未建立或明显过期时使用；forceRebuild 会全量重建，耗时较长。",
+        description: "把指定知识库的文章编译/增量更新为 Wiki 中间层（含目录树索引）。当 Wiki 尚未建立或明显过期时使用；forceRebuild 会忽略缓存重新编译所有文章，耗时较长；fullRebuild 会先清空该知识库已有 Wiki（含问答沉淀页）再从零编译，属于破坏性操作，只在用户明确要求完全重建时使用。",
         scope: "wiki:write",
         endpointPath: endpoints.wikiIngest,
         inputSchema: {
             knowledgeBaseId: idInputSchema.describe("知识库 ID"),
-            forceRebuild: z.boolean().optional().describe("是否全量重建，默认 false"),
+            forceRebuild: z.boolean().optional().describe("是否忽略缓存重新编译，默认 false"),
+            fullRebuild: z.boolean().optional().describe("是否完全重建（先清空已有 Wiki 再编译），默认 false"),
         },
     },
     {

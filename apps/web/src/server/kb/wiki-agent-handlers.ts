@@ -76,6 +76,7 @@ export async function wikiIngest(request: NextRequest) {
             knowledgeBaseId: input.knowledgeBaseId,
             articleIds: input.articleIds,
             forceRebuild: input.forceRebuild,
+            fullRebuild: input.fullRebuild,
         }))
     })
 }
