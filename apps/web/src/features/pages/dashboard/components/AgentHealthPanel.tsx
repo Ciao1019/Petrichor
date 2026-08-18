@@ -1,6 +1,6 @@
 "use client"
 
-import { AlertTriangle, CheckCircle2, Gauge, XCircle } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Gauge, XCircle } from "@/components/iconimate"
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
 
 import {

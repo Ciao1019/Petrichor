@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Tweet } from "react-tweet"
-import { ExternalLinkIcon, GithubIcon, GitForkIcon, ScaleIcon, StarIcon } from "lucide-react"
+import { ExternalLinkIcon, GithubIcon, GitForkIcon, ScaleIcon, StarIcon } from "@/components/iconimate"
 import type { PlateElementProps } from "platejs/react"
 import { PlateElement } from "platejs/react"
 

@@ -1,4 +1,4 @@
-import { Copy, DotIcon, Flame, Lock } from "lucide-react"
+import { Copy, DotIcon, Flame, Lock } from "@/components/iconimate"
 
 import { ModalShell } from "@/components/petrichor-ui/modal-shell"
 import { Badge } from "@/components/ui/badge"

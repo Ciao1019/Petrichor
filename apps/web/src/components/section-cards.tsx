@@ -1,4 +1,4 @@
-import { IconTrendingDown, IconTrendingUp } from "@tabler/icons-react"
+import { IconTrendingDown, IconTrendingUp } from "@/components/iconimate"
 
 import { Badge } from "@/components/ui/badge"
 import {

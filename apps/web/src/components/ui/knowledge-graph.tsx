@@ -9,7 +9,7 @@ import {
   useCallback,
   type ReactNode,
 } from "react"
-import { Minus, Plus, Download, Maximize, ScanSearch, Loader2 } from "lucide-react"
+import { Minus, Plus, Download, Maximize, ScanSearch, Loader2 } from "@/components/iconimate"
 import type { MindElixirData } from "mind-elixir"
 import { cn } from "@/lib/utils"
 

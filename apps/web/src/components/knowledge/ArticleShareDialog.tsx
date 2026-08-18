@@ -1,4 +1,4 @@
-import { Copy, DotIcon } from "lucide-react"
+import { Copy, DotIcon } from "@/components/iconimate"
 
 import { ModalShell } from "@/components/petrichor-ui/modal-shell"
 import { Button } from "@/components/ui/button"

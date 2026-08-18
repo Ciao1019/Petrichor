@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { BellRing, X } from "lucide-react"
+import { BellRing, X } from "@/components/iconimate"
 
 import { cn } from "@/lib/utils"
 

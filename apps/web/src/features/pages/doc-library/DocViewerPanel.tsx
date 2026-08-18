@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useTheme } from "next-themes"
-import { Loader2 } from "lucide-react"
+import { Loader2 } from "@/components/iconimate"
 import { MarkdownPreview } from "@/components/markdown/MarkdownPreview"
 import {
     PDFViewer,

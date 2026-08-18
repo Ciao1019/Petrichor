@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Github, MessageCircleQuestion, Search } from "lucide-react"
+import { Github, MessageCircleQuestion, Search } from "@/components/iconimate"
 import { Link } from "react-router-dom"
 
 import { BlogSearchDialog, useBlogSearchHotkey } from "@/components/blog-search-dialog"

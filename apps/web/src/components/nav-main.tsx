@@ -1,4 +1,4 @@
-import { IconCirclePlusFilled, type Icon } from "@tabler/icons-react"
+import { IconCirclePlusFilled, type Icon } from "@/components/iconimate"
 
 import {
   SidebarGroup,

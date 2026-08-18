@@ -1,4 +1,4 @@
-import { Check, Clock3, Loader2 } from "lucide-react"
+import { Check, Clock3, Loader2 } from "@/components/iconimate"
 
 import type { NotificationItem as NotificationItemModel } from "@/lib/api"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"

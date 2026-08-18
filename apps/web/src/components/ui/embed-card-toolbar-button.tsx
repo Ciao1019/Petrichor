@@ -4,7 +4,7 @@ import * as React from "react"
 
 import type { DropdownMenuProps } from "@radix-ui/react-dropdown-menu"
 
-import { SquareArrowOutUpRightIcon } from "lucide-react"
+import { SquareArrowOutUpRightIcon } from "@/components/iconimate"
 
 import {
     EMBED_PROVIDER_CONFIG,

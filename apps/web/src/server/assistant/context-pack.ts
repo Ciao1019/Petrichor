@@ -439,38 +439,45 @@ async function summarizeContextWithTimeout(input: {
 }) {
     if (input.signal?.aborted) throw new Error("context summary aborted")
 
-    const completion = callChatCompletion({
-        userId: input.userId,
-        modelRefId: input.modelRefId,
-        systemPrompt: [
-            "你是对话上下文压缩器。把较早的多轮对话压成简洁中文摘要，保留：用户目标、已确认事实、未决任务、关键实体 ID/路径（如 articleId、knowledgeBaseId、documentId）。",
-            "工具结果若已折叠，优先保留其中的 id 与错误码。",
-            "不要编造；不要输出 API Key、Cookie、密码；不要使用 Markdown 标题堆砌。",
-            "只输出摘要正文。",
-        ].join(""),
-        messages: [
-            ...(input.previousSummary
-                ? [{ role: "user" as const, content: `已有摘要：\n${input.previousSummary}` }]
-                : []),
-            {
-                role: "user",
-                content: `请将以下较早对话并入摘要：\n\n${input.transcript}`,
-            },
-        ],
-    })
+    const controller = new AbortController()
+    const abortFromOutside = () => controller.abort()
+    input.signal?.addEventListener("abort", abortFromOutside, { once: true })
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+        const result = await Promise.race([
+            callChatCompletion({
+                userId: input.userId,
+                modelRefId: input.modelRefId,
+                systemPrompt: [
+                    "你是对话上下文压缩器。把较早的多轮对话压成简洁中文摘要，保留：用户目标、已确认事实、未决任务、关键实体 ID/路径（如 articleId、knowledgeBaseId、documentId）。",
+                    "工具结果若已折叠，优先保留其中的 id 与错误码。",
+                    "不要编造；不要输出 API Key、Cookie、密码；不要使用 Markdown 标题堆砌。",
+                    "只输出摘要正文。",
+                ].join(""),
+                messages: [
+                    ...(input.previousSummary
+                        ? [{ role: "user" as const, content: `已有摘要：\n${input.previousSummary}` }]
+                        : []),
+                    {
+                        role: "user",
+                        content: `请将以下较早对话并入摘要：\n\n${input.transcript}`,
+                    },
+                ],
+                signal: controller.signal,
+            }),
+            new Promise<never>((_resolve, reject) => {
+                timer = setTimeout(() => {
+                    controller.abort()
+                    reject(new Error("context summary timeout"))
+                }, CONTEXT_SUMMARY_TIMEOUT_MS)
+            }),
+        ])
 
-    const result = await Promise.race([
-        completion,
-        new Promise<never>((_, reject) => {
-            const timer = setTimeout(() => reject(new Error("context summary timeout")), CONTEXT_SUMMARY_TIMEOUT_MS)
-            input.signal?.addEventListener("abort", () => {
-                clearTimeout(timer)
-                reject(new Error("context summary aborted"))
-            }, { once: true })
-        }),
-    ])
-
-    const trimmed = result.answer.trim()
-    if (!trimmed) throw new Error("empty context summary")
-    return trimmed.slice(0, 8_000)
+        const trimmed = result.answer.trim()
+        if (!trimmed) throw new Error("empty context summary")
+        return trimmed.slice(0, 8_000)
+    } finally {
+        if (timer) clearTimeout(timer)
+        input.signal?.removeEventListener("abort", abortFromOutside)
+    }
 }

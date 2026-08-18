@@ -4,7 +4,7 @@ import {
   Bell,
   CheckCheck,
   ChevronRight,
-} from "lucide-react"
+} from "@/components/iconimate"
 
 import type { NotificationItem as NotificationItemModel } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"

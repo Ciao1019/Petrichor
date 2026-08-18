@@ -42,8 +42,6 @@ const nextConfig: NextConfig = {
             "@radix-ui/react-select",
             "@radix-ui/react-tabs",
             "@radix-ui/react-tooltip",
-            "@tabler/icons-react",
-            "lucide-react",
             "@platejs/basic-nodes",
             "@platejs/basic-styles",
             "@platejs/autoformat",
@@ -52,7 +50,6 @@ const nextConfig: NextConfig = {
             "@platejs/media",
             "@platejs/link",
             "@platejs/list",
-            "@lobehub/icons",
         ],
     },
 
@@ -122,13 +119,6 @@ const nextConfig: NextConfig = {
                             test: /@radix-ui/,
                             priority: 9,
                             name: "radix-bundle",
-                            reuseExistingChunk: true,
-                        },
-                        // 图标库单独打包
-                        icons: {
-                            test: /(lucide-react|@tabler\/icons-react|@lobehub\/icons)/,
-                            priority: 8,
-                            name: "icons-bundle",
                             reuseExistingChunk: true,
                         },
                         // 其他 vendor 库（不固定 name，交给 webpack 按 maxSize 自动切分）

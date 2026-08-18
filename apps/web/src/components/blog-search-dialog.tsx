@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { LockKeyhole, Search } from "lucide-react"
+import { LockKeyhole, Search } from "@/components/iconimate"
 import { useNavigate } from "react-router-dom"
 
 import {

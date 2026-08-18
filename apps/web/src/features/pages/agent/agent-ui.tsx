@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Copy } from "lucide-react"
+import { Copy } from "@/components/iconimate"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"

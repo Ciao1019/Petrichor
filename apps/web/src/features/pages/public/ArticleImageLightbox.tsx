@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { createPortal } from "react-dom"
-import { X } from "lucide-react"
+import { X } from "@/components/iconimate"
 
 import { cn } from "@/lib/utils"
 

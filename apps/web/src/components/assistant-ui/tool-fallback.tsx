@@ -7,7 +7,7 @@ import {
   ChevronDownIcon,
   LoaderIcon,
   XCircleIcon,
-} from "lucide-react";
+} from "@/components/iconimate";
 import {
   useScrollLock,
   type ToolCallMessagePartStatus,

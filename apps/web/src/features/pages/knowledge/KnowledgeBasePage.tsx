@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { MoreHorizontal, Book as BookIcon } from "lucide-react"
+import { MoreHorizontal, Book as BookIcon } from "@/components/iconimate"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 

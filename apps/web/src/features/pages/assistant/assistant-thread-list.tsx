@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { FileText, Globe2, Library, Loader2, Trash2 } from "lucide-react"
+import { FileText, Globe2, Library, Loader2, Trash2 } from "@/components/iconimate"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"

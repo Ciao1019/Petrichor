@@ -13,7 +13,7 @@ import {
   useAuiState,
 } from "@assistant-ui/react"
 import { AssistantChatTransport, useChatRuntime } from "@assistant-ui/react-ai-sdk"
-import { ArrowUp, Copy, MessageCircleQuestion, RefreshCw, Square } from "lucide-react"
+import { ArrowUp, Copy, MessageCircleQuestion, RefreshCw, Square } from "@/components/iconimate"
 
 import { MarkdownText } from "@/components/assistant-ui/markdown-text"
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback"

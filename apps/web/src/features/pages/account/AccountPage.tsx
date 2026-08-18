@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Copy, Link2, Pencil, QuoteIcon, RefreshCw } from "lucide-react"
+import { Copy, Link2, Pencil, QuoteIcon, RefreshCw } from "@/components/iconimate"
 import { useSearchParams } from "react-router-dom"
 import { toast } from "sonner"
 

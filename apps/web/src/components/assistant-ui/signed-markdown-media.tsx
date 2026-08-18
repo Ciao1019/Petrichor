@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { FileUp } from "lucide-react"
+import { FileUp } from "@/components/iconimate"
 
 import { useSignedUrl } from "@/hooks/use-signed-url"
 import { normalizeS4ObjectKey, normalizeS4ObjectUrl } from "@/lib/s4-url"

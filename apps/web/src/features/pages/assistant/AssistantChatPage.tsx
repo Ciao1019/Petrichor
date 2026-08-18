@@ -34,13 +34,13 @@ import {
   Trash2,
   TriangleAlert,
   X,
-} from "lucide-react"
+} from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { MarkdownText } from "@/components/assistant-ui/markdown-text"
 import { UserMessageAttachments } from "@/components/assistant-ui/attachment"
 import { Button } from "@/components/ui/button"
-import { QaMarkdownScope, QaMarkdownText, QaPreparing } from "@/features/pages/knowledge/QaMarkdown"
+import { QaMarkdownScope, QaPreparing } from "@/features/pages/knowledge/QaMarkdown"
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback"
 import { AssistantTaskRail, TASK_TOOL_NAMES } from "@/features/pages/assistant/AssistantTaskRail"
 import {
@@ -127,6 +127,15 @@ import {
   SpawnWriteSubagentToolUI,
   StepBudgetDataUI,
 } from "./assistant-tool-renders"
+import {
+  AgentAnswerText,
+  AgentCitationBar,
+  AgentEventDataUI,
+  AgentRunPanel,
+  AgentStreamingAnswer,
+} from "./agent-run-ui"
+import { hydrateRunsFromMessages } from "@/features/agent-runs/hydrate"
+import { consumePendingRetryRunId } from "@/features/agent-runs/store"
 
 const CHAT_THREAD_HEADER = "X-Petrichor-Assistant-Thread-Id"
 const SKIP_DELETE_CONFIRM_KEY = "petrichor:assistant.skipDeleteConfirm"
@@ -309,6 +318,8 @@ export function AssistantChatPage() {
       setFocusSelection(focusFromThread(response.data.thread.focus))
       setInitialMessages(toInitialMessages(response.data.messages))
       setPersistedPlans(response.data.plans ?? [])
+      // 刷新恢复：历史助手消息带 agentRunId 时把 Run 视图一起拉回来（§162.29）
+      void hydrateRunsFromMessages(response.data.messages)
       setRuntimeSeed((value) => value + 1)
       if (isMobile) setSidebarOpen(false)
     } catch (error) {
@@ -891,6 +902,9 @@ function QaChatPanel({
           const parsed = JSON.parse(init.body)
           if (parsed && typeof parsed === "object") {
             parsed.focus = focusBody
+            // 重试：带上被重试的 runId，后端据此记录 retryOfRunKey，不复用已失败 State（§162.24）
+            const retryOfRunId = consumePendingRetryRunId()
+            if (retryOfRunId) parsed.retryOfRunId = retryOfRunId
             if (currentConfigId) parsed.configId = currentConfigId
             nextInit = { ...init, body: JSON.stringify(parsed) }
           }
@@ -978,6 +992,7 @@ function QaChatPanel({
       <SpawnWriteSubagentToolUI />
       <ContextCompressDataUI />
       <IntentRouteDataUI />
+      <AgentEventDataUI />
       <StepBudgetDataUI />
       <CitationToolUI />
       <DataTableToolUI />
@@ -1227,10 +1242,12 @@ function AssistantMessageBubble() {
             计划已同步到侧栏
           </p>
         ) : null}
+        <AgentRunPanel />
+        <AgentStreamingAnswer />
         <div className="wrap-break-word">
           <MessagePrimitive.Parts>
             {({ part }) => {
-              if (part.type === "text") return <QaMarkdownText />
+              if (part.type === "text") return <AgentAnswerText />
               if (part.type === "tool-call") {
                 if (TASK_TOOL_NAMES.has(part.toolName)) return null
                 return (
@@ -1245,6 +1262,7 @@ function AssistantMessageBubble() {
             }}
           </MessagePrimitive.Parts>
         </div>
+        <AgentCitationBar />
         <AuiIf
           condition={(s) =>
             s.thread.isRunning &&
@@ -1402,4 +1420,3 @@ function MessageTimingDisplay() {
     </div>
   )
 }
-

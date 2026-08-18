@@ -1,4 +1,4 @@
-import { FileCode, FileDigit, FileIcon as FileIconLucide, FileText } from "lucide-react"
+import { FileCode, FileDigit, FileIcon as FileIconLucide, FileText } from "@/components/iconimate"
 import { cn } from "@/lib/utils"
 
 export type FileType = "folder" | "file"

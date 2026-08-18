@@ -45,7 +45,7 @@ import {
   PencilIcon,
   RefreshCwIcon,
   SquareIcon,
-} from "lucide-react";
+} from "@/components/iconimate";
 import type { FC } from "react";
 
 export const Thread: FC = () => {

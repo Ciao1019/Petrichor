@@ -2,7 +2,7 @@ import type { TEquationElement } from 'platejs';
 import type { SlateElementProps } from 'platejs/static';
 
 import { getEquationHtml } from '@platejs/math';
-import { RadicalIcon } from 'lucide-react';
+import { RadicalIcon } from '@/components/iconimate';
 import { SlateElement } from 'platejs/static';
 
 import { cn } from '@/lib/utils';

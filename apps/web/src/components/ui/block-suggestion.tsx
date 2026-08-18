@@ -11,7 +11,7 @@ import {
   rejectSuggestion,
 } from '@platejs/suggestion';
 import { SuggestionPlugin } from '@platejs/suggestion/react';
-import { CheckIcon, XIcon } from 'lucide-react';
+import { CheckIcon, XIcon } from '@/components/iconimate';
 import {
   type NodeEntry,
   type Path,

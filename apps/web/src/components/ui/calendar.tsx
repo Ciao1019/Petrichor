@@ -3,7 +3,7 @@ import {
   ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-} from "lucide-react"
+} from "@/components/iconimate"
 import {
   DayPicker,
   getDefaultClassNames,

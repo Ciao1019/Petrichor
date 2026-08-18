@@ -11,7 +11,7 @@ import {
   FilmIcon,
   ImageIcon,
   LinkIcon,
-} from 'lucide-react';
+} from '@/components/iconimate';
 import { isUrl, KEYS } from 'platejs';
 import { useEditorRef } from 'platejs/react';
 import { toast } from 'sonner';

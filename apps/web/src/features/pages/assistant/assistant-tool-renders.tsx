@@ -22,7 +22,7 @@ import {
   Pencil,
   Search,
   Square,
-} from "lucide-react"
+} from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { QaPreparing } from "@/features/pages/knowledge/QaMarkdown"

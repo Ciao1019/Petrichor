@@ -11,7 +11,7 @@ import {
   Loader2,
   Network,
   RefreshCw,
-} from "lucide-react"
+} from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { agentApi, type AgentCallLogItem } from "@/lib/api"

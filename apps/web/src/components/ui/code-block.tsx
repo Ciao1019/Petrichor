@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils"
 import React, { useEffect, useState } from "react"
 import { useTheme } from "next-themes"
 import { codeToHtml } from "shiki"
-import { Check, Copy } from "lucide-react"
+import { Check, Copy } from "@/components/iconimate"
 
 export type CodeBlockProps = {
   children?: React.ReactNode

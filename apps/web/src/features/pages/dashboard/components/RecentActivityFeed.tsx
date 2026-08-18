@@ -1,6 +1,6 @@
 "use client"
 
-import { FileText, History, MessageCircle } from "lucide-react"
+import { FileText, History, MessageCircle } from "@/components/iconimate"
 import { useNavigate } from "react-router-dom"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Copy, KeyRound, RefreshCw, ShieldCheck, Trash2 } from "lucide-react"
+import { Copy, KeyRound, RefreshCw, ShieldCheck, Trash2 } from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { agentApi, type AgentApiKeyItem } from "@/lib/api"

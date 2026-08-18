@@ -10,7 +10,7 @@ import {
   HighlighterIcon,
   SquareIcon,
   UnderlineIcon,
-} from 'lucide-react';
+} from '@/components/iconimate';
 import { KEYS } from 'platejs';
 import { useEditorRef, useEditorSelector } from 'platejs/react';
 

@@ -96,7 +96,7 @@ pnpm --silent --filter "@petrichor/web" db:sql
 ## 前端与 UI 约定
 
 - 优先复用 `apps/web/src/components/ui`、`petrichor-ui`、`cuicui` 和现有业务组件。
-- 图标优先使用项目已有图标库，例如 `lucide-react` 或 `@tabler/icons-react`。
+- 图标统一从 `@/components/iconimate` 引入；不要重新添加独立图标运行时依赖。
 - 新页面应接入现有 `react-router-dom` 路由、主题、侧栏和面包屑体系。
 - 表单、弹窗、下拉、Toast 等交互优先沿用现有组件和视觉风格。
 - UI 改动完成后，尽量在浏览器中检查桌面和移动视口，确认没有文本溢出或组件重叠。

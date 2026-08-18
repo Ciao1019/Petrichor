@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { AppWindowIcon, GithubIcon, MusicIcon, TwitterIcon } from "lucide-react"
+import { AppWindowIcon, GithubIcon, MusicIcon, TwitterIcon } from "@/components/iconimate"
 import { useEditorRef } from "platejs/react"
 import { toast } from "sonner"
 

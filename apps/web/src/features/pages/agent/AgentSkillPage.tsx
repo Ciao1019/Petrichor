@@ -1,6 +1,6 @@
 "use client"
 
-import { ArrowRight, Download, FileCode2, Package, Plug } from "lucide-react"
+import { ArrowRight, Download, FileCode2, Package, Plug } from "@/components/iconimate"
 import { Link } from "react-router-dom"
 
 import { Badge } from "@/components/ui/badge"

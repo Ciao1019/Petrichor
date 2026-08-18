@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { PanelLeftClose } from "lucide-react"
+import { PanelLeftClose } from "@/components/iconimate"
 
 import { createSiteGraphRuntime, type SiteGraphRuntime } from "@/components/site-graph/graph-runtime"
 import { useIsMobile } from "@/hooks/use-mobile"

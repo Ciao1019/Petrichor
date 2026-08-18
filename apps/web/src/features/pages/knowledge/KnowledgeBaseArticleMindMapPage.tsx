@@ -1,5 +1,5 @@
 import * as React from "react"
-import { RotateCcw } from "lucide-react"
+import { RotateCcw } from "@/components/iconimate"
 import { useNavigate, useParams } from "react-router-dom"
 import type { MindElixirData } from "mind-elixir"
 import { Suspense, useMemo } from "react"

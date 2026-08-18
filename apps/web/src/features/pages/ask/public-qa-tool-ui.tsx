@@ -13,7 +13,7 @@ import {
   Loader2,
   Network,
   Search,
-} from "lucide-react"
+} from "@/components/iconimate"
 
 import { GraphRetrievalBody, parseGraphRetrievalResult } from "@/components/site-graph/GraphPathChain"
 import { CitationList } from "@/components/tool-ui/citation"

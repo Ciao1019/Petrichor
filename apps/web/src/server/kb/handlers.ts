@@ -28,6 +28,7 @@ import {
     resolveArticleTreeStatus,
     type ArticleTreeStatus,
 } from "@/server/kb/tree-status-logic"
+import { deleteArticleWikiPages } from "@/server/kb/wiki-agent-logic"
 import { deleteS3Objects, extractS4ObjectKeysFromArticleContent } from "@/server/upload/s3-delete"
 import { getLocalStorageDirOrNull } from "@/server/upload/local-storage"
 
@@ -857,6 +858,7 @@ export async function deleteFolder(request: NextRequest) {
         const imageObjectKeys = collectArticleS4ObjectKeys(articleRows, user.id)
 
         if (articleIds.length > 0) {
+            await deleteArticleWikiPages(db, { userId: user.id, articles: articleRows })
             await db.delete(knowledgeBaseArticleTags).where(inArray(knowledgeBaseArticleTags.articleId, articleIds))
         }
         await db.delete(knowledgeBaseArticles).where(and(eq(knowledgeBaseArticles.userId, user.id), inArray(knowledgeBaseArticles.nodeId, nodeIds)))
@@ -1051,6 +1053,7 @@ export async function deleteArticle(request: NextRequest) {
         }
         const imageObjectKeys = extractS4ObjectKeysFromArticleContent(article, user.id)
 
+        await deleteArticleWikiPages(db, { userId: user.id, articles: [article] })
         await db.delete(knowledgeBaseArticleTags).where(eq(knowledgeBaseArticleTags.articleId, article.id))
         await db.delete(knowledgeBaseArticles).where(and(eq(knowledgeBaseArticles.id, article.id), eq(knowledgeBaseArticles.userId, user.id)))
         await db.delete(knowledgeBaseNodes).where(and(eq(knowledgeBaseNodes.id, article.nodeId), eq(knowledgeBaseNodes.userId, user.id)))

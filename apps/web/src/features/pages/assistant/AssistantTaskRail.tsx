@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Check, Circle, Loader2, ListTodo, X } from "lucide-react"
+import { Check, Circle, Loader2, ListTodo, X } from "@/components/iconimate"
 import { useAuiState } from "@assistant-ui/react"
 
 import {

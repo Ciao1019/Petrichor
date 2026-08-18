@@ -1,6 +1,6 @@
 'use client';
 
-import type { LucideProps } from 'lucide-react';
+import type { LucideProps } from '@/components/iconimate';
 
 export function BorderAllIcon(props: LucideProps) {
   return (

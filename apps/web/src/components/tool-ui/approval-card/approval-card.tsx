@@ -6,7 +6,7 @@ import type { ApprovalCardProps, ApprovalDecision } from "./schema";
 import { ActionButtons } from "../shared/action-buttons";
 import { type Action } from "../shared/schema";
 
-import { icons, Check, X } from "lucide-react";
+import { icons, Check, X } from "@/components/iconimate";
 
 type LucideIcon = React.ComponentType<{ className?: string }>;
 

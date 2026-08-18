@@ -27,7 +27,7 @@ import {
   IconLoader,
   IconPlus,
   IconTrendingUp,
-} from "@tabler/icons-react"
+} from "@/components/iconimate"
 import {
   flexRender,
   getCoreRowModel,

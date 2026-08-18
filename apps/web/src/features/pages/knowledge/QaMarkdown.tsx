@@ -6,6 +6,8 @@ import { Markdown, remarkVideo, ThemeProvider, type MarkdownProps } from "@lobeh
 import { ThinkingOrb, type OrbState } from "thinking-orbs"
 
 import { useTheme } from "@/components/theme-provider"
+import { AgentCitationMark } from "@/components/agent/agent-citation-mark"
+import { remarkCitations } from "@/features/agent-runs/remark-citations"
 import {
   SignedMarkdownImage,
   storageMarkdownUrlTransform,
@@ -25,8 +27,11 @@ const QA_REACT_MARKDOWN_PROPS = {
 const QA_REMARK_PLUGINS: NonNullable<MarkdownProps["remarkPlugins"]> = [
   [remarkVideo, { videoTags: ["audio", "file"] }],
   remarkStripDanglingMediaTags,
+  // 正文里的 [n] 转成可交互引用角标；无对应证据时组件会退回纯文本
+  remarkCitations,
 ]
 const QA_MARKDOWN_COMPONENTS: NonNullable<MarkdownProps["components"]> = {
+  citation: AgentCitationMark,
   img: SignedMarkdownImage,
   video: SignedMarkdownVideo,
   audio: SignedMarkdownAudio,

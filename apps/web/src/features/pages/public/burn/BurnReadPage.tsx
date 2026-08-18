@@ -1,5 +1,5 @@
 import { useParams } from "react-router-dom"
-import { DotIcon, Flame } from "lucide-react"
+import { DotIcon, Flame } from "@/components/iconimate"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"

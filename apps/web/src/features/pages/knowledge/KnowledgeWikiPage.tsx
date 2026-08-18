@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CheckCircle2, Eye, FileStack, GitPullRequestArrow, ListTree, Loader2, RefreshCw, Sparkles, Wand2, X } from "lucide-react"
+import { CheckCircle2, Eye, FileStack, GitPullRequestArrow, ListTree, Loader2, RefreshCw, Sparkles, Wand2, X } from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"

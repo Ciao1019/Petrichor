@@ -6,7 +6,7 @@ import {
   useLinkToolbarButton,
   useLinkToolbarButtonState,
 } from '@platejs/link/react';
-import { Link } from 'lucide-react';
+import { Link } from '@/components/iconimate';
 
 import { ToolbarButton } from './toolbar';
 

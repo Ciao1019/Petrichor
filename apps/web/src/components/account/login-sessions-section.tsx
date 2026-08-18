@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Laptop, LogOut, MapPin, Monitor, RefreshCw, ShieldAlert, Smartphone } from "lucide-react"
+import { Laptop, LogOut, MapPin, Monitor, RefreshCw, ShieldAlert, Smartphone } from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { authSessionApi, type AuthSessionItem } from "@/lib/api"

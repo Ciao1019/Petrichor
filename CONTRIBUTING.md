@@ -131,7 +131,7 @@ pnpm dev
 ### 前端
 
 - 优先复用 `apps/web/src/components/ui`、petrichor-ui、cuicui 和现有业务组件
-- 图标优先 `lucide-react` 或 `@tabler/icons-react`
+- 图标统一从 `@/components/iconimate` 引入；不要重新添加独立图标运行时依赖
 - 新页面应接入现有 `react-router-dom` 路由、主题、侧栏和面包屑体系
 - UI 改动完成后请在浏览器中验证桌面 & 移动视口
 

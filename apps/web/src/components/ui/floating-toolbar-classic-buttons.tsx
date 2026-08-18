@@ -6,7 +6,7 @@ import {
   ItalicIcon,
   StrikethroughIcon,
   UnderlineIcon,
-} from 'lucide-react';
+} from '@/components/iconimate';
 import { KEYS } from 'platejs';
 import { useEditorReadOnly } from 'platejs/react';
 

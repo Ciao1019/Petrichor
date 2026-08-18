@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ChevronFirst, ChevronLast, ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronFirst, ChevronLast, ChevronLeft, ChevronRight } from "@/components/iconimate"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"

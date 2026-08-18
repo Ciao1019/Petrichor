@@ -6,7 +6,7 @@ import {
   useAuiState,
   type ToolCallMessagePartStatus,
 } from "@assistant-ui/react"
-import { CheckCircle2, ChevronDown, CircleAlert, ExternalLink, Loader2, Search } from "lucide-react"
+import { CheckCircle2, ChevronDown, CircleAlert, ExternalLink, Loader2, Search } from "@/components/iconimate"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 

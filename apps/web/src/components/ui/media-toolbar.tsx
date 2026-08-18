@@ -11,7 +11,7 @@ import {
   useImagePreviewValue,
 } from '@platejs/media/react';
 import { cva } from 'class-variance-authority';
-import { Link, Trash2Icon } from 'lucide-react';
+import { Link, Trash2Icon } from '@/components/iconimate';
 import {
   useEditorRef,
   useEditorSelector,

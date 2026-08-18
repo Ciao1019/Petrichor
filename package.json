@@ -12,6 +12,7 @@
         "build": "pnpm --filter @petrichor/web build",
         "db:backfill-public-article-metadata": "pnpm --filter @petrichor/web db:backfill-public-article-metadata",
         "db:sql": "pnpm --filter @petrichor/web db:sql",
+        "db:run-sql": "pnpm --filter @petrichor/web db:run-sql",
         "lint": "pnpm --filter @petrichor/web lint",
         "test": "pnpm --filter @petrichor/web test",
         "typecheck": "pnpm --filter @petrichor/web typecheck"

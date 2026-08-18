@@ -18,7 +18,7 @@ import {
   IconSparkles,
   IconUserCircle,
   IconUsers,
-} from "@tabler/icons-react"
+} from "@/components/iconimate"
 import { Link, useLocation } from "react-router-dom"
 
 import { NavContent } from "@/components/nav-content"

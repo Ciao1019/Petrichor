@@ -4,7 +4,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
-import { ChevronDown } from "lucide-react"
+import { ChevronDown } from "@/components/iconimate"
 
 export type StepsItemProps = React.ComponentProps<"div">
 

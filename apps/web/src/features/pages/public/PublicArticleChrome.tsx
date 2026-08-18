@@ -1,4 +1,4 @@
-import { DotIcon } from "lucide-react"
+import { DotIcon } from "@/components/iconimate"
 
 import { SiteLogo } from "@/components/site-logo"
 import { Button } from "@/components/ui/button"

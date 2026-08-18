@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useNavigate, useParams } from "react-router-dom"
-import { ArrowLeft, Loader2, RefreshCw } from "lucide-react"
+import { ArrowLeft, Loader2, RefreshCw } from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"

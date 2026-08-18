@@ -21,6 +21,7 @@ export const dashboardRoutes = {
     agentLogs: `${DASHBOARD_ROOT}/agent/logs`,
     agentMcp: `${DASHBOARD_ROOT}/agent/mcp`,
     agentSkill: `${DASHBOARD_ROOT}/agent/skill`,
+    agentDebug: `${DASHBOARD_ROOT}/agent/debug`,
 } as const
 
 export function dashboardPath(path = "") {

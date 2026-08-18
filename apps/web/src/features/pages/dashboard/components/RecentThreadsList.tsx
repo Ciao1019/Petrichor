@@ -1,6 +1,6 @@
 "use client"
 
-import { ArrowRight, MessageCircle } from "lucide-react"
+import { ArrowRight, MessageCircle } from "@/components/iconimate"
 import { useNavigate } from "react-router-dom"
 
 import {

@@ -12,6 +12,7 @@ import {
 } from "@/server/db/schema"
 import { badRequest } from "@/server/http/response"
 import { scoreSearchFields } from "@/server/kb/search-terms"
+import { buildIndexTokenText } from "@/server/retrieval/tokenize"
 import {
     assertKnowledgeBaseOwner,
     extractAgentImageReferences,
@@ -267,6 +268,10 @@ export async function buildArticleTree(input: {
         startLine: node.startLine,
         endLine: node.endLine,
         tokenEstimate: estimateTokens(node.contentMd),
+        // BM25 索引词元（需求 §27/§91）：写入时展开，查询时用同一套分词口径
+        searchTitleTokens: buildIndexTokenText(node.title, 200),
+        searchSummaryTokens: buildIndexTokenText(summaries.get(node.position) ?? null, 400),
+        searchContentTokens: buildIndexTokenText(node.contentMd),
         // 根节点存树指纹，作为整篇结构的缓存判定依据；其余节点存自身内容哈希。
         contentHash: node.position === 0 ? treeHash : createHash("sha256").update(node.contentMd).digest("hex"),
         createdAt: now,
@@ -351,6 +356,7 @@ export async function retrieveTreeNodesForAgent(input: {
     limit?: number
     articleId?: number
     maxContentChars?: number
+    signal?: AbortSignal
 }): Promise<TreeRetrievalHit[]> {
     await assertKnowledgeBaseOwner(getDb(), input.userId, input.knowledgeBaseId)
     const limit = Math.min(Math.max(input.limit ?? 6, 1), 12)
@@ -364,6 +370,7 @@ export async function retrieveTreeNodesForAgent(input: {
         query: input.query,
         nodes,
         limit,
+        ...(input.signal ? { signal: input.signal } : {}),
     })
 
     const orderedNodes: Array<{ node: KnowledgeBaseWikiTreeNodeRecord; reason?: string }> = selectedKeys.length > 0
@@ -634,6 +641,7 @@ async function selectNodeKeys(input: {
     query: string
     nodes: KnowledgeBaseWikiTreeNodeRecord[]
     limit: number
+    signal?: AbortSignal
 }): Promise<Array<{ nodeKey: string; reason?: string }>> {
     if (input.nodes.length > MAX_OUTLINE_NODES) return []
     try {
@@ -653,6 +661,7 @@ async function selectNodeKeys(input: {
                 "文档目录树：",
                 outline,
             ].join("\n\n"),
+            ...(input.signal ? { signal: input.signal } : {}),
         })
         return parseSelectionJson(completion.answer, new Set(input.nodes.map((node) => node.nodeKey)))
     } catch {

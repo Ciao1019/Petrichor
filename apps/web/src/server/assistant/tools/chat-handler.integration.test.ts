@@ -1,3 +1,4 @@
+import { createRequire } from "node:module"
 import { asc, eq } from "drizzle-orm"
 import { simulateReadableStream } from "ai"
 import { MockLanguageModelV4 } from "ai/test"
@@ -18,7 +19,16 @@ vi.mock("@/server/auth/current-user", () => ({
     requireCurrentUser: runtimeMocks.requireCurrentUser,
 }))
 
-const runIntegration = process.versions.modules === "137"
+// 原先按 Node ABI 版本号硬编码，换个 Node 版本就整组静默跳过。
+// 改成按"能不能真的加载 better-sqlite3"判断，保证该跑的时候一定会跑。
+const runIntegration = (() => {
+    try {
+        createRequire(import.meta.url)("better-sqlite3")
+        return true
+    } catch {
+        return false
+    }
+})()
 
 let assistantChat: typeof import("../chat-handler").assistantChat
 let getDb: typeof import("@/server/db/client").getDb
@@ -69,9 +79,17 @@ function requestWith(body: unknown) {
 
 function setMockModel(streams: LanguageModelStreamResult[]) {
     const model = new MockLanguageModelV4({ doStream: streams })
+    // 形状必须对齐 createChatLanguageModel 的真实返回：{ resolved, model }。
+    // 这里之前是 { model, config }，因为测试长期被 ABI 门控跳过而无人发现。
     runtimeMocks.createChatLanguageModel.mockResolvedValue({
         model,
-        config: { id: 501, name: "mock", model: "mock-model" },
+        resolved: {
+            model: { id: 501, modelId: "mock-model", name: "mock" },
+            provider: { providerKey: "openai-compatible" },
+            credential: {},
+            options: {},
+            runtime: {},
+        },
     })
     return model
 }
@@ -269,11 +287,18 @@ describe.runIf(runIntegration)("assistant chat handler integration", () => {
             ["read_knowledge_node", "COMPLETED"],
             ["show_citations", "COMPLETED"],
         ])
-        expect(JSON.parse(steps[0]!.outputJson!)).toMatchObject({
-            mode: "tree",
+        // 检索管线已升级为 Tree+Vector+BM25 融合，mode 从 tree/tree+semantic 变为 hybrid，
+        // 且每个命中会带上是被哪几路召回命中的（§28/§30）
+        const searchOutput = JSON.parse(steps[0]!.outputJson!)
+        expect(searchOutput).toMatchObject({
+            mode: "hybrid",
             knowledgeBaseId: String(knowledgeBaseId),
-            hits: [{ nodeKey: treeNodeKey }],
         })
+        expect(searchOutput.hits[0]).toMatchObject({ nodeKey: treeNodeKey })
+        expect(Array.isArray(searchOutput.hits[0].recallSources)).toBe(true)
+        expect(searchOutput.hits[0].recallSources.length).toBeGreaterThan(0)
+        // search 只返回定位信息，不返回全文
+        expect(searchOutput.hits[0]).not.toHaveProperty("contentMd")
         expect(JSON.parse(steps[2]!.outputJson!)).toMatchObject({ id: "citations-deploy" })
     })
 

@@ -19,7 +19,7 @@ import {
   PencilIcon,
   TrashIcon,
   XIcon,
-} from 'lucide-react';
+} from '@/components/iconimate';
 import {
   type NodeEntry,
   type TCommentText,

@@ -15,7 +15,7 @@ import {
 } from "@pierre/diffs/react";
 import { parseDiffFromFile, registerCustomTheme } from "@pierre/diffs";
 import type { FileDiffMetadata, ThemesType } from "@pierre/diffs";
-import { Copy, Check, ChevronDown, ChevronUp } from "lucide-react";
+import { Copy, Check, ChevronDown, ChevronUp } from "@/components/iconimate";
 import type { CodeDiffProps } from "./schema";
 import { useCopyToClipboard } from "../shared/use-copy-to-clipboard";
 import { Button, cn, Collapsible, CollapsibleTrigger } from "./_adapter";

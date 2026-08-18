@@ -27,6 +27,7 @@ import { AiReviewPage } from '@/features/pages/ai/AiReviewPage'
 import { AgentKeysPage } from '@/features/pages/agent/AgentKeysPage'
 import { AgentCallLogsPage } from '@/features/pages/agent/AgentCallLogsPage'
 import { AgentSkillPage } from '@/features/pages/agent/AgentSkillPage'
+import { AgentDebugPage } from '@/features/pages/agent-debug/AgentDebugPage'
 import { AgentMcpPage } from '@/features/pages/agent/AgentMcpPage'
 import { BlogHomePage } from '@/features/pages/blog/BlogHomePage'
 import { TagsPage } from '@/features/pages/blog/TagsPage'
@@ -222,6 +223,7 @@ function AppThemeScope() {
               <Route path="agent/logs" element={<AgentCallLogsPage />} />
               <Route path="agent/mcp" element={<AgentMcpPage />} />
               <Route path="agent/skill" element={<AgentSkillPage />} />
+              <Route path="agent/debug" element={<AgentDebugPage />} />
             </Route>
           </Routes>
         </div>

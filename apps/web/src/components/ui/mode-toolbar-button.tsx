@@ -7,7 +7,7 @@ import {
   type DropdownMenuProps,
   DropdownMenuItemIndicator,
 } from '@radix-ui/react-dropdown-menu';
-import { CheckIcon, EyeIcon, PencilLineIcon, PenIcon } from 'lucide-react';
+import { CheckIcon, EyeIcon, PencilLineIcon, PenIcon } from '@/components/iconimate';
 import { useEditorRef, usePlateState, usePluginOption } from 'platejs/react';
 
 import {

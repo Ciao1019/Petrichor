@@ -1,6 +1,6 @@
 "use client"
 
-import { FlaskConical, LogOut, Rocket } from "lucide-react"
+import { FlaskConical, LogOut, Rocket } from "@/components/iconimate"
 
 import { Button } from "@/components/ui/button"
 import { exitDemoMode, isDemoMode } from "@/lib/demo/demo-mode"

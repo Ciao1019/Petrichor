@@ -3,7 +3,7 @@
 import * as React from 'react';
 
 import { useIndentButton, useOutdentButton } from '@platejs/indent/react';
-import { IndentIcon, OutdentIcon } from 'lucide-react';
+import { IndentIcon, OutdentIcon } from '@/components/iconimate';
 
 import { ToolbarButton } from './toolbar';
 

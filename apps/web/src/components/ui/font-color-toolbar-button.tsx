@@ -10,7 +10,7 @@ import type {
 
 import { useComposedRef } from '@udecode/cn';
 import debounce from 'lodash/debounce.js';
-import { EraserIcon, PlusIcon } from 'lucide-react';
+import { EraserIcon, PlusIcon } from '@/components/iconimate';
 import { useEditorRef, useEditorSelector } from 'platejs/react';
 
 import { buttonVariants } from '@/components/ui/button';

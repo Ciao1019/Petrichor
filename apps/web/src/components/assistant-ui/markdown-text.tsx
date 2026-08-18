@@ -11,7 +11,7 @@ import {
 import remarkGfm from "remark-gfm";
 import { remarkVideo } from "@lobehub/ui";
 import { type ComponentProps, type FC, memo, useState } from "react";
-import { CheckIcon, CopyIcon } from "lucide-react";
+import { CheckIcon, CopyIcon } from "@/components/iconimate";
 
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { SignedMarkdownImage, storageMarkdownUrlTransform } from "@/components/assistant-ui/signed-markdown-image";

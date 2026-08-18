@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, type Ref } from "react"
 import { motion, AnimatePresence } from "motion/react"
 import { QRCodeSVG } from "qrcode.react"
 import type { MindElixirData } from "mind-elixir"
-import { ChevronUp, GalleryHorizontalEnd, ImageIcon } from "lucide-react"
+import { ChevronUp, GalleryHorizontalEnd, ImageIcon } from "@/components/iconimate"
 
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"

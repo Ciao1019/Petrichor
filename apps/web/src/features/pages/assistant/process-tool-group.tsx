@@ -3,7 +3,7 @@
 import * as React from "react"
 import { ChatToolCalls, type ChatToolCallStatus } from "@astryxdesign/core/Chat"
 import { useAuiState, type ToolCallMessagePartStatus } from "@assistant-ui/react"
-import { ChevronDown } from "lucide-react"
+import { ChevronDown } from "@/components/iconimate"
 
 import { AstryxProvider } from "@/components/astryx/astryx-provider"
 import { Badge } from "@/components/ui/badge"

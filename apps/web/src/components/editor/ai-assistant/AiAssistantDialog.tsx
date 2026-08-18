@@ -11,7 +11,7 @@ import {
   Sparkles,
   Wand2,
   X,
-} from "lucide-react"
+} from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"

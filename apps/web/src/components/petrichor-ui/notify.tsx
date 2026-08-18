@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react"
 
-import { CircleCheckIcon } from "lucide-react"
+import { CircleCheckIcon } from "@/components/iconimate"
 import { toast } from "sonner"
 
 export type NotifyOptions = {

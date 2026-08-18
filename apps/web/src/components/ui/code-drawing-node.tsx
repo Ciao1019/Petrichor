@@ -28,7 +28,7 @@ import {
   useSelected,
 } from 'platejs/react';
 import debounce from 'lodash/debounce.js';
-import { Trash2, DownloadIcon } from 'lucide-react';
+import { Trash2, DownloadIcon } from '@/components/iconimate';
 
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Button } from '@/components/ui/button';

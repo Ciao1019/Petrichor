@@ -25,8 +25,8 @@ import {
   PlusSignCircleIcon,
   Search01Icon,
   Upload01Icon,
-} from "@hugeicons/core-free-icons"
-import { HugeiconsIcon } from "@hugeicons/react"
+} from "@/components/iconimate"
+import { HugeiconsIcon } from "@/components/iconimate"
 import { createPortal } from "react-dom"
 
 import { cn } from "@/components/extend/lib/utils"

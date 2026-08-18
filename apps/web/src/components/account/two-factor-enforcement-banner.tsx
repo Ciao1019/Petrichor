@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ShieldAlert } from "lucide-react"
+import { ShieldAlert } from "@/components/iconimate"
 import { Link, useLocation } from "react-router-dom"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"

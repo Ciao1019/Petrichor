@@ -22,8 +22,8 @@ import {
   PlusSignCircleIcon,
   SidebarLeftIcon,
   Upload01Icon,
-} from "@hugeicons/core-free-icons"
-import { HugeiconsIcon } from "@hugeicons/react"
+} from "@/components/iconimate"
+import { HugeiconsIcon } from "@/components/iconimate"
 import { useVirtualizer } from "@tanstack/react-virtual"
 
 import { cn } from "@/components/extend/lib/utils"

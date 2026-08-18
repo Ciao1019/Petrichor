@@ -29,7 +29,7 @@ import {
   SmileIcon,
   StarIcon,
   XIcon,
-} from 'lucide-react';
+} from '@/components/iconimate';
 
 import { Button } from '@/components/ui/button';
 import {

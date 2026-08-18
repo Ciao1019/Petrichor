@@ -13,7 +13,7 @@ import {
   ListOrdered,
   ListTodo,
   OutdentIcon,
-} from 'lucide-react';
+} from '@/components/iconimate';
 import { KEYS } from 'platejs';
 import { useEditorRef } from 'platejs/react';
 

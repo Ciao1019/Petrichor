@@ -1,6 +1,6 @@
 import * as React from "react"
 import { createPortal } from "react-dom"
-import { AlertCircle, ChevronUp, FileDown, FileUp, Flame, Hash, Plus, RefreshCw, Save, Share2, Sparkles, X } from "lucide-react"
+import { AlertCircle, ChevronUp, FileDown, FileUp, Flame, Hash, Plus, RefreshCw, Save, Share2, Sparkles, X } from "@/components/iconimate"
 import { toast } from "sonner"
 import { useParams } from "react-router-dom"
 
@@ -239,11 +239,18 @@ function scoreCitationBlock(
     }
   }
 
-  for (const term of highlightTerms) {
+  const isHeading = /^h[1-6]$/.test(block.tagName.toLowerCase())
+  for (const [termIndex, term] of highlightTerms.entries()) {
     const normalizedTerm = normalizeCitationText(term)
     if (!normalizedTerm) continue
     if (normalizedBlockText.includes(normalizedTerm)) {
       score += 24 + Math.min(normalizedTerm.length, 24)
+      // citeTerms 的第一项是证据章节标题。章节没有独立正文、证据回退到整篇文章时，
+      // 应优先定位标题，而不是被文章开头的通用正文片段抢走。
+      if (isHeading) {
+        score += termIndex === 0 ? 1400 : 500
+        if (normalizedBlockText === normalizedTerm) score += 300
+      }
     }
   }
 

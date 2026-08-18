@@ -1,6 +1,6 @@
 import type React from "react"
-import { Loading03Icon } from "@hugeicons/core-free-icons"
-import { HugeiconsIcon } from "@hugeicons/react"
+import { Loading03Icon } from "@/components/iconimate"
+import { HugeiconsIcon } from "@/components/iconimate"
 
 import { cn } from "@/components/extend/lib/utils"
 

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Loader2, RefreshCw, Save } from "lucide-react"
+import { Loader2, RefreshCw, Save } from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"

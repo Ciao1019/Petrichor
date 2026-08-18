@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { QRCodeSVG } from "qrcode.react"
-import { Copy, KeyRound, RefreshCw, ShieldCheck, ShieldOff } from "lucide-react"
+import { Copy, KeyRound, RefreshCw, ShieldCheck, ShieldOff } from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { twoFactorApi, type UserProfileResponse } from "@/lib/api"

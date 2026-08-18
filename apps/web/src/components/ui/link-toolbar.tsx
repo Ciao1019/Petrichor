@@ -19,7 +19,7 @@ import {
   useFloatingLinkInsertState,
 } from '@platejs/link/react';
 import { cva } from 'class-variance-authority';
-import { ExternalLink, Link, Text, Unlink } from 'lucide-react';
+import { ExternalLink, Link, Text, Unlink } from '@/components/iconimate';
 import { KEYS } from 'platejs';
 import {
   useEditorRef,

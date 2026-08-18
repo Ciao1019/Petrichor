@@ -11,7 +11,7 @@ import {
   AlignJustifyIcon,
   AlignLeftIcon,
   AlignRightIcon,
-} from 'lucide-react';
+} from '@/components/iconimate';
 import { useEditorPlugin, useSelectionFragmentProp } from 'platejs/react';
 
 import {

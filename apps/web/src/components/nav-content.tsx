@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { IconChevronRight, type Icon } from "@tabler/icons-react"
+import { IconChevronRight, type Icon } from "@/components/iconimate"
 import { Link, useLocation } from "react-router-dom"
 import {
   Collapsible,

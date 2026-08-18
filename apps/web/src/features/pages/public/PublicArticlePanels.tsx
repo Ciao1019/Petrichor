@@ -1,6 +1,6 @@
 import type { MindElixirData } from "mind-elixir"
 import * as React from "react"
-import { List, Loader2, X } from "lucide-react"
+import { List, Loader2, X } from "@/components/iconimate"
 import { Suspense, useMemo } from "react"
 
 import { PlateMarkdownPreview } from "@/components/plate/PlateMarkdownPreview"

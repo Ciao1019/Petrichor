@@ -16,7 +16,7 @@ import {
   Plus,
   Trash2,
   X,
-} from "lucide-react"
+} from "@/components/iconimate"
 import * as React from "react"
 import {
   closestCenter,

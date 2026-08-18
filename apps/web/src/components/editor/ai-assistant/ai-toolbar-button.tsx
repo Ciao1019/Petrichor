@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Sparkles } from "lucide-react"
+import { Sparkles } from "@/components/iconimate"
 import { useEditorReadOnly, useEditorRef } from "platejs/react"
 
 import { ToolbarButton } from "@/components/ui/toolbar"

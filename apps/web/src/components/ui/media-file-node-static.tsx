@@ -3,7 +3,7 @@
 import type { TFileElement } from 'platejs';
 import type { SlateElementProps } from 'platejs/static';
 
-import { FileUp } from 'lucide-react';
+import { FileUp } from '@/components/iconimate';
 import { SlateElement } from 'platejs/static';
 
 import { useSignedUrl } from '@/hooks/use-signed-url';

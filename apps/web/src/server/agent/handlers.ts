@@ -38,6 +38,7 @@ import {
 import { isDescendantKnowledgeBaseNode, moveNodeIdIntoSiblingOrder } from "@/server/kb/node-move-logic"
 import {
     assertKnowledgeBaseOwner,
+    deleteArticleWikiPages,
     ingestKnowledgeBaseWiki,
     listUserKnowledgeBases,
     listWikiPages,
@@ -673,6 +674,7 @@ export async function agentDeleteArticle(request: NextRequest) {
         const article = await loadOwnedArticle(db, context.userId, input.articleId)
         const imageObjectKeys = extractS4ObjectKeysFromArticleContent(article, context.userId)
 
+        await deleteArticleWikiPages(db, { userId: context.userId, articles: [article] })
         await db.delete(knowledgeBaseArticleTags).where(eq(knowledgeBaseArticleTags.articleId, article.id))
         await db.delete(knowledgeBaseArticles).where(and(
             eq(knowledgeBaseArticles.id, article.id),

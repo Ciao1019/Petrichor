@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Link2, Link2Off, Loader2, Settings2 } from "lucide-react"
+import { Link2, Link2Off, Loader2, Settings2 } from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"

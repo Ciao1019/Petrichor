@@ -7,7 +7,7 @@ import {
   useScaleInput,
 } from '@platejs/media/react';
 import { cva } from 'class-variance-authority';
-import { ArrowLeft, ArrowRight, Minus, Plus, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Minus, Plus, X } from '@/components/iconimate';
 import { useEditorRef } from 'platejs/react';
 
 import { cn } from '@/lib/utils';

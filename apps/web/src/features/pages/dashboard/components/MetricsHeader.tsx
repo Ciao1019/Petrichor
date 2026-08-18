@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Activity, RefreshCw } from "lucide-react"
+import { Activity, RefreshCw } from "@/components/iconimate"
 
 import { Button } from "@/components/ui/button"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"

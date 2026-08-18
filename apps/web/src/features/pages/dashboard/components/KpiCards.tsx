@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react"
+import { ArrowDownRight, ArrowUpRight, Minus } from "@/components/iconimate"
 
 import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"

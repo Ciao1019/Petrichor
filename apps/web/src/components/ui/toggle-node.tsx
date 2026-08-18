@@ -3,7 +3,7 @@
 import type { PlateElementProps } from 'platejs/react';
 
 import { useToggleButton, useToggleButtonState } from '@platejs/toggle/react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight } from '@/components/iconimate';
 import { PlateElement } from 'platejs/react';
 
 import { Button } from '@/components/ui/button';

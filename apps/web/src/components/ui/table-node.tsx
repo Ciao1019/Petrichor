@@ -34,7 +34,7 @@ import {
   SquareSplitHorizontalIcon,
   Trash2Icon,
   XIcon,
-} from 'lucide-react';
+} from '@/components/iconimate';
 import {
   type TElement,
   type TTableCellElement,

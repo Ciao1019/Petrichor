@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 
-import { CheckIcon, InfoIcon, TriangleAlertIcon } from "lucide-react"
+import { CheckIcon, InfoIcon, TriangleAlertIcon } from "@/components/iconimate"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { cn } from "@/lib/utils"

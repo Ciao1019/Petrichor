@@ -15,7 +15,7 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { atom, useAtom } from "jotai";
-import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon } from "@/components/iconimate";
 import type { HTMLAttributes, ReactNode } from "react";
 import { createContext, memo, useCallback, useContext } from "react";
 import { Button } from "@/components/ui/button";

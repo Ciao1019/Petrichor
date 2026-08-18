@@ -13,7 +13,7 @@ import {
   Globe2,
   Library,
   Square,
-} from "lucide-react"
+} from "@/components/iconimate"
 
 import { ContextDisplay } from "@/components/assistant-ui/context-display"
 import { useThreadTokenUsage } from "@assistant-ui/react-ai-sdk"

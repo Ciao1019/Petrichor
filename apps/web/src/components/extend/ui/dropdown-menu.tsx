@@ -2,8 +2,8 @@
 
 import * as React from "react"
 import { Menu as DropdownMenuPrimitive } from "@base-ui/react/menu"
-import { ArrowRight01Icon, Tick02Icon } from "@hugeicons/core-free-icons"
-import { HugeiconsIcon } from "@hugeicons/react"
+import { ArrowRight01Icon, Tick02Icon } from "@/components/iconimate"
+import { HugeiconsIcon } from "@/components/iconimate"
 
 import { cn } from "@/components/extend/lib/utils"
 

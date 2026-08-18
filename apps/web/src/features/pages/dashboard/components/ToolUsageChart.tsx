@@ -1,6 +1,6 @@
 "use client"
 
-import { Wrench } from "lucide-react"
+import { Wrench } from "@/components/iconimate"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Folder, FolderOpen, Loader2, MoreHorizontal, Upload } from "lucide-react"
+import { Folder, FolderOpen, Loader2, MoreHorizontal, Upload } from "@/components/iconimate"
 import { useLocation, useNavigate, useParams } from "react-router-dom"
 import { toast } from "sonner"
 

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Loader2, Plus, RefreshCw, Search, Trash2, UserCog, X } from "lucide-react"
+import { Loader2, Plus, RefreshCw, Search, Trash2, UserCog, X } from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { PasswordFields } from "@/components/account/PasswordFields"

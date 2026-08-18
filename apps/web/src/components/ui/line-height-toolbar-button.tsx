@@ -6,7 +6,7 @@ import type { DropdownMenuProps } from '@radix-ui/react-dropdown-menu';
 
 import { LineHeightPlugin } from '@platejs/basic-styles/react';
 import { DropdownMenuItemIndicator } from '@radix-ui/react-dropdown-menu';
-import { CheckIcon, WrapText } from 'lucide-react';
+import { CheckIcon, WrapText } from '@/components/iconimate';
 import { useEditorRef, useSelectionFragmentProp } from 'platejs/react';
 
 import {

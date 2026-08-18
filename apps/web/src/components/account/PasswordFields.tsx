@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Eye, EyeOff, Shuffle } from "lucide-react"
+import { Eye, EyeOff, Shuffle } from "@/components/iconimate"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"

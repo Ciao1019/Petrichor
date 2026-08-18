@@ -25,7 +25,7 @@ import {
   SquareIcon,
   TableIcon,
   TableOfContentsIcon,
-} from 'lucide-react';
+} from '@/components/iconimate';
 import { KEYS } from 'platejs';
 import { useEditorRef } from 'platejs/react';
 

@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Bell, CheckCheck, Loader2 } from "lucide-react"
+import { Bell, CheckCheck, Loader2 } from "@/components/iconimate"
 import { toast } from "sonner"
 
 import {

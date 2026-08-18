@@ -383,6 +383,11 @@ export const knowledgeBaseWikiTreeNodes = pgTable("petrichor_kb_wiki_tree_node",
     embeddingVersion: integer("embedding_version").notNull().default(1),
     embeddingError: text("embedding_error"),
     embeddingUpdatedAt: timestamp("embedding_updated_at", { withTimezone: true }),
+    // BM25 词法召回索引列（需求 §27/§91）。中文按 2 字 n-gram 展开后存词元串，
+    // Postgres 侧再由 search_vector 生成列（setweight A/B/C）+ GIN 索引承接查询。
+    searchTitleTokens: text("search_title_tokens"),
+    searchSummaryTokens: text("search_summary_tokens"),
+    searchContentTokens: text("search_content_tokens"),
     // 注意：embedding 列（无约束 vector）仅存在于 Postgres（见 full-migration / 迁移 SQL），
     // 且只通过原生 SQL 读写。故意不在 Drizzle schema 声明，避免 loadTreeNodes 等 select() 全列查询在 SQLite（无该列）报错。
     ...timestamps,
@@ -1136,6 +1141,98 @@ export const assistantConfirmations = pgTable("petrichor_assistant_confirmation"
     index("petrichor_assistant_confirmation_thread_idx").on(table.threadId, table.userId, table.status),
 ])
 
+// ---------------------------------------------------------------------------
+// Agent Runtime v2 持久化（需求 §142~§146）
+// agentRuns / agentTraceEvents / agentEvidence 三张表支撑：
+// Run 查询、Trace 回放、Debug UI、Eval 聚合与刷新恢复。
+// ---------------------------------------------------------------------------
+
+export const agentRuns = pgTable("petrichor_agent_run", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    /** Runtime 生成的字符串 runId，前端与事件流用它关联 */
+    runKey: text("run_key").notNull(),
+    conversationId: text("conversation_id").notNull(),
+    threadId: bigint("thread_id", { mode: "number" }),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    /** 重试时指向被重试的 run，避免复用已失败状态 */
+    retryOfRunKey: text("retry_of_run_key"),
+    model: text("model").notNull(),
+    goal: text("goal").notNull(),
+    complexity: text("complexity").notNull().default("simple"),
+    status: text("status").notNull().default("running"),
+    stopReason: text("stop_reason"),
+    answer: text("answer"),
+    routingHintJson: text("routing_hint_json"),
+    planJson: text("plan_json"),
+    loadedSkillsJson: text("loaded_skills_json"),
+    metricsJson: text("metrics_json"),
+    evalJson: text("eval_json"),
+    toolCallCount: integer("tool_call_count").notNull().default(0),
+    iterationCount: integer("iteration_count").notNull().default(0),
+    delegationCount: integer("delegation_count").notNull().default(0),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    totalTokens: integer("total_tokens").notNull().default(0),
+    durationMs: integer("duration_ms"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+}, (table) => [
+    uniqueIndex("ux_petrichor_agent_run_key").on(table.runKey),
+    index("petrichor_agent_run_conversation_idx").on(table.conversationId, table.startedAt),
+    index("petrichor_agent_run_user_idx").on(table.userId, table.startedAt),
+    index("petrichor_agent_run_stop_reason_idx").on(table.stopReason, table.startedAt),
+])
+
+export const agentTraceEvents = pgTable("petrichor_agent_trace_event", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    runKey: text("run_key").notNull(),
+    sequence: integer("sequence").notNull(),
+    eventType: text("event_type").notNull(),
+    /** 已脱敏并截断的载荷（见 agent-runtime/trace.ts redact） */
+    payloadJson: text("payload_json"),
+    /** tool_call 类事件冗余出工具 id，便于按工具查询 */
+    toolId: text("tool_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+    uniqueIndex("ux_petrichor_agent_trace_event_seq").on(table.runKey, table.sequence),
+    index("petrichor_agent_trace_event_type_idx").on(table.eventType, table.createdAt),
+    index("petrichor_agent_trace_event_tool_idx").on(table.toolId, table.createdAt),
+])
+
+export const agentEvidence = pgTable("petrichor_agent_evidence", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    runKey: text("run_key").notNull(),
+    evidenceKey: text("evidence_key").notNull(),
+    source: text("source").notNull(),
+    title: text("title"),
+    content: text("content").notNull(),
+    sourceId: text("source_id"),
+    url: text("url"),
+    relevance: integer("relevance"),
+    confidence: integer("confidence"),
+    metadataJson: text("metadata_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+    uniqueIndex("ux_petrichor_agent_evidence_key").on(table.runKey, table.evidenceKey),
+    index("petrichor_agent_evidence_run_idx").on(table.runKey, table.createdAt),
+])
+
+export const agentSubtasks = pgTable("petrichor_agent_subtask", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    runKey: text("run_key").notNull(),
+    taskKey: text("task_key").notNull(),
+    objective: text("objective").notNull(),
+    status: text("status").notNull(),
+    summary: text("summary"),
+    depth: integer("depth").notNull().default(1),
+    evidenceCount: integer("evidence_count").notNull().default(0),
+    durationMs: integer("duration_ms"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+    uniqueIndex("ux_petrichor_agent_subtask_key").on(table.runKey, table.taskKey),
+    index("petrichor_agent_subtask_run_idx").on(table.runKey, table.createdAt),
+])
+
 export type UserRecord = typeof users.$inferSelect
 export type BetterAuthUserRecord = typeof betterAuthUsers.$inferSelect
 export type BetterAuthAccountRecord = typeof betterAuthAccounts.$inferSelect
@@ -1177,3 +1274,7 @@ export type AssistantStepRecord = typeof assistantSteps.$inferSelect
 export type AssistantArtifactRecord = typeof assistantArtifacts.$inferSelect
 export type AssistantPlanRecord = typeof assistantPlans.$inferSelect
 export type AssistantConfirmationRecord = typeof assistantConfirmations.$inferSelect
+export type AgentRunRecord = typeof agentRuns.$inferSelect
+export type AgentTraceEventRecord = typeof agentTraceEvents.$inferSelect
+export type AgentEvidenceRecord = typeof agentEvidence.$inferSelect
+export type AgentSubtaskRecord = typeof agentSubtasks.$inferSelect

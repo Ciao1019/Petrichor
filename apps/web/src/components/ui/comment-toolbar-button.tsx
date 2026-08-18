@@ -1,6 +1,6 @@
 'use client';
 
-import { MessageSquareTextIcon } from 'lucide-react';
+import { MessageSquareTextIcon } from '@/components/iconimate';
 import { useEditorRef } from 'platejs/react';
 
 import { commentPlugin } from '@/components/editor/plugins/comment-kit';

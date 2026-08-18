@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ExternalLink, Lock, LockOpen, Maximize2, Pencil, Search } from "lucide-react"
+import { ExternalLink, Lock, LockOpen, Maximize2, Pencil, Search } from "@/components/iconimate"
 
 import { createSiteGraphRuntime, type SiteGraphRuntime } from "@/components/site-graph/graph-runtime"
 import type {

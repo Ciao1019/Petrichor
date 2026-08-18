@@ -3,7 +3,7 @@ import {
   IconLogout,
   IconNotification,
   IconUserCircle,
-} from "@tabler/icons-react"
+} from "@/components/iconimate"
 import { useNavigate } from "react-router-dom"
 
 import {

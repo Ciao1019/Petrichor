@@ -10,8 +10,8 @@ import {
   Table01Icon,
   TextCenterlineCenterTopIcon,
   TextNumberSignIcon,
-} from "@hugeicons/core-free-icons"
-import { HugeiconsIcon } from "@hugeicons/react"
+} from "@/components/iconimate"
+import { HugeiconsIcon } from "@/components/iconimate"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import ReactMarkdown from "react-markdown"
 import rehypeRaw from "rehype-raw"

@@ -1,6 +1,6 @@
 "use client"
 
-import { FileStack, Inbox } from "lucide-react"
+import { FileStack, Inbox } from "@/components/iconimate"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"

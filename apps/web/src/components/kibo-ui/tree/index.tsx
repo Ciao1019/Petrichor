@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, File, Folder, FolderOpen } from "lucide-react";
+import { ChevronRight, File, Folder, FolderOpen } from "@/components/iconimate";
 import { AnimatePresence, motion } from "motion/react";
 import {
   type ComponentProps,

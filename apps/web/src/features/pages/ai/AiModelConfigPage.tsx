@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { BrainCircuit, KeyRound, Link2, Server } from "lucide-react"
+import { BrainCircuit, KeyRound, Link2, Server } from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"

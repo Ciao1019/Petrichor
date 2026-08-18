@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ChevronDown, ChevronUp, Loader2, Package, Plus, RefreshCw, Save, Trash2 } from "lucide-react"
+import { ChevronDown, ChevronUp, Loader2, Package, Plus, RefreshCw, Save, Trash2 } from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"

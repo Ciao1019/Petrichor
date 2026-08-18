@@ -541,7 +541,7 @@ describe("public content cache invalidation points", () => {
                     { id: 5, parentId: null, type: "FOLDER" },
                     { id: 6, parentId: 5, type: "ARTICLE" },
                 ],
-                [{ id: 9 }],
+                [{ id: 9, knowledgeBaseId: 3 }],
             ],
         })
         dbMocks.getDb.mockReturnValue(db)

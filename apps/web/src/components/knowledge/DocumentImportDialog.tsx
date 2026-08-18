@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CheckCircle2, FileText, Loader2, RotateCcw, UploadCloud, X } from "lucide-react"
+import { CheckCircle2, FileText, Loader2, RotateCcw, UploadCloud, X } from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"

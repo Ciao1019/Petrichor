@@ -36,6 +36,12 @@ import {
 } from "@/server/kb/wiki-tree"
 
 type Db = ReturnType<typeof getDb>
+type DbExecutor = Pick<Db, "delete" | "insert" | "select" | "update">
+
+export type ArticleWikiDeletionTarget = {
+    id: number
+    knowledgeBaseId: number
+}
 
 export type WikiPageKind = "index" | "source" | "concept" | "entity" | "comparison" | "answer" | "log"
 export type WikiPatchStatus = "PENDING" | "APPLIED" | "REJECTED"
@@ -341,12 +347,39 @@ export async function ingestKnowledgeBaseWiki(input: {
     const db = getDb()
     const kb = await assertKnowledgeBaseOwner(db, input.userId, input.knowledgeBaseId)
     const graph = await loadKnowledgeBaseArticles(db, input.userId, input.knowledgeBaseId, input.articleIds)
-    if (graph.articles.length === 0) {
-        throw badRequest("知识库里还没有可编译的文章")
-    }
-
     const pages: KnowledgeBaseWikiPageRecord[] = []
     const warnings: string[] = []
+    let orphanedPageCount = 0
+    if (!input.articleIds?.length) {
+        orphanedPageCount = await pruneOrphanArticleWikiPages(
+            db,
+            input.userId,
+            input.knowledgeBaseId,
+            graph.articles.map((article) => article.id),
+        )
+        if (orphanedPageCount > 0) {
+            warnings.push(`已清理 ${orphanedPageCount} 个失去源文章的 Wiki 页面`)
+        }
+    }
+
+    if (graph.articles.length === 0) {
+        if (orphanedPageCount === 0) {
+            throw badRequest("知识库里还没有可编译的文章")
+        }
+        const indexPage = await rebuildWikiIndex(db, input.userId, input.knowledgeBaseId, kb.name)
+        await logWikiEvent(db, input.userId, input.knowledgeBaseId, "INGEST", indexPage.id, null, {
+            articleCount: 0,
+            pageCount: 1,
+            warnings,
+        })
+        return {
+            knowledgeBaseId: String(input.knowledgeBaseId),
+            indexPage: toWikiPageResponse(indexPage),
+            pages: [],
+            warnings,
+        }
+    }
+
     for (const article of graph.articles) {
         const sourceHash = stableHash(`${article.title}\n${article.contentMd}`)
         const pageKey = buildArticleSourcePageKey(article.id)
@@ -417,6 +450,135 @@ export async function ingestKnowledgeBaseWiki(input: {
         pages: pages.map(toWikiPageResponse),
         warnings: [...new Set(warnings)].slice(0, 5),
     }
+}
+
+/**
+ * 删除文章对应的 source-<articleId> Wiki 页面及其派生数据。
+ *
+ * Wiki 页面没有 article_id 外键，文章删除时数据库只能级联清理 source_ref / tree_node，
+ * 无法反向删除页面本身；同时 wiki_link.to_page_key 也是文本引用，需要在这里显式清理。
+ */
+export async function deleteArticleWikiPages(
+    db: DbExecutor,
+    input: {
+        userId: number
+        articles: ArticleWikiDeletionTarget[]
+        rebuildIndex?: boolean
+    },
+) {
+    const targetsByKnowledgeBase = new Map<number, number[]>()
+    for (const article of input.articles) {
+        const articleIds = targetsByKnowledgeBase.get(article.knowledgeBaseId) ?? []
+        articleIds.push(article.id)
+        targetsByKnowledgeBase.set(article.knowledgeBaseId, articleIds)
+    }
+
+    let deletedPageCount = 0
+    for (const [knowledgeBaseId, rawArticleIds] of targetsByKnowledgeBase) {
+        const articleIds = [...new Set(rawArticleIds)]
+        const pageKeys = articleIds.map(buildArticleSourcePageKey)
+        const pages = await db
+            .select({ id: knowledgeBaseWikiPages.id })
+            .from(knowledgeBaseWikiPages)
+            .where(and(
+                eq(knowledgeBaseWikiPages.userId, input.userId),
+                eq(knowledgeBaseWikiPages.knowledgeBaseId, knowledgeBaseId),
+                eq(knowledgeBaseWikiPages.kind, "source"),
+                inArray(knowledgeBaseWikiPages.pageKey, pageKeys),
+            ))
+
+        if (pages.length === 0) continue
+
+        const pageIds = pages.map((page) => page.id)
+        const now = new Date()
+
+        // 事件日志作为审计记录保留，但不能继续引用即将删除的页面。
+        await db
+            .update(knowledgeBaseWikiEventLogs)
+            .set({ pageId: null })
+            .where(inArray(knowledgeBaseWikiEventLogs.pageId, pageIds))
+
+        // from_page_id 有外键级联，to_page_key 只是文本；两类链接都显式清理，兼容本地 SQLite。
+        await db
+            .delete(knowledgeBaseWikiLinks)
+            .where(and(
+                eq(knowledgeBaseWikiLinks.userId, input.userId),
+                eq(knowledgeBaseWikiLinks.knowledgeBaseId, knowledgeBaseId),
+                or(
+                    inArray(knowledgeBaseWikiLinks.fromPageId, pageIds),
+                    inArray(knowledgeBaseWikiLinks.toPageKey, pageKeys),
+                ),
+            ))
+        await db
+            .delete(knowledgeBaseWikiSourceRefs)
+            .where(inArray(knowledgeBaseWikiSourceRefs.pageId, pageIds))
+        await db
+            .delete(knowledgeBaseWikiTreeNodes)
+            .where(inArray(knowledgeBaseWikiTreeNodes.pageId, pageIds))
+        await db
+            .delete(knowledgeBaseWikiPages)
+            .where(and(
+                eq(knowledgeBaseWikiPages.userId, input.userId),
+                eq(knowledgeBaseWikiPages.knowledgeBaseId, knowledgeBaseId),
+                inArray(knowledgeBaseWikiPages.id, pageIds),
+            ))
+
+        // 防止待审批补丁在文章删除后重新创建同名 source 页面；保留记录用于审计。
+        await db
+            .update(knowledgeBaseWikiPatches)
+            .set({ status: "REJECTED", updatedAt: now })
+            .where(and(
+                eq(knowledgeBaseWikiPatches.userId, input.userId),
+                eq(knowledgeBaseWikiPatches.knowledgeBaseId, knowledgeBaseId),
+                eq(knowledgeBaseWikiPatches.status, "PENDING"),
+                inArray(knowledgeBaseWikiPatches.pageKey, pageKeys),
+            ))
+
+        deletedPageCount += pageIds.length
+
+        if (input.rebuildIndex !== false) {
+            const [knowledgeBase] = await db
+                .select({ name: knowledgeBases.name })
+                .from(knowledgeBases)
+                .where(and(eq(knowledgeBases.id, knowledgeBaseId), eq(knowledgeBases.userId, input.userId)))
+                .limit(1)
+            if (knowledgeBase) {
+                await rebuildWikiIndex(db, input.userId, knowledgeBaseId, knowledgeBase.name)
+            }
+        }
+    }
+
+    return deletedPageCount
+}
+
+async function pruneOrphanArticleWikiPages(
+    db: DbExecutor,
+    userId: number,
+    knowledgeBaseId: number,
+    validArticleIds: number[],
+) {
+    const sourcePages = await db
+        .select({ pageKey: knowledgeBaseWikiPages.pageKey })
+        .from(knowledgeBaseWikiPages)
+        .where(and(
+            eq(knowledgeBaseWikiPages.userId, userId),
+            eq(knowledgeBaseWikiPages.knowledgeBaseId, knowledgeBaseId),
+            eq(knowledgeBaseWikiPages.kind, "source"),
+        ))
+    const validIds = new Set(validArticleIds)
+    const orphanedArticles = sourcePages.flatMap((page) => {
+        const match = page.pageKey.match(/^source-(\d+)$/)
+        if (!match) return []
+        const articleId = Number(match[1])
+        return validIds.has(articleId) ? [] : [{ id: articleId, knowledgeBaseId }]
+    })
+    if (orphanedArticles.length === 0) return 0
+
+    return deleteArticleWikiPages(db, {
+        userId,
+        articles: orphanedArticles,
+        rebuildIndex: false,
+    })
 }
 
 export async function listWikiPatches(userId: number, knowledgeBaseId: number, status?: WikiPatchStatus) {
@@ -1547,7 +1709,7 @@ function renderArticleWikiPage(article: KnowledgeBaseArticleRecord, draft: Artic
     ].join("\n")
 }
 
-async function rebuildWikiIndex(db: Db, userId: number, knowledgeBaseId: number, knowledgeBaseName: string) {
+async function rebuildWikiIndex(db: DbExecutor, userId: number, knowledgeBaseId: number, knowledgeBaseName: string) {
     const pages = await db
         .select()
         .from(knowledgeBaseWikiPages)
@@ -1602,7 +1764,7 @@ async function rebuildWikiIndex(db: Db, userId: number, knowledgeBaseId: number,
     return indexPage
 }
 
-async function upsertWikiPage(db: Db, input: {
+async function upsertWikiPage(db: DbExecutor, input: {
     userId: number
     knowledgeBaseId: number
     pageKey: string
@@ -1656,7 +1818,7 @@ async function upsertWikiPage(db: Db, input: {
     return page
 }
 
-async function loadWikiPage(db: Db, userId: number, knowledgeBaseId: number, pageKey: string) {
+async function loadWikiPage(db: DbExecutor, userId: number, knowledgeBaseId: number, pageKey: string) {
     const [page] = await db
         .select()
         .from(knowledgeBaseWikiPages)

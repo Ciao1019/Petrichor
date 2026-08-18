@@ -12,7 +12,7 @@ import {
   MessageSquareTextIcon,
   MessagesSquareIcon,
   PencilLineIcon,
-} from 'lucide-react';
+} from '@/components/iconimate';
 import {
   type AnyPluginConfig,
   type NodeEntry,

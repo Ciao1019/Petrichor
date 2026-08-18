@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useMemo, useState, useEffect, useRef, memo } from "react";
-import { Loader2, Check, X, MoreHorizontal, ChevronRight } from "lucide-react";
+import { Loader2, Check, X, MoreHorizontal, ChevronRight } from "@/components/iconimate";
 import type { PlanProps, PlanTodo, PlanTodoStatus } from "./schema";
 import {
   cn,

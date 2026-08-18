@@ -1,6 +1,6 @@
 import type { SlateElementProps } from 'platejs/static';
 
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight } from '@/components/iconimate';
 import { SlateElement } from 'platejs/static';
 
 export function ToggleElementStatic(props: SlateElementProps) {

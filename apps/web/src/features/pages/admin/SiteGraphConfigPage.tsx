@@ -23,7 +23,7 @@ import {
     Trash2,
     Undo2,
     X,
-} from "lucide-react"
+} from "@/components/iconimate"
 import { toast } from "sonner"
 
 import {

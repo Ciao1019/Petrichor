@@ -16,7 +16,7 @@ import {
   Trash2Icon,
   Ungroup,
   XIcon,
-} from 'lucide-react';
+} from '@/components/iconimate';
 import { KEYS } from 'platejs';
 import { useEditorPlugin, useEditorSelector } from 'platejs/react';
 

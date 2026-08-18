@@ -2484,6 +2484,96 @@ export interface AssistantThreadDetailResponse {
   plans?: AssistantPersistedPlan[]
 }
 
+// Agent Run 视图：形状对齐 src/server/assistant/agent-run-handlers.ts
+export interface AgentRunActivityResponse {
+  id: string
+  toolId: string
+  namespace: string
+  status: "completed" | "failed"
+  summary: string
+  durationMs: number
+  evidenceIds: string[]
+  startedAt: number
+}
+
+export interface AgentRunEvidenceResponse {
+  id: string
+  source: "knowledge" | "web" | "graph" | "memory" | "subagent" | "tool"
+  title: string
+  snippet?: string
+  url?: string
+  nodeKey?: string
+  articleId?: string
+  knowledgeBaseId?: string
+  path?: string[]
+  relevance?: number
+}
+
+export interface AgentRunDetailResponse {
+  id: string
+  conversationId: string
+  status: "starting" | "running" | "completed" | "failed" | "stopped" | "cancelled"
+  complexity?: "direct" | "simple" | "multi_step" | "complex"
+  stopReason?: string
+  stopMessage?: string
+  goal: string
+  answer: string
+  plan: Array<{
+    id: string
+    goal: string
+    status: "pending" | "running" | "completed" | "skipped" | "failed"
+    resultSummary?: string
+  }>
+  loadedSkills: string[]
+  activities: AgentRunActivityResponse[]
+  subagents: Array<{
+    id: string
+    objective: string
+    status: string
+    summary?: string
+    evidenceCount: number
+    durationMs?: number
+  }>
+  evidence: AgentRunEvidenceResponse[]
+  metrics: {
+    durationMs: number
+    toolCalls: number
+    evidenceCount: number
+    subAgentCount: number
+    iterations: number
+  }
+  startedAt: number
+  completedAt?: number
+}
+
+export const agentRunApi = {
+  detail: (runId: string) =>
+    api.post<AgentRunDetailResponse>("/assistant/agent-run/detail", { runId }),
+  list: (conversationId: string, limit?: number) =>
+    api.post<{
+      runs: Array<{
+        runKey: string
+        status: string
+        complexity: string
+        stopReason: string | null
+        startedAt: string
+        completedAt: string | null
+      }>
+    }>("/assistant/agent-run/list", { conversationId, ...(limit ? { limit } : {}) }),
+  /** Debug 通道：完整 Trace，需操作员或开启 AGENT_DEBUG */
+  trace: (runId: string) =>
+    api.post<{
+      run: Record<string, unknown>
+      events: Array<{
+        sequence: number
+        type: string
+        toolId: string | null
+        payload: Record<string, unknown>
+        createdAt: number
+      }>
+    }>("/assistant/agent-run/trace", { runId }),
+}
+
 export const assistantApi = {
   threadList: (params: { cursor?: number; limit?: number; q?: string } = {}) =>
     api.post<AssistantThreadListResponse>("/assistant/thread/list", params),

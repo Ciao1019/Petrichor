@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { FileText, MoreHorizontal } from "lucide-react"
+import { FileText, MoreHorizontal } from "@/components/iconimate"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 

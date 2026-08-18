@@ -11,7 +11,7 @@ import {
   forwardRef,
   useImperativeHandle,
 } from "react";
-import { Minus, Plus, Download, Loader2, Maximize, ScanSearch } from "lucide-react";
+import { Minus, Plus, Download, Loader2, Maximize, ScanSearch } from "@/components/iconimate";
 
 import { cn } from "@/lib/utils";
 import { snapdom } from "@zumer/snapdom";

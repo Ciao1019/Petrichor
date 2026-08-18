@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { KeyRound, Loader2, MoreHorizontal, Plus } from "lucide-react"
+import { KeyRound, Loader2, MoreHorizontal, Plus } from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { ModalShell } from "@/components/petrichor-ui/modal-shell"

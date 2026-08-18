@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Bell, HomeIcon, Loader2 } from "lucide-react"
+import { Bell, HomeIcon, Loader2 } from "@/components/iconimate"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import {
   Breadcrumb,

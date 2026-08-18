@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import type { LucideIcon } from "lucide-react";
+import type { LucideIcon } from "@/components/iconimate";
 import {
   FileText,
   Globe,
@@ -10,7 +10,7 @@ import {
   Database,
   File,
   ExternalLink,
-} from "lucide-react";
+} from "@/components/iconimate";
 import { cn, Popover, PopoverContent, PopoverTrigger } from "./_adapter";
 import { Citation } from "./citation";
 import type {

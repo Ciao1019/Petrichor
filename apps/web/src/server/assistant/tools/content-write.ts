@@ -12,7 +12,7 @@ import { deleteDocument } from "@/server/doc-library/library-logic"
 import { badRequest, notFound } from "@/server/http/response"
 import { moveArticle } from "@/server/kb/article-move-logic"
 import { buildPublicArticleMetadata } from "@/server/kb/share-logic"
-import { assertKnowledgeBaseOwner } from "@/server/kb/wiki-agent-logic"
+import { assertKnowledgeBaseOwner, deleteArticleWikiPages } from "@/server/kb/wiki-agent-logic"
 import type { AssistantToolContext, AssistantToolRegistration } from "../domain-types"
 import { buildRequestUserConfirmationTool } from "../confirmation"
 
@@ -261,6 +261,7 @@ export async function deleteArticleForAssistant(ctx: AssistantToolContext, raw: 
     const article = await requireArticleOwner(ctx.userId, input.articleId)
     const db = getDb()
     await db.transaction(async (tx) => {
+        await deleteArticleWikiPages(tx, { userId: ctx.userId, articles: [article] })
         await tx.delete(knowledgeBaseArticleTags).where(eq(knowledgeBaseArticleTags.articleId, article.id))
         await tx.delete(knowledgeBaseArticleShares).where(eq(knowledgeBaseArticleShares.articleId, article.id))
         await tx.delete(knowledgeBaseArticles).where(and(

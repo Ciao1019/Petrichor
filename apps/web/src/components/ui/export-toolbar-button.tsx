@@ -5,7 +5,7 @@ import * as React from 'react';
 import type { DropdownMenuProps } from '@radix-ui/react-dropdown-menu';
 
 import { MarkdownPlugin } from '@platejs/markdown';
-import { ArrowDownToLineIcon } from 'lucide-react';
+import { ArrowDownToLineIcon } from '@/components/iconimate';
 import { useEditorRef } from 'platejs/react';
 
 import {

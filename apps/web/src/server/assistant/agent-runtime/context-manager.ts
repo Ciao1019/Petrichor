@@ -1,0 +1,316 @@
+import { resolveContextBudget, type ContextBudgetConfig } from "./config"
+import type { EvidenceStore } from "./evidence"
+import { renderObservation, type ObservationStore } from "./observation"
+import { BASE_AGENT_PROMPT } from "./prompts/base-agent"
+import { buildAnswerQualityGuidance } from "./answer-quality"
+import { renderSkillCatalog } from "./skill-registry"
+import { renderToolCatalogLine } from "./tool-registry"
+import type {
+    AgentEvidence,
+    AgentPlanStep,
+    AgentState,
+    AgentSkill,
+    AgentToolDefinition,
+} from "./types"
+
+/**
+ * Context Manager（§21/§22/§23）。
+ *
+ * 每轮推理只组装：
+ *   System Prompt + Current Goal + Plan + State Summary + 已加载 Skill 指令
+ *   + 相关 Evidence + 最近 Observation + 最近对话
+ *
+ * 明确禁止：全量对话 + 全部原始工具结果 + 全部文档 无限增长。
+ */
+
+export type ConversationSummary = {
+    goals: string[]
+    decisions: string[]
+    importantFacts: string[]
+    unresolvedQuestions: string[]
+}
+
+export type ContextBuildInput = {
+    state: AgentState
+    observations: ObservationStore
+    evidence: EvidenceStore
+    /** 已加载 skill 的指令 */
+    skillInstructions: Array<{ skillId: string; instructions: string }>
+    /** 未加载的 skill 目录（只给一行描述） */
+    skillCatalog: AgentSkill[]
+    /** 当前可用工具（核心 + 已解锁） */
+    tools: AgentToolDefinition[]
+    /** 最近对话消息（已由上层裁剪成 UI/Model 消息） */
+    recentMessages: unknown[]
+    /** 长会话摘要（§23） */
+    conversationSummary?: ConversationSummary | null
+    /** 既有上下文压缩器产出的持久摘要 + 相关历史片段；避免再做一次摘要 LLM */
+    conversationBackground?: string | null
+    /** Router 提示，只作提示（§5） */
+    routingHint?: { domains: string[]; confidence: number } | null
+    remainingToolCalls?: number
+    budget?: ContextBudgetConfig
+}
+
+export type BuiltContext = {
+    /** 注入给 Agent 的 system instructions */
+    instructions: string
+    /** 实际带进 context 的证据（Top-N 且去重后） */
+    usedEvidence: AgentEvidence[]
+    /** 各分区估算 token */
+    tokens: {
+        system: number
+        skill: number
+        evidence: number
+        observation: number
+        total: number
+    }
+    /** 被裁掉的内容统计，供 Debug UI 展示 */
+    dropped: { evidence: number; observations: number }
+}
+
+export class ContextManager {
+    private readonly budget: ContextBudgetConfig
+
+    constructor(budget?: ContextBudgetConfig) {
+        this.budget = budget ?? resolveContextBudget()
+    }
+
+    build(input: ContextBuildInput): BuiltContext {
+        const budget = input.budget ?? this.budget
+        const sections: string[] = [BASE_AGENT_PROMPT]
+
+        // --- 工具目录 -------------------------------------------------------
+        if (input.tools.length > 0) {
+            sections.push(`## 当前可用工具\n${input.tools.map(renderToolCatalogLine).join("\n")}`)
+        }
+
+        // --- 能力目录（未加载的只给一行）------------------------------------
+        const notLoaded = input.skillCatalog.filter((skill) => !input.state.loadedSkills.includes(skill.id))
+        const catalog = renderSkillCatalog(notLoaded)
+        if (catalog) sections.push(`## 可加载能力\n${catalog}`)
+
+        const systemTokens = estimateTokens(sections.join("\n\n"))
+
+        // --- 已加载 Skill 指令（受 skill budget 限制）------------------------
+        const skillBlocks: string[] = []
+        let skillTokens = 0
+        for (const item of input.skillInstructions) {
+            const cost = estimateTokens(item.instructions)
+            if (skillTokens + cost > budget.skill) break
+            skillTokens += cost
+            skillBlocks.push(item.instructions)
+        }
+        if (skillBlocks.length > 0) {
+            sections.push(`## 已加载能力说明\n\n${skillBlocks.join("\n\n")}`)
+        }
+
+        // --- 目标与状态 -----------------------------------------------------
+        sections.push(`## 当前目标\n${input.state.goal}`)
+        sections.push(`## 回答质量要求\n${buildAnswerQualityGuidance(input.state.goal)}`)
+
+        if (input.routingHint?.domains.length) {
+            sections.push(
+                `## 场景提示（仅供参考，不限制你的能力）\n`
+                + `可能相关：${input.routingHint.domains.join("、")}（置信度 ${input.routingHint.confidence.toFixed(2)}）。`
+                + `即使提示不准，你依然可以加载任何需要的能力。`,
+            )
+        }
+
+        if (input.conversationSummary) {
+            const summary = renderConversationSummary(input.conversationSummary)
+            if (summary) sections.push(`## 会话背景\n${summary}`)
+        }
+        if (input.conversationBackground?.trim()) {
+            sections.push(`## 较早会话背景\n${input.conversationBackground.trim()}`)
+        }
+
+        if (input.state.plan.length > 0) {
+            sections.push(`## 当前计划\n${renderPlan(input.state.plan)}`)
+        }
+
+        sections.push(`## 执行状态\n${renderStateSummary(input.state, input.remainingToolCalls)}`)
+
+        // --- 证据（Top-N，受 evidence budget 限制）---------------------------
+        const allEvidence = input.evidence.all
+        const ranked = input.evidence.topN(allEvidence.length)
+        const usedEvidence: AgentEvidence[] = []
+        let evidenceTokens = 0
+        for (const evidence of ranked) {
+            const rendered = renderEvidence(evidence, input.evidence.citationIndex(evidence.id))
+            const cost = estimateTokens(rendered)
+            if (evidenceTokens + cost > budget.evidence) break
+            evidenceTokens += cost
+            usedEvidence.push(evidence)
+        }
+        if (usedEvidence.length > 0) {
+            const lines = usedEvidence.map((evidence) =>
+                renderEvidence(evidence, input.evidence.citationIndex(evidence.id)))
+            sections.push(`## 已获取证据\n${lines.join("\n\n")}`)
+        }
+
+        // --- 观察（最近优先，老的压缩成一行统计）-----------------------------
+        const observations = input.observations.all
+        const kept: string[] = []
+        let observationTokens = 0
+        let droppedObservations = 0
+        for (let i = observations.length - 1; i >= 0; i -= 1) {
+            const rendered = renderObservation(observations[i])
+            const cost = estimateTokens(rendered)
+            if (observationTokens + cost > budget.observation) {
+                droppedObservations = i + 1
+                break
+            }
+            observationTokens += cost
+            kept.unshift(rendered)
+        }
+        if (kept.length > 0) {
+            const prefix = droppedObservations > 0
+                ? `（更早的 ${droppedObservations} 条观察已折叠）\n`
+                : ""
+            sections.push(`## 最近执行观察\n${prefix}${kept.join("\n")}`)
+        }
+
+        if (input.state.openQuestions.length > 0) {
+            sections.push(`## 待解决问题\n${input.state.openQuestions.map((q) => `- ${q}`).join("\n")}`)
+        }
+
+        const instructions = sections.join("\n\n")
+
+        return {
+            instructions,
+            usedEvidence,
+            tokens: {
+                system: systemTokens,
+                skill: skillTokens,
+                evidence: evidenceTokens,
+                observation: observationTokens,
+                total: estimateTokens(instructions),
+            },
+            dropped: {
+                evidence: Math.max(0, allEvidence.length - usedEvidence.length),
+                observations: droppedObservations,
+            },
+        }
+    }
+
+    /** 最近对话预算（§22）：从后往前保留，超预算就丢更早的 */
+    trimConversation(messages: unknown[], budget = this.budget.conversation): unknown[] {
+        const kept: unknown[] = []
+        let tokens = 0
+        for (let i = messages.length - 1; i >= 0; i -= 1) {
+            const cost = estimateTokens(JSON.stringify(messages[i] ?? ""))
+            if (tokens + cost > budget && kept.length > 0) break
+            tokens += cost
+            kept.unshift(messages[i])
+        }
+        return kept
+    }
+}
+
+/** 粗估 token：中文按 ~1.5 字/token，英文按 4 字符/token，够做预算阈值 */
+export function estimateTokens(text: string): number {
+    if (!text) return 0
+    const cjk = (text.match(/[一-鿿぀-ヿ]/g) ?? []).length
+    const rest = text.length - cjk
+    return Math.ceil(cjk / 1.5 + rest / 4)
+}
+
+export function renderPlan(plan: AgentPlanStep[]): string {
+    const icon: Record<AgentPlanStep["status"], string> = {
+        completed: "✓",
+        running: "●",
+        pending: "○",
+        skipped: "-",
+        failed: "✗",
+    }
+    return plan
+        .map((step) => {
+            const summary = step.resultSummary ? `\n    → ${step.resultSummary}` : ""
+            return `${icon[step.status]} ${step.goal}${summary}`
+        })
+        .join("\n")
+}
+
+export function renderStateSummary(state: AgentState, remainingToolCalls?: number): string {
+    const lines = [
+        `- 迭代轮次：${state.iteration}`,
+        `- 工具调用：${state.toolCallCount} 次`,
+        `- 已获取证据：${state.evidence.length} 条`,
+    ]
+    if (state.loadedSkills.length > 0) {
+        lines.push(`- 已加载能力：${state.loadedSkills.join("、")}`)
+    }
+    if (state.delegationCount > 0) {
+        lines.push(`- 已委派子任务：${state.delegationCount} 个`)
+    }
+    if (remainingToolCalls != null) {
+        lines.push(
+            remainingToolCalls <= 2
+                ? `- 剩余工具调用预算：${remainingToolCalls} 次（请尽快收敛并作答）`
+                : `- 剩余工具调用预算：${remainingToolCalls} 次`,
+        )
+    }
+    return lines.join("\n")
+}
+
+export function renderEvidence(evidence: AgentEvidence, index: number): string {
+    const parts = [`[${index}] (${evidence.source}) ${evidence.title ?? "未命名"}`]
+    const location = evidence.url ?? (evidence.metadata?.path as string[] | undefined)?.join(" / ")
+    if (location) parts.push(`  来源：${location}`)
+    if (evidence.metadata?.publishedAt) parts.push(`  时间：${String(evidence.metadata.publishedAt)}`)
+    parts.push(`  ${evidence.content.trim()}`)
+    return parts.join("\n")
+}
+
+export function renderConversationSummary(summary: ConversationSummary): string {
+    const blocks: string[] = []
+    if (summary.goals.length) blocks.push(`目标：${summary.goals.join("；")}`)
+    if (summary.decisions.length) blocks.push(`已达成决定：${summary.decisions.join("；")}`)
+    if (summary.importantFacts.length) blocks.push(`关键事实：${summary.importantFacts.join("；")}`)
+    if (summary.unresolvedQuestions.length) {
+        blocks.push(`未解决问题：${summary.unresolvedQuestions.join("；")}`)
+    }
+    return blocks.join("\n")
+}
+
+/**
+ * 最终回答前的收敛上下文（§102）。
+ * 只带目标 + 证据 + 重要观察 + 计划完成情况 + 已知局限，不重塞原始工具结果。
+ */
+export function buildFinalAnswerContext(input: {
+    state: AgentState
+    evidence: AgentEvidence[]
+    citationIndex?: (evidence: AgentEvidence) => number
+    observations: ObservationStore
+    limitations?: string[]
+}): string {
+    const sections: string[] = [`## 用户目标\n${input.state.goal}`]
+
+    if (input.evidence.length > 0) {
+        sections.push(
+            `## 可引用证据\n`
+            + `回答中引用某条证据时使用 [n] 标注，n 为下面的编号。\n\n`
+            + input.evidence.map((evidence, index) =>
+                renderEvidence(evidence, input.citationIndex?.(evidence) ?? index + 1)).join("\n\n"),
+        )
+    } else {
+        sections.push("## 可引用证据\n本轮没有获取到可引用的证据，请如实说明。")
+    }
+
+    const errors = input.observations.all.filter((item) => item.isError)
+    if (errors.length > 0) {
+        sections.push(`## 执行中的问题\n${errors.map((item) => `- ${item.summary}`).join("\n")}`)
+    }
+
+    if (input.state.plan.length > 0) {
+        sections.push(`## 计划完成情况\n${renderPlan(input.state.plan)}`)
+    }
+
+    const limitations = [...(input.limitations ?? []), ...input.state.openQuestions]
+    if (limitations.length > 0) {
+        sections.push(`## 已知局限\n${limitations.map((item) => `- ${item}`).join("\n")}`)
+    }
+
+    return sections.join("\n\n")
+}

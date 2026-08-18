@@ -26,7 +26,7 @@ import {
   Table,
   TableOfContentsIcon,
   Wand2,
-} from 'lucide-react';
+} from '@/components/iconimate';
 import { type TComboboxInputElement, KEYS } from 'platejs';
 import { PlateElement } from 'platejs/react';
 

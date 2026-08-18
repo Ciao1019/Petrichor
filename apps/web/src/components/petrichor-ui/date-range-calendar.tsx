@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import type { ReactNode } from "react"
 
-import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react"
+import { ChevronLeftIcon, ChevronRightIcon } from "@/components/iconimate"
 import { AnimatePresence, motion } from "motion/react"
 import type { DateRange } from "react-day-picker"
 

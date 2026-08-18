@@ -5,7 +5,7 @@ import type { PlateElementProps } from 'platejs/react';
 
 import { useMediaState } from '@platejs/media/react';
 import { ResizableProvider } from '@platejs/resizable';
-import { FileUp } from 'lucide-react';
+import { FileUp } from '@/components/iconimate';
 import { PlateElement, useReadOnly, withHOC } from 'platejs/react';
 
 import { useSignedUrl } from '@/hooks/use-signed-url';

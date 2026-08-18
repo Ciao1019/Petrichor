@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ChevronDownIcon, SearchIcon } from "lucide-react"
+import { ChevronDownIcon, SearchIcon } from "@/components/iconimate"
 
 import WheelList, { type WheelState } from "@/components/lab/inertial-wheel-list"
 import { Button } from "@/components/ui/button"

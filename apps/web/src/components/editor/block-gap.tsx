@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { PlusIcon } from "lucide-react"
+import { PlusIcon } from "@/components/iconimate"
 import { KEYS, PathApi, type TElement } from "platejs"
 import { useEditorRef, useReadOnly } from "platejs/react"
 

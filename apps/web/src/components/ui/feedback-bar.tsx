@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils"
-import { Loader2, ThumbsDown, ThumbsUp, X } from "lucide-react"
+import { Loader2, ThumbsDown, ThumbsUp, X } from "@/components/iconimate"
 
 type FeedbackBarProps = {
   className?: string

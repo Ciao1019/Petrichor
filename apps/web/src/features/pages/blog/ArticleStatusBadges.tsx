@@ -1,6 +1,6 @@
 "use client"
 
-import { LockKeyhole } from "lucide-react"
+import { LockKeyhole } from "@/components/iconimate"
 
 /**
  * 文章列表上的状态徽标（转载 / 内部链接 / 已过期 / 需要密码）。
