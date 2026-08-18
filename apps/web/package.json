@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "vercel-build": "pnpm db:migrate:vercel && pnpm build",
     "db:backfill-public-article-metadata": "tsx scripts/backfill-public-article-metadata.ts",
     "db:sql": "tsx scripts/print-initial-migration.ts",
     "db:run-sql": "tsx scripts/run-sql-file.ts",
