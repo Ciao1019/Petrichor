@@ -26,7 +26,7 @@ vi.mock("@/server/retrieval/vector-space", () => spaceMocks)
 const dbMocks = vi.hoisted(() => ({ getDb: vi.fn() }))
 vi.mock("@/server/db/client", () => dbMocks)
 
-import { embedQuery, embedTexts, getEmbeddingProfile } from "./embedding"
+import { clearQueryEmbeddingCacheForTest, embedQuery, embedTexts, getEmbeddingProfile } from "./embedding"
 
 let updateChain: { set: ReturnType<typeof vi.fn>; where: ReturnType<typeof vi.fn> }
 
@@ -56,6 +56,7 @@ function resolvedModel(dimensions: number | null) {
 
 beforeEach(() => {
     vi.clearAllMocks()
+    clearQueryEmbeddingCacheForTest()
     mockUpdateChain()
 })
 
@@ -150,5 +151,23 @@ describe("embedQuery", () => {
 
         expect(updateChain.set).not.toHaveBeenCalled()
         expect(spaceMocks.ensureVectorIndexes).not.toHaveBeenCalled()
+    })
+
+    it("同一模型和查询短时间内复用向量，并合并并发请求", async () => {
+        resolutionMocks.resolveEmbeddingModel.mockResolvedValue({
+            resolved: resolvedModel(1024),
+            model: {},
+        })
+        aiMocks.embed.mockResolvedValue({ embedding: new Array(1024).fill(0.3) })
+
+        const [first, second] = await Promise.all([
+            embedQuery(7, "  Redis   Streams "),
+            embedQuery(7, "Redis Streams"),
+        ])
+
+        expect(first).toHaveLength(1024)
+        expect(second).toEqual(first)
+        expect(first).not.toBe(second)
+        expect(aiMocks.embed).toHaveBeenCalledTimes(1)
     })
 })

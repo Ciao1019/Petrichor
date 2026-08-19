@@ -25,6 +25,8 @@ export type AgentRunEval = {
     evidenceCount: number
     /** 答案中出现的 [n] 引用数 / 证据数 */
     citationCoverage: number
+    /** 归一化句子中重复内容的占比，0 表示没有重复回答 */
+    answerRepetitionRate: number
 
     skillLoads: number
     /** Router 预测域 与 实际使用工具 namespace 的一致度 */
@@ -101,6 +103,7 @@ export function evaluateRun(input: {
 
         evidenceCount: state.evidence.length,
         citationCoverage: Number(citationCoverage.toFixed(3)),
+        answerRepetitionRate: calculateAnswerRepetitionRate(answer),
 
         skillLoads: trace.skillLoads.length,
         routerPrecision: routerPrecision == null ? null : Number(routerPrecision.toFixed(3)),
@@ -117,6 +120,28 @@ export function evaluateRun(input: {
         tokenUsage: trace.tokenUsage,
         latency: trace.latency,
     }
+}
+
+/**
+ * 用重复句占比监控“同一个结论说两遍”。忽略短句和引用编号，避免标题/列表标签误报。
+ */
+export function calculateAnswerRepetitionRate(answer: string): number {
+    const units = answer
+        .split(/[。！？!?\n]+/)
+        .map((unit) => unit
+            .replace(/\[\d{1,2}]/g, "")
+            .replace(/^[\s#>*\-\d.、]+/, "")
+            .replace(/\s+/g, "")
+            .trim())
+        .filter((unit) => unit.length >= 6)
+    if (units.length < 2) return 0
+    const seen = new Set<string>()
+    let duplicates = 0
+    for (const unit of units) {
+        if (seen.has(unit)) duplicates += 1
+        else seen.add(unit)
+    }
+    return Number((duplicates / units.length).toFixed(3))
 }
 
 /**

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { assessAnswerQuality, buildAnswerQualityGuidance, resolveAnswerDepth } from "./answer-quality"
+import {
+    assessAnswerQuality,
+    buildAnswerQualityGuidance,
+    dedupeRepeatedAnswer,
+    resolveAnswerDepth,
+} from "./answer-quality"
 import type { AgentEvidence } from "./types"
 
 function evidence(content: string): AgentEvidence {
@@ -62,5 +67,18 @@ describe("回答详略度", () => {
             evidence: [evidence("小鼹鼠是一款 macOS 清理工具。")],
         })
         expect(result.adequate).toBe(true)
+    })
+
+    it("移除流式重启造成的完全重复句，不影响不同要点", () => {
+        const answer = [
+            "Mole 是一款 macOS 清理工具 [1]。Mole 是一款 macOS 清理工具 [1]。",
+            "",
+            "它还支持扫描应用卸载残留 [2]。",
+            "它还支持扫描应用卸载残留 [2]。",
+        ].join("\n")
+
+        expect(dedupeRepeatedAnswer(answer)).toBe(
+            "Mole 是一款 macOS 清理工具 [1]。\n\n它还支持扫描应用卸载残留 [2]。",
+        )
     })
 })

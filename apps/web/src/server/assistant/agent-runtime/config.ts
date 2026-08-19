@@ -63,6 +63,8 @@ const BUDGET_BY_COMPLEXITY: Record<TaskComplexity, AgentBudget> = {
     },
     simple: {
         maxIterations: 4,
+        // search + read_many 通常只需 2 次；保留 2 次纠错空间，达到上限且已有证据时
+        // StopPolicy 会以 enough_evidence 收敛作答，而不是把正常问答标成 max_tool_calls。
         maxToolCalls: 4,
         maxExecutionMs: 120_000,
         maxSubAgents: 0,
@@ -147,6 +149,12 @@ export function resolveContextBudget(total = envInt("AGENT_CONTEXT_TOKENS", 100_
 // ---------------------------------------------------------------------------
 
 export type RecallConfig = {
+    /** 第一阶段最多保留多少篇相关文章，再在文章内定位章节 */
+    articleTopK: number
+    /** 送入重排前，每篇文章最多贡献多少个章节，避免单篇刷屏 */
+    perArticleTopK: number
+    /** 最终结果中每篇文章最多保留多少个相似章节 */
+    maxPerArticle: number
     treeTopK: number
     vectorTopK: number
     bm25TopK: number
@@ -164,10 +172,13 @@ export type RecallConfig = {
 
 export function resolveRecallConfig(overrides?: Partial<RecallConfig>): RecallConfig {
     const base: RecallConfig = {
+        articleTopK: envInt("RAG_ARTICLE_TOP_K", 3),
+        perArticleTopK: envInt("RAG_PER_ARTICLE_TOP_K", 4),
+        maxPerArticle: envInt("RAG_MAX_PER_ARTICLE", 3),
         treeTopK: envInt("RAG_TREE_TOP_K", 10),
         vectorTopK: envInt("RAG_VECTOR_TOP_K", 10),
         bm25TopK: envInt("RAG_BM25_TOP_K", 10),
-        fusionTopK: envInt("RAG_FUSION_TOP_K", 20),
+        fusionTopK: envInt("RAG_FUSION_TOP_K", 30),
         rerankTopK: envInt("RAG_RERANK_TOP_N", 10),
         finalTopK: envInt("RAG_FINAL_TOP_K", 10),
         rrfK: envInt("RAG_RRF_K", 60),

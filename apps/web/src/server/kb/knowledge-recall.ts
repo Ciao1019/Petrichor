@@ -4,10 +4,15 @@ import { getDb, isSqliteDatabase } from "@/server/db/client"
 import { knowledgeBaseWikiTreeNodes } from "@/server/db/schema"
 import { bm25Search } from "@/server/retrieval/bm25"
 import { reciprocalRankFusion, toRecallHits, type FusedCandidate, type RecallSource } from "@/server/retrieval/fusion"
-import { createReranker, rerankWithFallback, type Reranker } from "@/server/retrieval/reranker"
+import { createReranker, rerankAdaptively, type Reranker } from "@/server/retrieval/reranker"
 import { buildQueryTokens, buildTsQuery } from "@/server/retrieval/tokenize"
 import { assertKnowledgeBaseOwner } from "./wiki-agent-logic"
-import { retrieveTreeNodesForAgent, semanticSearchTreeNodes, type TreeRetrievalHit } from "./wiki-tree"
+import {
+    retrieveTreeNodesForAgent,
+    semanticSearchTreeNodes,
+    semanticSearchTreeNodesAcrossKbs,
+    type TreeRetrievalHit,
+} from "./wiki-tree"
 
 /**
  * 知识召回管线（§24/§28/§29/§158）：
@@ -39,9 +44,16 @@ export type RecallDiagnostics = {
     bm25Keys: string[]
     fusionKeys: string[]
     finalKeys: string[]
+    /** 两阶段召回第一阶段选中的文章；第二阶段只在这些文章内选章节 */
+    selectedArticleIds: string[]
+    /** 因同篇文章过多或内容高度相似而被过滤的章节 */
+    diversityDroppedKeys: string[]
     rerankApplied: boolean
+    rerankStrategy: "external" | "local" | "local_fallback" | "skipped"
     rerankError?: string
     treeAttempted: boolean
+    treeReason?: "complex_query" | "fast_recall_empty"
+    retrievalScope: "focused_article" | "article_then_chapter" | "cross_kb_article_then_chapter"
     degraded: Partial<Record<RecallSource, string>>
     retrievalMs: number
     rerankMs: number
@@ -156,21 +168,36 @@ export async function recallKnowledgeCandidates(input: KnowledgeRecallInput): Pr
         )
         : appendFallback(groups, sources, config.fusionTopK)
 
-    // ---- 重排 -------------------------------------------------------------
-    const preRerank = fused.map((item) => toCandidate(item, nodeIndex, input.knowledgeBaseId))
+    // ---- 两阶段：先选文章，再在候选文章里精排章节 -------------------------
+    // 宽召回结果如果直接截 Top-K，很容易被同一篇长文章的相似章节占满。
+    // 第一阶段按文章聚合相关度，第二阶段再均衡地选出各篇文章内的候选章节。
+    const broadCandidates = fused.map((item) => toCandidate(item, nodeIndex, input.knowledgeBaseId))
+    const articleStage = selectArticleStage(broadCandidates, {
+        articleTopK: input.articleId != null ? 1 : config.articleTopK,
+        perArticleTopK: config.perArticleTopK,
+        ...(input.articleId != null ? { focusedArticleId: String(input.articleId) } : {}),
+    })
+
+    // ---- 自适应重排 -------------------------------------------------------
     const reranker = input.reranker ?? createReranker()
-    const reranked = await rerankWithFallback(
+    const reranked = await rerankAdaptively(
         reranker,
         input.query,
-        preRerank.slice(0, config.rerankTopK).map((candidate) => ({
+        articleStage.candidates.slice(0, config.rerankTopK).map((candidate) => ({
             ...candidate,
             content: readContent(nodeIndex.get(candidate.nodeKey)),
         })),
-        { topN: config.finalTopK, ...(input.signal ? { signal: input.signal } : {}) },
+        { topN: Math.max(config.finalTopK, config.maxPerArticle * articleStage.articleIds.length), ...(input.signal ? { signal: input.signal } : {}) },
+    )
+
+    const diversified = selectDiverseCandidates(
+        reranked.items,
+        config.finalTopK,
+        input.articleId != null ? config.finalTopK : config.maxPerArticle,
     )
 
     // rerank 输入里带了 content 供打分，回给调用方时去掉——search 只返回定位信息（§30）
-    const finalCandidates: KnowledgeCandidate[] = reranked.items
+    const finalCandidates: KnowledgeCandidate[] = diversified.items
         .map((item) => {
             const candidate: Record<string, unknown> = { ...item }
             delete candidate.content
@@ -178,11 +205,12 @@ export async function recallKnowledgeCandidates(input: KnowledgeRecallInput): Pr
         })
         .slice(0, config.finalTopK)
 
-    // rerank 未生效时补齐到 finalTopK（rerankTopK 可能小于 finalTopK）
-    if (!reranked.applied && finalCandidates.length < config.finalTopK) {
-        for (const candidate of preRerank) {
+    // 候选过少时从同一文章阶段补齐；仍然遵守内容去重与每篇文章上限。
+    if (finalCandidates.length < config.finalTopK) {
+        for (const candidate of articleStage.candidates) {
             if (finalCandidates.length >= config.finalTopK) break
             if (finalCandidates.some((item) => item.nodeKey === candidate.nodeKey)) continue
+            if (!canAppendCandidate(finalCandidates, candidate, input.articleId != null ? config.finalTopK : config.maxPerArticle)) continue
             finalCandidates.push(candidate)
         }
     }
@@ -197,9 +225,16 @@ export async function recallKnowledgeCandidates(input: KnowledgeRecallInput): Pr
             bm25Keys,
             fusionKeys: fused.map((item) => item.nodeKey),
             finalKeys: finalCandidates.map((item) => item.nodeKey),
+            selectedArticleIds: articleStage.articleIds,
+            diversityDroppedKeys: diversified.droppedKeys,
             rerankApplied: reranked.applied,
+            rerankStrategy: reranked.strategy,
             ...(reranked.error ? { rerankError: reranked.error } : {}),
             treeAttempted,
+            ...(treeAttempted
+                ? { treeReason: treeMode === "always" ? "complex_query" as const : "fast_recall_empty" as const }
+                : {}),
+            retrievalScope: input.articleId != null ? "focused_article" : "article_then_chapter",
             degraded,
             retrievalMs: Date.now() - startedAt,
             rerankMs: reranked.durationMs,
@@ -208,11 +243,11 @@ export async function recallKnowledgeCandidates(input: KnowledgeRecallInput): Pr
 }
 
 /**
- * 未锁定具体知识库时的跨库 BM25 召回。
+ * 未锁定具体知识库时的跨库混合召回。
  *
  * 旧路径只取最近 500 条 Wiki/文章后在 JS 里打分，较老但高度相关的内容永远召不回。
- * 这里直接复用 tree node 的 GIN/n-gram 候选池，并继续尊重 user_id 权限边界；
- * 不跨所有库强跑向量与 Tree LLM，符合 §95/§96 的成本约束。
+ * 这里直接复用 Wiki Tree 的全局向量索引与 GIN/n-gram 候选池，并继续尊重 user_id
+ * 权限边界。向量只做一次全局查询，不按知识库循环；昂贵的 Tree LLM 仍不跨库强跑。
  */
 export async function recallKnowledgeCandidatesAcrossKbs(input: {
     userId: number
@@ -235,61 +270,88 @@ export async function recallKnowledgeCandidatesAcrossKbs(input: {
         .slice(0, 4)
     const degraded: Partial<Record<RecallSource, string>> = {}
 
-    const bm25Results = flags.bm25
-        ? await settleAll(queries.map((query) => bm25RecallTreeNodesAcrossKbs({
+    const [vectorResults, bm25Results] = await Promise.all([
+        settleAll(queries.map((query) => semanticSearchTreeNodesAcrossKbs({
             userId: input.userId,
             query,
-            limit: config.bm25TopK,
-        }))).then((results) => collect(results, degraded, "bm25"))
-        : []
+            limit: config.vectorTopK,
+            maxContentChars: 600,
+        }))).then((results) => collect(results, degraded, "vector")),
+        flags.bm25
+            ? settleAll(queries.map((query) => bm25RecallTreeNodesAcrossKbs({
+                userId: input.userId,
+                query,
+                limit: config.bm25TopK,
+            }))).then((results) => collect(results, degraded, "bm25"))
+            : Promise.resolve<Bm25RecallHit[][]>([]),
+    ])
 
-    const nodeIndex = new Map<string, Bm25Node>()
-    const groups = bm25Results.map((group) => group.map((hit) => {
+    const nodeIndex = new Map<string, TreeRetrievalHit | Bm25Node>()
+    const vectorGroups = vectorResults.map((group) => group.map((hit) => {
+        const key = crossNodeKey(hit)
+        nodeIndex.set(key, hit)
+        return { nodeKey: key }
+    }))
+    const bm25Groups = bm25Results.map((group) => group.map((hit) => {
         const key = crossNodeKey(hit.node)
         nodeIndex.set(key, hit.node)
         return { nodeKey: key, score: hit.score }
     }))
-    const sources: RecallSource[] = groups.map(() => "bm25")
+    const groups = [...vectorGroups, ...bm25Groups]
+    const sources: RecallSource[] = [
+        ...vectorGroups.map(() => "vector" as const),
+        ...bm25Groups.map(() => "bm25" as const),
+    ]
     const fused = flags.rrf
         ? reciprocalRankFusion(
-            groups.map((group) => toRecallHits("bm25", group)),
+            groups.map((group, index) => toRecallHits(sources[index], group)),
             { k: config.rrfK, topK: config.fusionTopK },
         )
         : appendFallback(groups, sources, config.fusionTopK)
 
-    const preRerank: KnowledgeCandidate[] = fused.flatMap((item) => {
+    const broadCandidates: KnowledgeCandidate[] = fused.flatMap((item) => {
         const node = nodeIndex.get(item.nodeKey)
         if (!node) return []
+        const isTreeHit = "path" in node && typeof node.path === "string"
         return [{
             nodeKey: node.nodeKey,
             articleId: node.articleId,
             knowledgeBaseId: node.knowledgeBaseId,
             title: node.title,
+            ...(isTreeHit && node.path
+                ? { path: String(node.path).split(/\s*(?:›|\/)\s*/).filter(Boolean) }
+                : {}),
             ...(node.summary ? { summary: node.summary } : {}),
             score: item.fusedScore,
             recallSources: item.recallSources,
         }]
     })
+    const articleStage = selectArticleStage(broadCandidates, {
+        articleTopK: config.articleTopK,
+        perArticleTopK: config.perArticleTopK,
+    })
     const reranker = input.reranker ?? createReranker()
-    const reranked = await rerankWithFallback(
+    const reranked = await rerankAdaptively(
         reranker,
         input.query,
-        preRerank.slice(0, config.rerankTopK).map((candidate) => ({
+        articleStage.candidates.slice(0, config.rerankTopK).map((candidate) => ({
             ...candidate,
             content: nodeIndex.get(crossCandidateKey(candidate))?.contentMd.slice(0, 1_200),
         })),
-        { topN: config.finalTopK, ...(input.signal ? { signal: input.signal } : {}) },
+        { topN: Math.max(config.finalTopK, config.maxPerArticle * articleStage.articleIds.length), ...(input.signal ? { signal: input.signal } : {}) },
     )
-    const finalCandidates = reranked.items.map((item) => {
+    const diversified = selectDiverseCandidates(reranked.items, config.finalTopK, config.maxPerArticle)
+    const finalCandidates = diversified.items.map((item) => {
         const candidate: Record<string, unknown> = { ...item }
         delete candidate.content
         return candidate as unknown as KnowledgeCandidate
     }).slice(0, config.finalTopK)
 
-    if (!reranked.applied && finalCandidates.length < config.finalTopK) {
-        for (const candidate of preRerank) {
+    if (finalCandidates.length < config.finalTopK) {
+        for (const candidate of articleStage.candidates) {
             if (finalCandidates.length >= config.finalTopK) break
             if (finalCandidates.some((item) => crossCandidateKey(item) === crossCandidateKey(candidate))) continue
+            if (!canAppendCandidate(finalCandidates, candidate, config.maxPerArticle)) continue
             finalCandidates.push(candidate)
         }
     }
@@ -300,13 +362,17 @@ export async function recallKnowledgeCandidatesAcrossKbs(input: {
             query: input.query,
             rewrittenQueries: input.subQueries ?? [],
             treeKeys: [],
-            vectorKeys: [],
-            bm25Keys: fused.map((item) => item.nodeKey),
+            vectorKeys: vectorGroups.flatMap((group) => group.map((item) => item.nodeKey)),
+            bm25Keys: bm25Groups.flatMap((group) => group.map((item) => item.nodeKey)),
             fusionKeys: fused.map((item) => item.nodeKey),
             finalKeys: finalCandidates.map(crossCandidateKey),
+            selectedArticleIds: articleStage.articleIds,
+            diversityDroppedKeys: diversified.droppedKeys,
             rerankApplied: reranked.applied,
+            rerankStrategy: reranked.strategy,
             ...(reranked.error ? { rerankError: reranked.error } : {}),
             treeAttempted: false,
+            retrievalScope: "cross_kb_article_then_chapter",
             degraded,
             retrievalMs: Date.now() - startedAt,
             rerankMs: reranked.durationMs,
@@ -589,6 +655,119 @@ function crossCandidateKey(candidate: Pick<KnowledgeCandidate, "knowledgeBaseId"
     return `${candidate.knowledgeBaseId}:${candidate.nodeKey}`
 }
 
+type ArticleStageOptions = {
+    articleTopK: number
+    perArticleTopK: number
+    focusedArticleId?: string
+}
+
+/**
+ * 第一阶段把章节命中按文章聚合，第二阶段按文章轮询取章节。
+ * 文章得分用「最佳章节 + 其余章节的衰减贡献」，既不会只看一个偶然命中，
+ * 也不会让章节特别多的长文章单纯靠数量胜出。
+ */
+export function selectArticleStage(
+    candidates: KnowledgeCandidate[],
+    options: ArticleStageOptions,
+): { candidates: KnowledgeCandidate[]; articleIds: string[] } {
+    const grouped = new Map<string, Array<{ candidate: KnowledgeCandidate; index: number }>>()
+    candidates.forEach((candidate, index) => {
+        if (options.focusedArticleId && candidate.articleId !== options.focusedArticleId) return
+        const key = articleCandidateKey(candidate)
+        grouped.set(key, [...(grouped.get(key) ?? []), { candidate, index }])
+    })
+
+    const rankedArticles = [...grouped.entries()]
+        .map(([key, items]) => {
+            const scores = items
+                .map((item) => item.candidate.score ?? 0)
+                .sort((left, right) => right - left)
+            const score = (scores[0] ?? 0)
+                + (scores[1] ?? 0) * 0.35
+                + (scores[2] ?? 0) * 0.15
+                + Math.max(...items.map((item) => item.candidate.recallSources.length)) * 0.000001
+            return { key, items, score, firstIndex: Math.min(...items.map((item) => item.index)) }
+        })
+        .sort((left, right) => right.score - left.score || left.firstIndex - right.firstIndex)
+        .slice(0, Math.max(1, options.articleTopK))
+
+    const balanced: KnowledgeCandidate[] = []
+    for (let offset = 0; offset < Math.max(1, options.perArticleTopK); offset += 1) {
+        for (const article of rankedArticles) {
+            const item = article.items[offset]
+            if (item) balanced.push(item.candidate)
+        }
+    }
+
+    return {
+        candidates: balanced,
+        articleIds: rankedArticles.map((item) => item.key),
+    }
+}
+
+type CandidateWithContent = KnowledgeCandidate & { content?: string | null }
+
+/** 最终候选同时限制单篇占比，并过滤标题/摘要/正文高度相似的重复章节。 */
+export function selectDiverseCandidates<T extends CandidateWithContent>(
+    candidates: T[],
+    limit: number,
+    maxPerArticle: number,
+): { items: T[]; droppedKeys: string[] } {
+    const items: T[] = []
+    const droppedKeys: string[] = []
+    for (const candidate of candidates) {
+        if (items.length >= limit) break
+        if (!canAppendCandidate(items, candidate, maxPerArticle)) {
+            droppedKeys.push(crossCandidateKey(candidate))
+            continue
+        }
+        items.push(candidate)
+    }
+    return { items, droppedKeys }
+}
+
+function canAppendCandidate<T extends CandidateWithContent>(
+    selected: T[],
+    candidate: CandidateWithContent,
+    maxPerArticle: number,
+): boolean {
+    const articleKey = articleCandidateKey(candidate)
+    if (selected.filter((item) => articleCandidateKey(item) === articleKey).length >= maxPerArticle) {
+        return false
+    }
+    return !selected.some((item) => candidateSimilarity(item, candidate) >= 0.88)
+}
+
+function articleCandidateKey(candidate: Pick<KnowledgeCandidate, "knowledgeBaseId" | "articleId" | "nodeKey">): string {
+    return candidate.articleId
+        ? `${candidate.knowledgeBaseId}:${candidate.articleId}`
+        : `${candidate.knowledgeBaseId}:node:${candidate.nodeKey}`
+}
+
+function candidateSimilarity(left: CandidateWithContent, right: CandidateWithContent): number {
+    const leftTitle = normalizeSearchText(left.title)
+    const rightTitle = normalizeSearchText(right.title)
+    if (leftTitle && leftTitle === rightTitle) return 1
+
+    const leftTokens = new Set(buildQueryTokens(candidateText(left)))
+    const rightTokens = new Set(buildQueryTokens(candidateText(right)))
+    if (leftTokens.size === 0 || rightTokens.size === 0) return 0
+    let intersection = 0
+    for (const token of leftTokens) if (rightTokens.has(token)) intersection += 1
+    const union = leftTokens.size + rightTokens.size - intersection
+    return union === 0 ? 0 : intersection / union
+}
+
+function candidateText(candidate: CandidateWithContent): string {
+    return [candidate.title, candidate.summary ?? "", candidate.content?.slice(0, 800) ?? ""]
+        .filter(Boolean)
+        .join("\n")
+}
+
+function normalizeSearchText(value: string): string {
+    return value.toLowerCase().replace(/[^a-z0-9一-鿿]+/g, "").trim()
+}
+
 /** RRF 关闭时的兜底：按召回源顺序去重拼接 */
 function appendFallback(
     groups: Array<Array<{ nodeKey: string; score?: number }>>,
@@ -628,7 +807,7 @@ function toCandidate(
         articleId: node?.articleId ?? "",
         knowledgeBaseId: String(knowledgeBaseId),
         title: node?.title ?? fused.nodeKey,
-        ...(isTreeHit && node.path ? { path: String(node.path).split(" / ").filter(Boolean) } : {}),
+        ...(isTreeHit && node.path ? { path: String(node.path).split(/\s*(?:›|\/)\s*/).filter(Boolean) } : {}),
         ...(node && "summary" in node && node.summary ? { summary: String(node.summary) } : {}),
         score: fused.fusedScore,
         recallSources: fused.recallSources,

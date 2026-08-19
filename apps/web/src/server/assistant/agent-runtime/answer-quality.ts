@@ -110,6 +110,39 @@ export function assessAnswerQuality(input: {
     }
 }
 
+/**
+ * 删除流式重启或模型重试造成的完全重复句/行。只处理归一化后完全相同且较长的单元，
+ * 不做语义改写，避免误删“看起来相似但含义不同”的有效内容。
+ */
+export function dedupeRepeatedAnswer(answer: string): string {
+    const lines = answer.split(/\r?\n/)
+    const seenLines = new Set<string>()
+    const dedupedLines = lines.filter((line) => {
+        const key = normalizeRepeatUnit(line)
+        if (key.length < 12) return true
+        if (seenLines.has(key)) return false
+        seenLines.add(key)
+        return true
+    })
+
+    const text = dedupedLines.join("\n")
+    const seenSentences = new Set<string>()
+    return text.replace(/[^。！？!?\n]+[。！？!?]?/g, (sentence) => {
+        const key = normalizeRepeatUnit(sentence)
+        if (key.length < 16) return sentence
+        if (seenSentences.has(key)) return ""
+        seenSentences.add(key)
+        return sentence
+    }).replace(/\n{3,}/g, "\n\n").trim()
+}
+
+function normalizeRepeatUnit(value: string): string {
+    return value
+        .replace(/^\s*(?:[-*+] |\d+[.)、]\s*|#+\s*)/, "")
+        .replace(/\s+/g, "")
+        .trim()
+}
+
 function visibleCharacterCount(text: string): number {
     return text
         .replace(/```[\s\S]*?```/g, "")

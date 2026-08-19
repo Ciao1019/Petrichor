@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { createReranker, NoopReranker, OpenAiCompatibleReranker, rerankWithFallback } from "./reranker"
+import {
+    createReranker,
+    LocalLexicalReranker,
+    NoopReranker,
+    OpenAiCompatibleReranker,
+    rerankAdaptively,
+    rerankWithFallback,
+} from "./reranker"
 
 const candidates = [
     { nodeKey: "a", title: "A", content: "内容 A" },
@@ -61,5 +68,40 @@ describe("Reranker", () => {
         expect(result.applied).toBe(true)
         expect(result.items.map((item) => item.nodeKey)).toEqual(["c", "b", "a"])
         expect(result.items[0].rerankScore).toBe(1)
+    })
+
+    it("未配置外部服务时自适应使用本地重排", async () => {
+        const result = await rerankAdaptively(
+            new NoopReranker(),
+            "Sentinel 部署",
+            [
+                { nodeKey: "generic", title: "普通说明", content: "无关内容" },
+                { nodeKey: "target", title: "Sentinel 部署方案", content: "三节点故障转移" },
+            ],
+            { topN: 2 },
+        )
+
+        expect(result.applied).toBe(true)
+        expect(result.strategy).toBe("local")
+        expect(result.items[0].nodeKey).toBe("target")
+    })
+
+    it("外部重排失败时回落本地，而不是退回未经重排的顺序", async () => {
+        const external = new OpenAiCompatibleReranker({
+            enabled: true,
+            provider: "openai-compatible",
+            model: "m",
+            topN: 2,
+            timeoutMs: 50,
+        })
+        const result = await rerankAdaptively(external, "Redis Streams", [
+            { nodeKey: "a", title: "缓存", content: "普通缓存" },
+            { nodeKey: "b", title: "Redis Streams", content: "消费者组" },
+        ])
+
+        expect(result.strategy).toBe("local_fallback")
+        expect(result.items[0].nodeKey).toBe("b")
+        expect(result.error).toContain("RAG_RERANK_BASE_URL")
+        expect(new LocalLexicalReranker().id).toBe("local-lexical")
     })
 })

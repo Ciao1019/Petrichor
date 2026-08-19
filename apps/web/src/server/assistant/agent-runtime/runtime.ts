@@ -1,5 +1,5 @@
 import { BudgetTracker } from "./budget"
-import { assessAnswerQuality } from "./answer-quality"
+import { assessAnswerQuality, dedupeRepeatedAnswer } from "./answer-quality"
 import { readAgentFeatureFlags, resolveContextBudget, resolveStopPolicy } from "./config"
 import { ContextManager, type ConversationSummary } from "./context-manager"
 import { DelegationManager } from "./delegation"
@@ -105,6 +105,40 @@ const MAX_SEGMENTS = 8
  * 拿它预热能力只会平白把工具集撑大、把复杂度抬高。
  */
 const ROUTER_HINT_MIN_CONFIDENCE = 0.5
+
+const SIMPLE_KNOWLEDGE_PATTERN = /(?:是什么|什么意思|是干什么(?:的)?|有(?:哪些|什么)(?:主要|核心)?功能|怎么用|如何使用|使用方法|用途|作用|介绍|概述|说明|教程|原理|区别)/i
+const SCOPED_KNOWLEDGE_FACT_PATTERN = /(?:是否|能否|能不能|支不支持|支持(?:什么|哪些)?|在哪里|哪个|多少)/i
+const NON_KNOWLEDGE_ACTION_PATTERN = /(?:创建|新建|修改|更新|删除|移动|发布|分享|保存|导出|写一篇|生成一篇|改写|翻译|发邮件|联网|外部资料|网页搜索|历史对话|记住)/i
+const SYSTEM_OVERVIEW_PATTERN = /(?:(?:有多少|多少|几个|数量|清单|列出).{0,12}(?:知识库|文档库|文章|文档|对话)|(?:知识库|文档库|文章|文档|对话).{0,12}(?:有多少|多少|几个|数量|清单))/i
+const PROMPT_INJECTION_PATTERN = /(?:忽略.{0,16}(?:以上|之前|系统|开发者)(?:指令|提示)|(?:ignore|disregard).{0,24}(?:previous|system|developer).{0,12}(?:instruction|prompt)|system\s*prompt|developer\s*message|jailbreak|越狱)/i
+
+/**
+ * 高频简单知识问答快车道。
+ *
+ * 它只负责决定是否可以先做一次只读检索；真正未命中时仍回到完整 Agentic Loop。
+ * 明显的写操作、外部研究和提示注入文本都不进入该路径。
+ */
+export function shouldUseSimpleKnowledgeFastPath(input: {
+    goal: string
+    complexity: TaskComplexity
+    focus?: unknown
+    routingHint?: RoutingHint | null
+}): boolean {
+    const goal = input.goal.trim()
+    if (input.complexity !== "simple" || !goal || goal.length > 160) return false
+    if (NON_KNOWLEDGE_ACTION_PATTERN.test(goal)
+        || SYSTEM_OVERVIEW_PATTERN.test(goal)
+        || PROMPT_INJECTION_PATTERN.test(goal)) return false
+
+    if (SIMPLE_KNOWLEDGE_PATTERN.test(goal)) return true
+
+    const focus = input.focus as { knowledgeBaseId?: unknown; articleId?: unknown } | null | undefined
+    const hasKnowledgeScope = Boolean(focus?.knowledgeBaseId != null
+        || focus?.articleId != null
+        || ((input.routingHint?.confidence ?? 0) >= 0.7
+            && input.routingHint?.domains.includes("knowledge")))
+    return hasKnowledgeScope && SCOPED_KNOWLEDGE_FACT_PATTERN.test(goal)
+}
 
 export class PetrichorAgentRuntime {
     private readonly tools: AgentToolRegistry
@@ -301,6 +335,28 @@ export class PetrichorAgentRuntime {
             await skillLoader.preload(mapDomainsToSkills(actionableHint.domains, this.skills.ids), buildCtx())
         }
 
+        // ------------------------------------------------ 简单知识问答快车道
+        // 定义/功能/用法类问题不需要让模型先后决定 search 与 read_many。
+        // 先通过统一 ToolExecutor 执行一次只读复合检索；命中后只保留一轮无工具生成，
+        // 未命中或读取失败则原样回到完整 Agentic Loop。
+        let simpleKnowledgeFastPath = false
+        if (!request.abortSignal?.aborted
+            && this.tools.has("knowledge.lookup")
+            && shouldUseSimpleKnowledgeFastPath({
+                goal: request.goal,
+                complexity,
+                focus: request.focus,
+                routingHint,
+            })) {
+            const outcome = await executor.execute("knowledge.lookup", { query: request.goal }, buildCtx())
+            simpleKnowledgeFastPath = outcome.ok && outcome.evidence.length > 0
+            trace.event("observation", {
+                strategy: "simple_knowledge_fast_path",
+                hit: simpleKnowledgeFastPath,
+                evidenceCount: outcome.evidence.length,
+            })
+        }
+
         // ------------------------------------------------------------ 计划
         if (shouldCreatePlan(complexity)) {
             const steps = state.setPlan(draftPlan(request.goal))
@@ -331,7 +387,9 @@ export class PetrichorAgentRuntime {
                 state.incrementIteration()
                 segmentController = new SegmentController()
 
-                const tools = this.resolveActiveTools(skillLoader, complexity, request.isOperator === true)
+                const tools = simpleKnowledgeFastPath
+                    ? []
+                    : this.resolveActiveTools(skillLoader, complexity, request.isOperator === true)
                 const built = contextManager.build({
                     state: state.current,
                     observations,
@@ -359,25 +417,31 @@ export class PetrichorAgentRuntime {
                         tools,
                         ctx: buildCtx(),
                         executor,
-                        maxSteps: Math.max(1, stopPolicy.remainingToolCalls(state.current) || 1),
+                        maxSteps: simpleKnowledgeFastPath
+                            ? 1
+                            : Math.max(1, stopPolicy.remainingToolCalls(state.current) || 1),
                         ...(request.abortSignal ? { abortSignal: request.abortSignal } : {}),
-                        injectionGuard: request.injectionGuard ?? null,
+                        // 快车道已经排除了明显注入文本，且这一段没有任何工具/副作用能力；
+                        // 不再额外调用一次 LLM 注入分类器，否则安全检查本身会成为主要延迟。
+                        injectionGuard: simpleKnowledgeFastPath ? null : request.injectionGuard ?? null,
                         ...(request.contextTokenLimit ? { contextTokenLimit: request.contextTokenLimit } : {}),
                         onTextDelta: (delta) => {
                             if (!answerStarted) {
                                 answerStarted = true
-                                // 换段会重新开始作答：前端 reducer 收到该事件即重置答案缓冲
-                                events.emit("final_answer_started", {} as never)
+                                // 新的一段作答开始；不带 replace，前端会保留上一段
+                                events.emit("final_answer_started", {})
                                 trace.markFirstToken()
                             }
                             events.emit("final_answer_delta", { delta })
                         },
                         onAnswerReset: () => {
-                            // 刚才那段是"我来读一下正文"这类过程话，后面还有工具调用：
-                            // 重发 started 让前端清掉缓冲，避免过程话残留在答案里
+                            // 刚才那段是"我来读一下正文"这类过程话，后面还有工具调用。
+                            // 服务端仍然只把最后一段当作最终答案（见 mastra-bridge），
+                            // 但前端不再清空已经流出的字——那会让用户看见内容凭空消失。
+                            // 这里只标记换段，前端把上一段归档、另起一段继续。
                             if (!answerStarted) return
                             answerStarted = false
-                            events.emit("final_answer_started", {} as never)
+                            events.emit("final_answer_started", {})
                         },
                         onToolOutcome: (outcome: ToolRunOutcome) => {
                             const decision = stopPolicy.evaluateAfterToolCall(state.current)
@@ -454,6 +518,7 @@ export class PetrichorAgentRuntime {
                         ...(stopReason ? { stopReason } : {}),
                         events,
                         trace,
+                        replacePrevious: true,
                     })
                     answer = rewritten.trim() || originalAnswer
                 }
@@ -476,6 +541,8 @@ export class PetrichorAgentRuntime {
             stopReason = fatal.code === "TOOL_ABORTED" ? "cancelled" : "fatal_error"
             trace.event("error", { code: fatal.code, message: fatal.message })
         }
+
+        if (answer) answer = dedupeRepeatedAnswer(answer)
 
         // ------------------------------------------------------------- 收尾
         const metrics = {
@@ -560,6 +627,8 @@ export class PetrichorAgentRuntime {
         stopReason?: AgentStopReason
         events: AgentEventEmitter
         trace: TraceCollector
+        /** 同一个问题重答一遍：前端要丢弃上一版，而不是追加到它后面 */
+        replacePrevious?: boolean
     }): Promise<string> {
         const plan = buildFinalAnswerPlan({
             state: input.state.current,
@@ -592,7 +661,10 @@ export class PetrichorAgentRuntime {
                 onTextDelta: (delta) => {
                     if (!started) {
                         started = true
-                        input.events.emit("final_answer_started", {} as never)
+                        // 质量重写要覆盖掉上一版答案；强制收敛只是接着往下说
+                        input.events.emit("final_answer_started", {
+                            ...(input.replacePrevious ? { replace: true } : {}),
+                        })
                         input.trace.markFirstToken()
                     }
                     input.events.emit("final_answer_delta", { delta })

@@ -81,31 +81,42 @@ export function AgentRunPanel() {
 }
 
 /**
- * 实时答案只从结构化 delta 渲染；最终完成后标准 text part 接管。
- * 这样既保留流式体验，又不会把工具前的过程话固化成第二段回答。
+ * 答案由 Run 的结构化文本渲染，还是由标准 text part 渲染。
+ *
+ * - 本次会话流式产生的 Run：从第一个 delta 一路渲染到终态，中途不换手。
+ *   run 完成时交还给 text part 会重挂整棵 Markdown 树，用户看到的就是
+ *   "最后一下整段刷出来"。
+ * - 刷新后从后端恢复的 Run：历史消息本来就带标准 text part，交给它渲染，
+ *   免得 hydrate 落地时再闪一次；除非它还在执行（那时还没有 text part）。
  */
+function usesRunAnswer(run: AgentRunViewModel | null): run is AgentRunViewModel {
+    if (!run?.answer) return false
+    if (!run.hydrated) return true
+    return run.status === "starting" || run.status === "running"
+}
+
+/** 实时答案：从结构化 delta 渲染，并一路渲染到终态 */
 export function AgentStreamingAnswer() {
     const run = useCurrentAgentRun()
-    if (!run || !run.answer) return null
+    if (!usesRunAnswer(run)) return null
     const running = run.status === "starting" || run.status === "running"
-    if (!running) return null
 
     return (
-        <div aria-live="polite" aria-label="回答生成中">
-            <QaStreamingMarkdown text={run.answer} running />
+        <div aria-live="polite" aria-label={running ? "回答生成中" : "回答"}>
+            <QaStreamingMarkdown text={run.answer} running={running} />
         </div>
     )
 }
 
 /**
- * Agent 运行时由结构化答案接管；完成后一次性显示标准 text part。
+ * 标准 text part 的渲染。
+ * Run 正在接管答案时让位，避免同一段内容渲染两遍；
  * 旧链路没有 AgentRun，继续沿用原来的逐字流式渲染。
  */
 export function AgentAnswerText() {
     const run = useCurrentAgentRun()
     const { text, status } = useMessagePartText()
-    const agentRunning = run?.status === "starting" || run?.status === "running"
-    if (agentRunning) return null
+    if (usesRunAnswer(run)) return null
     return <QaStreamingMarkdown text={text} running={!run && status?.type === "running"} />
 }
 

@@ -41,8 +41,9 @@ export function createAgentEventWriter(writer: ChatStreamWriter) {
         onEvent(event: AgentStreamEvent): void {
             switch (event.type) {
                 case "final_answer_started": {
-                    // 换段重答：结构化 reducer 会同步重置实时答案。标准 text 不能撤回，
-                    // 所以在最终完成前绝不把推测性的过程话写进聊天消息。
+                    // 服务端只把最后一段当作最终答案：这里跟着重置兜底缓冲。
+                    // 标准 text 不能撤回，所以在最终完成前绝不把推测性的过程话
+                    // 写进聊天消息；实时显示由前端 reducer 按段维护。
                     answerBuffer = ""
                     answerLength = 0
                     break

@@ -135,7 +135,7 @@ import {
   AgentStreamingAnswer,
 } from "./agent-run-ui"
 import { hydrateRunsFromMessages } from "@/features/agent-runs/hydrate"
-import { consumePendingRetryRunId } from "@/features/agent-runs/store"
+import { consumePendingRetryRunId, useAgentRunsStore } from "@/features/agent-runs/store"
 
 const CHAT_THREAD_HEADER = "X-Petrichor-Assistant-Thread-Id"
 const SKIP_DELETE_CONFIRM_KEY = "petrichor:assistant.skipDeleteConfirm"
@@ -976,6 +976,15 @@ function QaChatPanel({
         new SimpleImageAttachmentAdapter(),
         new SimpleTextAttachmentAdapter(),
       ]),
+    },
+    // Agent 事件直接从流里消费，不依赖 data part 的重渲染。
+    // 复用同一个 part id 的 final_answer_delta 是原地覆盖的：两次更新落在
+    // 同一帧时 React 只渲染最后一个值，中间那些 delta 的字会永久丢失。
+    // onData 对每个 chunk 都会回调一次，reducer 再按 sequence 幂等去重。
+    onData: (part) => {
+      if (part.type === "data-agent-event") {
+        useAgentRunsStore.getState().appendUnknown(part.data)
+      }
     },
     onFinish: () => {
       void onStreamSettled()

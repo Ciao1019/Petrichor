@@ -19,10 +19,17 @@ function PopoverContent({
   className,
   align = "center",
   sideOffset = 4,
+  portalContainer,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+}: React.ComponentProps<typeof PopoverPrimitive.Content> & {
+  /**
+   * 指定 Portal 的挂载容器。嵌套在模态框内时应挂到 DialogContent，
+   * 否则 Dialog 的滚动锁会把弹层里的滚轮事件当成框外滚动并拦截。
+   */
+  portalContainer?: React.ComponentProps<typeof PopoverPrimitive.Portal>["container"]
+}) {
   return (
-    <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Portal container={portalContainer}>
       <PopoverPrimitive.Content
         data-slot="popover-content"
         align={align}

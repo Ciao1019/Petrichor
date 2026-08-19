@@ -6,6 +6,8 @@ import { Markdown, remarkVideo, ThemeProvider, type MarkdownProps } from "@lobeh
 import { ThinkingOrb, type OrbState } from "thinking-orbs"
 
 import { useTheme } from "@/components/theme-provider"
+import { useGentleReveal } from "./use-gentle-reveal"
+import { LIVE_MARKDOWN_STREAM_PROPS, useStreamPacer } from "./use-stream-pacer"
 import { AgentCitationMark } from "@/components/agent/agent-citation-mark"
 import { remarkCitations } from "@/features/agent-runs/remark-citations"
 import {
@@ -86,83 +88,6 @@ function QaMarkdownThemeShell({ children }: { children: React.ReactNode }) {
   )
 }
 
-// —— 温柔节流：比 LobeHub silky 预设再慢一点的稳定放字节奏 ——
-// LobeHub 的 streamSmoothingPreset 速率写死且 silky 已是最慢档，这里在喂给
-// <Markdown> 之前先按更慢的节奏揭示，让本节奏成为瓶颈，渐显/平滑照常叠加。
-// 想更慢/更快只需调 GENTLE_CPS。
-const GENTLE_CPS = 21 // 稳定放字速度（字/秒）。silky≈28，这里更柔。
-const GENTLE_CATCHUP_MS = 900 // 突发大块积压时，在该窗口内温和追平。
-
-type GentleRevealOptions = {
-  cps?: number
-  catchupMs?: number | null
-}
-
-function useGentleReveal(text: string, isRunning: boolean, options: GentleRevealOptions = {}): number {
-  const cps = options.cps ?? GENTLE_CPS
-  const catchupMs = options.catchupMs ?? GENTLE_CATCHUP_MS
-  const steadyMsPerChar = 1000 / cps
-  const [revealed, setRevealed] = React.useState(() => (isRunning ? 0 : text.length))
-  const effectiveRevealed = Math.min(revealed, text.length)
-
-  const revealedRef = React.useRef(revealed)
-  const targetRef = React.useRef(text.length)
-  const rafRef = React.useRef<number | null>(null)
-  const lastTimeRef = React.useRef(0)
-  const tickRef = React.useRef<() => void>(() => {})
-
-  React.useEffect(() => {
-    revealedRef.current = effectiveRevealed
-  }, [effectiveRevealed])
-
-  React.useEffect(() => {
-    targetRef.current = text.length
-  }, [text.length])
-
-  React.useEffect(() => {
-    tickRef.current = () => {
-      const now = performance.now()
-      const delta = now - lastTimeRef.current
-      const remaining = targetRef.current - revealedRef.current
-      if (remaining <= 0) {
-        rafRef.current = null
-        return
-      }
-      // 积压越大越快（追平），越小越趋于匀速 GENTLE_CPS。
-      const msPerChar = catchupMs == null
-        ? steadyMsPerChar
-        : Math.min(steadyMsPerChar, catchupMs / remaining)
-      let charsToAdd = Math.floor(delta / msPerChar)
-      if (charsToAdd <= 0) {
-        rafRef.current = requestAnimationFrame(tickRef.current)
-        return
-      }
-      if (charsToAdd > remaining) charsToAdd = remaining
-      lastTimeRef.current = now - (delta - charsToAdd * msPerChar)
-      const next = revealedRef.current + charsToAdd
-      revealedRef.current = next
-      setRevealed(next)
-      rafRef.current = next < targetRef.current ? requestAnimationFrame(tickRef.current) : null
-    }
-  }, [steadyMsPerChar, catchupMs])
-
-  React.useEffect(() => {
-    if (revealedRef.current >= text.length) return
-    if (rafRef.current == null) {
-      lastTimeRef.current = performance.now()
-      rafRef.current = requestAnimationFrame(tickRef.current)
-    }
-    return () => {
-      if (rafRef.current != null) {
-        cancelAnimationFrame(rafRef.current)
-        rafRef.current = null
-      }
-    }
-  }, [text, isRunning])
-
-  return effectiveRevealed
-}
-
 /**
  * 首字到达前的"准备响应中"提示：thinking-orbs 点阵球 + 流光文字。
  *
@@ -216,8 +141,7 @@ export function QaPreparing({
 
 /**
  * 问答助手回答的渲染：直接用 LobeHub Markdown。
- * - 先经 useGentleReveal 节流，再交给 LobeHub 做 silky 平滑 + 字符渐显
- * - animated：流式中（含节流未放完）开启渐显，历史消息直接显示
+ * animated 只跟随是否在流式中，历史消息直接静态显示。
  */
 export function QaMarkdownText() {
   const { text, status } = useMessagePartText()
@@ -234,24 +158,76 @@ export function QaStreamingMarkdown({
 }: {
   text: string
   running?: boolean
+  /** 文本一次性给全（如文章 AI 总结），需要自己做打字机效果 */
   revealOnMount?: boolean
   revealCps?: number
   catchupMs?: number | null
 }) {
-  const shouldReveal = running || revealOnMount
-  const revealed = useGentleReveal(text, shouldReveal, { cps: revealCps, catchupMs })
-  const shown = revealed >= text.length ? text : text.slice(0, revealed)
-  const animating = running || revealed < text.length
+  // 两条路径的差别不是参数，是"谁来控制节奏"，所以拆成两个组件而不是一个分支：
+  // 流式路径完全不该挂 useGentleReveal 的 rAF 循环。
+  if (revealOnMount) {
+    return <QaRevealedMarkdown text={text} revealCps={revealCps} catchupMs={catchupMs} />
+  }
+  return <QaLiveMarkdown text={text} running={running} />
+}
+
+/**
+ * 流式渲染。
+ *
+ * 调速器只有一个，就是 LobeHub 自己那套（useSmoothStreamContent 按帧插值 +
+ * useStreamQueue 块级节奏 + rehypeStreamAnimated 逐字渐显）。官方
+ * StreamingPlayground 把 2~8 字 / 35~120ms 的原始 chunk 直接塞进去，效果很顺，
+ * 我们不再在它上面叠自己的节流——那会让它的 inputActive 恒为真、进不了 flush 分支。
+ *
+ * useStreamPacer 做的是另一件事：只整形"到达的形状"（提交间隔和单次字数），
+ * 不改变谁来控制节奏。模型很快时这一步是必要的，理由和实测数字见该文件注释。
+ */
+function QaLiveMarkdown({ text, running }: { text: string; running: boolean }) {
+  // 只整形"到达形状"，不当第二个调速器：每 60ms 提交一次、每次至多 10 字、不跨行。
+  // 模型很快时这一步把单帧最大同时淡入字数从 60 压到 18（见 use-stream-pacer 注释）。
+  const shown = useStreamPacer(text, running)
+  // 整形还没放完时要继续保持动画，否则剩下的字会失去渐显直接出现。
+  const animating = running || shown.length < text.length
   return (
     <Markdown
-      variant="chat"
+      // 预设跟官方 demo 一致；这几个 prop 与端到端测试共用同一份常量
+      {...LIVE_MARKDOWN_STREAM_PROPS}
       animated={animating}
-      enableStream
-      streamSmoothingPreset="silky"
       remarkPlugins={QA_REMARK_PLUGINS}
       components={QA_MARKDOWN_COMPONENTS}
       reactMarkdownProps={QA_REACT_MARKDOWN_PROPS}
       // KB 回答用不到图片画廊预览；关掉它顺带消除 antd Image 的 rootClassName 弃用告警。
+      enableImageGallery={false}
+    >
+      {shown}
+    </Markdown>
+  )
+}
+
+/**
+ * 打字机渲染：文本已经全在手里（文章 AI 总结），由 useGentleReveal 逐字放出。
+ * 这里我们就是唯一的节奏来源，LobeHub 只负责把放出来的字渐显。
+ */
+function QaRevealedMarkdown({
+  text,
+  revealCps,
+  catchupMs,
+}: {
+  text: string
+  revealCps?: number
+  catchupMs?: number | null
+}) {
+  const revealed = useGentleReveal(text, true, { cps: revealCps, catchupMs })
+  const shown = revealed >= text.length ? text : text.slice(0, revealed)
+  const animating = revealed < text.length
+  return (
+    <Markdown
+      variant="chat"
+      animated={animating}
+      streamSmoothingPreset="balanced"
+      remarkPlugins={QA_REMARK_PLUGINS}
+      components={QA_MARKDOWN_COMPONENTS}
+      reactMarkdownProps={QA_REACT_MARKDOWN_PROPS}
       enableImageGallery={false}
     >
       {shown}

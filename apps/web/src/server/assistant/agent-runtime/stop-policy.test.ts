@@ -37,6 +37,23 @@ describe("StopPolicy", () => {
         expect(policy.evaluateAfterToolCall(state.current)).toMatchObject({ stop: true, reason: "max_tool_calls" })
     })
 
+    it("工具预算用尽但已有证据时正常收敛作答", () => {
+        const { policy, state } = setup({ maxToolCalls: 2 })
+        state.addEvidence([{
+            id: "e1",
+            source: "knowledge",
+            content: "可用于作答的正文",
+            createdAt: Date.now(),
+        }])
+        state.incrementToolCall()
+        state.incrementToolCall()
+
+        expect(policy.evaluateAfterToolCall(state.current)).toMatchObject({
+            stop: true,
+            reason: "enough_evidence",
+        })
+    })
+
     it("超时触发 max_execution_time", () => {
         const { policy, state } = setup({ maxExecutionMs: 1_000 })
         const later = Date.now() + 2_000

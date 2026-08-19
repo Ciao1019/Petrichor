@@ -32,6 +32,7 @@ export function createEmptyRun(runId: string, goal = "", startedAt = Date.now())
         evidence: [],
         loadedSkills: [],
         answer: "",
+        answerSegmentStart: 0,
         startedAt,
         lastSequence: 0,
     }
@@ -59,6 +60,14 @@ export function replayEvents(runId: string, events: AgentStreamEvent[]): AgentRu
             (state, event) => agentRunReducer(state, event),
             createEmptyRun(runId),
         )
+}
+
+/**
+ * 两段答案是不是同一段正文（只差空白不算变化）。
+ * 用来判断服务端的最终文本值不值得替换掉已经流式放出去的内容。
+ */
+function isSameAnswerBody(a: string, b: string): boolean {
+    return a.replace(/\s+/g, " ").trim() === b.replace(/\s+/g, " ").trim()
 }
 
 function applyEvent(state: AgentRunViewModel, event: AgentStreamEvent): AgentRunViewModel {
@@ -157,15 +166,35 @@ function applyEvent(state: AgentRunViewModel, event: AgentStreamEvent): AgentRun
                 }),
             }
 
-        // 换段重答：清空已缓冲的答案，避免上一段的半截文字残留（见 chat-bridge）
-        case "final_answer_started":
-            return { ...state, answer: "" }
+        // 换段：工具调用打断了上一段话。不清空已流出的内容——那会让用户
+        // 看见字凭空消失；把上一段归档、另起一段继续（工具卡片按顺序穿插）。
+        // 只有 replace=true 的整段重答才丢弃前文。
+        case "final_answer_started": {
+            if (payload.replace === true) return { ...state, answer: "", answerSegmentStart: 0 }
+            if (!state.answer.trim()) return { ...state, answerSegmentStart: state.answer.length }
+            const archived = `${state.answer.trimEnd()}\n\n`
+            return { ...state, answer: archived, answerSegmentStart: archived.length }
+        }
 
         case "final_answer_delta":
             return { ...state, answer: state.answer + String(payload.delta ?? "") }
 
-        case "final_answer_completed":
-            return { ...state, answer: String(payload.text ?? state.answer) }
+        // 服务端的最终答案只是最后一段，用它覆盖当前段即可；
+        // 整段替换会把前面已归档的内容抹掉，表现为结尾突然刷新一大坨。
+        //
+        // 而且只在内容真的变了时才替换：服务端那份经过 trim 和 dedupeRepeatedAnswer
+        // 归一化，几乎必然和流式累积的那段差一点空白。一旦替换出一个"不是旧内容前缀"
+        // 的字符串，下游 useSmoothStreamContent 会直接 syncImmediate 跳过全部平滑，
+        // 表现就是「一开始正常，最后一下全出来」。
+        case "final_answer_completed": {
+            if (typeof payload.text !== "string") return state
+            const streamed = state.answer.slice(state.answerSegmentStart)
+            if (isSameAnswerBody(streamed, payload.text)) return state
+            return {
+                ...state,
+                answer: state.answer.slice(0, state.answerSegmentStart) + payload.text,
+            }
+        }
 
         case "agent_completed":
             return {

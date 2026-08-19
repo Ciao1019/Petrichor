@@ -11,6 +11,7 @@ import {
     knowledgeBaseNodes,
     knowledgeBases,
     knowledgeBaseWikiPages,
+    knowledgeBaseWikiTreeNodes,
     type KnowledgeBaseArticleRecord,
     type KnowledgeBaseArticleShareRecord,
     type KnowledgeBaseNodeRecord,
@@ -408,21 +409,38 @@ async function loadReferencedS4ObjectKeys(db: Db, userId: number, candidateKeys:
         return referenced
     }
 
-    const rows = await db
-        .select({
-            contentJson: knowledgeBaseArticles.contentJson,
-            contentMd: knowledgeBaseArticles.contentMd,
-        })
-        .from(knowledgeBaseArticles)
-        .where(eq(knowledgeBaseArticles.userId, userId))
-
-    for (const row of rows) {
+    const collect = (row: { contentJson?: string | null; contentMd?: string | null }) => {
         for (const key of extractS4ObjectKeysFromArticleContent(row, userId)) {
             if (candidateSet.has(key)) {
                 referenced.add(key)
             }
         }
     }
+
+    const articleRows = await db
+        .select({
+            contentJson: knowledgeBaseArticles.contentJson,
+            contentMd: knowledgeBaseArticles.contentMd,
+        })
+        .from(knowledgeBaseArticles)
+        .where(eq(knowledgeBaseArticles.userId, userId))
+    for (const row of articleRows) collect(row)
+
+    // Wiki 页与目录树节点是文章正文的派生副本，它们各自保存了一份 contentMd。
+    // 只扫文章会把"文章里换掉、但派生副本还在引用"的对象误判成无引用直接删掉，
+    // 随后知识问答从目录树读到的就是一个已经不存在的图片地址（渲染为空）。
+    const wikiPageRows = await db
+        .select({ contentMd: knowledgeBaseWikiPages.contentMd })
+        .from(knowledgeBaseWikiPages)
+        .where(eq(knowledgeBaseWikiPages.userId, userId))
+    for (const row of wikiPageRows) collect(row)
+
+    const treeNodeRows = await db
+        .select({ contentMd: knowledgeBaseWikiTreeNodes.contentMd })
+        .from(knowledgeBaseWikiTreeNodes)
+        .where(eq(knowledgeBaseWikiTreeNodes.userId, userId))
+    for (const row of treeNodeRows) collect(row)
+
     return referenced
 }
 

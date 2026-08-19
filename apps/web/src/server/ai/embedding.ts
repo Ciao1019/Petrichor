@@ -26,6 +26,15 @@ import { ensureVectorIndexes, isValidDimensions } from "@/server/retrieval/vecto
 /** embedding 元数据版本。改动分块或归一化策略时 +1，使历史向量整体失效重算。 */
 export const EMBEDDING_VERSION = 1
 
+type QueryEmbeddingCacheEntry = {
+    expiresAt: number
+    value: Promise<number[]>
+}
+
+const QUERY_EMBEDDING_CACHE_MAX = 256
+const QUERY_EMBEDDING_CACHE_TTL_MS = 2 * 60_000
+const queryEmbeddingCache = new Map<string, QueryEmbeddingCacheEntry>()
+
 export interface EmbeddingProfile {
     /** 绑定的模型主键，参与向量新鲜度判定，换模型即失效 */
     modelRefId: number
@@ -86,9 +95,40 @@ export async function embedTexts(userId: number, texts: string[]): Promise<numbe
 
 export async function embedQuery(userId: number, query: string): Promise<number[]> {
     const { resolved, model } = await resolveEmbeddingModel(userId)
-    const { embedding } = await embed({ model, value: query })
-    await reconcileDimensions(resolved, embedding.length)
-    return embedding
+    const normalizedQuery = query.trim().replace(/\s+/g, " ")
+    const key = `${userId}:${resolved.model.id}:${resolved.model.modelId}:${normalizedQuery}`
+    const now = Date.now()
+    const cached = queryEmbeddingCache.get(key)
+    if (cached && cached.expiresAt > now) return [...await cached.value]
+    if (cached) queryEmbeddingCache.delete(key)
+
+    const value = (async () => {
+        const { embedding } = await embed({ model, value: normalizedQuery })
+        await reconcileDimensions(resolved, embedding.length)
+        return embedding
+    })()
+    trimQueryEmbeddingCache()
+    queryEmbeddingCache.set(key, { expiresAt: now + QUERY_EMBEDDING_CACHE_TTL_MS, value })
+    try {
+        return [...await value]
+    } catch (error) {
+        // 失败结果绝不缓存，否则一次临时网络错误会在 TTL 内持续污染后续请求。
+        if (queryEmbeddingCache.get(key)?.value === value) queryEmbeddingCache.delete(key)
+        throw error
+    }
+}
+
+function trimQueryEmbeddingCache(): void {
+    while (queryEmbeddingCache.size >= QUERY_EMBEDDING_CACHE_MAX) {
+        const oldest = queryEmbeddingCache.keys().next().value
+        if (typeof oldest !== "string") break
+        queryEmbeddingCache.delete(oldest)
+    }
+}
+
+/** 仅供测试隔离；生产调用依靠短 TTL 与模型主键自动失效。 */
+export function clearQueryEmbeddingCacheForTest(): void {
+    queryEmbeddingCache.clear()
 }
 
 export async function hasEmbeddingConfig(userId: number): Promise<boolean> {

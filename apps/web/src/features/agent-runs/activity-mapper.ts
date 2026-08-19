@@ -151,17 +151,26 @@ function groupDetail(
 ): string | undefined {
     switch (group.key) {
         case "knowledge": {
-            const searchCount = countTool(activities, "knowledge.search")
-            const reads = activities.filter((item) => item.metadata?.toolId === "knowledge.read")
-            const readableCount = reads.filter(hasEvidence).length
+            const searchCount = countTool(activities, "knowledge.search") + countTool(activities, "knowledge.lookup")
+            const searches = activities.filter((item) =>
+                item.metadata?.toolId === "knowledge.search" || item.metadata?.toolId === "knowledge.lookup")
+            const reads = activities.filter((item) =>
+                item.metadata?.toolId === "knowledge.lookup"
+                || item.metadata?.toolId === "knowledge.read"
+                || item.metadata?.toolId === "knowledge.read_many")
+            const readableCount = reads.reduce((count, item) =>
+                count + (hasEvidence(item) ? Number(item.metadata?.evidenceCount ?? 0) : 0), 0)
             const runningCount = reads.filter((item) => item.status === "running").length
+            const retrieval = latestRetrievalLabel(searches)
             if (readableCount > 0) {
                 const searchDetail = searchCount > 0 ? `检索 ${searchCount} 次，` : ""
                 const runningDetail = runningCount > 0 ? "，仍在继续阅读" : ""
-                return `${searchDetail}深读了 ${readableCount} 个相关章节${runningDetail}`
+                const retrievalDetail = retrieval ? ` · ${retrieval}` : ""
+                return `${searchDetail}深读了 ${readableCount} 个相关章节${runningDetail}${retrievalDetail}`
             }
             if (runningCount > 0) return `正在深读 ${runningCount} 个候选章节`
             if (reads.length > 0) return `尝试读取了 ${reads.length} 个章节，但没有可引用正文`
+            if (searchCount > 0 && retrieval) return `${searchCount > 1 ? `完成了 ${searchCount} 次检索 · ` : ""}${retrieval}`
             return searchCount > 1 ? `完成了 ${searchCount} 次检索` : undefined
         }
         case "research": {
@@ -191,6 +200,17 @@ function hasEvidence(activity: AgentActivityViewModel): boolean {
     return activity.status === "completed"
         && typeof activity.metadata?.evidenceCount === "number"
         && activity.metadata.evidenceCount > 0
+}
+
+/** 从后端安全摘要中提取用户可读的召回方式，不向普通 UI 暴露原始 Trace/分数。 */
+function latestRetrievalLabel(searches: AgentActivityViewModel[]): string | undefined {
+    for (let index = searches.length - 1; index >= 0; index -= 1) {
+        const summary = searches[index].description ?? ""
+        const start = summary.indexOf("（")
+        const end = summary.lastIndexOf("）")
+        if (start >= 0 && end > start) return summary.slice(start + 1, end)
+    }
+    return undefined
 }
 
 const STATUS_RANK: Record<AgentActivityViewModel["status"], number> = {

@@ -197,6 +197,57 @@ describe("article S4 image cleanup handlers", () => {
         expect(s3Mocks.deleteS3Objects).not.toHaveBeenCalled()
     })
 
+    it("图片仍被 Wiki 目录树节点引用时不删除", async () => {
+        // Wiki 页与目录树节点是文章正文的派生副本，各自存了一份 contentMd。
+        // 只扫文章会把它们仍在引用的对象误删，之后知识问答从目录树读到的
+        // 就是一个已经不存在的图片地址——答案里图片渲染为空。
+        const db = createDbMock({
+            selectResults: [
+                [createArticleRecord({ contentMd: "![旧图](s4key:uploads/1/old.png)" })],
+                [],  // 其它文章：无引用
+                [],  // Wiki 页：无引用
+                [{ contentMd: "![](s4key:uploads/1/old.png)" }],  // 目录树节点仍在引用
+            ],
+        })
+        dbMocks.getDb.mockReturnValue(db)
+
+        await updateArticle(createJsonRequest({
+            articleId: "9",
+            contentJson: null,
+            contentMd: "# 新正文",
+            contentMetaJson: null,
+            tags: [],
+            title: "新标题",
+        }))
+
+        await runScheduledAfterTasks(scheduledTasks)
+        expect(s3Mocks.deleteS3Objects).not.toHaveBeenCalled()
+    })
+
+    it("图片仍被 Wiki 页引用时不删除", async () => {
+        const db = createDbMock({
+            selectResults: [
+                [createArticleRecord({ contentMd: "![旧图](s4key:uploads/1/old.png)" })],
+                [],
+                [{ contentMd: "正文里嵌了 ![图](s4key:uploads/1/old.png)" }],
+                [],
+            ],
+        })
+        dbMocks.getDb.mockReturnValue(db)
+
+        await updateArticle(createJsonRequest({
+            articleId: "9",
+            contentJson: null,
+            contentMd: "# 新正文",
+            contentMetaJson: null,
+            tags: [],
+            title: "新标题",
+        }))
+
+        await runScheduledAfterTasks(scheduledTasks)
+        expect(s3Mocks.deleteS3Objects).not.toHaveBeenCalled()
+    })
+
     it("删除文章后清理文章独占的图片对象", async () => {
         const db = createDbMock({
             selectResults: [

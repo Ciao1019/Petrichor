@@ -16,6 +16,8 @@ export function toRunViewModel(response: AgentRunDetailResponse): AgentRunViewMo
         ...(response.complexity ? { complexity: response.complexity } : {}),
         goal: response.goal,
         answer: response.answer,
+        // 恢复态只有最终答案这一段
+        answerSegmentStart: 0,
         plan: response.plan,
         loadedSkills: response.loadedSkills,
         activities: response.activities.map((activity) => ({
@@ -44,6 +46,7 @@ export function toRunViewModel(response: AgentRunDetailResponse): AgentRunViewMo
         ...(response.completedAt ? { completedAt: response.completedAt } : {}),
         // 恢复态不参与事件序号比较：后续新事件序号一定大于 0
         lastSequence: 0,
+        hydrated: true,
     }
 }
 

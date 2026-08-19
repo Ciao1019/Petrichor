@@ -310,11 +310,14 @@ export class ToolExecutor {
 }
 
 /**
- * knowledge.search 的诊断只进入 Trace，不进入 Observation / 模型上下文。
+ * knowledge.search / knowledge.lookup 的诊断只进入 Trace，不进入 Observation / 模型上下文。
  * 这样能观测各路召回与 rerank 延迟，同时不把排名明细反复塞回提示词。
  */
 function readRetrievalDiagnostics(toolId: string, output: unknown): Record<string, unknown> | null {
-    if (toolId !== "knowledge.search" || output == null || typeof output !== "object" || Array.isArray(output)) {
+    if ((toolId !== "knowledge.search" && toolId !== "knowledge.lookup")
+        || output == null
+        || typeof output !== "object"
+        || Array.isArray(output)) {
         return null
     }
     const diagnostics = (output as Record<string, unknown>).diagnostics

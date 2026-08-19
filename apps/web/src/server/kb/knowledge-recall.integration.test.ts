@@ -15,9 +15,11 @@ describe.runIf(hasSqlite)("knowledge recall integration", () => {
     let schema: typeof import("@/server/db/schema")
     let recallAcross: typeof import("./knowledge-recall").recallKnowledgeCandidatesAcrossKbs
     let recallFocused: typeof import("./knowledge-recall").recallKnowledgeCandidates
+    let readTreeNode: typeof import("./wiki-tree").readTreeNodeForAgent
     let userId = 0
     let knowledgeBaseId = 0
     let targetKey = ""
+    let emptyParentKey = ""
 
     beforeAll(async () => {
         process.env.PETRICHOR_DB_DIALECT = "sqlite"
@@ -28,6 +30,7 @@ describe.runIf(hasSqlite)("knowledge recall integration", () => {
         schema = await import("@/server/db/schema")
         ;({ recallKnowledgeCandidatesAcrossKbs: recallAcross, recallKnowledgeCandidates: recallFocused }
             = await import("./knowledge-recall"))
+        ;({ readTreeNodeForAgent: readTreeNode } = await import("./wiki-tree"))
 
         const db = getDb()
         const [user] = await db.insert(schema.users).values({
@@ -49,7 +52,7 @@ describe.runIf(hasSqlite)("knowledge recall integration", () => {
             knowledgeBaseId,
             nodeId: folder.id,
             title: "历史部署记录",
-            contentMd: "Sentinel 冷门术语只存在于很早的章节。",
+            contentMd: "Sentinel 冷门术语只存在于很早的章节。整篇文章独有标记不应出现在空父章节读取结果中。",
         }).returning({ id: schema.knowledgeBaseArticles.id })
         const [page] = await db.insert(schema.knowledgeBaseWikiPages).values({
             userId,
@@ -62,6 +65,7 @@ describe.runIf(hasSqlite)("knowledge recall integration", () => {
         }).returning({ id: schema.knowledgeBaseWikiPages.id })
 
         targetKey = `article-${article.id}:target`
+        emptyParentKey = `article-${article.id}:empty-parent`
         const rows = [
             {
                 userId,
@@ -76,6 +80,46 @@ describe.runIf(hasSqlite)("knowledge recall integration", () => {
                 contentMd: "生产环境使用 Sentinel，并配置故障转移。",
                 contentHash: "target",
             },
+            {
+                userId,
+                knowledgeBaseId,
+                pageId: page.id,
+                articleId: article.id,
+                nodeKey: emptyParentKey,
+                depth: 0,
+                position: 1,
+                title: "安装指南",
+                summary: "安装相关内容的父章节",
+                contentMd: "",
+                contentHash: "empty-parent",
+            },
+            {
+                userId,
+                knowledgeBaseId,
+                pageId: page.id,
+                articleId: article.id,
+                nodeKey: `article-${article.id}:child-install`,
+                parentKey: emptyParentKey,
+                depth: 1,
+                position: 2,
+                title: "使用 Homebrew 安装",
+                summary: "通过 Homebrew 安装",
+                contentMd: "运行 brew install mole。",
+                contentHash: "child-install",
+            },
+            {
+                userId,
+                knowledgeBaseId,
+                pageId: page.id,
+                articleId: article.id,
+                nodeKey: `article-${article.id}:outside-subtree`,
+                depth: 0,
+                position: 3,
+                title: "卸载指南",
+                summary: "与安装子树无关",
+                contentMd: "这是空父章节子树以外的内容。",
+                contentHash: "outside-subtree",
+            },
             ...Array.from({ length: 520 }, (_value, index) => ({
                 userId,
                 knowledgeBaseId,
@@ -83,7 +127,7 @@ describe.runIf(hasSqlite)("knowledge recall integration", () => {
                 articleId: article.id,
                 nodeKey: `article-${article.id}:decoy-${index}`,
                 depth: 0,
-                position: index + 1,
+                position: index + 10,
                 title: `无关章节 ${index}`,
                 summary: "普通说明",
                 contentMd: "这里没有目标关键词。",
@@ -118,5 +162,16 @@ describe.runIf(hasSqlite)("knowledge recall integration", () => {
         expect(result.candidates.some((item) => item.nodeKey === targetKey)).toBe(true)
         expect(result.diagnostics.treeAttempted).toBe(false)
         expect(result.diagnostics.degraded.vector).toBeTruthy()
+    })
+
+    it("空父章节只聚合子树，不再回退整篇文章", async () => {
+        const result = await readTreeNode(userId, knowledgeBaseId, emptyParentKey)
+
+        expect(result?.contentFrom).toBe("subtree")
+        expect(result?.contentMd).toContain("使用 Homebrew 安装")
+        expect(result?.contentMd).toContain("brew install mole")
+        expect(result?.contentMd).not.toContain("整篇文章独有标记")
+        expect(result?.contentMd).not.toContain("空父章节子树以外的内容")
+        expect(result?.contextMd).toContain("直接子章节")
     })
 })

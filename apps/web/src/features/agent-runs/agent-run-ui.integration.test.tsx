@@ -190,6 +190,42 @@ describe("复杂 Agent Run 渲染", () => {
         expect(text).not.toContain("callId")
     })
 
+    it("展示用户可读的召回方式，并按证据数统计批量深读章节", async () => {
+        const run = drive([
+            event("agent_started", { goal: "Mole 是什么" }),
+            event("complexity_detected", { complexity: "simple" }),
+            event("tool_started", { callId: "s1", toolId: "knowledge.search", title: "正在搜索知识库" }),
+            event("tool_completed", {
+                callId: "s1",
+                toolId: "knowledge.search",
+                summary: "找到 8 个相关章节（语义 + 关键词；Wiki 目录导航未参与；本地重排）",
+                durationMs: 30,
+                evidenceIds: [],
+            }),
+            event("tool_started", { callId: "r1", toolId: "knowledge.read_many", title: "正在并行阅读知识章节" }),
+            event("tool_completed", {
+                callId: "r1",
+                toolId: "knowledge.read_many",
+                summary: "已并行深读 2 个相关章节",
+                durationMs: 40,
+                evidenceIds: ["e1", "e2"],
+            }),
+            event("evidence_created", {
+                evidence: [
+                    { id: "e1", source: "knowledge", title: "什么是 Mole" },
+                    { id: "e2", source: "knowledge", title: "核心功能" },
+                ],
+            }),
+        ])
+        const { container } = render(<AgentRun run={run} />)
+        ;(container.querySelector("button[aria-expanded]") as HTMLButtonElement).click()
+
+        const activities = await screen.findByRole("list", { name: "执行步骤" })
+        expect(within(activities).getByText(/深读了 2 个相关章节/)).toBeTruthy()
+        expect(within(activities).getByText(/语义 \+ 关键词/)).toBeTruthy()
+        expect(within(activities).getByText(/Wiki 目录导航未参与/)).toBeTruthy()
+    })
+
     it("状态变化经 aria-live 播报，不只依赖颜色", () => {
         const run = drive(complexRunEvents())
         const { container } = render(<AgentRun run={run} />)

@@ -4,11 +4,11 @@ import {
     recallKnowledgeCandidates,
     recallKnowledgeCandidatesAcrossKbs,
 } from "@/server/kb/knowledge-recall"
-import { listUserKnowledgeBases, readSourceArticleForAgent, searchWikiPagesAcrossKbs } from "@/server/kb/wiki-agent-logic"
+import { listUserKnowledgeBases, searchWikiPagesAcrossKbs } from "@/server/kb/wiki-agent-logic"
 import { rewriteQuery } from "@/server/retrieval/query-rewrite"
 import { readKnowledgeNode } from "../../tools/knowledge"
 import { defineTool } from "./adapter"
-import type { AgentToolDefinition, ToolNormalizerResult } from "../types"
+import type { AgentToolDefinition, ToolExecutionContext, ToolNormalizerResult } from "../types"
 
 /**
  * 知识能力工具（§24/§30/§31）。
@@ -46,6 +46,10 @@ const readSchema = z.object({
     }
 })
 
+const readManySchema = z.object({
+    nodes: z.array(readSchema).min(1).max(4),
+})
+
 function focusKnowledgeBaseId(focus: unknown): number | null {
     const raw = (focus as { knowledgeBaseId?: string | null } | null)?.knowledgeBaseId
     if (raw == null) return null
@@ -58,6 +62,222 @@ function focusArticleId(focus: unknown): number | undefined {
     if (raw == null) return undefined
     const parsed = Number(String(raw).trim())
     return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined
+}
+
+async function executeKnowledgeRead(
+    ctx: ToolExecutionContext,
+    input: z.infer<typeof readSchema>,
+): Promise<Record<string, unknown>> {
+    const legacyCtx = {
+        userId: ctx.userId,
+        threadId: ctx.threadId ?? 0,
+        runId: ctx.dbRunId ?? 0,
+        focus: (ctx.focus ?? null) as never,
+        systemRole: ctx.systemRole ?? null,
+    }
+    // readTreeNodeForAgent 已负责空父节点的子树聚合。这里不再把空章节替换成整篇文章，
+    // 避免一次深读把数千字无关正文塞进上下文并造成粗粒度引用。
+    return await readKnowledgeNode(legacyCtx, input as never) as Record<string, unknown>
+}
+
+/** 章节里的图片/视频/附件引用，来自 readTreeNodeForAgent 的 media 字段 */
+type NodeMediaReference = {
+    kind?: string
+    alt?: string
+    src?: string
+    filename?: string
+}
+
+/**
+ * 把媒体清单渲染成一段紧凑文本，放在证据正文之前。
+ *
+ * 必须放前面：mastra-bridge 只把单条证据的前 1,200 字交给模型
+ * （MODEL_EVIDENCE_ITEM_MAX_CHARS）。图片语法虽然本来就在正文里，但章节稍长
+ * 就会落在窗口外，模型只看得到图片上下的文字，答案里自然没有图。
+ */
+function renderMediaManifest(media: NodeMediaReference[]): string {
+    const usable = media.filter((item) => typeof item.src === "string" && item.src.trim())
+    if (usable.length === 0) return ""
+    const lines = usable.slice(0, 12).map((item) => {
+        const label = item.alt?.trim() || item.filename?.trim() || "未命名"
+        return `- ${item.kind ?? "image"} | ${label} | ${item.src}`
+    })
+    return `[本章节可引用的媒体]\n${lines.join("\n")}\n\n`
+}
+
+function normalizeKnowledgeRead(output: unknown, input: unknown): ToolNormalizerResult {
+    const record = output as {
+        kind?: string
+        title?: string
+        articleTitle?: string
+        nodeKey?: string
+        articleId?: string
+        knowledgeBaseId?: string
+        path?: string
+        contentMd?: string
+        content?: string
+        contextMd?: string
+        contentFrom?: "node" | "subtree" | "empty"
+        breadcrumb?: string[]
+        media?: NodeMediaReference[]
+    }
+    const title = record.title ?? record.articleTitle ?? "知识节点"
+    const content = (record.contentMd ?? record.content ?? "").trim()
+    const context = (record.contextMd ?? "").trim()
+    const media = Array.isArray(record.media) ? record.media : []
+    const path = record.breadcrumb
+        ?? (record.path ? String(record.path).split(/\s*(?:›|\/)\s*/).filter(Boolean) : undefined)
+    // Mastra 段内会截取单条证据的前 1,200 字，因此把精简的定位上下文和媒体清单
+    // 放在前面，确保模型既知道章节所处层级、有图可引，也仍有足够预算阅读正文。
+    const contextPrefix = context ? `[章节定位上下文]\n${context.slice(0, 360)}\n\n` : ""
+    const mediaPrefix = renderMediaManifest(media)
+    const evidenceContent = `${contextPrefix}${mediaPrefix}[目标章节正文]\n${content}`.slice(0, 4_000)
+    const fromSubtree = record.contentFrom === "subtree"
+
+    return {
+        summary: content
+            ? `已读取「${title}」（${content.length} 字${fromSubtree ? "，正文由该章节的子树聚合" : ""}${context ? "，已补充层级上下文" : ""}${media.length > 0 ? `，含 ${media.length} 个媒体引用` : ""}）`
+            : `「${title}」没有可引用的正文内容`,
+        data: {
+            kind: record.kind,
+            title,
+            nodeKey: record.nodeKey,
+            articleId: record.articleId,
+            contentFrom: record.contentFrom,
+            ...(media.length > 0 ? { media } : {}),
+            // 正文进证据，不重复进 observation data
+            excerpt: content.slice(0, 400),
+        },
+        evidence: content
+            ? [{
+                source: "knowledge",
+                title,
+                content: evidenceContent,
+                ...(record.nodeKey ? { sourceId: record.nodeKey } : {}),
+                relevance: 0.8,
+                confidence: 0.8,
+                metadata: {
+                    ...(record.nodeKey ? { nodeKey: record.nodeKey } : {}),
+                    ...(record.articleId ? { articleId: String(record.articleId) } : {}),
+                    ...(record.knowledgeBaseId ? { knowledgeBaseId: String(record.knowledgeBaseId) } : {}),
+                    ...(path ? { path } : {}),
+                    ...(record.contentFrom ? { contentFrom: record.contentFrom } : {}),
+                    requestedBy: input,
+                },
+            }]
+            : [],
+    }
+}
+
+function retrievalDisplaySummary(diagnostics: {
+    vectorKeys?: unknown[]
+    bm25Keys?: unknown[]
+    treeKeys?: unknown[]
+    treeAttempted?: boolean
+    rerankStrategy?: string
+    degraded?: Record<string, string>
+} | undefined): string {
+    if (!diagnostics) return "混合检索"
+    const methods: string[] = []
+    if ((diagnostics.vectorKeys?.length ?? 0) > 0) methods.push("语义")
+    if ((diagnostics.bm25Keys?.length ?? 0) > 0) methods.push("关键词")
+    if (diagnostics.treeAttempted) methods.push("Wiki 目录导航")
+    const methodLabel = methods.length > 0
+        ? `Wiki 章节索引：${methods.join(" + ")}`
+        : "兼容检索"
+
+    const rerank = diagnostics.rerankStrategy === "external"
+        ? "模型重排"
+        : diagnostics.rerankStrategy === "local_fallback"
+            ? "本地重排（外部服务已降级）"
+            : diagnostics.rerankStrategy === "local"
+                ? "本地重排"
+                : ""
+    const tree = diagnostics.treeAttempted ? "" : "Wiki 目录导航未参与"
+    const degraded = Object.keys(diagnostics.degraded ?? {}).length > 0 ? "部分召回已降级" : ""
+    return [methodLabel, tree, rerank, degraded].filter(Boolean).join("；")
+}
+
+type KnowledgeReadBatchOutput = {
+    items: Array<{ requested?: unknown; output?: unknown; error?: string }>
+    requestedCount: number
+    skippedCount: number
+}
+
+async function executeKnowledgeReadBatch(
+    ctx: ToolExecutionContext,
+    nodes: Array<z.infer<typeof readSchema>>,
+    limit: number,
+): Promise<KnowledgeReadBatchOutput> {
+    const selected = nodes.slice(0, limit)
+    const settled = await Promise.allSettled(selected.map(async (node) => ({
+        requested: node,
+        output: await executeKnowledgeRead(ctx, node),
+    })))
+    return {
+        items: settled.map((result, index) => result.status === "fulfilled"
+            ? result.value
+            : {
+                requested: selected[index],
+                error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+            }),
+        requestedCount: nodes.length,
+        skippedCount: Math.max(0, nodes.length - selected.length),
+    }
+}
+
+function normalizeKnowledgeReadBatch(output: unknown): ToolNormalizerResult {
+    const record = output as KnowledgeReadBatchOutput
+    const normalized = (record.items ?? [])
+        .filter((item) => item.output != null)
+        .map((item) => normalizeKnowledgeRead(item.output, item.requested))
+    const evidence = normalized.flatMap((item) => item.evidence ?? [])
+    const failures = (record.items ?? []).filter((item) => item.error).length
+    const notes = [
+        failures > 0 ? `${failures} 个章节读取失败` : "",
+        (record.skippedCount ?? 0) > 0 ? `按当前问题复杂度跳过 ${record.skippedCount} 个低优先级候选` : "",
+    ].filter(Boolean)
+    return {
+        progress: evidence.length > 0,
+        summary: evidence.length > 0
+            ? `已并行深读 ${evidence.length} 个相关章节${notes.length ? `（${notes.join("；")}）` : ""}`
+            : `没有读到可引用正文${notes.length ? `（${notes.join("；")}）` : ""}`,
+        data: {
+            items: normalized.map((item) => item.data),
+            requestedCount: record.requestedCount ?? record.items?.length ?? 0,
+            readCount: evidence.length,
+        },
+        evidence,
+        suggestedActions: evidence.length > 0 ? [] : ["knowledge.search"],
+    }
+}
+
+function readRequestFromSearchHit(hit: Record<string, unknown>): z.infer<typeof readSchema> | null {
+    const knowledgeBaseId = Number(hit.knowledgeBaseId)
+    const scope = Number.isInteger(knowledgeBaseId) && knowledgeBaseId > 0 ? { knowledgeBaseId } : {}
+    if (typeof hit.nodeKey === "string" && hit.nodeKey.trim()) {
+        return { ...scope, nodeKey: hit.nodeKey.trim() }
+    }
+    if (typeof hit.pageKey === "string" && hit.pageKey.trim()) {
+        return { ...scope, pageKey: hit.pageKey.trim() }
+    }
+    const articleId = Number(hit.articleId)
+    if (Number.isInteger(articleId) && articleId > 0) return { ...scope, articleId }
+    return null
+}
+
+function uniqueReadRequests(hits: Array<Record<string, unknown>>): Array<z.infer<typeof readSchema>> {
+    const seen = new Set<string>()
+    const nodes: Array<z.infer<typeof readSchema>> = []
+    for (const hit of hits) {
+        const node = readRequestFromSearchHit(hit)
+        if (!node) continue
+        const key = `${node.knowledgeBaseId ?? ""}:${node.nodeKey ?? node.pageKey ?? node.articleId ?? ""}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        nodes.push(node)
+    }
+    return nodes
 }
 
 export const knowledgeTools: AgentToolDefinition[] = [
@@ -187,7 +407,14 @@ export const knowledgeTools: AgentToolDefinition[] = [
             const record = output as {
                 mode?: string
                 hits?: Array<Record<string, unknown>>
-                diagnostics?: { degraded?: Record<string, string> }
+                diagnostics?: {
+                    vectorKeys?: unknown[]
+                    bm25Keys?: unknown[]
+                    treeKeys?: unknown[]
+                    treeAttempted?: boolean
+                    rerankStrategy?: string
+                    degraded?: Record<string, string>
+                }
             }
             const hits = record.hits ?? []
             if (hits.length === 0) {
@@ -197,12 +424,10 @@ export const knowledgeTools: AgentToolDefinition[] = [
                     suggestedActions: ["rewrite_query", "load_skill:research"],
                 }
             }
-            const degraded = Object.keys(record.diagnostics?.degraded ?? {})
             return {
                 // 找到候选就是进展：正文要靠 knowledge.read 才有证据（§31）
                 progress: true,
-                summary: `找到 ${hits.length} 个相关知识节点`
-                    + (degraded.length ? `（${degraded.join("/")} 召回暂不可用）` : ""),
+                summary: `找到 ${hits.length} 个相关章节（${retrievalDisplaySummary(record.diagnostics)}）`,
                 // 只回传定位信息，正文交给 read（§30）
                 data: {
                     mode: record.mode,
@@ -217,9 +442,121 @@ export const knowledgeTools: AgentToolDefinition[] = [
                         recallSources: hit.recallSources,
                     })),
                 },
-                suggestedActions: ["knowledge.read"],
+                suggestedActions: ["knowledge.read_many", "knowledge.read"],
             }
         },
+    }),
+
+    defineTool({
+        id: "knowledge.lookup",
+        name: "lookup_knowledge",
+        namespace: "knowledge",
+        core: true,
+        riskLevel: "low",
+        sideEffect: false,
+        description:
+            "一次完成知识库检索并深读最相关的 1~2 个章节，每个章节都会生成独立可追溯来源。"
+            + "何时用：简单的定义、功能、用途、用法等知识问答，优先用它减少等待。"
+            + "输入：query；可选 knowledgeBaseId 限定库。"
+            + "输出：候选摘要、召回诊断、章节正文与独立证据。"
+            + "何时不用：复杂比较、跨主题研究或需要自主挑选更多章节时，改用 search_knowledge + read_knowledge_nodes。",
+        inputSchema: searchSchema,
+        execute: async (ctx, raw) => {
+            const input = searchSchema.parse(raw)
+            const searchTool = knowledgeTools.find((item) => item.id === "knowledge.search")
+            if (!searchTool) throw new Error("knowledge.search 未注册")
+
+            // 快车道只需少量候选供两阶段筛选，避免把十条摘要重复塞回模型。
+            const searchOutput = await searchTool.execute(ctx, {
+                ...input,
+                limit: input.limit ?? 6,
+            })
+            const searchRecord = searchOutput as {
+                hits?: Array<Record<string, unknown>>
+            }
+            const nodes = uniqueReadRequests(searchRecord.hits ?? [])
+            const reads = await executeKnowledgeReadBatch(ctx, nodes, 2)
+            return {
+                ...(searchOutput as Record<string, unknown>),
+                reads,
+            }
+        },
+        normalize: (output): ToolNormalizerResult => {
+            const record = output as {
+                mode?: string
+                hits?: Array<Record<string, unknown>>
+                diagnostics?: {
+                    vectorKeys?: unknown[]
+                    bm25Keys?: unknown[]
+                    treeKeys?: unknown[]
+                    treeAttempted?: boolean
+                    rerankStrategy?: string
+                    degraded?: Record<string, string>
+                }
+                reads?: KnowledgeReadBatchOutput
+            }
+            const hits = record.hits ?? []
+            const readResult = normalizeKnowledgeReadBatch(record.reads ?? {
+                items: [],
+                requestedCount: 0,
+                skippedCount: 0,
+            })
+            const evidence = readResult.evidence ?? []
+            const retrieval = retrievalDisplaySummary(record.diagnostics)
+
+            if (hits.length === 0) {
+                return {
+                    summary: "知识库中未检索到相关内容",
+                    data: { hits: [], readCount: 0 },
+                    suggestedActions: ["rewrite_query", "load_skill:research"],
+                }
+            }
+
+            return {
+                progress: true,
+                summary: evidence.length > 0
+                    ? `找到 ${hits.length} 个相关章节并深读 ${evidence.length} 个（${retrieval}）`
+                    : `找到 ${hits.length} 个候选章节，但没有读到可引用正文（${retrieval}）`,
+                data: {
+                    mode: record.mode,
+                    hits: hits.map((hit) => ({
+                        nodeKey: hit.nodeKey,
+                        pageKey: hit.pageKey,
+                        articleId: hit.articleId,
+                        knowledgeBaseId: hit.knowledgeBaseId,
+                        title: hit.title,
+                        path: hit.path,
+                        summary: hit.summary,
+                        recallSources: hit.recallSources,
+                    })),
+                    reads: readResult.data,
+                },
+                evidence,
+                suggestedActions: evidence.length > 0 ? [] : ["knowledge.read_many", "knowledge.read"],
+            }
+        },
+    }),
+
+    defineTool({
+        id: "knowledge.read_many",
+        name: "read_knowledge_nodes",
+        namespace: "knowledge",
+        core: true,
+        riskLevel: "low",
+        sideEffect: false,
+        description:
+            "一次并行读取多个知识章节，是 search 后深读候选的首选工具。"
+            + "何时用：需要比较或综合 2~4 个候选章节；简单问题最多读取 2 个，复杂问题最多 4 个。"
+            + "输入：nodes 数组，每项均为 nodeKey、pageKey、articleId 三选一，并可携带 knowledgeBaseId。"
+            + "输出：每个章节的正文、层级上下文与独立可追溯证据。"
+            + "何时不用：只需读取一个明确章节时用 read_knowledge_node。",
+        inputSchema: readManySchema,
+        execute: async (ctx, raw) => {
+            const input = readManySchema.parse(raw)
+            const limit = ctx.state.complexity === "simple" ? 2 : 4
+            return await executeKnowledgeReadBatch(ctx, input.nodes, limit)
+        },
+        normalize: normalizeKnowledgeReadBatch,
     }),
 
     defineTool({
@@ -236,84 +573,8 @@ export const knowledgeTools: AgentToolDefinition[] = [
             + "输出：正文、面包屑、子节点、媒体引用。"
             + "何时不用：不要把所有候选都读一遍；只需要标题清单时用 search。",
         inputSchema: readSchema,
-        execute: async (ctx, raw) => {
-            const input = readSchema.parse(raw)
-            const legacyCtx = {
-                userId: ctx.userId,
-                threadId: ctx.threadId ?? 0,
-                runId: ctx.dbRunId ?? 0,
-                focus: (ctx.focus ?? null) as never,
-                systemRole: ctx.systemRole ?? null,
-            }
-            const node = await readKnowledgeNode(legacyCtx, input as never) as Record<string, unknown>
-
-            // 结构性节点（如首个标题之前的根节点）自身没有正文，直接返回等于白读一次。
-            // 这类节点的内容在整篇文章里，回退到文章正文，保证 read 一定能产出证据。
-            const content = typeof node.contentMd === "string" ? node.contentMd.trim() : ""
-            if (content.length > 0) return node
-
-            const knowledgeBaseId = Number(node.knowledgeBaseId ?? input.knowledgeBaseId ?? focusKnowledgeBaseId(ctx.focus))
-            const articleId = Number(node.articleId)
-            if (!Number.isInteger(knowledgeBaseId) || !Number.isInteger(articleId) || articleId <= 0) return node
-
-            const article = await readSourceArticleForAgent(ctx.userId, knowledgeBaseId, articleId)
-            return {
-                ...node,
-                contentMd: article.contentMd,
-                // 说明正文来自整篇文章，避免模型误以为这一节就这么长
-                contentFrom: "article" as const,
-                articleTitle: article.title,
-            }
-        },
-        normalize: (output, input): ToolNormalizerResult => {
-            const record = output as {
-                kind?: string
-                title?: string
-                articleTitle?: string
-                nodeKey?: string
-                articleId?: string
-                knowledgeBaseId?: string
-                path?: string
-                contentMd?: string
-                content?: string
-                breadcrumb?: string[]
-            }
-            const title = record.title ?? record.articleTitle ?? "知识节点"
-            const content = (record.contentMd ?? record.content ?? "").trim()
-            const path = record.breadcrumb ?? (record.path ? String(record.path).split(" / ").filter(Boolean) : undefined)
-
-            const fromArticle = (output as { contentFrom?: string }).contentFrom === "article"
-            return {
-                summary: content
-                    ? `已读取「${title}」（${content.length} 字${fromArticle ? "，该节点无独立正文，已取整篇文章" : ""}）`
-                    : `「${title}」没有正文内容`,
-                data: {
-                    kind: record.kind,
-                    title,
-                    nodeKey: record.nodeKey,
-                    articleId: record.articleId,
-                    // 正文进证据，不重复进 observation data
-                    excerpt: content.slice(0, 400),
-                },
-                evidence: content
-                    ? [{
-                        source: "knowledge",
-                        title,
-                        content: content.slice(0, 4_000),
-                        ...(record.nodeKey ? { sourceId: record.nodeKey } : {}),
-                        relevance: 0.8,
-                        confidence: 0.8,
-                        metadata: {
-                            ...(record.nodeKey ? { nodeKey: record.nodeKey } : {}),
-                            ...(record.articleId ? { articleId: String(record.articleId) } : {}),
-                            ...(record.knowledgeBaseId ? { knowledgeBaseId: String(record.knowledgeBaseId) } : {}),
-                            ...(path ? { path } : {}),
-                            requestedBy: input,
-                        },
-                    }]
-                    : [],
-            }
-        },
+        execute: async (ctx, raw) => await executeKnowledgeRead(ctx, readSchema.parse(raw)),
+        normalize: normalizeKnowledgeRead,
     }),
 
     defineTool({

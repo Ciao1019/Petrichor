@@ -89,14 +89,45 @@ describe("agentRunReducer", () => {
         expect(run.subagents[1].status).toBe("running")
     })
 
-    it("final_answer_started 会重置答案缓冲，避免换段残留", () => {
+    it("换段不丢弃已流出的内容，上一段作为段落保留", () => {
         const run = reduce([
             event("final_answer_started"),
-            event("final_answer_delta", { delta: "半截答案" }),
+            event("final_answer_delta", { delta: "我先查一下正文。" }),
             event("final_answer_started"),
             event("final_answer_delta", { delta: "正式答案" }),
         ])
-        expect(run.answer).toBe("正式答案")
+        expect(run.answer).toBe("我先查一下正文。\n\n正式答案")
+    })
+
+    it("整段重答（replace）才清空前文", () => {
+        const run = reduce([
+            event("final_answer_started"),
+            event("final_answer_delta", { delta: "第一版答案" }),
+            event("final_answer_started", { replace: true }),
+            event("final_answer_delta", { delta: "重写后的答案" }),
+        ])
+        expect(run.answer).toBe("重写后的答案")
+    })
+
+    it("final_answer_completed 只覆盖当前段，已归档段落保留", () => {
+        const run = reduce([
+            event("final_answer_started"),
+            event("final_answer_delta", { delta: "我先查一下正文。" }),
+            event("final_answer_started"),
+            event("final_answer_delta", { delta: "残缺的最" }),
+            event("final_answer_completed", { text: "完整的最终答案" }),
+        ])
+        expect(run.answer).toBe("我先查一下正文。\n\n完整的最终答案")
+    })
+
+    it("最终文本只是空白归一化时不替换，避免结尾整段重刷", () => {
+        const run = reduce([
+            event("final_answer_started"),
+            event("final_answer_delta", { delta: "这是完整答案。\n" }),
+            event("final_answer_completed", { text: "这是完整答案。" }),
+        ])
+        // 保留流式那份：替换成"不是旧内容前缀"的字符串会让下游跳过平滑整段同步
+        expect(run.answer).toBe("这是完整答案。\n")
     })
 
     it("停止时给出用户可读文案，不暴露内部策略名", () => {
@@ -181,6 +212,22 @@ describe("活动聚合", () => {
         ])
 
         expect(aggregateActivities(run.activities)[0].detail).toBe("检索 1 次，深读了 1 个相关章节")
+    })
+
+    it("复合检索按一次搜索和实际证据数展示深读章节", () => {
+        const run = reduce([
+            event("tool_started", { callId: "c1", toolId: "knowledge.lookup", title: "检索并阅读" }),
+            event("tool_completed", {
+                callId: "c1",
+                toolId: "knowledge.lookup",
+                summary: "找到 6 个相关章节并深读 2 个（语义 + 关键词；Wiki 目录导航未参与；本地重排）",
+                durationMs: 40,
+                evidenceIds: ["e1", "e2"],
+            }),
+        ])
+
+        expect(aggregateActivities(run.activities)[0].detail)
+            .toBe("检索 1 次，深读了 2 个相关章节 · 语义 + 关键词；Wiki 目录导航未参与；本地重排")
     })
 
     it("不同域不会被合并", () => {

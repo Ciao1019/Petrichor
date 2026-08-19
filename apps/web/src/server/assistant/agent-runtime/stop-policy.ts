@@ -32,6 +32,12 @@ export class StopPolicy {
     /** 工具执行后检查：工具预算、循环、无进展 */
     evaluateAfterToolCall(state: AgentState, now = Date.now()): StopDecision {
         if (state.toolCallCount >= this.config.maxToolCalls) {
+            if (state.evidence.length > 0) {
+                return stop(
+                    "enough_evidence",
+                    `已取得 ${state.evidence.length} 条证据，停止继续调用工具并进入最终作答`,
+                )
+            }
             return stop("max_tool_calls", `已达最大工具调用次数 ${this.config.maxToolCalls}`)
         }
         if (this.budget.timeExhausted(now)) {

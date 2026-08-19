@@ -337,6 +337,7 @@ const MAX_OUTLINE_NODES = 200
 export interface TreeRetrievalHit {
     nodeKey: string
     articleId: string
+    knowledgeBaseId: string
     title: string
     path: string
     summary: string | null
@@ -383,6 +384,7 @@ export async function retrieveTreeNodesForAgent(input: {
     return orderedNodes.slice(0, limit).map(({ node, reason }) => ({
         nodeKey: node.nodeKey,
         articleId: String(node.articleId),
+        knowledgeBaseId: String(node.knowledgeBaseId),
         title: node.title,
         path: buildNodePath(node, byKey),
         summary: node.summary,
@@ -617,8 +619,79 @@ export async function semanticSearchTreeNodes(input: {
         return [{
             nodeKey: node.nodeKey,
             articleId: String(node.articleId),
+            knowledgeBaseId: String(node.knowledgeBaseId),
             title: node.title,
             path: buildNodePath(node, byKey),
+            summary: node.summary,
+            contentMd: node.contentMd.length > maxContentChars ? `${node.contentMd.slice(0, maxContentChars)}…` : node.contentMd,
+            depth: node.depth,
+        }]
+    })
+}
+
+/**
+ * 跨库章节语义召回：只按 user_id 扫描当前用户自己的 Wiki Tree 向量，
+ * 一次 embedding + 一次向量查询覆盖所有库，避免对每个知识库串行调用。
+ */
+export async function semanticSearchTreeNodesAcrossKbs(input: {
+    userId: number
+    query: string
+    limit?: number
+    maxContentChars?: number
+}): Promise<TreeRetrievalHit[]> {
+    if (isSqliteDatabase()) {
+        throw badRequest("向量语义检索需要 PostgreSQL 数据库")
+    }
+    const keyword = input.query.trim()
+    if (!keyword) return []
+    const limit = Math.min(Math.max(input.limit ?? 12, 1), 36)
+    const maxContentChars = input.maxContentChars ?? 1600
+    const vec = await embedQuery(input.userId, keyword)
+    const profile = await getEmbeddingProfile(input.userId)
+    const literal = `[${vec.join(",")}]`
+    const dims = vec.length
+    const rows = await getDb().execute(sql`
+        select node_key, knowledge_base_id
+        from petrichor_kb_wiki_tree_node
+        where user_id = ${input.userId} and embedding is not null
+          and ${whereSameDimension("embedding", dims)}
+          and embedding_status = 'ready'
+          and embedding_model = ${profile.model}
+          and embedding_dimensions = ${dims}
+          and embedding_version = ${profile.version}
+        order by ${cosineDistance("embedding", literal, dims)}
+        limit ${limit}
+    `)
+    const ordered: Array<{ nodeKey: string; knowledgeBaseId: number }> = []
+    for (const raw of rows as Iterable<Record<string, unknown>>) {
+        const knowledgeBaseId = Number(raw.knowledge_base_id)
+        if (raw.node_key == null || !Number.isInteger(knowledgeBaseId) || knowledgeBaseId <= 0) continue
+        ordered.push({ nodeKey: String(raw.node_key), knowledgeBaseId })
+    }
+    if (ordered.length === 0) return []
+
+    const nodesByKey = new Map<string, KnowledgeBaseWikiTreeNodeRecord>()
+    const pathsByKey = new Map<string, string>()
+    await Promise.all([...new Set(ordered.map((item) => item.knowledgeBaseId))].map(async (knowledgeBaseId) => {
+        const nodes = await loadTreeNodes(input.userId, knowledgeBaseId)
+        const byKey = new Map(nodes.map((node) => [node.nodeKey, node]))
+        for (const node of nodes) {
+            const key = `${knowledgeBaseId}:${node.nodeKey}`
+            nodesByKey.set(key, node)
+            pathsByKey.set(key, buildNodePath(node, byKey))
+        }
+    }))
+
+    return ordered.flatMap((item) => {
+        const key = `${item.knowledgeBaseId}:${item.nodeKey}`
+        const node = nodesByKey.get(key)
+        if (!node) return []
+        return [{
+            nodeKey: node.nodeKey,
+            articleId: String(node.articleId),
+            knowledgeBaseId: String(node.knowledgeBaseId),
+            title: node.title,
+            path: pathsByKey.get(key) ?? node.title,
             summary: node.summary,
             contentMd: node.contentMd.length > maxContentChars ? `${node.contentMd.slice(0, maxContentChars)}…` : node.contentMd,
             depth: node.depth,
@@ -693,7 +766,13 @@ function parseSelectionJson(raw: string, validKeys: Set<string>): Array<{ nodeKe
     return result
 }
 
-/** 读取单个目录节点的完整内容（含面包屑路径与媒体引用），供 Agent 深读。 */
+const TREE_READ_SUBTREE_MAX_CHARS = 6_000
+const TREE_READ_CONTEXT_MAX_CHARS = 1_500
+
+/**
+ * 读取单个目录节点的完整内容（含层级上下文与媒体引用），供 Agent 深读。
+ * 空父节点只聚合自身子树，不再回退整篇文章；有正文的节点补充少量父级/相邻上下文。
+ */
 export async function readTreeNodeForAgent(userId: number, knowledgeBaseId: number, nodeKey: string) {
     await assertKnowledgeBaseOwner(getDb(), userId, knowledgeBaseId)
     const db = getDb()
@@ -716,9 +795,14 @@ export async function readTreeNodeForAgent(userId: number, knowledgeBaseId: numb
         .from(knowledgeBaseArticles)
         .where(eq(knowledgeBaseArticles.id, node.articleId))
         .limit(1)
-    const childTitles = siblings
+    const children = siblings
         .filter((item) => item.parentKey === node.nodeKey)
-        .map((item) => ({ nodeKey: item.nodeKey, title: item.title }))
+        .map((item) => ({ nodeKey: item.nodeKey, title: item.title, summary: item.summary }))
+    const ownContent = node.contentMd.trim()
+    const subtreeNodes = ownContent ? [] : collectDescendants(node, siblings)
+    const subtreeContent = ownContent ? "" : renderSubtreeContent(node, subtreeNodes, TREE_READ_SUBTREE_MAX_CHARS)
+    const effectiveContent = ownContent || subtreeContent
+    const contextMd = renderHierarchyContext(node, siblings, byKey).slice(0, TREE_READ_CONTEXT_MAX_CHARS)
 
     return {
         knowledgeBaseId: String(knowledgeBaseId),
@@ -729,14 +813,90 @@ export async function readTreeNodeForAgent(userId: number, knowledgeBaseId: numb
         path: buildNodePath(node, byKey),
         summary: node.summary,
         depth: node.depth,
-        contentMd: node.contentMd,
-        children: childTitles,
-        media: extractAgentImageReferences(node.contentMd, {
+        contentMd: effectiveContent,
+        primaryContentMd: ownContent,
+        contextMd,
+        contentFrom: ownContent ? "node" as const : subtreeContent ? "subtree" as const : "empty" as const,
+        children,
+        media: extractAgentImageReferences(effectiveContent, {
             sourceArticleId: String(node.articleId),
             sourceArticleTitle: article?.title ?? undefined,
         }),
         updatedAt: formatDate(node.updatedAt),
     }
+}
+
+function collectDescendants(
+    root: KnowledgeBaseWikiTreeNodeRecord,
+    nodes: KnowledgeBaseWikiTreeNodeRecord[],
+): KnowledgeBaseWikiTreeNodeRecord[] {
+    const byKey = new Map(nodes.map((node) => [node.nodeKey, node]))
+    return nodes.filter((candidate) => {
+        let parentKey = candidate.parentKey
+        const guard = new Set<string>()
+        while (parentKey && !guard.has(parentKey)) {
+            if (parentKey === root.nodeKey) return true
+            guard.add(parentKey)
+            parentKey = byKey.get(parentKey)?.parentKey ?? null
+        }
+        return false
+    })
+}
+
+function renderSubtreeContent(
+    root: KnowledgeBaseWikiTreeNodeRecord,
+    descendants: KnowledgeBaseWikiTreeNodeRecord[],
+    maxChars: number,
+): string {
+    const blocks: string[] = []
+    let length = 0
+    for (const item of descendants) {
+        const level = Math.min(6, Math.max(2, item.depth - root.depth + 1))
+        const body = item.contentMd.trim() || item.summary?.trim() || ""
+        const block = [`${"#".repeat(level)} ${item.title}`, body].filter(Boolean).join("\n\n")
+        if (!block) continue
+        const remaining = maxChars - length
+        if (remaining <= 0) break
+        blocks.push(block.length > remaining ? `${block.slice(0, remaining)}…` : block)
+        length += Math.min(block.length, remaining)
+    }
+    return blocks.join("\n\n").trim()
+}
+
+function renderHierarchyContext(
+    node: KnowledgeBaseWikiTreeNodeRecord,
+    nodes: KnowledgeBaseWikiTreeNodeRecord[],
+    byKey: Map<string, KnowledgeBaseWikiTreeNodeRecord>,
+): string {
+    const lines: string[] = []
+    const parent = node.parentKey ? byKey.get(node.parentKey) : undefined
+    if (parent) lines.push(`上级章节：${describeContextNode(parent)}`)
+
+    const peers = nodes.filter((item) => item.parentKey === node.parentKey)
+    const index = peers.findIndex((item) => item.nodeKey === node.nodeKey)
+    if (index > 0) lines.push(`上一章节：${describeContextNode(peers[index - 1])}`)
+    if (index >= 0 && index + 1 < peers.length) {
+        lines.push(`下一章节：${describeContextNode(peers[index + 1])}`)
+    }
+
+    const children = nodes.filter((item) => item.parentKey === node.nodeKey).slice(0, 8)
+    if (children.length > 0) {
+        lines.push(`直接子章节：${children.map(describeContextNode).join("；")}`)
+    }
+    return lines.join("\n")
+}
+
+function describeContextNode(node: KnowledgeBaseWikiTreeNodeRecord): string {
+    const summary = node.summary?.trim() || localSummary({
+        position: node.position,
+        depth: node.depth,
+        title: node.title,
+        parentPosition: null,
+        contentMd: node.contentMd,
+        startLine: node.startLine ?? 0,
+        endLine: node.endLine ?? 0,
+    }, 120)
+    return summary ? `${node.title} — ${summary}` : node.title
 }
 
 /** 列出某知识库（或单篇文章）的目录树轮廓，供前端/Agent 概览。 */

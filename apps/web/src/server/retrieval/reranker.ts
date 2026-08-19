@@ -1,4 +1,5 @@
 import { resolveRerankConfig, type RerankConfig } from "@/server/assistant/agent-runtime/config"
+import { buildQueryTokens } from "./tokenize"
 
 /**
  * 可插拔 Reranker（§29/§92/§141）。
@@ -38,6 +39,55 @@ export class NoopReranker implements Reranker {
 
     async rerank<T extends RerankCandidate>(_query: string, candidates: T[], options?: RerankOptions) {
         return options?.topN ? candidates.slice(0, options.topN) : candidates
+    }
+}
+
+/**
+ * 无外部 Cross Encoder 时使用的轻量本地重排。
+ *
+ * 混合召回的 RRF 主要解决「不同分数不可比」，这里再根据原问题对标题、摘要、正文
+ * 做一次字段加权，修正“多个召回源都命中，但真正回答问题的章节排在后面”的情况。
+ * 它不发网络请求，耗时通常只有毫秒级，因此可以作为默认能力和外部服务的降级路径。
+ */
+export class LocalLexicalReranker implements Reranker {
+    readonly id = "local-lexical"
+
+    async rerank<T extends RerankCandidate>(
+        query: string,
+        candidates: T[],
+        options?: RerankOptions,
+    ): Promise<Array<RerankedCandidate<T>>> {
+        const tokens = buildQueryTokens(query)
+        const normalizedQuery = normalize(query)
+        const scored = candidates.map((candidate, index) => {
+            const title = normalize(candidate.title ?? "")
+            const summary = normalize(candidate.summary ?? "")
+            const content = normalize(candidate.content ?? "")
+            let score = 1 / (index + 2)
+
+            if (normalizedQuery) {
+                if (title.includes(normalizedQuery)) score += 8
+                if (summary.includes(normalizedQuery)) score += 4
+                if (content.includes(normalizedQuery)) score += 2
+            }
+            for (const token of tokens) {
+                const normalizedToken = normalize(token)
+                if (!normalizedToken) continue
+                if (title.includes(normalizedToken)) score += 4
+                if (summary.includes(normalizedToken)) score += 2
+                if (content.includes(normalizedToken)) score += 1
+            }
+
+            return { candidate, index, score }
+        })
+
+        return scored
+            .sort((left, right) => right.score - left.score || left.index - right.index)
+            .slice(0, options?.topN ?? candidates.length)
+            .map(({ candidate, score }) => ({
+                ...candidate,
+                rerankScore: Number(score.toFixed(6)),
+            }))
     }
 }
 
@@ -141,8 +191,56 @@ export async function rerankWithFallback<T extends RerankCandidate>(
     }
 }
 
+export type AdaptiveRerankResult<T extends RerankCandidate> = {
+    items: Array<RerankedCandidate<T>>
+    applied: boolean
+    strategy: "external" | "local" | "local_fallback" | "skipped"
+    error?: string
+    durationMs: number
+}
+
+/**
+ * 自适应重排：候选过少时跳过；外部服务已配置时优先使用，失败则本地降级；
+ * 未配置外部服务时直接使用本地重排，避免默认配置下 rerank 永远不生效。
+ */
+export async function rerankAdaptively<T extends RerankCandidate>(
+    configured: Reranker,
+    query: string,
+    candidates: T[],
+    options?: RerankOptions,
+): Promise<AdaptiveRerankResult<T>> {
+    if (candidates.length <= 1) {
+        return {
+            items: options?.topN ? candidates.slice(0, options.topN) : candidates,
+            applied: false,
+            strategy: "skipped",
+            durationMs: 0,
+        }
+    }
+
+    if (configured.id === "noop") {
+        const local = await rerankWithFallback(new LocalLexicalReranker(), query, candidates, options)
+        return { ...local, strategy: local.applied ? "local" : "skipped" }
+    }
+
+    const external = await rerankWithFallback(configured, query, candidates, options)
+    if (external.applied) return { ...external, strategy: "external" }
+
+    const local = await rerankWithFallback(new LocalLexicalReranker(), query, candidates, options)
+    return {
+        ...local,
+        strategy: local.applied ? "local_fallback" : "skipped",
+        ...(external.error ? { error: external.error } : {}),
+        durationMs: external.durationMs + local.durationMs,
+    }
+}
+
 function renderDocument(candidate: RerankCandidate): string {
     return [candidate.title, candidate.summary, candidate.content?.slice(0, 1_200)]
         .filter(Boolean)
         .join("\n")
+}
+
+function normalize(value: string): string {
+    return value.toLowerCase().replace(/\s+/g, "").trim()
 }

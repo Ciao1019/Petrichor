@@ -32,7 +32,9 @@ type ToolUiSpec = {
 }
 
 const TOOL_UI: Record<string, ToolUiSpec> = {
+    "knowledge.lookup": { activityType: "knowledge_search", running: "正在检索并阅读知识库", done: "检索并阅读知识库", group: "knowledge" },
     "knowledge.search": { activityType: "knowledge_search", running: "正在搜索知识库", done: "搜索知识库", group: "knowledge" },
+    "knowledge.read_many": { activityType: "knowledge_read", running: "正在并行阅读知识章节", done: "并行阅读知识章节", group: "knowledge" },
     "knowledge.read": { activityType: "knowledge_read", running: "正在阅读知识文档", done: "阅读知识文档", group: "knowledge" },
     "knowledge.list_bases": { activityType: "knowledge_search", running: "正在查看知识库列表", done: "查看知识库列表", group: "knowledge" },
     "graph.search": { activityType: "graph_search", running: "正在查询知识图谱", done: "查询知识图谱", group: "graph" },

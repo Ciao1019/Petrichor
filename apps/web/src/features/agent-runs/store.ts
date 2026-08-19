@@ -2,6 +2,7 @@
 
 import { create } from "zustand"
 import { agentRunReducer, createEmptyRun, replayEvents } from "./reducer"
+import { traceAnswerStream } from "./stream-debug"
 import { isAgentStreamEvent, type AgentRunViewModel, type AgentStreamEvent } from "./types"
 
 /**
@@ -31,7 +32,9 @@ export const useAgentRunsStore = create<AgentRunsState>((set) => ({
     activeRunId: null,
 
     appendEvent: (event) => set((state) => {
-        const next = agentRunReducer(state.runs[event.runId] ?? null, event)
+        const prev = state.runs[event.runId] ?? null
+        const next = agentRunReducer(prev, event)
+        traceAnswerStream(prev, next, event)
         const isTerminal = TERMINAL.includes(next.status)
         return {
             runs: { ...state.runs, [event.runId]: next },

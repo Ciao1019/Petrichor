@@ -97,7 +97,14 @@ export type AgentRunViewModel = {
     subagents: SubAgentViewModel[]
     evidence: EvidenceViewModel[]
     loadedSkills: string[]
+    /** 实时答案全文：换段时旧段落保留，新内容接在其后 */
     answer: string
+    /**
+     * 当前作答段在 answer 中的起始下标。
+     * final_answer_completed 只覆盖这一段，前面已归档的段落原样保留，
+     * 否则结尾会把用户已经读到的内容整段换掉。
+     */
+    answerSegmentStart: number
     /** 面向用户的停止说明；不含内部策略名 */
     stopMessage?: string
     errorMessage?: string
@@ -106,6 +113,8 @@ export type AgentRunViewModel = {
     completedAt?: number
     /** 已处理的最大事件序号，用于幂等重放 */
     lastSequence: number
+    /** 由后端 Run API 恢复而来，而非本次会话流式产生 */
+    hydrated?: boolean
 }
 
 // ---------------------------------------------------------------------------

@@ -57,6 +57,8 @@ export function WheelSelect({
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState("")
   const [centered, setCentered] = React.useState<WheelSelectItem | null>(null)
+  const [portalContainer, setPortalContainer] = React.useState<HTMLElement | null>(null)
+  const triggerRef = React.useRef<HTMLButtonElement>(null)
   // 滚筒重挂后停在 index 0，此时的第一次 settled 是「初始态」而不是用户选择，
   // 不能拿它覆盖已有的值 —— 只有用户真的拨过（指针/键盘落在滚筒里）才允许提交。
   const touched = React.useRef(false)
@@ -83,12 +85,21 @@ export function WheelSelect({
     touched.current = false
   }, [wheelKey])
 
-  React.useEffect(() => {
-    if (open) return
-    setQuery("")
-    setCentered(null)
-    touched.current = false
-  }, [open])
+  const handleOpenChange = React.useCallback((nextOpen: boolean) => {
+    // Dialog 会锁住其 DOM 子树以外的滚动。Popover 默认挂到 body，嵌套在 Dialog
+    // 时滚筒虽能点击，却收不到鼠标滚轮；改挂到当前 DialogContent 即可留在允许区内。
+    setPortalContainer(
+      nextOpen
+        ? (triggerRef.current?.closest<HTMLElement>('[data-slot="dialog-content"]') ?? null)
+        : null,
+    )
+    if (!nextOpen) {
+      setQuery("")
+      setCentered(null)
+      touched.current = false
+    }
+    setOpen(nextOpen)
+  }, [])
 
   const commit = React.useCallback(
     (item: WheelSelectItem | undefined) => {
@@ -115,15 +126,16 @@ export function WheelSelect({
     const index = Array.prototype.indexOf.call(list.children, option)
     if (index < 0) return
     commit(filtered[index])
-    setOpen(false)
+    handleOpenChange(false)
   }
 
   const hint = (centered ?? selected)?.hint
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           data-slot="wheel-select-trigger"
           data-size={size}
@@ -156,6 +168,7 @@ export function WheelSelect({
 
       <PopoverContent
         align="start"
+        portalContainer={portalContainer ?? undefined}
         className={cn("w-(--radix-popover-trigger-width) min-w-56 space-y-2 p-2", contentClassName)}
       >
         {showSearch ? (
@@ -179,6 +192,9 @@ export function WheelSelect({
             onPointerDownCapture={() => {
               touched.current = true
             }}
+            onWheelCapture={() => {
+              touched.current = true
+            }}
             onKeyDownCapture={() => {
               touched.current = true
             }}
@@ -200,7 +216,12 @@ export function WheelSelect({
             <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
               {hint ?? `${filtered.length} 项`}
             </span>
-            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpen(false)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2"
+              onClick={() => handleOpenChange(false)}
+            >
               完成
             </Button>
           </div>

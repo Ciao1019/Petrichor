@@ -72,7 +72,13 @@ export const BUILTIN_SKILLS: AgentSkill[] = [
         name: "知识库",
         description: "检索并深读站内知识库内容",
         instructions: KNOWLEDGE_SKILL_PROMPT,
-        toolIds: ["knowledge.search", "knowledge.read", "knowledge.list_bases"],
+        toolIds: [
+            "knowledge.lookup",
+            "knowledge.search",
+            "knowledge.read_many",
+            "knowledge.read",
+            "knowledge.list_bases",
+        ],
         tags: ["retrieval"],
     },
     {

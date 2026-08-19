@@ -75,7 +75,12 @@ export type AgentStreamEventPayloadMap = {
         durationMs: number
     }
     delegation_failed: { taskId: string; message: string; durationMs: number }
-    final_answer_started: Record<string, never>
+    /**
+     * 开始新的一段作答。
+     * replace=true 表示整段重答（质量重写），前端应丢弃已流出的内容；
+     * 缺省表示只是换段（工具调用打断），前端保留前文、另起一段。
+     */
+    final_answer_started: { replace?: boolean }
     final_answer_delta: { delta: string }
     final_answer_completed: { text: string }
     agent_completed: {
