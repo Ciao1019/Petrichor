@@ -141,7 +141,7 @@ export function QaPreparing({
 
 /**
  * 问答助手回答的渲染：直接用 LobeHub Markdown。
- * animated 只跟随是否在流式中，历史消息直接静态显示。
+ * 流过的消息一直保持 animated，历史消息挂载时直接静态显示。
  */
 export function QaMarkdownText() {
   const { text, status } = useMessagePartText()
@@ -179,20 +179,34 @@ export function QaStreamingMarkdown({
  * StreamingPlayground 把 2~8 字 / 35~120ms 的原始 chunk 直接塞进去，效果很顺，
  * 我们不再在它上面叠自己的节流——那会让它的 inputActive 恒为真、进不了 flush 分支。
  *
- * useStreamPacer 做的是另一件事：只整形"到达的形状"（提交间隔和单次字数），
- * 不改变谁来控制节奏。模型很快时这一步是必要的，理由和实测数字见该文件注释。
+ * useStreamPacer 做的是另一件事：只整形"到达的形状"（提交间隔、单次可见字数、
+ * 块边界怎么切），不改变谁来控制节奏。理由和实测数字见该文件注释。
+ *
+ * 还有一处不在这里、但同属这条链的改动：patches/@lobehub__ui@*.patch 把
+ * marked 的空行 token 并进前一个块。空行块没有可见字符却会占住 useStreamQueue，
+ * 把后面的块憋住约 198ms 再整块放出，是块边界最大的一处卡顿来源。
  */
 function QaLiveMarkdown({ text, running }: { text: string; running: boolean }) {
-  // 只整形"到达形状"，不当第二个调速器：每 60ms 提交一次、每次至多 10 字、不跨行。
+  // 只整形"到达形状"，不当第二个调速器：每 60ms 提交一次、每次至多 10 个可见字。
   // 模型很快时这一步把单帧最大同时淡入字数从 60 压到 18（见 use-stream-pacer 注释）。
   const shown = useStreamPacer(text, running)
   // 整形还没放完时要继续保持动画，否则剩下的字会失去渐显直接出现。
   const animating = running || shown.length < text.length
+  // animated 只上不下：一旦流过就一直是 true。
+  //
+  // LobeHub 的 useDelayedAnimated 会在 animated 转 false 的 1 秒后把渲染器从
+  // StreamdownRender 换成 MarkdownRenderer，两者 DOM 结构不同（前者多一层
+  // div + 按块切分），整棵树会被重建——实测回答结束 1 秒后 table / p / pre
+  // 节点全部被换掉，代码块要重新高亮、图片重新请求，看得见地闪一下。
+  // 保持 true 就不会触发这次切换；已完成的历史消息挂载时 animating 本来就是
+  // false（useStreamPacer 在 running=false 时直接给全文），不受影响。
+  const everAnimatedRef = React.useRef(false)
+  if (animating) everAnimatedRef.current = true
   return (
     <Markdown
       // 预设跟官方 demo 一致；这几个 prop 与端到端测试共用同一份常量
       {...LIVE_MARKDOWN_STREAM_PROPS}
-      animated={animating}
+      animated={everAnimatedRef.current}
       remarkPlugins={QA_REMARK_PLUGINS}
       components={QA_MARKDOWN_COMPONENTS}
       reactMarkdownProps={QA_REACT_MARKDOWN_PROPS}

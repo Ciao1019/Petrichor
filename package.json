@@ -31,6 +31,9 @@
             "msgpackr-extract",
             "sharp",
             "unrs-resolver"
-        ]
+        ],
+        "patchedDependencies": {
+            "@lobehub/ui@5.15.17": "patches/@lobehub__ui@5.15.17.patch"
+        }
     }
 }

@@ -1,0 +1,36 @@
+diff --git a/es/Markdown/SyntaxMarkdown/StreamdownRender.mjs b/es/Markdown/SyntaxMarkdown/StreamdownRender.mjs
+index 711cb2feb9e490f7d9331ea17c2050468d812184..61ca3ddbba6e27163e6086bb48c79639b2b9e310 100644
+--- a/es/Markdown/SyntaxMarkdown/StreamdownRender.mjs
++++ b/es/Markdown/SyntaxMarkdown/StreamdownRender.mjs
+@@ -136,14 +136,26 @@ const StreamdownBlocks = memo(({ content: smoothedContent, markdownOptions: rest
+ 		const start = profiler ? getNow() : 0;
+ 		const tokens = marked.lexer(processedContent);
+ 		let offset = 0;
+-		const value = tokens.map((token) => {
+-			const block = {
++		// PATCH(petrichor): 空行（marked 的 space token）不再单独成块，并入前一个块。
++		// 原因：空行块没有任何可见字符，却会被 useStreamQueue 当成"正在动画的块"，
++		// 把它后面那个块判成 queued 直接 return null，要等 (n-1)*charDelay+180 ≈ 198ms
++		// 的定时器才放行，然后整块一次性冒出来。流式时平滑器常在同一帧里同时吐出
++		// 空行和下一块的首字，marked 一次切出两个块，上游无论怎么整形都绕不开。
++		// 并入后块数每次只 +1，minRevealedRef 跟得上，不会再有块被 queued。
++		// 见 apps/web/src/features/pages/knowledge/streaming.e2e.test.tsx。
++		const value = [];
++		for (const token of tokens) {
++			if (token.raw.trim() === "" && value.length > 0) {
++				value[value.length - 1].content += token.raw;
++				offset += token.raw.length;
++				continue;
++			}
++			value.push({
+ 				content: token.raw,
+ 				startOffset: offset
+-			};
++			});
+ 			offset += token.raw.length;
+-			return block;
+-		});
++		}
+ 		return {
+ 			durationMs: profiler ? getNow() - start : 0,
+ 			value

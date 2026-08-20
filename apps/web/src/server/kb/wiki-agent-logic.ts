@@ -23,7 +23,6 @@ import {
     type KnowledgeBaseAgentArtifactRecord,
     type KnowledgeBaseAgentThreadRecord,
     type KnowledgeBaseArticleRecord,
-    type KnowledgeBaseRecord,
     type KnowledgeBaseWikiPageRecord,
     type KnowledgeBaseWikiPatchRecord,
 } from "@/server/db/schema"
@@ -262,13 +261,17 @@ export async function assertKnowledgeBaseOwner(db: Db, userId: number, knowledge
 export async function listWikiPages(userId: number, knowledgeBaseId: number) {
     const db = getDb()
     await assertKnowledgeBaseOwner(db, userId, knowledgeBaseId)
-    const pages = await db
+    const pages = await loadWikiPageRows(db, userId, knowledgeBaseId)
+
+    return pages.map(toWikiPageResponse)
+}
+
+async function loadWikiPageRows(db: DbExecutor, userId: number, knowledgeBaseId: number) {
+    return await db
         .select()
         .from(knowledgeBaseWikiPages)
         .where(and(eq(knowledgeBaseWikiPages.userId, userId), eq(knowledgeBaseWikiPages.knowledgeBaseId, knowledgeBaseId)))
         .orderBy(asc(knowledgeBaseWikiPages.kind), asc(knowledgeBaseWikiPages.title))
-
-    return pages.map(toWikiPageResponse)
 }
 
 export async function loadWikiPageDetail(userId: number, knowledgeBaseId: number, pageKey: string) {
@@ -317,34 +320,23 @@ export async function loadWikiPageDetail(userId: number, knowledgeBaseId: number
 export async function loadWikiDashboard(userId: number, knowledgeBaseId: number) {
     const db = getDb()
     await assertKnowledgeBaseOwner(db, userId, knowledgeBaseId)
-    const [kb] = await db
-        .select()
-        .from(knowledgeBases)
-        .where(and(eq(knowledgeBases.id, knowledgeBaseId), eq(knowledgeBases.userId, userId)))
-        .limit(1)
-    const pages = await listWikiPages(userId, knowledgeBaseId)
-    const threads = await listAgentThreads(userId, knowledgeBaseId)
-    const patches = await listWikiPatches(userId, knowledgeBaseId, "PENDING")
-    const lint = await runWikiLint(userId, knowledgeBaseId)
-    const artifacts = await listAgentArtifacts(userId, knowledgeBaseId)
-    const [treeNodeRow] = await db
-        .select({ value: count() })
-        .from(knowledgeBaseWikiTreeNodes)
-        .where(and(
-            eq(knowledgeBaseWikiTreeNodes.userId, userId),
-            eq(knowledgeBaseWikiTreeNodes.knowledgeBaseId, knowledgeBaseId),
-        ))
-
-    const embedding = await getKbWikiEmbeddingStatus(userId, knowledgeBaseId)
+    const pageRows = await loadWikiPageRows(db, userId, knowledgeBaseId)
+    const [lint, treeNodeRows, embedding] = await Promise.all([
+        buildWikiLint(db, userId, knowledgeBaseId, pageRows),
+        db
+            .select({ value: count() })
+            .from(knowledgeBaseWikiTreeNodes)
+            .where(and(
+                eq(knowledgeBaseWikiTreeNodes.userId, userId),
+                eq(knowledgeBaseWikiTreeNodes.knowledgeBaseId, knowledgeBaseId),
+            )),
+        getKbWikiEmbeddingStatus(userId, knowledgeBaseId),
+    ])
 
     return {
-        knowledgeBase: kb ? toKnowledgeBaseLite(kb) : null,
-        pages,
-        threads,
-        pendingPatches: patches,
+        pages: pageRows.map(toWikiPageResponse),
         lint,
-        artifacts,
-        treeNodeCount: treeNodeRow?.value ?? 0,
+        treeNodeCount: treeNodeRows[0]?.value ?? 0,
         embedding,
     }
 }
@@ -1184,7 +1176,12 @@ export async function searchWikiPagesAcrossKbs(input: {
     return Array.from(byKey.values())
         .sort((left, right) => right.score - left.score || right.sortTime - left.sortTime)
         .slice(0, limit)
-        .map(({ score: _score, sortTime: _sortTime, ...hit }) => hit)
+        .map((item) => {
+            const { score, sortTime, ...hit } = item
+            void score
+            void sortTime
+            return hit
+        })
 }
 
 function extractArticleIdFromPageKey(pageKey: string): string | null {
@@ -1347,23 +1344,28 @@ export async function createAgentArtifact(input: {
 export async function runWikiLint(userId: number, knowledgeBaseId: number) {
     const db = getDb()
     await assertKnowledgeBaseOwner(db, userId, knowledgeBaseId)
-    const pages = await db
-        .select()
-        .from(knowledgeBaseWikiPages)
-        .where(and(eq(knowledgeBaseWikiPages.userId, userId), eq(knowledgeBaseWikiPages.knowledgeBaseId, knowledgeBaseId)))
-        .orderBy(asc(knowledgeBaseWikiPages.kind), asc(knowledgeBaseWikiPages.title))
-    const links = pages.length > 0
-        ? await db
-            .select()
-            .from(knowledgeBaseWikiLinks)
-            .where(and(eq(knowledgeBaseWikiLinks.userId, userId), eq(knowledgeBaseWikiLinks.knowledgeBaseId, knowledgeBaseId)))
-        : []
-    const refs = pages.length > 0
-        ? await db
-            .select()
-            .from(knowledgeBaseWikiSourceRefs)
-            .where(inArray(knowledgeBaseWikiSourceRefs.pageId, pages.map((page) => page.id)))
-        : []
+    const pages = await loadWikiPageRows(db, userId, knowledgeBaseId)
+    return await buildWikiLint(db, userId, knowledgeBaseId, pages)
+}
+
+async function buildWikiLint(
+    db: DbExecutor,
+    userId: number,
+    knowledgeBaseId: number,
+    pages: KnowledgeBaseWikiPageRecord[],
+) {
+    const [links, refs] = pages.length > 0
+        ? await Promise.all([
+            db
+                .select()
+                .from(knowledgeBaseWikiLinks)
+                .where(and(eq(knowledgeBaseWikiLinks.userId, userId), eq(knowledgeBaseWikiLinks.knowledgeBaseId, knowledgeBaseId))),
+            db
+                .select()
+                .from(knowledgeBaseWikiSourceRefs)
+                .where(inArray(knowledgeBaseWikiSourceRefs.pageId, pages.map((page) => page.id))),
+        ])
+        : [[], []]
     const pageKeys = new Set(pages.map((page) => page.pageKey))
     const linkedFrom = new Map<string, number>()
     for (const link of links) {
@@ -1986,16 +1988,6 @@ async function logWikiEvent(db: Db, userId: number, knowledgeBaseId: number, eve
 
 function buildArticleSourcePageKey(articleId: number) {
     return `source-${articleId}`
-}
-
-function toKnowledgeBaseLite(kb: KnowledgeBaseRecord) {
-    return {
-        id: String(kb.id),
-        name: kb.name,
-        description: kb.description,
-        createdAt: formatDate(kb.createdAt),
-        updatedAt: formatDate(kb.updatedAt),
-    }
 }
 
 function parseJsonObject(raw: string | null | undefined) {

@@ -1178,12 +1178,8 @@ export interface KnowledgeBaseQaSummary {
 }
 
 export interface KnowledgeBaseWikiDashboardResponse {
-  knowledgeBase: KnowledgeBaseResponse | null
   pages: KnowledgeBaseWikiPageResponse[]
-  threads: KnowledgeBaseAgentThreadResponse[]
-  pendingPatches: KnowledgeBaseWikiPatchResponse[]
   lint: KnowledgeBaseWikiLintResponse
-  artifacts: KnowledgeBaseAgentArtifactResponse[]
   treeNodeCount: number
   embedding: KbWikiEmbeddingStatus
 }

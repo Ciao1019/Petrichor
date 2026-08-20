@@ -1,12 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { CheckCircle2, Eye, FileStack, GitPullRequestArrow, ListTree, Loader2, RefreshCw, RotateCcw, Sparkles, Wand2, X } from "@/components/iconimate"
+import { BookOpen, CheckCircle2, Eye, FileStack, Link2, ListTree, Loader2, RefreshCw, RotateCcw, Sparkles, Wand2 } from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { MarkdownPreview } from "@/components/markdown/MarkdownPreview"
 import {
   Select,
   SelectContent,
@@ -25,7 +26,6 @@ import {
   type KnowledgeBaseWikiPageDetailResponse,
   type KnowledgeBaseWikiPageKind,
   type KnowledgeBaseWikiPageResponse,
-  type KnowledgeBaseWikiPatchResponse,
   type KnowledgeBaseWikiTreeNode,
 } from "@/lib/api"
 
@@ -45,6 +45,8 @@ const SEVERITY_META: Record<string, { label: string; className: string }> = {
   info: { label: "提示", className: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
 }
 
+const EMPTY_WIKI_PAGES: KnowledgeBaseWikiPageResponse[] = []
+
 function resolveApiErrorMessage(error: unknown, fallback: string): string {
   if (typeof error === "object" && error && "response" in error) {
     const response = (error as { response?: { data?: { msg?: unknown } } }).response
@@ -63,30 +65,6 @@ function formatDateTime(value?: string | null) {
 
 function kindLabel(kind: KnowledgeBaseWikiPageKind) {
   return KIND_LABEL[kind] ?? kind
-}
-
-/** 把简化版 unified diff 字符串按行着色渲染 */
-function DiffView({ diff }: { diff: string }) {
-  const lines = diff.split("\n")
-  return (
-    <pre className="app-scrollbar max-h-72 overflow-auto rounded-md border bg-muted/30 p-3 text-xs leading-relaxed">
-      {lines.map((line, index) => {
-        const cls =
-          line.startsWith("+") && !line.startsWith("+++")
-            ? "text-emerald-600 dark:text-emerald-400"
-            : line.startsWith("-") && !line.startsWith("---")
-              ? "text-destructive"
-              : line.startsWith("@@")
-                ? "text-sky-600 dark:text-sky-400"
-                : "text-muted-foreground"
-        return (
-          <div key={index} className={cls}>
-            {line || " "}
-          </div>
-        )
-      })}
-    </pre>
-  )
 }
 
 /** 从 `source-<id>` 形式的 pageKey 解析出文章 ID；非源文档页返回 null。 */
@@ -125,11 +103,27 @@ function WikiTreeOutline({ nodes }: { nodes: KnowledgeBaseWikiTreeNode[] }) {
   )
 }
 
-function StatCard({ label, value, accent }: { label: string; value: React.ReactNode; accent?: boolean }) {
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  detail,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  value: React.ReactNode
+  detail: React.ReactNode
+}) {
   return (
-    <div className="rounded-lg border px-4 py-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className={cn("mt-1 text-2xl font-semibold tabular-nums", accent && "text-primary")}>{value}</div>
+    <div className="rounded-xl border border-border/70 bg-card/60 p-4 shadow-sm shadow-black/[0.02]">
+      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+        <span className="flex size-7 items-center justify-center rounded-lg bg-muted">
+          <Icon className="size-3.5" />
+        </span>
+        {label}
+      </div>
+      <div className="mt-3 text-2xl font-semibold tracking-tight tabular-nums">{value}</div>
+      <div className="mt-1 text-xs text-muted-foreground">{detail}</div>
     </div>
   )
 }
@@ -141,18 +135,19 @@ export function KnowledgeWikiPage() {
 
   const [dashboard, setDashboard] = React.useState<KnowledgeBaseWikiDashboardResponse | null>(null)
   const [loading, setLoading] = React.useState(false)
+  const [dashboardError, setDashboardError] = React.useState<string | null>(null)
   const [ingesting, setIngesting] = React.useState(false)
   const [fullRebuilding, setFullRebuilding] = React.useState(false)
   const [fullRebuildOpen, setFullRebuildOpen] = React.useState(false)
   const [linting, setLinting] = React.useState(false)
   const [embedding, setEmbedding] = React.useState(false)
-  const [patchBusyId, setPatchBusyId] = React.useState<string | null>(null)
 
-  const [activePatch, setActivePatch] = React.useState<KnowledgeBaseWikiPatchResponse | null>(null)
   const [pageDetail, setPageDetail] = React.useState<KnowledgeBaseWikiPageDetailResponse | null>(null)
   const [pageDetailLoading, setPageDetailLoading] = React.useState(false)
   const [treeNodes, setTreeNodes] = React.useState<KnowledgeBaseWikiTreeNode[]>([])
   const [treeLoading, setTreeLoading] = React.useState(false)
+  const dashboardRequestRef = React.useRef(0)
+  const pageDetailRequestRef = React.useRef(0)
 
   React.useEffect(() => {
     let cancelled = false
@@ -163,7 +158,7 @@ export function KnowledgeWikiPage() {
         if (cancelled) return
         const rows = res.data.knowledgeBases || []
         setKnowledgeBases(rows)
-        setSelectedKbId((prev) => prev ?? (rows[0]?.id ?? null))
+        setSelectedKbId((prev) => rows.some((kb) => kb.id === prev) ? prev : (rows[0]?.id ?? null))
       } catch (error) {
         if (!cancelled) toast.error(resolveApiErrorMessage(error, "加载知识库列表失败"))
       } finally {
@@ -175,35 +170,36 @@ export function KnowledgeWikiPage() {
     }
   }, [])
 
-  const loadDashboard = React.useCallback(async (knowledgeBaseId: string) => {
+  const loadDashboard = React.useCallback(async (knowledgeBaseId: string, options: { reset?: boolean } = {}) => {
+    const requestId = ++dashboardRequestRef.current
+    if (options.reset) setDashboard(null)
     setLoading(true)
+    setDashboardError(null)
     try {
       const res = await knowledgeBaseWikiAgentApi.dashboard(knowledgeBaseId)
+      if (requestId !== dashboardRequestRef.current) return
       setDashboard(res.data)
     } catch (error) {
-      toast.error(resolveApiErrorMessage(error, "加载 Wiki 仪表盘失败"))
+      if (requestId !== dashboardRequestRef.current) return
+      const message = resolveApiErrorMessage(error, "加载 Wiki 概览失败")
+      toast.error(message)
+      setDashboardError(message)
       setDashboard(null)
     } finally {
-      setLoading(false)
+      if (requestId === dashboardRequestRef.current) setLoading(false)
     }
   }, [])
 
   React.useEffect(() => {
-    if (selectedKbId) void loadDashboard(selectedKbId)
-  }, [selectedKbId, loadDashboard])
-
-  // 页面重新可见 / 窗口重新获得焦点时刷新仪表盘，
-  // 确保在问答页或其它标签页提交的补丁无需手动重载就能出现。
-  React.useEffect(() => {
     if (!selectedKbId) return
-    const refresh = () => {
-      if (document.visibilityState === "visible") void loadDashboard(selectedKbId)
-    }
-    document.addEventListener("visibilitychange", refresh)
-    window.addEventListener("focus", refresh)
+    let cancelled = false
+    void (async () => {
+      await Promise.resolve()
+      if (!cancelled) await loadDashboard(selectedKbId, { reset: true })
+    })()
     return () => {
-      document.removeEventListener("visibilitychange", refresh)
-      window.removeEventListener("focus", refresh)
+      cancelled = true
+      dashboardRequestRef.current += 1
     }
   }, [selectedKbId, loadDashboard])
 
@@ -262,103 +258,107 @@ export function KnowledgeWikiPage() {
     setLinting(true)
     try {
       const res = await knowledgeBaseWikiAgentApi.lint(selectedKbId)
-      toast.success(`Lint 完成，得分 ${res.data.score}，发现 ${res.data.issueCount} 个问题`)
-      await loadDashboard(selectedKbId)
+      toast.success(`结构检查完成，得分 ${res.data.score}，发现 ${res.data.issueCount} 个问题`)
+      setDashboard((current) => current ? { ...current, lint: res.data } : current)
     } catch (error) {
-      toast.error(resolveApiErrorMessage(error, "Lint 检查失败"))
+      toast.error(resolveApiErrorMessage(error, "结构检查失败"))
     } finally {
       setLinting(false)
     }
-  }, [selectedKbId, loadDashboard])
-
-  const applyPatch = React.useCallback(async (patchId: string) => {
-    if (!selectedKbId) return
-    setPatchBusyId(patchId)
-    try {
-      await knowledgeBaseWikiAgentApi.applyPatch(selectedKbId, patchId)
-      toast.success("补丁已合并到 Wiki 页面")
-      setActivePatch(null)
-      await loadDashboard(selectedKbId)
-    } catch (error) {
-      toast.error(resolveApiErrorMessage(error, "合并补丁失败"))
-    } finally {
-      setPatchBusyId(null)
-    }
-  }, [selectedKbId, loadDashboard])
-
-  const rejectPatch = React.useCallback(async (patchId: string) => {
-    if (!selectedKbId) return
-    setPatchBusyId(patchId)
-    try {
-      await knowledgeBaseWikiAgentApi.rejectPatch(selectedKbId, patchId)
-      toast.success("补丁已驳回")
-      setActivePatch(null)
-      await loadDashboard(selectedKbId)
-    } catch (error) {
-      toast.error(resolveApiErrorMessage(error, "驳回补丁失败"))
-    } finally {
-      setPatchBusyId(null)
-    }
-  }, [selectedKbId, loadDashboard])
+  }, [selectedKbId])
 
   const openPageDetail = React.useCallback(async (page: KnowledgeBaseWikiPageResponse) => {
     if (!selectedKbId) return
+    const requestId = ++pageDetailRequestRef.current
     setPageDetailLoading(true)
     setPageDetail({ ...page, sourceRefs: [], links: [] })
     const articleId = articleIdFromPageKey(page.pageKey)
     setTreeNodes([])
     setTreeLoading(articleId != null)
+    const detailRequest = knowledgeBaseWikiAgentApi.pageDetail(selectedKbId, page.pageKey)
+    const treeRequest = articleId != null
+      ? knowledgeBaseWikiAgentApi.tree(selectedKbId, articleId)
+      : null
     try {
-      const res = await knowledgeBaseWikiAgentApi.pageDetail(selectedKbId, page.pageKey)
-      setPageDetail(res.data)
+      const res = await detailRequest
+      if (requestId === pageDetailRequestRef.current) setPageDetail(res.data)
     } catch (error) {
-      toast.error(resolveApiErrorMessage(error, "加载页面详情失败"))
+      if (requestId === pageDetailRequestRef.current) {
+        toast.error(resolveApiErrorMessage(error, "加载页面详情失败"))
+      }
     } finally {
-      setPageDetailLoading(false)
+      if (requestId === pageDetailRequestRef.current) setPageDetailLoading(false)
     }
     // 源文档页才有对应的目录树，按 articleId 拉取层级大纲。
-    if (articleId != null) {
+    if (treeRequest) {
       try {
-        const treeRes = await knowledgeBaseWikiAgentApi.tree(selectedKbId, articleId)
-        setTreeNodes(treeRes.data.nodes)
+        const treeRes = await treeRequest
+        if (requestId === pageDetailRequestRef.current) setTreeNodes(treeRes.data.nodes)
       } catch {
-        setTreeNodes([])
+        if (requestId === pageDetailRequestRef.current) setTreeNodes([])
       } finally {
-        setTreeLoading(false)
+        if (requestId === pageDetailRequestRef.current) setTreeLoading(false)
       }
     }
   }, [selectedKbId])
 
+  const closePageDetail = React.useCallback(() => {
+    pageDetailRequestRef.current += 1
+    setPageDetail(null)
+    setPageDetailLoading(false)
+    setTreeLoading(false)
+  }, [])
+
   const lint = dashboard?.lint
-  const pendingPatches = dashboard?.pendingPatches ?? []
-  const pages = dashboard?.pages ?? []
+  const pages = dashboard?.pages ?? EMPTY_WIKI_PAGES
   const busy = ingesting || linting || embedding || fullRebuilding
   const embeddingStatus = dashboard?.embedding
 
   const PAGE_SIZE = 10
   const [pageIndex, setPageIndex] = React.useState(0)
   const pageCount = Math.max(1, Math.ceil(pages.length / PAGE_SIZE))
-  // 切换知识库 / 刷新后把越界页码夹回有效范围
-  React.useEffect(() => {
-    setPageIndex((current) => Math.min(current, pageCount - 1))
-  }, [pageCount])
+  const safePageIndex = Math.min(pageIndex, pageCount - 1)
   const visiblePages = React.useMemo(
-    () => pages.slice(pageIndex * PAGE_SIZE, pageIndex * PAGE_SIZE + PAGE_SIZE),
-    [pages, pageIndex],
+    () => pages.slice(safePageIndex * PAGE_SIZE, safePageIndex * PAGE_SIZE + PAGE_SIZE),
+    [pages, safePageIndex],
   )
 
   return (
-    <div className="flex w-full flex-col gap-6 px-4 py-6 sm:px-6 lg:px-10">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold">知识 Wiki</h1>
-          <p className="text-sm text-muted-foreground">
-            Agent 在问答中沉淀的结论以补丁形式提交，确认后写入 Wiki，越用越聪明。
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Select value={selectedKbId ?? ""} onValueChange={(v) => setSelectedKbId(v)} disabled={kbLoading}>
-            <SelectTrigger className="w-52">
+    <div className="flex w-full flex-col gap-5 px-4 py-6 sm:px-6 lg:px-10">
+      <header className="relative overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-primary/[0.08] via-card to-card p-5 sm:p-6">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 opacity-30 [mask-image:radial-gradient(ellipse_at_top_right,black,transparent_65%)]"
+          style={{
+            backgroundImage: "linear-gradient(to right, var(--border) 1px, transparent 1px), linear-gradient(to bottom, var(--border) 1px, transparent 1px)",
+            backgroundSize: "32px 32px",
+          }}
+        />
+        <div className="relative flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <BookOpen className="size-5" />
+              </span>
+              <div>
+                <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">知识 Wiki</h1>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  将知识库编译为适合检索的结构化知识层，统一管理目录、引用与质量。
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Select
+            value={selectedKbId ?? ""}
+            onValueChange={(value) => {
+              setPageIndex(0)
+              closePageDetail()
+              setSelectedKbId(value)
+            }}
+            disabled={kbLoading}
+          >
+            <SelectTrigger className="w-full bg-background/80 sm:w-56">
               <SelectValue placeholder={kbLoading ? "加载中…" : "选择知识库"} />
             </SelectTrigger>
             <SelectContent>
@@ -369,42 +369,42 @@ export function KnowledgeWikiPage() {
               ))}
             </SelectContent>
           </Select>
-          <Button variant="outline" onClick={() => selectedKbId && loadDashboard(selectedKbId)} disabled={!selectedKbId || loading}>
-            <RefreshCw className={cn("mr-2 size-4", loading && "animate-spin")} />
+          <Button className="sm:min-w-28" onClick={() => runIngest()} disabled={!selectedKbId || busy}>
+            <Sparkles className={cn("mr-2 size-4", ingesting && "animate-spin")} />
+            {ingesting ? "更新中…" : "更新 Wiki"}
+          </Button>
+          </div>
+        </div>
+
+        <div className="relative mt-5 flex flex-col gap-3 border-t border-border/60 pt-4 lg:flex-row lg:items-center lg:justify-between">
+          <p className="text-xs text-muted-foreground">
+            默认仅更新有变化的文章；完全重建会清空现有 Wiki 后重新调用模型。
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" className="bg-background/70" onClick={() => selectedKbId && loadDashboard(selectedKbId)} disabled={!selectedKbId || loading}>
+            <RefreshCw className={cn("mr-1.5 size-3.5", loading && "animate-spin")} />
             刷新
           </Button>
-          <Button variant="outline" onClick={() => runLint()} disabled={!selectedKbId || busy}>
-            <CheckCircle2 className={cn("mr-2 size-4", linting && "animate-spin")} />
-            Lint 检查
-          </Button>
-          <Button onClick={() => runIngest()} disabled={!selectedKbId || busy}>
-            <Sparkles className={cn("mr-2 size-4", ingesting && "animate-spin")} />
-            重新生成 Wiki
-          </Button>
-          <Button
-            variant="outline"
-            className="text-destructive hover:text-destructive"
-            onClick={() => setFullRebuildOpen(true)}
-            disabled={!selectedKbId || busy}
-            title="清空当前知识库的全部 Wiki 页面与目录树，再从源文章从零编译"
-          >
-            <RotateCcw className={cn("mr-2 size-4", fullRebuilding && "animate-spin")} />
-            {fullRebuilding ? "重建中…" : "完全重建"}
+          <Button size="sm" variant="outline" className="bg-background/70" onClick={() => runLint()} disabled={!selectedKbId || busy}>
+            <CheckCircle2 className={cn("mr-1.5 size-3.5", linting && "animate-spin")} />
+            结构检查
           </Button>
           {embeddingStatus?.supported ? (
             <Button
+              size="sm"
               variant="outline"
+              className="bg-background/70"
               onClick={() => runEmbed()}
               disabled={!selectedKbId || busy || embeddingStatus.total === 0 || embeddingStatus.pending === 0}
               title={
                 embeddingStatus.total === 0
-                  ? "请先编译 Wiki 生成目录树节点，再生成向量"
+                  ? "请先更新 Wiki 生成目录树节点，再生成向量"
                   : embeddingStatus.pending === 0
                     ? "所有章节均已向量化，可用于语义检索"
                     : `为 ${embeddingStatus.pending} 个未向量化的章节节点生成向量`
               }
             >
-              <Wand2 className={cn("mr-2 size-4", embedding && "animate-spin")} />
+              <Wand2 className={cn("mr-1.5 size-3.5", embedding && "animate-spin")} />
               {embeddingStatus.pending === 0 && embeddingStatus.total > 0
                 ? "向量已就绪"
                 : embedding
@@ -412,8 +412,20 @@ export function KnowledgeWikiPage() {
                   : `生成向量${embeddingStatus.pending > 0 ? ` (${embeddingStatus.pending})` : ""}`}
             </Button>
           ) : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-muted-foreground hover:text-destructive"
+            onClick={() => setFullRebuildOpen(true)}
+            disabled={!selectedKbId || busy}
+            title="清空当前知识库的全部 Wiki 页面与目录树，再从源文章从零编译"
+          >
+            <RotateCcw className={cn("mr-2 size-4", fullRebuilding && "animate-spin")} />
+            {fullRebuilding ? "重建中…" : "完全重建"}
+          </Button>
+          </div>
         </div>
-      </div>
+      </header>
 
       {!selectedKbId && !kbLoading ? (
         <div className="rounded-lg border py-16 text-center text-sm text-muted-foreground">
@@ -424,104 +436,87 @@ export function KnowledgeWikiPage() {
           <Loader2 className="mr-2 size-4 animate-spin" />
           加载中…
         </div>
+      ) : dashboardError && !dashboard ? (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-6 py-10 text-center">
+          <p className="text-sm font-medium">Wiki 概览加载失败</p>
+          <p className="mt-1 text-sm text-muted-foreground">{dashboardError}</p>
+          <Button className="mt-4" size="sm" variant="outline" onClick={() => selectedKbId && loadDashboard(selectedKbId)}>
+            <RefreshCw className="mr-1.5 size-3.5" />
+            重新加载
+          </Button>
+        </div>
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
-            <StatCard label="Wiki 页面" value={lint?.pageCount ?? pages.length} />
-            <StatCard label="目录树节点" value={dashboard?.treeNodeCount ?? 0} />
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
-              label="已向量化章节"
-              value={embeddingStatus?.supported ? `${embeddingStatus.embedded}/${embeddingStatus.total}` : "-"}
-              accent={Boolean(embeddingStatus?.supported && embeddingStatus.pending > 0)}
+              icon={FileStack}
+              label="Wiki 页面"
+              value={lint?.pageCount ?? pages.length}
+              detail="已编译的知识页面"
             />
-            <StatCard label="页面链接" value={lint?.linkCount ?? 0} />
-            <StatCard label="来源引用" value={lint?.sourceRefCount ?? 0} />
-            <StatCard label="Lint 得分" value={lint ? lint.score : "-"} />
-            <StatCard label="待审批补丁" value={pendingPatches.length} accent={pendingPatches.length > 0} />
+            <StatCard
+              icon={ListTree}
+              label="目录树节点"
+              value={dashboard?.treeNodeCount ?? 0}
+              detail={embeddingStatus?.supported
+                ? `${embeddingStatus.embedded}/${embeddingStatus.total} 个节点已向量化`
+                : "按源文章组织的层级结构"}
+            />
+            <StatCard
+              icon={Link2}
+              label="知识关联"
+              value={(lint?.linkCount ?? 0) + (lint?.sourceRefCount ?? 0)}
+              detail={`${lint?.linkCount ?? 0} 条链接 · ${lint?.sourceRefCount ?? 0} 个来源`}
+            />
+            <StatCard
+              icon={CheckCircle2}
+              label="结构质量"
+              value={lint ? lint.score : "-"}
+              detail={lint ? `${lint.issueCount} 个待处理问题` : "尚未完成检查"}
+            />
           </div>
 
-          {/* 待审批补丁 —— 沉淀回路的核心 */}
-          <section className="rounded-lg border">
-            <div className="flex items-center gap-2 border-b px-4 py-3">
-              <GitPullRequestArrow className="size-4 text-primary" />
-              <span className="text-sm font-medium">待审批补丁</span>
-              {pendingPatches.length > 0 ? (
-                <Badge variant="secondary" className="ml-1">{pendingPatches.length}</Badge>
-              ) : null}
-            </div>
-            {pendingPatches.length === 0 ? (
-              <div className="py-10 text-center text-sm text-muted-foreground">
-                暂无待审批补丁。Agent 在问答中发现值得沉淀的结论时会自动提交到这里。
-              </div>
-            ) : (
-              <ul className="divide-y">
-                {pendingPatches.map((patch) => (
-                  <li key={patch.id} className="flex flex-col gap-2 px-4 py-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <span className="truncate font-medium">{patch.title}</span>
-                        <Badge variant="outline" className="font-mono text-[11px]">{patch.pageKey}</Badge>
-                        <Badge
-                          className={cn(
-                            "text-[11px]",
-                            patch.operation === "CREATE"
-                              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                              : "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-                          )}
-                        >
-                          {patch.operation === "CREATE" ? "新建" : "更新"}
-                        </Badge>
-                      </div>
-                      <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-                        <Button size="sm" variant="ghost" onClick={() => setActivePatch(patch)}>
-                          <Eye className="mr-1 size-4" />
-                          查看差异
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={patchBusyId === patch.id}
-                          onClick={() => rejectPatch(patch.id)}
-                        >
-                          <X className="mr-1 size-4" />
-                          驳回
-                        </Button>
-                        <Button
-                          size="sm"
-                          disabled={patchBusyId === patch.id}
-                          onClick={() => applyPatch(patch.id)}
-                        >
-                          {patchBusyId === patch.id ? (
-                            <Loader2 className="mr-1 size-4 animate-spin" />
-                          ) : (
-                            <CheckCircle2 className="mr-1 size-4" />
-                          )}
-                          确认合并
-                        </Button>
-                      </div>
-                    </div>
-                    {patch.reason ? (
-                      <p className="text-xs text-muted-foreground">变更原因：{patch.reason}</p>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
           {/* Wiki 页面列表 */}
-          <section className="rounded-lg border">
-            <div className="flex items-center gap-2 border-b px-4 py-3">
-              <FileStack className="size-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Wiki 页面</span>
-              <Badge variant="secondary" className="ml-1">{pages.length}</Badge>
+          <section className="overflow-hidden rounded-xl border border-border/70 bg-card/50">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3.5 sm:px-5">
+              <div className="flex items-center gap-2">
+                <FileStack className="size-4 text-primary" />
+                <span className="text-sm font-medium">Wiki 页面</span>
+                <Badge variant="secondary">{pages.length}</Badge>
+              </div>
+              <span className="text-xs text-muted-foreground">点击页面查看正文、目录与引用</span>
             </div>
             {pages.length === 0 ? (
               <div className="py-10 text-center text-sm text-muted-foreground">
-                还没有 Wiki 页面。点右上角「重新生成 Wiki」从知识库文章构建索引。
+                还没有 Wiki 页面。点右上角「更新 Wiki」从知识库文章构建索引。
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              <ul className="divide-y md:hidden">
+                {visiblePages.map((page) => (
+                  <li key={page.id}>
+                    <button
+                      type="button"
+                      className="flex w-full items-start justify-between gap-3 px-4 py-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                      onClick={() => openPageDetail(page)}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">{page.title}</span>
+                        {page.summary ? (
+                          <span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">{page.summary}</span>
+                        ) : null}
+                        <span className="mt-2 flex flex-wrap items-center gap-1.5">
+                          <Badge variant="outline" className="text-[10px]">{kindLabel(page.kind)}</Badge>
+                          <span className="text-[11px] text-muted-foreground">v{page.version}</span>
+                          <span className="text-[11px] text-muted-foreground">{formatDateTime(page.updatedAt)}</span>
+                        </span>
+                      </span>
+                      <Eye className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <div className="hidden overflow-x-auto md:block">
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
@@ -559,11 +554,12 @@ export function KnowledgeWikiPage() {
                 </TableBody>
               </Table>
               </div>
+              </>
             )}
             {pages.length > PAGE_SIZE ? (
               <div className="border-t px-4 py-3">
                 <AppPagination
-                  page={pageIndex}
+                  page={safePageIndex}
                   totalPages={pageCount}
                   total={pages.length}
                   pageSize={PAGE_SIZE}
@@ -630,75 +626,36 @@ export function KnowledgeWikiPage() {
         <div className="flex flex-col gap-2 px-1 py-1 text-sm text-muted-foreground">
           <p>会被删除的内容：</p>
           <ul className="list-disc space-y-1 pl-5">
-            <li>全部 Wiki 页面，包含索引页、源文档页，以及问答补丁沉淀的概念 / 答案页（共 {pages.length} 个）</li>
+            <li>全部 Wiki 页面，包含索引页、源文档页及其衍生知识页（共 {pages.length} 个）</li>
             <li>全部页面链接与来源引用</li>
             <li>全部文档目录树节点及其向量（共 {dashboard?.treeNodeCount ?? 0} 个，重建后需要重新生成向量）</li>
           </ul>
-          <p>会被保留的内容：源文章本身、问答历史、待审批补丁（{pendingPatches.length} 个）与事件日志。</p>
+          <p>会被保留的内容：源文章本身、问答历史与事件日志。</p>
           <p className="text-destructive">此操作不可撤销，且会重新调用模型编译所有文章，可能产生较多耗时与费用。</p>
         </div>
-      </ModalShell>
-
-      {/* 补丁差异弹窗 */}
-      <ModalShell
-        open={activePatch != null}
-        onOpenChange={(next) => {
-          if (!next) setActivePatch(null)
-        }}
-        title={activePatch ? activePatch.title : "补丁差异"}
-        description={activePatch ? `${activePatch.pageKey} · ${activePatch.operation === "CREATE" ? "新建" : "更新"}` : undefined}
-        contentClassName="sm:max-w-3xl"
-        footer={
-          activePatch ? (
-            <div className="flex w-full items-center justify-end gap-2">
-              <Button
-                variant="outline"
-                disabled={patchBusyId === activePatch.id}
-                onClick={() => rejectPatch(activePatch.id)}
-              >
-                <X className="mr-1 size-4" />
-                驳回
-              </Button>
-              <Button disabled={patchBusyId === activePatch.id} onClick={() => applyPatch(activePatch.id)}>
-                {patchBusyId === activePatch.id ? (
-                  <Loader2 className="mr-1 size-4 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="mr-1 size-4" />
-                )}
-                确认合并
-              </Button>
-            </div>
-          ) : null
-        }
-      >
-        {activePatch ? (
-          <div className="flex flex-col gap-3 px-1 py-1">
-            {activePatch.reason ? (
-              <p className="text-sm text-muted-foreground">变更原因：{activePatch.reason}</p>
-            ) : null}
-            <DiffView diff={activePatch.diffText || "（无差异内容）"} />
-          </div>
-        ) : null}
       </ModalShell>
 
       {/* 页面详情弹窗 */}
       <ModalShell
         open={pageDetail != null}
         onOpenChange={(next) => {
-          if (!next) setPageDetail(null)
+          if (!next) closePageDetail()
         }}
         title={pageDetail ? pageDetail.title : "页面详情"}
         description={pageDetail ? `${pageDetail.pageKey} · ${kindLabel(pageDetail.kind)} · v${pageDetail.version}` : undefined}
-        contentClassName="sm:max-w-3xl"
+        contentClassName="sm:max-w-4xl"
       >
         {pageDetail ? (
           <div className="flex flex-col gap-4 px-1 py-1">
             {pageDetail.summary ? (
               <p className="text-sm text-muted-foreground">{pageDetail.summary}</p>
             ) : null}
-            <pre className="app-scrollbar max-h-[40vh] overflow-auto whitespace-pre-wrap rounded-md border bg-muted/30 p-3 text-sm leading-relaxed">
-              {pageDetail.contentMd}
-            </pre>
+            <div className="app-scrollbar max-h-[48vh] overflow-auto rounded-lg border bg-background p-4 sm:p-5">
+              <MarkdownPreview
+                value={pageDetail.contentMd}
+                className="[&_h1]:!mt-0 [&_h1]:!text-2xl [&_h2]:!mt-8 [&_h2]:!text-xl [&_h3]:!mt-6 [&_h3]:!text-lg"
+              />
+            </div>
             {articleIdFromPageKey(pageDetail.pageKey) != null ? (
               <div>
                 <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
