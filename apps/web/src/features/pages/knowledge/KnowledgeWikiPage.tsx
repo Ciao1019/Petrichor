@@ -271,7 +271,7 @@ export function KnowledgeWikiPage() {
     if (!selectedKbId) return
     const requestId = ++pageDetailRequestRef.current
     setPageDetailLoading(true)
-    setPageDetail({ ...page, sourceRefs: [], links: [] })
+    setPageDetail({ ...page, sourceRefs: [], links: [], inLinks: [] })
     const articleId = articleIdFromPageKey(page.pageKey)
     setTreeNodes([])
     setTreeLoading(articleId != null)

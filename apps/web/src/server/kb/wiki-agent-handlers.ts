@@ -7,6 +7,8 @@ import { aiBindings, aiModels, aiProviders } from "@/server/db/schema"
 import { ok, readJson, toErrorResponse } from "@/server/http/response"
 import {
     applyWikiPatch,
+    articleKnowledgeBuildInputSchema,
+    buildArticleKnowledge,
     ingestKnowledgeBaseWiki,
     listUserKnowledgeBases,
     listWikiPages,
@@ -77,6 +79,18 @@ export async function wikiIngest(request: NextRequest) {
             articleIds: input.articleIds,
             forceRebuild: input.forceRebuild,
             fullRebuild: input.fullRebuild,
+        }))
+    })
+}
+
+export async function articleKnowledgeBuild(request: NextRequest) {
+    return withUser(request, async (user) => {
+        const input = articleKnowledgeBuildInputSchema.parse(await readJson(request))
+        return ok(await buildArticleKnowledge({
+            userId: user.id,
+            knowledgeBaseId: input.knowledgeBaseId,
+            articleId: input.articleId,
+            forceRebuild: input.forceRebuild,
         }))
     })
 }

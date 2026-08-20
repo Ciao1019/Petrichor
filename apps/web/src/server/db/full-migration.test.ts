@@ -1,7 +1,18 @@
+import fs from "node:fs"
+import path from "node:path"
 import { describe, expect, it } from "vitest"
 import { buildInitialMigrationSql } from "./full-migration"
 
 describe("buildInitialMigrationSql", () => {
+    it("与仓库中可直接执行的初始化 SQL 保持一致", () => {
+        const checkedInSql = fs.readFileSync(
+            path.resolve(process.cwd(), "../../docs/petrichor-init.sql"),
+            "utf8",
+        )
+
+        expect(checkedInSql).toBe(`${buildInitialMigrationSql()}\n`)
+    })
+
     it("包含当前业务基础表，且不再创建 Todo、普通聊天、便签和向量表", () => {
         const sql = buildInitialMigrationSql()
 
@@ -31,6 +42,8 @@ describe("buildInitialMigrationSql", () => {
         expect(sql).toContain("add column if not exists original_url text")
         expect(sql).toContain("add column if not exists original_author_name text")
         expect(sql).toContain("create table if not exists petrichor_kb_article_burn_link")
+        expect(sql).toContain("create table if not exists petrichor_kb_article_chunk")
+        expect(sql).toContain("recommended_questions_json text not null default '[]'")
         expect(sql).toContain("max_views integer not null default 1")
         expect(sql).toContain("status text not null default 'ACTIVE'")
         expect(sql).toContain("petrichor_kb_burn_link_article_idx")

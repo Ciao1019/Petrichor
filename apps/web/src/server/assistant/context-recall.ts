@@ -26,7 +26,7 @@ export function sanitizeRecallExcerpt(text: string): string {
     let next = text
         .replace(/sk-[a-zA-Z0-9]{10,}/g, "[redacted]")
         .replace(/(api[_-]?key|token|secret|password|cookie)\s*[:=]\s*\S+/gi, "$1=[redacted]")
-        .replace(/bearer\s+[a-zA-Z0-9._\-]+/gi, "Bearer [redacted]")
+        .replace(/bearer\s+[a-zA-Z0-9._-]+/gi, "Bearer [redacted]")
         .replace(/executionOutcome[\s\S]{0,200}/gi, "[confirmation omitted]")
     next = next.replace(/\s+/g, " ").trim()
     if (next.length <= CONTEXT_RECALL_EXCERPT_MAX) return next

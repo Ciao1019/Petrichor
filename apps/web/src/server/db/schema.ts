@@ -25,17 +25,30 @@ const pgTable = (useSqliteSchema ? sqliteTable : pgPgTable) as typeof pgPgTable
 const index = (useSqliteSchema ? sqliteIndex : pgIndex) as typeof pgIndex
 const uniqueIndex = (useSqliteSchema ? sqliteUniqueIndex : pgUniqueIndex) as typeof pgUniqueIndex
 
+type SqliteIdentityBuilder = {
+    generatedAlwaysAsIdentity: () => SqliteIdentityBuilder
+}
+
+type SqliteBigintBuilder = {
+    primaryKey: (config?: unknown) => SqliteIdentityBuilder
+}
+
+type SqliteTimestampBuilder = {
+    default: (value: ReturnType<typeof sql>) => unknown
+    defaultNow: () => unknown
+}
+
 const bigint = ((name: string, config?: unknown) => {
     if (!useSqliteSchema) {
         return pgBigint(name, config as Parameters<typeof pgBigint>[1])
     }
 
-    const builder = sqliteInteger(name) as any
+    const builder = sqliteInteger(name) as unknown as SqliteBigintBuilder
     const originalPrimaryKey = builder.primaryKey.bind(builder)
     builder.primaryKey = (primaryKeyConfig?: unknown) => {
         const primaryKeyBuilder = originalPrimaryKey(
             primaryKeyConfig ?? { autoIncrement: true },
-        ) as any
+        )
         primaryKeyBuilder.generatedAlwaysAsIdentity = () => primaryKeyBuilder
         return primaryKeyBuilder
     }
@@ -61,7 +74,7 @@ const timestamp = ((name: string, config?: unknown) => {
         return pgTimestamp(name, config as Parameters<typeof pgTimestamp>[1])
     }
 
-    const builder = sqliteInteger(name, { mode: "timestamp_ms" }) as any
+    const builder = sqliteInteger(name, { mode: "timestamp_ms" }) as unknown as SqliteTimestampBuilder
     builder.defaultNow = () => builder.default(sql`(unixepoch() * 1000)`)
     return builder as unknown as ReturnType<typeof pgTimestamp>
 }) as typeof pgTimestamp
@@ -253,6 +266,25 @@ export const knowledgeBaseArticles = pgTable("petrichor_kb_article", {
     // 首页文章热力图/趋势：user_id 过滤 + created_at 时间范围聚合
     index("petrichor_kb_article_user_created_idx").on(table.userId, table.createdAt),
     uniqueIndex("ux_petrichor_kb_article_node_id").on(table.nodeId),
+])
+
+// “构建知识”产生的平铺 Markdown 切片。它与旧的 Wiki PageIndex 目录树解耦：
+// 每个切片独立保存 3 个推荐问题，后续问答链路迁移时可直接消费。
+export const knowledgeBaseArticleChunks = pgTable("petrichor_kb_article_chunk", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    knowledgeBaseId: bigint("knowledge_base_id", { mode: "number" }).notNull(),
+    articleId: bigint("article_id", { mode: "number" }).notNull(),
+    chunkKey: text("chunk_key").notNull(),
+    position: integer("position").notNull().default(0),
+    heading: text("heading").notNull(),
+    contentMd: text("content_md").notNull(),
+    contentHash: text("content_hash").notNull(),
+    recommendedQuestionsJson: text("recommended_questions_json").notNull().default("[]"),
+    ...timestamps,
+}, (table) => [
+    uniqueIndex("ux_petrichor_kb_article_chunk_key").on(table.userId, table.articleId, table.chunkKey),
+    index("idx_petrichor_kb_article_chunk_article").on(table.userId, table.knowledgeBaseId, table.articleId, table.position),
 ])
 
 export const knowledgeBaseArticleTags = pgTable("petrichor_kb_article_tag", {
@@ -1241,6 +1273,7 @@ export type NotificationRecord = typeof notifications.$inferSelect
 export type KnowledgeBaseRecord = typeof knowledgeBases.$inferSelect
 export type KnowledgeBaseNodeRecord = typeof knowledgeBaseNodes.$inferSelect
 export type KnowledgeBaseArticleRecord = typeof knowledgeBaseArticles.$inferSelect
+export type KnowledgeBaseArticleChunkRecord = typeof knowledgeBaseArticleChunks.$inferSelect
 export type KnowledgeBaseWikiPageRecord = typeof knowledgeBaseWikiPages.$inferSelect
 export type KnowledgeBaseWikiTreeNodeRecord = typeof knowledgeBaseWikiTreeNodes.$inferSelect
 export type KnowledgeBaseWikiPatchRecord = typeof knowledgeBaseWikiPatches.$inferSelect

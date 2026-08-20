@@ -1,6 +1,7 @@
 "use client"
 
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useSearchParams, Outlet } from 'react-router-dom'
+import Link from 'next/link'
 import { LoginForm } from '@/components/login-form'
 import { AuthCallback } from '@/components/auth-callback'
 import { ThemeProvider } from '@/components/theme-provider'
@@ -17,7 +18,6 @@ import { KnowledgeBasePage } from '@/features/pages/knowledge/KnowledgeBasePage'
 import { KnowledgeBaseArticleEditorPage } from '@/features/pages/knowledge/KnowledgeBaseArticleEditorPage'
 import { DocLibraryListPage } from '@/features/pages/doc-library/DocLibraryListPage'
 import { DocLibraryBrowsePage } from '@/features/pages/doc-library/DocLibraryBrowsePage'
-import { KnowledgeWikiPage } from '@/features/pages/knowledge/KnowledgeWikiPage'
 import { KnowledgeBaseArticleMindMapPage } from '@/features/pages/knowledge/KnowledgeBaseArticleMindMapPage'
 import { KnowledgeBaseTreePage } from '@/features/pages/knowledge/KnowledgeBaseTreePage'
 import { DocumentImportJobsPage } from '@/features/pages/knowledge/DocumentImportJobsPage'
@@ -73,9 +73,9 @@ function LoginPage() {
         <LoginForm className="w-full" onLoginSuccess={handleLoginSuccess} />
         <p className="mt-4 text-center text-xs text-muted-foreground">
           没有账号？
-          <a href="/demo" className="ml-1 underline underline-offset-4 hover:text-foreground">
+          <Link href="/demo" className="ml-1 underline underline-offset-4 hover:text-foreground">
             免登录进入演示模式
-          </a>
+          </Link>
         </p>
       </div>
     </div>
@@ -208,7 +208,7 @@ function AppThemeScope() {
               <Route path="imports/:jobId" element={<DocumentImportJobDetailPage />} />
               <Route path="doc-library" element={<DocLibraryListPage />} />
               <Route path="doc-library/:libraryId" element={<DocLibraryBrowsePage />} />
-              <Route path="wiki" element={<KnowledgeWikiPage />} />
+              <Route path="wiki" element={<Navigate to={dashboardRoutes.knowledge} replace />} />
               <Route path="knowledge/:knowledgeBaseId/articles/:articleId" element={<KnowledgeBaseArticleEditorPage />} />
               <Route path="knowledge/:knowledgeBaseId/articles/:articleId/mindmap" element={<KnowledgeBaseArticleMindMapPage />} />
               <Route path="admin/users" element={<UserManagementPage />} />

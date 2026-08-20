@@ -11,6 +11,7 @@ import {
     knowledgeBaseAgentRuns,
     knowledgeBaseAgentSteps,
     knowledgeBaseAgentThreads,
+    knowledgeBaseArticleChunks,
     knowledgeBaseArticles,
     knowledgeBaseNodes,
     knowledgeBases,
@@ -33,6 +34,13 @@ import {
     embedKnowledgeBaseTreeNodesBestEffort,
     getKbWikiEmbeddingStatus,
 } from "@/server/kb/wiki-tree"
+import {
+    ARTICLE_KNOWLEDGE_BUILD_VERSION,
+    runArticleKnowledgeBuildWorkflow,
+    type ExtractedKnowledgeItem,
+    type ExtractedKnowledgeRelation,
+    type KnowledgeBuildWorkflowResult,
+} from "@/server/kb/knowledge-build-workflow"
 
 type Db = ReturnType<typeof getDb>
 type DbExecutor = Pick<Db, "delete" | "insert" | "select" | "update">
@@ -88,6 +96,11 @@ export const wikiIngestInputSchema = knowledgeBaseIdInputSchema.extend({
     forceRebuild: z.boolean().optional().default(false),
     // 完全重建：清空该知识库下已有的 Wiki 页面/目录树后再从零编译
     fullRebuild: z.boolean().optional().default(false),
+})
+
+export const articleKnowledgeBuildInputSchema = knowledgeBaseIdInputSchema.extend({
+    articleId: idSchema,
+    forceRebuild: z.boolean().optional().default(false),
 })
 
 export const wikiPageDetailInputSchema = knowledgeBaseIdInputSchema.extend({
@@ -179,6 +192,7 @@ export function normalizePageKey(input: string) {
 }
 
 export function toWikiPageResponse(page: KnowledgeBaseWikiPageRecord) {
+    const metadata = readKnowledgePageMetadata(page.frontmatterJson)
     return {
         id: String(page.id),
         knowledgeBaseId: String(page.knowledgeBaseId),
@@ -187,6 +201,8 @@ export function toWikiPageResponse(page: KnowledgeBaseWikiPageRecord) {
         kind: page.kind as WikiPageKind,
         contentMd: page.contentMd,
         frontmatter: parseJsonObject(page.frontmatterJson),
+        categoryPath: metadata.categoryPath,
+        aliases: metadata.aliases,
         summary: page.summary,
         contentHash: page.contentHash,
         version: page.version,
@@ -270,7 +286,11 @@ async function loadWikiPageRows(db: DbExecutor, userId: number, knowledgeBaseId:
     return await db
         .select()
         .from(knowledgeBaseWikiPages)
-        .where(and(eq(knowledgeBaseWikiPages.userId, userId), eq(knowledgeBaseWikiPages.knowledgeBaseId, knowledgeBaseId)))
+        .where(and(
+            eq(knowledgeBaseWikiPages.userId, userId),
+            eq(knowledgeBaseWikiPages.knowledgeBaseId, knowledgeBaseId),
+            isNull(knowledgeBaseWikiPages.archivedAt),
+        ))
         .orderBy(asc(knowledgeBaseWikiPages.kind), asc(knowledgeBaseWikiPages.title))
 }
 
@@ -294,11 +314,29 @@ export async function loadWikiPageDetail(userId: number, knowledgeBaseId: number
         .where(eq(knowledgeBaseWikiSourceRefs.pageId, page.id))
         .orderBy(asc(knowledgeBaseWikiSourceRefs.id))
 
-    const links = await db
-        .select()
-        .from(knowledgeBaseWikiLinks)
-        .where(eq(knowledgeBaseWikiLinks.fromPageId, page.id))
-        .orderBy(asc(knowledgeBaseWikiLinks.toPageKey))
+    const [links, inLinks, activePages] = await Promise.all([
+        db
+            .select()
+            .from(knowledgeBaseWikiLinks)
+            .where(eq(knowledgeBaseWikiLinks.fromPageId, page.id))
+            .orderBy(asc(knowledgeBaseWikiLinks.toPageKey)),
+        db
+            .select()
+            .from(knowledgeBaseWikiLinks)
+            .where(and(
+                eq(knowledgeBaseWikiLinks.userId, userId),
+                eq(knowledgeBaseWikiLinks.knowledgeBaseId, knowledgeBaseId),
+                eq(knowledgeBaseWikiLinks.toPageKey, page.pageKey),
+            ))
+            .orderBy(asc(knowledgeBaseWikiLinks.fromPageId)),
+        loadWikiPageRows(db, userId, knowledgeBaseId),
+    ])
+    const pageById = new Map(activePages.map((item) => [item.id, item]))
+    const pageByKey = new Map(activePages.map((item) => [item.pageKey, item]))
+    const outgoingRelations = new Map(
+        collectKnowledgePageRelations(readKnowledgePageMetadata(page.frontmatterJson))
+            .map((relation) => [`${relation.toPageKey}|${relation.relationType}`, relation] as const),
+    )
 
     return {
         ...toWikiPageResponse(page),
@@ -312,8 +350,28 @@ export async function loadWikiPageDetail(userId: number, knowledgeBaseId: number
         links: links.map((link) => ({
             id: String(link.id),
             toPageKey: link.toPageKey,
+            toPageTitle: pageByKey.get(link.toPageKey)?.title ?? link.toPageKey,
+            toPageKind: pageByKey.get(link.toPageKey)?.kind ?? null,
+            toPageSummary: pageByKey.get(link.toPageKey)?.summary ?? null,
             linkType: link.linkType,
+            description: outgoingRelations.get(`${link.toPageKey}|${link.linkType}`)?.description ?? null,
         })),
+        inLinks: inLinks.map((link) => {
+            const fromPage = pageById.get(link.fromPageId)
+            const incomingRelation = fromPage
+                ? collectKnowledgePageRelations(readKnowledgePageMetadata(fromPage.frontmatterJson))
+                    .find((relation) => relation.toPageKey === page.pageKey && relation.relationType === link.linkType)
+                : null
+            return {
+                id: String(link.id),
+                fromPageKey: fromPage?.pageKey ?? "",
+                fromPageTitle: fromPage?.title ?? "未知页面",
+                fromPageKind: fromPage?.kind ?? null,
+                fromPageSummary: fromPage?.summary ?? null,
+                linkType: link.linkType,
+                description: incomingRelation?.description ?? null,
+            }
+        }),
     }
 }
 
@@ -339,6 +397,185 @@ export async function loadWikiDashboard(userId: number, knowledgeBaseId: number)
         treeNodeCount: treeNodeRows[0]?.value ?? 0,
         embedding,
     }
+}
+
+/**
+ * 从知识库文章列表触发的单篇“构建知识”。Mastra Workflow 并发执行切片问题生成
+ * 与整文候选抽取；候选确定后，再按页面批量生成独立 Wiki 正文并持久化页面关系。
+ */
+export async function buildArticleKnowledge(input: {
+    userId: number
+    knowledgeBaseId: number
+    articleId: number
+    forceRebuild?: boolean
+}) {
+    const db = getDb()
+    const kb = await assertKnowledgeBaseOwner(db, input.userId, input.knowledgeBaseId)
+    const [article] = await db
+        .select()
+        .from(knowledgeBaseArticles)
+        .where(and(
+            eq(knowledgeBaseArticles.id, input.articleId),
+            eq(knowledgeBaseArticles.userId, input.userId),
+            eq(knowledgeBaseArticles.knowledgeBaseId, input.knowledgeBaseId),
+        ))
+        .limit(1)
+    if (!article) throw notFound("文章不存在")
+    if (!article.contentMd.trim()) throw badRequest("文章没有可构建的 Markdown 内容")
+
+    const sourceHash = stableHash(`${article.title}\n${article.contentMd}`)
+    const sourcePageKey = buildArticleSourcePageKey(article.id)
+    const existingSourcePage = await loadWikiPage(db, input.userId, input.knowledgeBaseId, sourcePageKey)
+    const existingMetadata = readKnowledgePageMetadata(existingSourcePage?.frontmatterJson)
+    const [chunkCountRow] = await db
+        .select({ value: count() })
+        .from(knowledgeBaseArticleChunks)
+        .where(and(
+            eq(knowledgeBaseArticleChunks.userId, input.userId),
+            eq(knowledgeBaseArticleChunks.articleId, input.articleId),
+        ))
+
+    if (
+        !input.forceRebuild
+        && existingMetadata.sourceHash === sourceHash
+        && existingMetadata.buildVersion === ARTICLE_KNOWLEDGE_BUILD_VERSION
+        && (chunkCountRow?.value ?? 0) > 0
+    ) {
+        return buildArticleKnowledgeResponse({
+            article,
+            sourcePage: existingSourcePage!,
+            fromCache: true,
+            chunkCount: chunkCountRow?.value ?? 0,
+            entityCount: existingMetadata.entityCount,
+            conceptCount: existingMetadata.conceptCount,
+            warnings: [],
+        })
+    }
+
+    const existingKnowledgePageRows = await db
+        .select()
+        .from(knowledgeBaseWikiPages)
+        .where(and(
+            eq(knowledgeBaseWikiPages.userId, input.userId),
+            eq(knowledgeBaseWikiPages.knowledgeBaseId, input.knowledgeBaseId),
+            or(eq(knowledgeBaseWikiPages.kind, "entity"), eq(knowledgeBaseWikiPages.kind, "concept")),
+            isNull(knowledgeBaseWikiPages.archivedAt),
+        ))
+
+    const workflowResult = await runArticleKnowledgeBuildWorkflow({
+        userId: input.userId,
+        knowledgeBaseId: input.knowledgeBaseId,
+        knowledgeBaseName: kb.name,
+        articleId: article.id,
+        articleTitle: article.title,
+        contentMd: article.contentMd,
+        existingPages: existingKnowledgePageRows.map((page) => {
+            const metadata = readKnowledgePageMetadata(page.frontmatterJson)
+            return {
+                pageKey: page.pageKey,
+                title: page.title,
+                kind: page.kind === "concept" ? "concept" as const : "entity" as const,
+                aliases: metadata.aliases,
+                summary: page.summary ?? "",
+                categoryPath: metadata.categoryPath,
+                buildVersion: metadata.buildVersion,
+            }
+        }),
+    })
+    if (workflowResult.chunks.length === 0) throw badRequest("文章没有可构建的 Markdown 切片")
+
+    let sourcePage: KnowledgeBaseWikiPageRecord | null = null
+    await db.transaction(async (tx) => {
+        await tx
+            .delete(knowledgeBaseArticleChunks)
+            .where(and(
+                eq(knowledgeBaseArticleChunks.userId, input.userId),
+                eq(knowledgeBaseArticleChunks.articleId, article.id),
+            ))
+        await tx.insert(knowledgeBaseArticleChunks).values(workflowResult.chunks.map((chunk) => ({
+            userId: input.userId,
+            knowledgeBaseId: input.knowledgeBaseId,
+            articleId: article.id,
+            chunkKey: chunk.chunkKey,
+            position: chunk.position,
+            heading: chunk.heading,
+            contentMd: chunk.contentMd,
+            contentHash: stableHash(chunk.contentMd),
+            recommendedQuestionsJson: JSON.stringify(chunk.recommendedQuestions),
+            updatedAt: new Date(),
+        })))
+
+        await detachArticleFromGeneratedKnowledgePages(tx, {
+            userId: input.userId,
+            knowledgeBaseId: input.knowledgeBaseId,
+            articleId: article.id,
+        })
+
+        const generatedPages: KnowledgeBaseWikiPageRecord[] = []
+        for (const item of workflowResult.items) {
+            generatedPages.push(await upsertExtractedKnowledgePage(tx, {
+                userId: input.userId,
+                knowledgeBaseId: input.knowledgeBaseId,
+                article,
+                item,
+            }))
+        }
+        await rebuildGeneratedKnowledgePageLinks(tx, input.userId, input.knowledgeBaseId)
+
+        sourcePage = await upsertWikiPage(tx, {
+            userId: input.userId,
+            knowledgeBaseId: input.knowledgeBaseId,
+            pageKey: sourcePageKey,
+            title: article.title,
+            kind: "source",
+            contentMd: renderBuiltSourcePage(article, workflowResult),
+            summary: workflowResult.documentSummary,
+            frontmatter: {
+                generatedBy: "article-knowledge-build",
+                buildVersion: ARTICLE_KNOWLEDGE_BUILD_VERSION,
+                articleId: String(article.id),
+                sourceTitle: article.title,
+                sourceUpdatedAt: formatDate(article.updatedAt),
+                sourceHash,
+                chunkCount: workflowResult.chunks.length,
+                recommendedQuestionCount: workflowResult.chunks.length * 3,
+                entityCount: workflowResult.items.filter((item) => item.kind === "entity").length,
+                conceptCount: workflowResult.items.filter((item) => item.kind === "concept").length,
+            },
+            sourceRefs: [{ articleId: article.id, anchor: null, note: "源文档" }],
+        })
+
+        await tx.delete(knowledgeBaseWikiLinks).where(eq(knowledgeBaseWikiLinks.fromPageId, sourcePage.id))
+        if (generatedPages.length > 0) {
+            await tx.insert(knowledgeBaseWikiLinks).values(generatedPages.map((page) => ({
+                userId: input.userId,
+                knowledgeBaseId: input.knowledgeBaseId,
+                fromPageId: sourcePage!.id,
+                toPageKey: page.pageKey,
+                linkType: "extracts",
+            })))
+        }
+
+        await rebuildWikiIndex(tx, input.userId, input.knowledgeBaseId, kb.name)
+    })
+
+    await logWikiEvent(db, input.userId, input.knowledgeBaseId, "ARTICLE_KNOWLEDGE_BUILD", sourcePage!.id, null, {
+        articleId: article.id,
+        chunkCount: workflowResult.chunks.length,
+        entityCount: workflowResult.items.filter((item) => item.kind === "entity").length,
+        conceptCount: workflowResult.items.filter((item) => item.kind === "concept").length,
+        warnings: workflowResult.warnings,
+    })
+
+    return buildArticleKnowledgeResponse({
+        article,
+        sourcePage: sourcePage!,
+        fromCache: false,
+        chunkCount: workflowResult.chunks.length,
+        entityCount: workflowResult.items.filter((item) => item.kind === "entity").length,
+        conceptCount: workflowResult.items.filter((item) => item.kind === "concept").length,
+        warnings: workflowResult.warnings,
+    })
 }
 
 export async function ingestKnowledgeBaseWiki(input: {
@@ -1832,7 +2069,11 @@ async function rebuildWikiIndex(db: DbExecutor, userId: number, knowledgeBaseId:
     const pages = await db
         .select()
         .from(knowledgeBaseWikiPages)
-        .where(and(eq(knowledgeBaseWikiPages.userId, userId), eq(knowledgeBaseWikiPages.knowledgeBaseId, knowledgeBaseId)))
+        .where(and(
+            eq(knowledgeBaseWikiPages.userId, userId),
+            eq(knowledgeBaseWikiPages.knowledgeBaseId, knowledgeBaseId),
+            isNull(knowledgeBaseWikiPages.archivedAt),
+        ))
         .orderBy(asc(knowledgeBaseWikiPages.kind), asc(knowledgeBaseWikiPages.title))
     const sourcePages = pages.filter((page) => page.kind === "source")
     const conceptPages = pages.filter((page) => page.kind !== "source" && page.kind !== "index")
@@ -1984,6 +2225,386 @@ async function logWikiEvent(db: Db, userId: number, knowledgeBaseId: number, eve
         threadId,
         payloadJson: JSON.stringify(payload),
     })
+}
+
+type KnowledgePageContribution = {
+    articleId: string
+    articleTitle: string
+    summary: string
+    contentMd: string
+    aliases: string[]
+    categoryPath: string[]
+    sourceChunkKeys: string[]
+    relatedPageKeys: string[]
+    relations: ExtractedKnowledgeRelation[]
+}
+
+type KnowledgePageMetadata = {
+    generatedBy: string | null
+    buildVersion: number
+    sourceHash: string | null
+    chunkCount: number
+    entityCount: number
+    conceptCount: number
+    categoryPath: string[]
+    aliases: string[]
+    baseContentMd: string | null
+    baseSummary: string | null
+    contributions: Record<string, KnowledgePageContribution>
+}
+
+function readKnowledgePageMetadata(raw: string | null | undefined): KnowledgePageMetadata {
+    const parsed = parseJsonObject(raw)
+    const value = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : {}
+    const rawContributions = value.contributions && typeof value.contributions === "object" && !Array.isArray(value.contributions)
+        ? value.contributions as Record<string, unknown>
+        : {}
+    const contributions: Record<string, KnowledgePageContribution> = {}
+    for (const [articleId, rawContribution] of Object.entries(rawContributions)) {
+        if (!rawContribution || typeof rawContribution !== "object" || Array.isArray(rawContribution)) continue
+        const contribution = rawContribution as Record<string, unknown>
+        contributions[articleId] = {
+            articleId,
+            articleTitle: typeof contribution.articleTitle === "string" ? contribution.articleTitle : `文章 ${articleId}`,
+            summary: typeof contribution.summary === "string" ? contribution.summary : "",
+            contentMd: typeof contribution.contentMd === "string" ? contribution.contentMd : "",
+            aliases: normalizeStringList(contribution.aliases),
+            categoryPath: normalizeStringList(contribution.categoryPath).slice(0, 2),
+            sourceChunkKeys: normalizeStringList(contribution.sourceChunkKeys),
+            relatedPageKeys: normalizeStringList(contribution.relatedPageKeys),
+            relations: normalizeStoredKnowledgeRelations(contribution.relations),
+        }
+    }
+    return {
+        generatedBy: typeof value.generatedBy === "string" ? value.generatedBy : null,
+        buildVersion: typeof value.buildVersion === "number" ? value.buildVersion : 0,
+        sourceHash: typeof value.sourceHash === "string" ? value.sourceHash : null,
+        chunkCount: typeof value.chunkCount === "number" ? value.chunkCount : 0,
+        entityCount: typeof value.entityCount === "number" ? value.entityCount : 0,
+        conceptCount: typeof value.conceptCount === "number" ? value.conceptCount : 0,
+        categoryPath: normalizeStringList(value.categoryPath).slice(0, 2),
+        aliases: normalizeStringList(value.aliases),
+        baseContentMd: typeof value.baseContentMd === "string" && value.baseContentMd.trim() ? value.baseContentMd : null,
+        baseSummary: typeof value.baseSummary === "string" && value.baseSummary.trim() ? value.baseSummary : null,
+        contributions,
+    }
+}
+
+function normalizeStoredKnowledgeRelations(value: unknown): ExtractedKnowledgeRelation[] {
+    if (!Array.isArray(value)) return []
+    const seen = new Set<string>()
+    const relations: ExtractedKnowledgeRelation[] = []
+    for (const item of value) {
+        if (!item || typeof item !== "object" || Array.isArray(item)) continue
+        const relation = item as Record<string, unknown>
+        const fromPageKey = typeof relation.fromPageKey === "string"
+            ? normalizePageKey(relation.fromPageKey)
+            : ""
+        const toPageKey = typeof relation.toPageKey === "string"
+            ? normalizePageKey(relation.toPageKey)
+            : ""
+        if (!fromPageKey || !toPageKey || fromPageKey === toPageKey) continue
+        const relationType = typeof relation.relationType === "string" && relation.relationType.trim()
+            ? relation.relationType.trim().slice(0, 60)
+            : "关联"
+        const description = typeof relation.description === "string"
+            ? relation.description.trim().slice(0, 300)
+            : ""
+        const key = `${fromPageKey}|${toPageKey}|${relationType}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        relations.push({ fromPageKey, toPageKey, relationType, description })
+    }
+    return relations
+}
+
+function collectKnowledgePageRelations(metadata: KnowledgePageMetadata) {
+    const ownPageRelations = Object.values(metadata.contributions)
+        .flatMap((contribution) => contribution.relations)
+    return normalizeStoredKnowledgeRelations(ownPageRelations)
+}
+
+function buildArticleKnowledgeResponse(input: {
+    article: KnowledgeBaseArticleRecord
+    sourcePage: KnowledgeBaseWikiPageRecord
+    fromCache: boolean
+    chunkCount: number
+    entityCount: number
+    conceptCount: number
+    warnings: string[]
+}) {
+    return {
+        articleId: String(input.article.id),
+        knowledgeBaseId: String(input.article.knowledgeBaseId),
+        fromCache: input.fromCache,
+        chunkCount: input.chunkCount,
+        recommendedQuestionCount: input.chunkCount * 3,
+        entityCount: input.entityCount,
+        conceptCount: input.conceptCount,
+        sourcePage: toWikiPageResponse(input.sourcePage),
+        warnings: input.warnings,
+    }
+}
+
+async function detachArticleFromGeneratedKnowledgePages(
+    db: DbExecutor,
+    input: { userId: number; knowledgeBaseId: number; articleId: number },
+) {
+    const pages = await db
+        .select()
+        .from(knowledgeBaseWikiPages)
+        .where(and(
+            eq(knowledgeBaseWikiPages.userId, input.userId),
+            eq(knowledgeBaseWikiPages.knowledgeBaseId, input.knowledgeBaseId),
+            or(eq(knowledgeBaseWikiPages.kind, "entity"), eq(knowledgeBaseWikiPages.kind, "concept")),
+        ))
+    const articleId = String(input.articleId)
+    for (const page of pages) {
+        const metadata = readKnowledgePageMetadata(page.frontmatterJson)
+        if (metadata.generatedBy !== "article-knowledge-build" || !metadata.contributions[articleId]) continue
+        delete metadata.contributions[articleId]
+        const remaining = Object.values(metadata.contributions)
+        if (remaining.length === 0 && !metadata.baseContentMd) {
+            await db
+                .update(knowledgeBaseWikiPages)
+                .set({
+                    frontmatterJson: JSON.stringify({
+                        generatedBy: metadata.generatedBy,
+                        buildVersion: metadata.buildVersion,
+                        categoryPath: metadata.categoryPath,
+                        aliases: metadata.aliases,
+                        contributions: {},
+                    }),
+                    archivedAt: new Date(),
+                    updatedAt: new Date(),
+                })
+                .where(eq(knowledgeBaseWikiPages.id, page.id))
+            await db
+                .delete(knowledgeBaseWikiSourceRefs)
+                .where(and(
+                    eq(knowledgeBaseWikiSourceRefs.pageId, page.id),
+                    eq(knowledgeBaseWikiSourceRefs.articleId, input.articleId),
+                ))
+            await db
+                .delete(knowledgeBaseWikiLinks)
+                .where(or(
+                    eq(knowledgeBaseWikiLinks.fromPageId, page.id),
+                    and(
+                        eq(knowledgeBaseWikiLinks.userId, input.userId),
+                        eq(knowledgeBaseWikiLinks.knowledgeBaseId, input.knowledgeBaseId),
+                        eq(knowledgeBaseWikiLinks.toPageKey, page.pageKey),
+                    ),
+                ))
+            continue
+        }
+        const updatedPage = await upsertWikiPage(db, {
+            userId: input.userId,
+            knowledgeBaseId: input.knowledgeBaseId,
+            pageKey: page.pageKey,
+            title: page.title,
+            kind: page.kind,
+            contentMd: renderAggregatedKnowledgePage(page.title, metadata),
+            summary: metadata.baseSummary ?? remaining[0]?.summary ?? page.summary,
+            frontmatter: metadata,
+            sourceRefs: remaining.map((contribution) => ({
+                articleId: Number(contribution.articleId),
+                note: `构建知识：${contribution.articleTitle}`,
+            })),
+        })
+        await replaceGeneratedKnowledgePageLinks(db, updatedPage, metadata)
+    }
+}
+
+async function upsertExtractedKnowledgePage(db: DbExecutor, input: {
+    userId: number
+    knowledgeBaseId: number
+    article: KnowledgeBaseArticleRecord
+    item: ExtractedKnowledgeItem
+}) {
+    const existing = await loadWikiPage(db, input.userId, input.knowledgeBaseId, input.item.pageKey)
+    const previous = readKnowledgePageMetadata(existing?.frontmatterJson)
+    const ownsExisting = previous.generatedBy === "article-knowledge-build"
+    const contributions = ownsExisting ? previous.contributions : {}
+    contributions[String(input.article.id)] = {
+        articleId: String(input.article.id),
+        articleTitle: input.article.title,
+        summary: input.item.summary,
+        contentMd: input.item.contentMd,
+        aliases: input.item.aliases,
+        categoryPath: input.item.categoryPath,
+        sourceChunkKeys: [],
+        relatedPageKeys: input.item.relatedPageKeys,
+        relations: input.item.relations,
+    }
+    const metadata: KnowledgePageMetadata = {
+        generatedBy: "article-knowledge-build",
+        buildVersion: ARTICLE_KNOWLEDGE_BUILD_VERSION,
+        sourceHash: null,
+        chunkCount: 0,
+        entityCount: 0,
+        conceptCount: 0,
+        categoryPath: previous.buildVersion >= ARTICLE_KNOWLEDGE_BUILD_VERSION && previous.categoryPath.length > 0
+            ? previous.categoryPath
+            : input.item.categoryPath.length > 0
+                ? input.item.categoryPath
+                : previous.categoryPath,
+        aliases: [...new Set([...previous.aliases, ...input.item.aliases])].slice(0, 20),
+        baseContentMd: ownsExisting ? previous.baseContentMd : existing?.contentMd ?? null,
+        baseSummary: ownsExisting ? previous.baseSummary : existing?.summary ?? null,
+        contributions,
+    }
+    const contributionValues = Object.values(contributions)
+    const page = await upsertWikiPage(db, {
+        userId: input.userId,
+        knowledgeBaseId: input.knowledgeBaseId,
+        pageKey: input.item.pageKey,
+        title: input.item.name,
+        kind: input.item.kind,
+        contentMd: renderAggregatedKnowledgePage(input.item.name, metadata),
+        summary: input.item.summary || metadata.baseSummary,
+        frontmatter: metadata,
+        sourceRefs: contributionValues.map((contribution) => ({
+            articleId: Number(contribution.articleId),
+            note: `构建知识：${contribution.articleTitle}`,
+        })),
+    })
+    await replaceGeneratedKnowledgePageLinks(db, page, metadata)
+    return page
+}
+
+function renderAggregatedKnowledgePage(title: string, metadata: KnowledgePageMetadata) {
+    const contributions = Object.values(metadata.contributions)
+    const bodies = [
+        ...(metadata.baseContentMd ? [metadata.baseContentMd] : []),
+        ...contributions.map((contribution) => contribution.contentMd || contribution.summary),
+    ].filter((value): value is string => Boolean(value?.trim()))
+    if (bodies.length === 0) return `# ${title}\n\n暂无文章构建结果。`
+    if (bodies.length === 1 && !metadata.baseContentMd) return ensureWikiPageTitle(bodies[0], title)
+
+    const seen = new Set<string>()
+    const blocks: string[] = []
+    for (const body of bodies) {
+        const withoutTitle = stripLeadingWikiTitle(body, title)
+        for (const block of withoutTitle.split(/\n{2,}/)) {
+            const normalized = block.replace(/\s+/g, " ").trim().toLowerCase()
+            if (!normalized || seen.has(normalized)) continue
+            seen.add(normalized)
+            blocks.push(block.trim())
+        }
+    }
+    return [`# ${title}`, "", ...blocks].join("\n\n").trim()
+}
+
+function ensureWikiPageTitle(contentMd: string, title: string) {
+    const content = contentMd.trim()
+    return /^#\s+/m.test(content) ? content : `# ${title}\n\n${content}`
+}
+
+function stripLeadingWikiTitle(contentMd: string, title: string) {
+    const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    return contentMd
+        .trim()
+        .replace(new RegExp(`^#\\s+${escapedTitle}\\s*\\n+`, "i"), "")
+        .replace(/^#\s+[^\n]+\n+/, "")
+        .trim()
+}
+
+async function replaceGeneratedKnowledgePageLinks(
+    db: DbExecutor,
+    page: KnowledgeBaseWikiPageRecord,
+    metadata: KnowledgePageMetadata,
+) {
+    await db.delete(knowledgeBaseWikiLinks).where(eq(knowledgeBaseWikiLinks.fromPageId, page.id))
+    const relations = collectKnowledgePageRelations(metadata)
+        .filter((relation) => relation.fromPageKey === page.pageKey && relation.toPageKey !== page.pageKey)
+    if (relations.length === 0) return
+    await db.insert(knowledgeBaseWikiLinks).values(relations.map((relation) => ({
+        userId: page.userId,
+        knowledgeBaseId: page.knowledgeBaseId,
+        fromPageId: page.id,
+        toPageKey: relation.toPageKey,
+        linkType: relation.relationType,
+    })))
+}
+
+async function rebuildGeneratedKnowledgePageLinks(
+    db: DbExecutor,
+    userId: number,
+    knowledgeBaseId: number,
+) {
+    const pages = await db
+        .select()
+        .from(knowledgeBaseWikiPages)
+        .where(and(
+            eq(knowledgeBaseWikiPages.userId, userId),
+            eq(knowledgeBaseWikiPages.knowledgeBaseId, knowledgeBaseId),
+            or(eq(knowledgeBaseWikiPages.kind, "entity"), eq(knowledgeBaseWikiPages.kind, "concept")),
+            isNull(knowledgeBaseWikiPages.archivedAt),
+        ))
+    if (pages.length === 0) return
+
+    await db.delete(knowledgeBaseWikiLinks).where(inArray(
+        knowledgeBaseWikiLinks.fromPageId,
+        pages.map((page) => page.id),
+    ))
+    const activePageKeys = new Set(pages.map((page) => page.pageKey))
+    const values = pages.flatMap((page) => (
+        collectKnowledgePageRelations(readKnowledgePageMetadata(page.frontmatterJson))
+            .filter((relation) => (
+                relation.fromPageKey === page.pageKey
+                && activePageKeys.has(relation.toPageKey)
+                && relation.toPageKey !== page.pageKey
+            ))
+            .map((relation) => ({
+                userId,
+                knowledgeBaseId,
+                fromPageId: page.id,
+                toPageKey: relation.toPageKey,
+                linkType: relation.relationType,
+            }))
+    ))
+    if (values.length > 0) await db.insert(knowledgeBaseWikiLinks).values(values)
+}
+
+function renderBuiltSourcePage(article: KnowledgeBaseArticleRecord, result: KnowledgeBuildWorkflowResult) {
+    const entities = result.items.filter((item) => item.kind === "entity")
+    const concepts = result.items.filter((item) => item.kind === "concept")
+    return [
+        `# ${article.title}`,
+        "",
+        "## 文档摘要",
+        result.documentSummary || "暂无摘要。",
+        "",
+        "## 实体",
+        ...(entities.length > 0
+            ? entities.map((item) => `- [[${item.pageKey}|${item.name}]]：${item.summary}`)
+            : ["- 未抽取到实体"]),
+        "",
+        "## 概念",
+        ...(concepts.length > 0
+            ? concepts.map((item) => `- [[${item.pageKey}|${item.name}]]：${item.summary}`)
+            : ["- 未抽取到概念"]),
+        "",
+        "## 知识关系",
+        ...(result.relations.length > 0
+            ? result.relations.map((relation) => (
+                `- [[${relation.fromPageKey}|${relation.fromPageKey}]] ${relation.relationType} `
+                + `[[${relation.toPageKey}|${relation.toPageKey}]]${relation.description ? `：${relation.description}` : ""}`
+            ))
+            : ["- 未抽取到有明确原文依据的关系"]),
+        "",
+        "## 切片推荐问题",
+        ...result.chunks.flatMap((chunk) => [
+            `### ${chunk.heading}`,
+            ...chunk.recommendedQuestions.map((question) => `- ${question}`),
+            "",
+        ]),
+        "## 来源",
+        `- 源文档 ID：${article.id}`,
+        `- 最近更新：${formatDate(article.updatedAt) ?? ""}`,
+    ].join("\n")
 }
 
 function buildArticleSourcePageKey(articleId: number) {

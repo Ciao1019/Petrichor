@@ -32,6 +32,22 @@ describe("数据库迁移清单", () => {
             migrations: [{ file: "b.sql" }, { file: "a.sql" }],
         })).toThrow("升序")
     })
+
+    it("清单中登记的 SQL 文件均存在且可以完整解析", () => {
+        const migrationsDirectory = path.resolve(process.cwd(), "../../docs/migrations")
+        const manifest = parseMigrationManifest(JSON.parse(fs.readFileSync(
+            path.join(migrationsDirectory, "manifest.json"),
+            "utf8",
+        )))
+
+        expect(manifest.migrations.length).toBeGreaterThan(0)
+        for (const migration of manifest.migrations) {
+            const migrationPath = path.join(migrationsDirectory, migration.file)
+            expect(fs.existsSync(migrationPath), migration.file).toBe(true)
+            expect(splitSqlStatements(fs.readFileSync(migrationPath, "utf8")).length, migration.file)
+                .toBeGreaterThan(0)
+        }
+    })
 })
 
 describe("SQL 语句拆分", () => {

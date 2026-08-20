@@ -2,7 +2,6 @@ import {
   CalendarIcon,
   CheckCircle2,
   ChevronLeft,
-  ChevronDown,
   BookOpen,
   FileText,
   FileUp,
@@ -72,6 +71,7 @@ import { AppPagination } from "@/components/app-pagination"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { OrbitingCircles } from "@/components/godui/orbiting-circles"
+import { SegmentedControl } from "@/components/godui/segmented-control"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -92,11 +92,18 @@ import {
   validateMarkdownImportFile,
   validateMarkdownImportText,
 } from "@/components/knowledge/article-editor-utils"
+import {
+  ArrowUpTrayIcon,
+  BookOpenIcon,
+  DocumentPlusIcon,
+  FolderPlusIcon,
+} from "@/components/animated-icons"
 import { Tree as RecursiveTree } from "@/features/pages/knowledge/recursive-tree"
 import {
   knowledgeBaseApi,
   knowledgeBaseArticleApi,
   knowledgeBaseNodeApi,
+  knowledgeBaseWikiAgentApi,
   type ArticleTreeStatus,
   type KnowledgeBaseResponse,
   type KnowledgeBaseTreeNode,
@@ -112,6 +119,7 @@ import { DocumentImportDialog } from "@/components/knowledge/DocumentImportDialo
 import { cn } from "@/lib/utils"
 import { gsap } from "@/lib/gsap"
 import { rememberKnowledgeBase } from "@/features/pages/knowledge/kb-recent"
+import { KnowledgeExplorerPanel } from "@/features/pages/knowledge/KnowledgeExplorerDialog"
 
 /**
  * 文章节点状态：用 StatusDot 降噪，悬停看含义，避免彩色胶囊墙抢标题注意力。
@@ -143,7 +151,7 @@ function ArticleStatusBadges({ status }: { status: ArticleTreeStatus | undefined
 
   return (
     <div
-      className="hidden shrink-0 items-center gap-1.5 sm:flex"
+      className="mr-2.5 hidden shrink-0 items-center gap-1.5 sm:flex"
       onClick={(e) => e.stopPropagation()}
     >
       {dots.map((dot) => (
@@ -400,6 +408,115 @@ function collectVisibleNodeDndIds(
 
   walk(nodes)
   return ids
+}
+
+/** 三个顶部操作图标共用的命令式句柄，用于在按钮悬停/聚焦时驱动动效 */
+type AnimatedIconHandle = {
+  startAnimation: () => void
+  stopAnimation: () => void
+}
+
+type AnimatedIconComponent = React.ForwardRefExoticComponent<
+  { className?: string; size?: number } & React.RefAttributes<AnimatedIconHandle>
+>
+
+/** 知识库顶部的图标动作按钮：Tooltip 承载文案，悬停/聚焦时播放图标动效 */
+function KnowledgeBaseHeaderAction({
+  disabled,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  disabled?: boolean
+  icon: AnimatedIconComponent
+  label: string
+  onClick: () => void
+}) {
+  const iconRef = React.useRef<AnimatedIconHandle>(null)
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={label}
+          className="rounded-lg text-muted-foreground hover:text-foreground"
+          disabled={disabled}
+          onClick={onClick}
+          onMouseEnter={() => iconRef.current?.startAnimation()}
+          onMouseLeave={() => iconRef.current?.stopAnimation()}
+          onFocus={() => iconRef.current?.startAnimation()}
+          onBlur={() => iconRef.current?.stopAnimation()}
+        >
+          <Icon ref={iconRef} size={18} />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+/** 文章行内的「构建知识」按钮：悬停/聚焦时翻动书页，构建中切换为 Loader */
+/** 分段控件里的纯图标标签：文案交给 Tooltip 与按钮的 aria-label */
+function KnowledgeBaseViewLabel({
+  icon,
+  label,
+}: {
+  icon: React.ReactNode
+  label: string
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="flex items-center">{icon}</span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+function KnowledgeBaseBuildButton({
+  building,
+  onBuild,
+}: {
+  building: boolean
+  onBuild: () => void
+}) {
+  const iconRef = React.useRef<AnimatedIconHandle>(null)
+
+  const label = building ? "知识构建中…" : "构建知识"
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={label}
+          className="hidden size-7 rounded-lg text-muted-foreground sm:inline-flex hover:text-foreground"
+          disabled={building}
+          onClick={(event) => {
+            event.stopPropagation()
+            onBuild()
+          }}
+          onMouseEnter={() => iconRef.current?.startAnimation()}
+          onMouseLeave={() => iconRef.current?.stopAnimation()}
+          onFocus={() => iconRef.current?.startAnimation()}
+          onBlur={() => iconRef.current?.stopAnimation()}
+        >
+          {building ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <BookOpenIcon ref={iconRef} size={14} />
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="top">{label}</TooltipContent>
+    </Tooltip>
+  )
 }
 
 function KnowledgeBaseDragHandle({
@@ -719,6 +836,8 @@ export function KnowledgeBaseTreePage() {
   const [createArticleBatchParsing, setCreateArticleBatchParsing] = React.useState(false)
   const [createArticleBatchRunning, setCreateArticleBatchRunning] = React.useState(false)
   const [importDialogOpen, setImportDialogOpen] = React.useState(false)
+  const [activeView, setActiveView] = React.useState<"documents" | "knowledge">("documents")
+  const [buildingArticleIds, setBuildingArticleIds] = React.useState<Set<string>>(new Set())
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleteTarget, setDeleteTarget] = React.useState<DeleteTarget | null>(null)
   const [activeDragNodeId, setActiveDragNodeId] = React.useState<string | null>(null)
@@ -854,6 +973,9 @@ export function KnowledgeBaseTreePage() {
     setCreateArticleBatchItems([])
     setCreateArticleBatchParsing(false)
     setCreateArticleBatchRunning(false)
+    setImportDialogOpen(false)
+    setActiveView("documents")
+    setBuildingArticleIds(new Set())
     setDeleteOpen(false)
     setDeleteTarget(null)
     setActiveDragNodeId(null)
@@ -939,6 +1061,31 @@ export function KnowledgeBaseTreePage() {
   React.useEffect(() => {
     void fetchTree()
   }, [fetchTree])
+
+  const buildArticleKnowledge = React.useCallback(async (articleId: string) => {
+    if (!knowledgeBaseId || buildingArticleIds.has(articleId)) return
+    setBuildingArticleIds((current) => new Set(current).add(articleId))
+    try {
+      const response = await knowledgeBaseWikiAgentApi.buildArticleKnowledge({
+        knowledgeBaseId,
+        articleId,
+      })
+      const result = response.data
+      toast.success(
+        `知识构建完成：${result.chunkCount} 个切片、${result.entityCount} 个实体、${result.conceptCount} 个概念${result.fromCache ? "（已复用）" : ""}`
+      )
+      if (result.warnings.length > 0) toast.warning(result.warnings[0])
+      await fetchTree()
+    } catch (error) {
+      toast.error(resolveApiErrorMessage(error, "知识构建失败"))
+    } finally {
+      setBuildingArticleIds((current) => {
+        const next = new Set(current)
+        next.delete(articleId)
+        return next
+      })
+    }
+  }, [buildingArticleIds, fetchTree, knowledgeBaseId])
 
   React.useEffect(() => {
     if (pageIndex > totalPages - 1) {
@@ -1763,6 +1910,12 @@ export function KnowledgeBaseTreePage() {
                     folderId={node.id}
                   />
                 ) : null}
+                {!isFolder && node.articleId ? (
+                  <KnowledgeBaseBuildButton
+                    building={buildingArticleIds.has(node.articleId)}
+                    onBuild={() => void buildArticleKnowledge(node.articleId!)}
+                  />
+                ) : null}
                 <ActionMenu
                   trigger={
                     <Button variant="ghost" size="icon" className="size-9 md:size-6" onClick={(e) => e.stopPropagation()}>
@@ -1819,6 +1972,15 @@ export function KnowledgeBaseTreePage() {
                         }}
                       >
                         生成思维导图
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={!node.articleId || buildingArticleIds.has(node.articleId)}
+                        onClick={() => {
+                          if (!node.articleId) return
+                          void buildArticleKnowledge(node.articleId)
+                        }}
+                      >
+                        {node.articleId && buildingArticleIds.has(node.articleId) ? "知识构建中…" : "构建知识"}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         disabled={!node.articleId}
@@ -1889,7 +2051,7 @@ export function KnowledgeBaseTreePage() {
         )}
       </SortableKnowledgeBaseTreeNode>
     )
-  }, [activeDragNodeId, dragDisabled, dragOverNodeId, expandedIds, isSearching, knowledgeBaseId, loadChildren, movingNodeId, navigate, nodeLoadErrorById, nodeLoadingById, openCreateArticle, openCreateFolder, openRenameFolder, roots])
+  }, [activeDragNodeId, buildArticleKnowledge, buildingArticleIds, dragDisabled, dragOverNodeId, expandedIds, isSearching, knowledgeBaseId, loadChildren, movingNodeId, navigate, nodeLoadErrorById, nodeLoadingById, openCreateArticle, openCreateFolder, openRenameFolder, roots])
 
   const handlePageChange = React.useCallback(
     (nextPageIndex: number) => {
@@ -1914,10 +2076,37 @@ export function KnowledgeBaseTreePage() {
             <ChevronLeft className="size-4" />
             知识库
           </Button>
-          <div>
-            <h1 className="truncate text-2xl font-semibold tracking-tight">
-              {knowledgeBase?.name || "知识库"}
-            </h1>
+          <div className="min-w-0">
+            <h1 className="sr-only">{knowledgeBase?.name || "我的文档"}</h1>
+            <SegmentedControl
+              value={activeView}
+              size="lg"
+              options={[
+                {
+                  ariaLabel: knowledgeBase?.name || "我的文档",
+                  label: (
+                    <KnowledgeBaseViewLabel
+                      icon={<FileText className="size-[18px] shrink-0" />}
+                      label={knowledgeBase?.name || "我的文档"}
+                    />
+                  ),
+                  value: "documents",
+                },
+                {
+                  ariaLabel: "知识空间",
+                  label: (
+                    <KnowledgeBaseViewLabel
+                      icon={<BookOpenIcon className="shrink-0" size={18} />}
+                      label="知识空间"
+                    />
+                  ),
+                  value: "knowledge",
+                },
+              ]}
+              ariaLabel="知识库视图"
+              className="-ml-3"
+              onValueChange={(value) => setActiveView(value === "knowledge" ? "knowledge" : "documents")}
+            />
             {knowledgeBase?.description ? (
               <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
                 {knowledgeBase.description}
@@ -1925,47 +2114,34 @@ export function KnowledgeBaseTreePage() {
             ) : null}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!knowledgeBaseId || loading || saving}
-              >
-                更多
-                <ChevronDown className="size-4 opacity-70" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem
-                disabled={!knowledgeBaseId || loading || saving}
-                onClick={() => openCreateFolder(null)}
-              >
-                <FolderPlus className="size-4" />
-                新建文件夹
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={!knowledgeBaseId}
-                onClick={() => setImportDialogOpen(true)}
-              >
-                <FileUp className="size-4" />
-                导入文档
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button
-            disabled={!knowledgeBaseId || loading || saving}
-            onClick={() => openCreateArticle(null)}
-          >
-            <Plus className="size-4" />
-            新建文章
-          </Button>
-        </div>
+        {activeView === "documents" ? (
+          <div className="flex flex-wrap items-center gap-1">
+            <KnowledgeBaseHeaderAction
+              icon={FolderPlusIcon}
+              label="新建文件夹"
+              disabled={!knowledgeBaseId || loading || saving}
+              onClick={() => openCreateFolder(null)}
+            />
+            <KnowledgeBaseHeaderAction
+              icon={ArrowUpTrayIcon}
+              label="导入文档"
+              disabled={!knowledgeBaseId}
+              onClick={() => setImportDialogOpen(true)}
+            />
+            <KnowledgeBaseHeaderAction
+              icon={DocumentPlusIcon}
+              label="新建文章"
+              disabled={!knowledgeBaseId || loading || saving}
+              onClick={() => openCreateArticle(null)}
+            />
+          </div>
+        ) : null}
       </div>
 
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      {activeView === "documents" ? (
+        <>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <Input
             value={keyword}
             placeholder="搜索文件夹/文章名称"
@@ -2168,17 +2344,21 @@ export function KnowledgeBaseTreePage() {
             </DragOverlay>
           </DndContext>
         )}
-      </div>
+        </div>
 
-      <div className="py-3 mt-2">
-        <AppPagination
-          page={pageIndex}
-          totalPages={totalPages}
-          total={totalFolders}
-          pageSize={pageSize}
-          onChange={handlePageChange}
-        />
-      </div>
+        <div className="py-3 mt-2">
+          <AppPagination
+            page={pageIndex}
+            totalPages={totalPages}
+            total={totalFolders}
+            pageSize={pageSize}
+            onChange={handlePageChange}
+          />
+        </div>
+        </>
+      ) : knowledgeBaseId ? (
+        <KnowledgeExplorerPanel knowledgeBaseId={knowledgeBaseId} />
+      ) : null}
 
       <ModalShell
         open={createFolderOpen}

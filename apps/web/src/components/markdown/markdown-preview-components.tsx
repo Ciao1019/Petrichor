@@ -89,9 +89,12 @@ function createAnchorComponent(variant: MarkdownPreviewVariant): NonNullable<Com
   return (props) => {
     const { className, href, ...rest } = withoutNode(props)
     const isHashLink = typeof href === "string" && href.startsWith("#")
+    const isWikiPageLink = typeof href === "string" && href.startsWith("#wiki-page=")
     const isHeadingAnchor = typeof className === "string" && className.includes("heading-anchor-link")
     const styleClassName = isHeadingAnchor
       ? "no-underline text-current"
+      : isWikiPageLink
+        ? "cursor-pointer font-semibold text-primary underline decoration-primary/60 decoration-[1.5px] underline-offset-[5px] transition-colors hover:text-primary/80 hover:decoration-primary focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       : variant === "heti"
         ? undefined
         : variant === "typography"

@@ -27,6 +27,7 @@ const AGENT_TABLES = [
     "petrichor_agent_evidence",
     "petrichor_agent_subtask",
 ]
+const KNOWLEDGE_BUILD_TABLES = ["petrichor_kb_article_chunk"]
 
 describe("初始化 SQL", () => {
     const sql = buildInitialMigrationSql()
@@ -35,6 +36,13 @@ describe("初始化 SQL", () => {
         for (const table of AGENT_TABLES) {
             expect(sql, table).toContain(`create table if not exists ${table}`)
         }
+    })
+
+    it("包含文章知识构建切片表", () => {
+        for (const table of KNOWLEDGE_BUILD_TABLES) {
+            expect(sql, table).toContain(`create table if not exists ${table}`)
+        }
+        expect(sql).toContain("recommended_questions_json text not null default '[]'")
     })
 
     it("BM25 词元列写在 create table 里，而不只有 alter table", () => {
@@ -63,6 +71,12 @@ describe("SQLite 迁移", () => {
 
     it("同样建出 Agent Runtime 表", () => {
         for (const table of AGENT_TABLES) {
+            expect(sql, table).toContain(table)
+        }
+    })
+
+    it("同样建出文章知识构建切片表", () => {
+        for (const table of KNOWLEDGE_BUILD_TABLES) {
             expect(sql, table).toContain(table)
         }
     })

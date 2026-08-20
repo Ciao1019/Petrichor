@@ -3,6 +3,9 @@
   "migrations": [
     {
       "file": "2026-08-18-agent-runtime-v2.sql"
+    },
+    {
+      "file": "2026-08-20-article-knowledge-build.sql"
     }
   ]
 }

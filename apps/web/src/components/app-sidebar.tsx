@@ -1,7 +1,6 @@
 import * as React from "react"
 import {
   IconBook,
-  IconBookmarks,
   IconChartBar,
   IconFileImport,
   IconFiles,
@@ -109,18 +108,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         icon: IconSparkles,
         isActive:
           isDashboardSectionPath(pathname, "assistant") ||
-          isDashboardSectionPath(pathname, "wiki") ||
           isDashboardSectionPath(pathname, "ai/review"),
         items: [
           {
             title: "助手",
             url: dashboardRoutes.assistant,
             icon: IconRobot,
-          },
-          {
-            title: "知识 Wiki",
-            url: dashboardRoutes.wiki,
-            icon: IconBookmarks,
           },
           {
             title: "AI 回顾",

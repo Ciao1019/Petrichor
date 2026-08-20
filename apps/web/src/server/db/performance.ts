@@ -3,15 +3,19 @@
  * 用于分析和优化数据库查询性能
  */
 
-import { sql } from "drizzle-orm"
+import { sql, type SQLWrapper } from "drizzle-orm"
 import { createLogger } from "@/lib/logger"
 
 const logger = createLogger("db-performance")
 
+type ExecutableDatabase = {
+    execute: (query: SQLWrapper) => Promise<unknown>
+}
+
 /**
  * 执行 EXPLAIN ANALYZE 并记录查询计划
  */
-export async function explainQuery(db: any, query: any) {
+export async function explainQuery(db: ExecutableDatabase, query: SQLWrapper) {
     if (process.env.NODE_ENV !== "development") {
         return // 仅在开发环境启用
     }
@@ -73,7 +77,7 @@ export function withQueryTiming<T>(
 /**
  * 检查索引使用情况
  */
-export async function checkIndexUsage(db: any, tableName: string) {
+export async function checkIndexUsage(db: ExecutableDatabase, tableName: string) {
     if (process.env.NODE_ENV !== "development") {
         return
     }

@@ -1069,6 +1069,9 @@ export interface KnowledgeBaseWikiPageResponse {
   kind: KnowledgeBaseWikiPageKind
   contentMd: string
   frontmatter: unknown
+  /** “构建知识”动态抽取的 1-2 级分类路径；实体/概念类型作为 UI 根目录单独呈现。 */
+  categoryPath: string[]
+  aliases: string[]
   summary?: string | null
   contentHash: string
   version: number
@@ -1088,12 +1091,27 @@ export interface KnowledgeBaseWikiSourceRef {
 export interface KnowledgeBaseWikiLink {
   id: string
   toPageKey: string
+  toPageTitle: string
+  toPageKind?: KnowledgeBaseWikiPageKind | string | null
+  toPageSummary?: string | null
   linkType: string
+  description?: string | null
+}
+
+export interface KnowledgeBaseWikiBacklink {
+  id: string
+  fromPageKey: string
+  fromPageTitle: string
+  fromPageKind?: KnowledgeBaseWikiPageKind | string | null
+  fromPageSummary?: string | null
+  linkType: string
+  description?: string | null
 }
 
 export interface KnowledgeBaseWikiPageDetailResponse extends KnowledgeBaseWikiPageResponse {
   sourceRefs: KnowledgeBaseWikiSourceRef[]
   links: KnowledgeBaseWikiLink[]
+  inLinks: KnowledgeBaseWikiBacklink[]
 }
 
 export interface KnowledgeBaseWikiPatchResponse {
@@ -1243,6 +1261,18 @@ export interface KnowledgeBaseWikiIngestResponse {
   warnings: string[]
 }
 
+export interface ArticleKnowledgeBuildResponse {
+  articleId: string
+  knowledgeBaseId: string
+  fromCache: boolean
+  chunkCount: number
+  recommendedQuestionCount: number
+  entityCount: number
+  conceptCount: number
+  sourcePage: KnowledgeBaseWikiPageResponse
+  warnings: string[]
+}
+
 export const knowledgeBaseWikiAgentApi = {
   dashboard: (knowledgeBaseId: string) =>
     api.post<KnowledgeBaseWikiDashboardResponse>("/kb/wiki/dashboard", { knowledgeBaseId }),
@@ -1260,6 +1290,11 @@ export const knowledgeBaseWikiAgentApi = {
     fullRebuild?: boolean
   }) =>
     api.post<KnowledgeBaseWikiIngestResponse>("/kb/wiki/ingest", data),
+  buildArticleKnowledge: (data: {
+    knowledgeBaseId: string
+    articleId: string
+    forceRebuild?: boolean
+  }) => api.post<ArticleKnowledgeBuildResponse>("/kb/knowledge/build", data),
   embedWiki: (knowledgeBaseId: string) =>
     api.post<KbWikiEmbeddingRunResult>("/kb/wiki/embedding/run", { knowledgeBaseId }),
   patches: (knowledgeBaseId: string) =>
