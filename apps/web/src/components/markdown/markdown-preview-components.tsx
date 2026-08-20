@@ -2,6 +2,7 @@ import * as React from "react"
 import type { Components } from "react-markdown"
 
 import { cn } from "@/lib/utils"
+import { wikiScribbleStyle } from "@/components/markdown/wiki-scribble"
 import { Checkbox } from "@/components/ui/checkbox"
 import { protectedImageProps } from "@/components/ui/protected-media"
 import { Separator } from "@/components/ui/separator"
@@ -94,7 +95,7 @@ function createAnchorComponent(variant: MarkdownPreviewVariant): NonNullable<Com
     const styleClassName = isHeadingAnchor
       ? "no-underline text-current"
       : isWikiPageLink
-        ? "cursor-pointer font-semibold text-primary underline decoration-primary/60 decoration-[1.5px] underline-offset-[5px] transition-colors hover:text-primary/80 hover:decoration-primary focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        ? "cursor-pointer font-medium text-foreground no-underline transition-colors hover:text-primary focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       : variant === "heti"
         ? undefined
         : variant === "typography"
@@ -108,6 +109,8 @@ function createAnchorComponent(variant: MarkdownPreviewVariant): NonNullable<Com
         target={isHashLink || isHeadingAnchor ? undefined : "_blank"}
         rel={isHashLink || isHeadingAnchor ? undefined : "noreferrer"}
         {...rest}
+        // 内链不画系统下划线，改描一道手绘马克笔波浪（颜色按 href 稳定散开）
+        style={isWikiPageLink ? wikiScribbleStyle(href as string) : rest.style}
       />
     )
   }

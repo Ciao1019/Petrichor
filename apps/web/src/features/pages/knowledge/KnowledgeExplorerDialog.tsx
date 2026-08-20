@@ -332,6 +332,16 @@ export function KnowledgeExplorerPanel({
     [searching, folders, expanded],
   )
   const relatedKnowledge = React.useMemo(() => detail ? collectRelatedKnowledge(detail) : [], [detail])
+  // pageKey → 标题，用来把正文里的 [[source-9]] 渲染成真实页面名
+  const pageTitleByKey = React.useMemo(() => {
+    const map = new Map<string, string>()
+    for (const page of pages) map.set(page.pageKey, page.title)
+    return map
+  }, [pages])
+  const resolvePageTitle = React.useCallback(
+    (pageKey: string) => pageTitleByKey.get(pageKey),
+    [pageTitleByKey],
+  )
 
   const selectPageKey = React.useCallback(async (pageKey: string, pushHistory = true) => {
     const previousPageKey = selectedPageKeyRef.current
@@ -582,7 +592,7 @@ export function KnowledgeExplorerPanel({
                 <>
                   <div onClick={handleMarkdownClick}>
                     <MarkdownPreview
-                      value={prepareWikiMarkdown(detail.contentMd, detail.title, relatedKnowledge)}
+                      value={prepareWikiMarkdown(detail.contentMd, detail.title, relatedKnowledge, resolvePageTitle)}
                       variant="typography"
                     />
                   </div>
