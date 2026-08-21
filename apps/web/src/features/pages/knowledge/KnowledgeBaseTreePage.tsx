@@ -11,12 +11,12 @@ import {
   FolderPlus,
   GripVertical,
   Loader2,
-  MoreHorizontal,
   Plus,
   Trash2,
   X,
 } from "@/components/iconimate"
 import * as React from "react"
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import {
   closestCenter,
   DndContext,
@@ -28,35 +28,29 @@ import {
   useSensors,
   type CollisionDetection,
   type DragEndEvent,
-  type DragOverEvent,
+  type DragMoveEvent,
   type DragStartEvent,
   type UniqueIdentifier,
 } from "@dnd-kit/core"
 import {
   SortableContext,
   useSortable,
-  verticalListSortingStrategy,
+  type SortingStrategy,
 } from "@dnd-kit/sortable"
-import { CSS } from "@dnd-kit/utilities"
 import { useNavigate, useParams } from "react-router-dom"
 import { toast } from "sonner"
 import type { DateRange } from "react-day-picker"
 
-import {
-  TreeExpander,
-  TreeIcon,
-  TreeLabel,
-  TreeNode,
-  TreeNodeContent,
-  TreeNodeTrigger,
-  TreeProvider,
-  TreeView,
-} from "@/components/kibo-ui/tree"
 import { FileIcon } from "@/components/kibo-ui/tree/file-icon"
+import { NativeNestedList, type ListItem } from "@/components/uitripled/native-nested-list-shadcnui"
+import {
+  resolveDropIntentKind,
+  resolvePointerY,
+  resolveSiblingTargetIndex,
+  type DropIntent,
+} from "@/features/pages/knowledge/knowledge-tree-drop"
 import { DateRangeCalendar } from "@/components/petrichor-ui/date-range-calendar"
 import { ModalShell } from "@/components/petrichor-ui/modal-shell"
-import { ActionMenu } from "@/components/petrichor-ui/action-menu"
-import { notify } from "@/components/petrichor-ui/notify"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -71,12 +65,10 @@ import { AppPagination } from "@/components/app-pagination"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { OrbitingCircles } from "@/components/godui/orbiting-circles"
-import { SegmentedControl } from "@/components/godui/segmented-control"
+import { AnimatedTabs } from "@/components/microinteractions/animated-tabs"
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -98,7 +90,6 @@ import {
   DocumentPlusIcon,
   FolderPlusIcon,
 } from "@/components/animated-icons"
-import { Tree as RecursiveTree } from "@/features/pages/knowledge/recursive-tree"
 import {
   knowledgeBaseApi,
   knowledgeBaseArticleApi,
@@ -112,10 +103,10 @@ import { StatusDot, type StatusDotVariant } from "@astryxdesign/core/StatusDot"
 import { AstryxProvider } from "@/components/astryx/astryx-provider"
 import {
   dashboardRoutes,
-  knowledgeBaseArticleMindMapPath,
   knowledgeBaseArticlePath,
 } from "@/lib/dashboard-routes"
 import { DocumentImportDialog } from "@/components/knowledge/DocumentImportDialog"
+import { ButtonDelete } from "@/components/ruixen/button-delete"
 import { cn } from "@/lib/utils"
 import { gsap } from "@/lib/gsap"
 import { rememberKnowledgeBase } from "@/features/pages/knowledge/kb-recent"
@@ -238,6 +229,15 @@ async function parseArticleBatchFile(
 const NODE_DND_PREFIX = "kb-node:"
 const FOLDER_DROP_DND_PREFIX = "kb-folder-drop:"
 const TREE_NODE_INDENT_PX = 20
+/** 拖拽悬停多久自动展开折叠的文件夹（spring-loaded folder）。 */
+const SPRING_LOAD_EXPAND_DELAY_MS = 600
+
+/**
+ * 树是嵌套 sortable：文件夹的 sortable 矩形包含整棵子树，父子会各自叠加一次位移，
+ * 排序预览算出来的 transform 根本不对，还会把子节点推出带 overflow:hidden 的子树容器被裁掉。
+ * 落点已经由插入线和整行高亮表达，这里不需要任何位移预览。
+ */
+const noSortingTransform: SortingStrategy = () => null
 
 type FolderTreeNode = {
   id: string
@@ -251,11 +251,6 @@ type SortableTreeNodeBindings = Pick<
   ReturnType<typeof useSortable>,
   "attributes" | "listeners" | "isDragging"
 >
-
-type DragRect = {
-  height: number
-  top: number
-}
 
 function toNodeDndId(nodeId: string) {
   return `${NODE_DND_PREFIX}${nodeId}`
@@ -283,22 +278,6 @@ function parseFolderDropDndId(value: UniqueIdentifier | null | undefined): strin
     : null
 }
 
-function resolveOverNodeId(value: UniqueIdentifier | null | undefined): string | null {
-  return parseNodeDndId(value) ?? parseFolderDropDndId(value)
-}
-
-function isDropInFolderBody(activeRect: DragRect | null | undefined, overRect: DragRect | null | undefined) {
-  if (!activeRect || !overRect) {
-    return true
-  }
-
-  const activeCenterY = activeRect.top + activeRect.height / 2
-  const bodyTop = overRect.top + overRect.height * 0.25
-  const bodyBottom = overRect.top + overRect.height * 0.75
-
-  return activeCenterY >= bodyTop && activeCenterY <= bodyBottom
-}
-
 function formatDateYmd(date: Date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, "0")
@@ -316,15 +295,6 @@ function resolveApiErrorMessage(error: unknown, fallback: string): string {
   }
   if (error instanceof Error && error.message) return error.message
   return fallback
-}
-
-function hasSelectedFolder(
-  node: FolderTreeNode,
-  selectedFolderId: string | null
-): boolean {
-  if (!selectedFolderId) return false
-  if (node.id === selectedFolderId) return true
-  return (node.children || []).some((child) => hasSelectedFolder(child, selectedFolderId))
 }
 
 function toFolderTreeNodes(nodes: KnowledgeBaseTreeNode[]): FolderTreeNode[] {
@@ -459,7 +429,11 @@ function KnowledgeBaseHeaderAction({
 }
 
 /** 文章行内的「构建知识」按钮：悬停/聚焦时翻动书页，构建中切换为 Loader */
-/** 分段控件里的纯图标标签：文案交给 Tooltip 与按钮的 aria-label */
+/**
+ * 标签栏里的纯图标标签：文案交给 Tooltip 与按钮的 aria-label。
+ * 图标统一塞进 18×18 的方盒子——两个图标各自的实现（内联 svg / 带 div 包裹的动画图标）
+ * 撑出来的宽度并不一样，不定死盒子的话两个标签下划线就会一长一短。
+ */
 function KnowledgeBaseViewLabel({
   icon,
   label,
@@ -470,7 +444,9 @@ function KnowledgeBaseViewLabel({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="flex items-center">{icon}</span>
+        <span className="flex size-[18px] shrink-0 items-center justify-center [&_svg]:size-[18px]">
+          {icon}
+        </span>
       </TooltipTrigger>
       <TooltipContent side="bottom">{label}</TooltipContent>
     </Tooltip>
@@ -519,27 +495,30 @@ function KnowledgeBaseBuildButton({
   )
 }
 
+/** 行首拖拽手柄挂在列表的 leading 插槽里，sortable 绑定通过 context 下发。 */
+const TreeNodeDragBindingsContext = React.createContext<SortableTreeNodeBindings | null>(null)
+
 function KnowledgeBaseDragHandle({
-  bindings,
   disabled,
   nodeName,
 }: {
-  bindings: SortableTreeNodeBindings
   disabled?: boolean
   nodeName: string
 }) {
+  const bindings = React.useContext(TreeNodeDragBindingsContext)
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
-          {...bindings.attributes}
-          {...bindings.listeners}
+          {...(bindings?.attributes ?? {})}
+          {...(bindings?.listeners ?? {})}
           type="button"
           variant="ghost"
           size="icon"
           disabled={disabled}
           aria-label={`拖动 ${nodeName} 调整位置`}
-          className="mr-1 h-6 w-6 shrink-0 cursor-grab text-muted-foreground hover:bg-transparent active:cursor-grabbing"
+          className="mr-1 h-6 w-6 shrink-0 cursor-grab text-muted-foreground hover:bg-transparent dark:hover:bg-transparent active:cursor-grabbing"
           onClick={(event) => event.stopPropagation()}
         >
           <GripVertical className="h-3.5 w-3.5" />
@@ -598,12 +577,13 @@ function SortableKnowledgeBaseTreeNode({
   disabled,
   node,
 }: {
-  children: (bindings: SortableTreeNodeBindings) => React.ReactNode
+  children: React.ReactNode
   disabled?: boolean
   node: KnowledgeBaseTreeNode
 }) {
   const sortable = useSortable({
     id: toNodeDndId(node.id),
+    animateLayoutChanges: () => false,
     disabled,
     data: {
       nodeId: node.id,
@@ -612,25 +592,26 @@ function SortableKnowledgeBaseTreeNode({
     },
   })
 
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(sortable.transform),
-    transition: sortable.transition,
-  }
+  const bindings = React.useMemo<SortableTreeNodeBindings>(
+    () => ({
+      attributes: sortable.attributes,
+      listeners: sortable.listeners,
+      isDragging: sortable.isDragging,
+    }),
+    [sortable.attributes, sortable.listeners, sortable.isDragging]
+  )
 
   return (
     <div
       ref={sortable.setNodeRef}
-      style={style}
       className={cn(
         "rounded-md",
         sortable.isDragging && "opacity-45"
       )}
     >
-      {children({
-        attributes: sortable.attributes,
-        listeners: sortable.listeners,
-        isDragging: sortable.isDragging,
-      })}
+      <TreeNodeDragBindingsContext.Provider value={bindings}>
+        {children}
+      </TreeNodeDragBindingsContext.Provider>
     </div>
   )
 }
@@ -644,7 +625,7 @@ function KnowledgeBaseDragOverlay({ node }: { node: KnowledgeBaseTreeNode | null
   return (
     <div className="flex max-w-[320px] items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm shadow-lg">
       {isFolder ? (
-        <FolderOpen className="h-4 w-4 shrink-0 text-primary" />
+        <FolderOpen className="h-4 w-4 shrink-0 text-yellow-500" />
       ) : (
         <FileIcon name={node.name} />
       )}
@@ -655,10 +636,64 @@ function KnowledgeBaseDragOverlay({ node }: { node: KnowledgeBaseTreeNode | null
 
 function KnowledgeBaseFolderTreeIcon({ expanded }: { expanded: boolean }) {
   return expanded ? (
-    <FolderOpen className="h-4 w-4" />
+    <FolderOpen className="h-4 w-4 text-yellow-500" />
   ) : (
-    <Folder className="h-4 w-4" />
+    <Folder className="h-4 w-4 text-blue-500" />
   )
+}
+
+/** 收集「从根到选中文件夹」这条路径上的所有 id，用来自动展开露出当前选择。 */
+function collectSelectedFolderPath(
+  nodes: FolderTreeNode[],
+  selectedFolderId: string | null
+): Set<string> {
+  const path = new Set<string>()
+  if (!selectedFolderId) return path
+  const walk = (node: FolderTreeNode, ancestors: string[]): boolean => {
+    if (node.id === selectedFolderId) {
+      for (const id of ancestors) path.add(id)
+      path.add(node.id)
+      return true
+    }
+    return (node.children || []).some((child) => walk(child, [...ancestors, node.id]))
+  }
+  for (const node of nodes) walk(node, [])
+  return path
+}
+
+function toCreateArticleFolderItems(
+  nodes: FolderTreeNode[],
+  expandedIds: Set<string>,
+  selectedFolderId: string | null,
+  disabled: boolean | undefined,
+  onSelectFolder: (folder: { id: string; name: string } | null) => void
+): ListItem[] {
+  return nodes.map((node) => {
+    const hasChildren = Boolean(node.hasChildren || node.children?.length)
+    const expanded = expandedIds.has(node.id)
+    return {
+      id: node.id,
+      label: node.name,
+      hasChildren,
+      leading: (
+        <Checkbox
+          checked={selectedFolderId === node.id}
+          disabled={disabled}
+          aria-label={`选择 ${node.name} 作为创建位置`}
+          onCheckedChange={() => onSelectFolder({ id: node.id, name: node.name })}
+          onClick={(event) => event.stopPropagation()}
+        />
+      ),
+      icon: expanded ? (
+        <FolderOpen className="size-4 shrink-0 text-yellow-500" />
+      ) : (
+        <Folder className="size-4 shrink-0 text-blue-500" />
+      ),
+      children: node.children?.length
+        ? toCreateArticleFolderItems(node.children, expandedIds, selectedFolderId, disabled, onSelectFolder)
+        : undefined,
+    }
+  })
 }
 
 function CreateArticleFolderTree({
@@ -672,40 +707,40 @@ function CreateArticleFolderTree({
   disabled?: boolean
   onSelectFolder: (folder: { id: string; name: string } | null) => void
 }) {
-  const renderNode = (node: FolderTreeNode): React.ReactNode => {
-    const checked = selectedFolderId === node.id
-    const hasChildren = Boolean(node.hasChildren || node.children?.length)
-    return (
-      <RecursiveTree
-        key={node.id}
-        defaultCollapsed={!hasSelectedFolder(node, selectedFolderId)}
-        hasChildren={hasChildren}
-        contentTree={(collapsed) => (
-          <div className="flex min-w-0 items-center gap-2">
-            <Checkbox
-              checked={checked}
-              disabled={disabled}
-              aria-label={`选择 ${node.name} 作为创建位置`}
-              onCheckedChange={() => onSelectFolder({ id: node.id, name: node.name })}
-              onClick={(event) => event.stopPropagation()}
-            />
-            {hasChildren ? (
-              collapsed ? (
-                <Folder className="size-4 shrink-0 text-primary" />
-              ) : (
-                <FolderOpen className="size-4 shrink-0 text-primary" />
-              )
-            ) : (
-              <Folder className="size-4 shrink-0 text-muted-foreground opacity-70" />
-            )}
-            <span className="truncate text-sm">{node.name}</span>
-          </div>
-        )}
-      >
-        {node.children?.map((child) => renderNode(child))}
-      </RecursiveTree>
-    )
-  }
+  const [expandedIds, setExpandedIds] = React.useState<Set<string>>(
+    () => collectSelectedFolderPath(roots, selectedFolderId)
+  )
+
+  // 选择变化时把这条路径补进展开集合，保证选中的文件夹始终可见。
+  React.useEffect(() => {
+    const path = collectSelectedFolderPath(roots, selectedFolderId)
+    if (path.size === 0) return
+    setExpandedIds((current) => {
+      let changed = false
+      const next = new Set(current)
+      for (const id of path) {
+        if (!next.has(id)) {
+          next.add(id)
+          changed = true
+        }
+      }
+      return changed ? next : current
+    })
+  }, [roots, selectedFolderId])
+
+  const handleExpandedChange = React.useCallback((id: string, nextExpanded: boolean) => {
+    setExpandedIds((current) => {
+      const next = new Set(current)
+      if (nextExpanded) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }, [])
+
+  const items = React.useMemo(
+    () => toCreateArticleFolderItems(roots, expandedIds, selectedFolderId, disabled, onSelectFolder),
+    [roots, expandedIds, selectedFolderId, disabled, onSelectFolder]
+  )
 
   if (!roots.length) {
     return (
@@ -715,7 +750,14 @@ function CreateArticleFolderTree({
     )
   }
 
-  return <div className="flex flex-col gap-1">{roots.map((node) => renderNode(node))}</div>
+  return (
+    <NativeNestedList
+      items={items}
+      activeId={selectedFolderId ?? undefined}
+      expandedIds={expandedIds}
+      onExpandedChange={handleExpandedChange}
+    />
+  )
 }
 
 function normalizeDateRange(value: DateRange | undefined): DateRange | undefined {
@@ -746,30 +788,6 @@ function updateNodeChildren(
       return {
         ...node,
         children: updateNodeChildren(node.children, nodeId, children),
-      }
-    }
-
-    return node
-  })
-}
-
-function updateNodeName(
-  nodes: KnowledgeBaseTreeNode[],
-  nodeId: string,
-  name: string
-): KnowledgeBaseTreeNode[] {
-  return nodes.map((node) => {
-    if (node.id === nodeId) {
-      return {
-        ...node,
-        name,
-      }
-    }
-
-    if (Array.isArray(node.children) && node.children.length > 0) {
-      return {
-        ...node,
-        children: updateNodeName(node.children, nodeId, name),
       }
     }
 
@@ -815,9 +833,6 @@ export function KnowledgeBaseTreePage() {
   const [createFolderParentId, setCreateFolderParentId] = React.useState<string | null>(null)
   const [createFolderParentName, setCreateFolderParentName] = React.useState<string | null>(null)
   const [createFolderName, setCreateFolderName] = React.useState("")
-  const [renameFolderOpen, setRenameFolderOpen] = React.useState(false)
-  const [renameFolderId, setRenameFolderId] = React.useState<string | null>(null)
-  const [renameFolderName, setRenameFolderName] = React.useState("")
   const [createArticleOpen, setCreateArticleOpen] = React.useState(false)
   const [createArticleParentId, setCreateArticleParentId] = React.useState<string | null>(null)
   const [createArticleParentName, setCreateArticleParentName] = React.useState<string | null>(null)
@@ -837,13 +852,30 @@ export function KnowledgeBaseTreePage() {
   const [createArticleBatchRunning, setCreateArticleBatchRunning] = React.useState(false)
   const [importDialogOpen, setImportDialogOpen] = React.useState(false)
   const [activeView, setActiveView] = React.useState<"documents" | "knowledge">("documents")
+  const prefersReducedMotion = useReducedMotion()
   const [buildingArticleIds, setBuildingArticleIds] = React.useState<Set<string>>(new Set())
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleteTarget, setDeleteTarget] = React.useState<DeleteTarget | null>(null)
   const [activeDragNodeId, setActiveDragNodeId] = React.useState<string | null>(null)
-  const [dragOverNodeId, setDragOverNodeId] = React.useState<string | null>(null)
+  const [dropIntent, setDropIntent] = React.useState<DropIntent | null>(null)
   const [movingNodeId, setMovingNodeId] = React.useState<string | null>(null)
   const createArticleFileInputRef = React.useRef<HTMLInputElement | null>(null)
+  // 行元素本体（不含展开的子树），命中测试要按行高算，sortable 包裹层的矩形是整棵子树。
+  const rowElementsRef = React.useRef(new Map<string, HTMLDivElement>())
+  const rowRefCallbacksRef = React.useRef(new Map<string, React.RefCallback<HTMLDivElement>>())
+  const springLoadTimerRef = React.useRef<number | null>(null)
+
+  const getRowRef = React.useCallback((nodeId: string) => {
+    const cached = rowRefCallbacksRef.current.get(nodeId)
+    if (cached) return cached
+
+    const callback: React.RefCallback<HTMLDivElement> = (element) => {
+      if (element) rowElementsRef.current.set(nodeId, element)
+      else rowElementsRef.current.delete(nodeId)
+    }
+    rowRefCallbacksRef.current.set(nodeId, callback)
+    return callback
+  }, [])
 
   const articleCreatedDateFrom = articleCreatedDateRange?.from
     ? formatDateYmd(articleCreatedDateRange.from)
@@ -884,7 +916,34 @@ export function KnowledgeBaseTreePage() {
   )
   const collisionDetection = React.useCallback<CollisionDetection>((args) => {
     const pointerCollisions = pointerWithin(args)
-    return pointerCollisions.length > 0 ? pointerCollisions : closestCenter(args)
+    if (pointerCollisions.length === 0) {
+      return closestCenter(args)
+    }
+
+    // 行尾「放入文件夹」按钮压在行上，两者都会命中，按钮优先。
+    const folderDropCollision = pointerCollisions.find((collision) =>
+      parseFolderDropDndId(collision.id)
+    )
+    if (folderDropCollision) {
+      return [folderDropCollision]
+    }
+
+    // sortable 包的是「行 + 整棵子树」，pointerWithin 按矩形中心排序会让祖先盖过后代
+    // （祖先中心可能反而离指针更近）。指针实际落在谁的行本体上，就算命中谁。
+    const pointerY = args.pointerCoordinates?.y
+    if (pointerY != null) {
+      const rowCollision = pointerCollisions.find((collision) => {
+        const nodeId = parseNodeDndId(collision.id)
+        if (!nodeId) return false
+        const rect = rowElementsRef.current.get(nodeId)?.getBoundingClientRect()
+        return !!rect && pointerY >= rect.top && pointerY <= rect.bottom
+      })
+      if (rowCollision) {
+        return [rowCollision]
+      }
+    }
+
+    return pointerCollisions
   }, [])
   const visibleNodeDndIds = React.useMemo(
     () => collectVisibleNodeDndIds(roots, expandedIds),
@@ -954,9 +1013,6 @@ export function KnowledgeBaseTreePage() {
     setCreateFolderParentId(null)
     setCreateFolderParentName(null)
     setCreateFolderName("")
-    setRenameFolderOpen(false)
-    setRenameFolderId(null)
-    setRenameFolderName("")
     setCreateArticleOpen(false)
     setCreateArticleParentId(null)
     setCreateArticleParentName(null)
@@ -979,7 +1035,7 @@ export function KnowledgeBaseTreePage() {
     setDeleteOpen(false)
     setDeleteTarget(null)
     setActiveDragNodeId(null)
-    setDragOverNodeId(null)
+    setDropIntent(null)
     setMovingNodeId(null)
   }, [knowledgeBaseId])
 
@@ -1219,51 +1275,6 @@ export function KnowledgeBaseTreePage() {
       setSaving(false)
     }
   }, [createFolderName, createFolderParentId, fetchTree, isSearching, knowledgeBaseId, loadChildren, saving])
-
-  const openRenameFolder = React.useCallback((node: KnowledgeBaseTreeNode) => {
-    setRenameFolderId(node.id)
-    setRenameFolderName(node.name || "")
-    setRenameFolderOpen(true)
-  }, [])
-
-  const submitRenameFolder = React.useCallback(async () => {
-    if (!renameFolderId) return
-    const name = renameFolderName.trim()
-    if (!name) {
-      toast.error("文件夹名称不能为空")
-      return
-    }
-    if (saving) return
-
-    setSaving(true)
-    try {
-      await knowledgeBaseNodeApi.updateFolder({ nodeId: renameFolderId, name })
-      toast.success("文件夹已重命名")
-      setRenameFolderOpen(false)
-
-      if (isSearching) {
-        await fetchTree()
-        return
-      }
-      setRoots((prev) => updateNodeName(prev, renameFolderId, name))
-    } catch (e: unknown) {
-      const msg = (() => {
-        if (typeof e === "object" && e && "response" in e) {
-          const response = (e as { response?: { data?: { msg?: unknown } } })
-            .response
-          const apiMsg = response?.data?.msg
-          if (typeof apiMsg === "string" && apiMsg) {
-            return apiMsg
-          }
-        }
-        if (e instanceof Error && e.message) return e.message
-        return "重命名失败"
-      })()
-      toast.error(msg)
-    } finally {
-      setSaving(false)
-    }
-  }, [fetchTree, isSearching, renameFolderId, renameFolderName, saving])
 
   const loadCreateArticleFolderTree = React.useCallback(async () => {
     if (!knowledgeBaseId) {
@@ -1715,25 +1726,82 @@ export function KnowledgeBaseTreePage() {
     [fetchTree, loadChildren]
   )
 
+  /**
+   * 落点意图的唯一真相来源：悬停高亮和真正落库都读它，避免「亮了却没放进去」。
+   * 注意用指针坐标 + 行本体矩形，跟 pointerWithin 的碰撞判定保持同一套参照。
+   */
+  const computeDropIntent = React.useCallback(
+    (event: DragMoveEvent | DragEndEvent): DropIntent | null => {
+      const activeNodeId = parseNodeDndId(event.active.id)
+      const overId = event.over?.id
+      if (!activeNodeId || !overId) {
+        return null
+      }
+
+      // 行尾那个「放入文件夹」按钮是独立 droppable，命中即表示放入，不再按行内位置判定。
+      const overFolderId = parseFolderDropDndId(overId)
+      if (overFolderId) {
+        return { kind: "into", nodeId: overFolderId }
+      }
+
+      const overNodeId = parseNodeDndId(overId)
+      if (!overNodeId || overNodeId === activeNodeId) {
+        return null
+      }
+
+      const overNode = findTreeNode(roots, overNodeId)
+      if (!overNode) {
+        return null
+      }
+
+      const activeNode = findTreeNode(roots, activeNodeId)
+      const sourceParentId = activeNode?.parentId ?? null
+      const canDropInto =
+        overNode.type === "FOLDER" &&
+        overNode.id !== sourceParentId &&
+        !isDescendantInLoadedTree(roots, activeNodeId, overNode.id)
+
+      const rowRect = rowElementsRef.current.get(overNodeId)?.getBoundingClientRect()
+      const pointerY = resolvePointerY(event.activatorEvent, event.delta)
+      if (!rowRect || pointerY == null) {
+        return { kind: canDropInto ? "into" : "before", nodeId: overNodeId }
+      }
+
+      return {
+        kind: resolveDropIntentKind(pointerY, rowRect, canDropInto),
+        nodeId: overNodeId,
+      }
+    },
+    [roots]
+  )
+
   const handleDragStart = React.useCallback((event: DragStartEvent) => {
     if (dragDisabled) {
       return
     }
     setActiveDragNodeId(parseNodeDndId(event.active.id))
-    setDragOverNodeId(null)
+    setDropIntent(null)
   }, [dragDisabled])
 
-  const handleDragOver = React.useCallback((event: DragOverEvent) => {
-    setDragOverNodeId(resolveOverNodeId(event.over?.id))
-  }, [])
+  // 行内位置每一帧都在变，onDragOver 只在 over 切换时触发，这里必须用 onDragMove。
+  // 但落点意图没变就别写 state，否则整棵树每帧重建一次。
+  const handleDragMove = React.useCallback((event: DragMoveEvent) => {
+    const next = computeDropIntent(event)
+    setDropIntent((current) => {
+      if (current?.kind === next?.kind && current?.nodeId === next?.nodeId) {
+        return current
+      }
+      return next
+    })
+  }, [computeDropIntent])
 
   const handleDragEnd = React.useCallback(async (event: DragEndEvent) => {
     const activeNodeId = parseNodeDndId(event.active.id)
-    const overId = event.over?.id
+    const intent = computeDropIntent(event)
     setActiveDragNodeId(null)
-    setDragOverNodeId(null)
+    setDropIntent(null)
 
-    if (!knowledgeBaseId || dragDisabled || !activeNodeId || !overId) {
+    if (!knowledgeBaseId || dragDisabled || !activeNodeId || !intent) {
       return
     }
 
@@ -1745,51 +1813,34 @@ export function KnowledgeBaseTreePage() {
     const sourceParentId = activeNode.parentId ?? null
     let targetParentId: string | null
     let targetIndex: number | undefined
-    const overFolderId = parseFolderDropDndId(overId)
 
-    if (overFolderId) {
-      if (overFolderId === sourceParentId) {
+    if (intent.kind === "into") {
+      if (intent.nodeId === sourceParentId) {
         return
       }
-      targetParentId = overFolderId
+      targetParentId = intent.nodeId
       targetIndex = undefined
     } else {
-      const overNodeId = parseNodeDndId(overId)
-      if (!overNodeId || overNodeId === activeNodeId) {
-        return
-      }
-
-      const overNode = findTreeNode(roots, overNodeId)
+      const overNode = findTreeNode(roots, intent.nodeId)
       if (!overNode) {
         return
       }
 
-      const shouldDropIntoFolder =
-        overNode.type === "FOLDER" &&
-        overNode.id !== sourceParentId &&
-        isDropInFolderBody(event.active.rect.current.translated, event.over?.rect)
-
-      if (shouldDropIntoFolder) {
-        targetParentId = overNode.id
-        targetIndex = undefined
-      } else {
-        targetParentId = overNode.parentId ?? null
-        const siblings = getSiblingNodes(roots, targetParentId)
-        const overIndex = siblings.findIndex((node) => node.id === overNodeId)
-        if (overIndex < 0) {
-          return
-        }
-
-        const pageOffset = targetParentId == null ? pageIndex * pageSize : 0
-        targetIndex = pageOffset + overIndex
-
-        if (sourceParentId === targetParentId) {
-          const activeIndex = siblings.findIndex((node) => node.id === activeNodeId)
-          if (activeIndex < 0 || activeIndex === overIndex) {
-            return
-          }
-        }
+      targetParentId = overNode.parentId ?? null
+      const resolvedIndex = resolveSiblingTargetIndex({
+        activeId: activeNodeId,
+        kind: intent.kind,
+        overId: intent.nodeId,
+        // 根级列表是分页的，roots 只有当前页，落库下标要补上前面几页的偏移。
+        pageOffset: targetParentId == null ? pageIndex * pageSize : 0,
+        sameParent: sourceParentId === targetParentId,
+        siblingIds: getSiblingNodes(roots, targetParentId).map((node) => node.id),
+      })
+      // null = 位置没变或目标已不在列表里，直接放弃这次移动。
+      if (resolvedIndex == null) {
+        return
       }
+      targetIndex = resolvedIndex
     }
 
     if (targetParentId === activeNodeId || isDescendantInLoadedTree(roots, activeNodeId, targetParentId)) {
@@ -1813,6 +1864,7 @@ export function KnowledgeBaseTreePage() {
       setMovingNodeId(null)
     }
   }, [
+    computeDropIntent,
     dragDisabled,
     knowledgeBaseId,
     pageIndex,
@@ -1821,12 +1873,7 @@ export function KnowledgeBaseTreePage() {
     roots,
   ])
 
-  const renderNode = React.useCallback((
-    node: KnowledgeBaseTreeNode,
-    level = 0,
-    isLast = false,
-    parentPath: boolean[] = []
-  ) => {
+  const buildTreeItem = React.useCallback((node: KnowledgeBaseTreeNode): ListItem => {
     const isFolder = node.type === "FOLDER"
     const hasChildren =
       isFolder && (node.hasChildren ?? (node.children?.length || 0) > 0)
@@ -1838,220 +1885,165 @@ export function KnowledgeBaseTreePage() {
       isFolder &&
       !!activeDragNodeId &&
       activeDragNodeId !== node.id &&
+      node.id !== (activeDragNode?.parentId ?? null) &&
       !isDescendantInLoadedTree(roots, activeDragNodeId, node.id)
-    const isFolderBodyDropActive = canDropIntoFolder && dragOverNodeId === node.id
+    // 高亮和指示线都从 dropIntent 推导，跟松手时的落库判定同源。
+    const isDropIntoActive = dropIntent?.kind === "into" && dropIntent.nodeId === node.id
+    const dropIndicator =
+      dropIntent && dropIntent.kind !== "into" && dropIntent.nodeId === node.id
+        ? dropIntent.kind
+        : null
 
-    return (
-      <SortableKnowledgeBaseTreeNode key={node.id} node={node} disabled={dragDisabled}>
-        {(dragBindings) => (
-          <TreeNode
-            nodeId={node.id}
-            level={level}
-            isLast={isLast}
-            parentPath={parentPath}
-          >
-            <TreeNodeTrigger
-              className={cn(
-                "w-full",
-                isFolderBodyDropActive && "bg-primary/10 ring-1 ring-primary/25",
-                movingNodeId === node.id && "opacity-60"
-              )}
-              style={{ paddingLeft: 8 }}
-              onClick={() => {
-                if (isFolder) {
-                  if (!hasChildren) return
-                  if (isSearching) return
-                  if (!isExpanded) {
-                    void loadChildren(node.id)
+    return {
+      id: node.id,
+      label: node.name,
+      hasChildren,
+      rowRef: getRowRef(node.id),
+      dropIndicator,
+      className: cn(
+        isDropIntoActive && "bg-primary/10 ring-1 ring-primary/40",
+        movingNodeId === node.id && "opacity-60"
+      ),
+      icon: isFolder ? (
+        <KnowledgeBaseFolderTreeIcon expanded={isExpanded} />
+      ) : (
+        <div className="flex h-4 w-4 items-center justify-center">
+          <FileIcon name={node.name} />
+        </div>
+      ),
+      leading: <KnowledgeBaseDragHandle disabled={dragDisabled} nodeName={node.name} />,
+      trailing: (
+        <>
+          {!isFolder ? <ArticleStatusBadges status={node.status} /> : null}
+          {isFolder && activeDragNodeId ? (
+            <KnowledgeBaseFolderDropTarget
+              disabled={!canDropIntoFolder}
+              folderId={node.id}
+            />
+          ) : null}
+          {!isFolder && node.articleId ? (
+            <KnowledgeBaseBuildButton
+              building={buildingArticleIds.has(node.articleId)}
+              onBuild={() => void buildArticleKnowledge(node.articleId!)}
+            />
+          ) : null}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <ButtonDelete
+                label={`删除「${node.name}」`}
+                disabled={!isFolder && !node.articleId}
+                onDelete={() => {
+                  if (isFolder) {
+                    setDeleteTarget({
+                      type: "folder",
+                      nodeId: node.id,
+                      name: node.name,
+                      parentId: node.parentId,
+                    })
+                  } else {
+                    if (!node.articleId) return
+                    setDeleteTarget({
+                      type: "article",
+                      articleId: node.articleId,
+                      nodeId: node.id,
+                      name: node.name,
+                      parentId: node.parentId,
+                    })
                   }
-                  return
-                }
-                if (!knowledgeBaseId) return
-                if (!node.articleId) return
-                navigate(knowledgeBaseArticlePath(knowledgeBaseId, node.articleId))
+                  setDeleteOpen(true)
+                }}
+              />
+            </TooltipTrigger>
+            <TooltipContent side="top">{`删除「${node.name}」`}</TooltipContent>
+          </Tooltip>
+        </>
+      ),
+      onClick: () => {
+        if (isFolder) return
+        if (!knowledgeBaseId) return
+        if (!node.articleId) return
+        navigate(knowledgeBaseArticlePath(knowledgeBaseId, node.articleId))
+      },
+      emptyContent: (
+        <div className="flex items-center gap-2 py-1 pl-6 text-sm text-muted-foreground">
+          {isLoadingChildren ? (
+            <>
+              <Loader2 className="h-3 w-3 animate-spin" />
+              加载中...
+            </>
+          ) : hasLoadError ? (
+            <span
+              className="cursor-pointer text-destructive hover:underline"
+              onClick={(e) => {
+                e.stopPropagation()
+                void loadChildren(node.id)
               }}
             >
-              <KnowledgeBaseDragHandle
-                bindings={dragBindings}
-                disabled={dragDisabled}
-                nodeName={node.name}
-              />
-              <div
-                aria-hidden="true"
-                className="shrink-0"
-                style={{ width: level * TREE_NODE_INDENT_PX }}
-              />
+              加载失败，点击重试
+            </span>
+          ) : (
+            <span className="opacity-50">空文件夹</span>
+          )}
+        </div>
+      ),
+      renderWrapper: (content) => (
+        <SortableKnowledgeBaseTreeNode disabled={dragDisabled} node={node}>
+          {content}
+        </SortableKnowledgeBaseTreeNode>
+      ),
+      children: node.children?.length ? node.children.map(buildTreeItem) : undefined,
+    }
+  }, [activeDragNode, activeDragNodeId, buildArticleKnowledge, buildingArticleIds, dragDisabled, dropIntent, expandedIds, getRowRef, knowledgeBaseId, loadChildren, movingNodeId, navigate, nodeLoadErrorById, nodeLoadingById, openCreateArticle, openCreateFolder, roots])
 
-              {isFolder ? (
-                <TreeExpander hasChildren={hasChildren} />
-              ) : (
-                <div className="w-4 h-4 mr-1" />
-              )}
+  const treeItems = React.useMemo(() => roots.map(buildTreeItem), [buildTreeItem, roots])
 
-              {isFolder ? (
-                <TreeIcon
-                  hasChildren={hasChildren}
-                  icon={<KnowledgeBaseFolderTreeIcon expanded={isExpanded} />}
-                />
-              ) : (
-                <div className="mr-2 flex h-4 w-4 items-center justify-center text-muted-foreground">
-                  <FileIcon name={node.name} />
-                </div>
-              )}
+  const handleTreeExpandedChange = React.useCallback((id: string, nextExpanded: boolean) => {
+    setExpandedIds((current) => {
+      const next = new Set(current)
+      if (nextExpanded) next.add(id)
+      else next.delete(id)
+      return next
+    })
+    // 展开时按需拉子节点；搜索态下的树已经是全量结果，不再触发懒加载。
+    if (nextExpanded && !isSearching) void loadChildren(id)
+  }, [isSearching, loadChildren])
 
-              <TreeLabel>{node.name}</TreeLabel>
+  // spring-loaded folder：拖着东西在折叠文件夹上悬停一会儿就自动展开，便于往深层拖。
+  React.useEffect(() => {
+    if (springLoadTimerRef.current != null) {
+      window.clearTimeout(springLoadTimerRef.current)
+      springLoadTimerRef.current = null
+    }
 
-              {!isFolder ? <ArticleStatusBadges status={node.status} /> : null}
+    if (!activeDragNodeId || dropIntent?.kind !== "into") {
+      return
+    }
 
-              <div className="ml-auto shrink-0 flex items-center gap-1">
-                {isFolder && activeDragNodeId ? (
-                  <KnowledgeBaseFolderDropTarget
-                    disabled={!canDropIntoFolder}
-                    folderId={node.id}
-                  />
-                ) : null}
-                {!isFolder && node.articleId ? (
-                  <KnowledgeBaseBuildButton
-                    building={buildingArticleIds.has(node.articleId)}
-                    onBuild={() => void buildArticleKnowledge(node.articleId!)}
-                  />
-                ) : null}
-                <ActionMenu
-                  trigger={
-                    <Button variant="ghost" size="icon" className="size-9 md:size-6" onClick={(e) => e.stopPropagation()}>
-                      <MoreHorizontal className="size-4 md:size-3" />
-                    </Button>
-                  }
-                  align="end"
-                >
-                  {isFolder ? (
-                    <>
-                      <DropdownMenuItem onClick={() => openCreateFolder({ id: node.id, name: node.name })}>
-                        新建文件夹
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => openCreateArticle({ id: node.id, name: node.name })}>
-                        新建文章
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => openRenameFolder(node)}>
-                        重命名
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onClick={() => {
-                          setDeleteTarget({
-                            type: "folder",
-                            nodeId: node.id,
-                            name: node.name,
-                            parentId: node.parentId,
-                          })
-                          setDeleteOpen(true)
-                        }}
-                      >
-                        删除
-                      </DropdownMenuItem>
-                    </>
-                  ) : (
-                    <>
-                      <DropdownMenuItem
-                        disabled={!node.articleId}
-                        onClick={() => {
-                          if (!knowledgeBaseId) return
-                          if (!node.articleId) return
-                          navigate(knowledgeBaseArticlePath(knowledgeBaseId, node.articleId))
-                        }}
-                      >
-                        打开
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        disabled={!node.articleId}
-                        onClick={() => {
-                          if (!knowledgeBaseId) return
-                          if (!node.articleId) return
-                          navigate(knowledgeBaseArticleMindMapPath(knowledgeBaseId, node.articleId))
-                        }}
-                      >
-                        生成思维导图
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        disabled={!node.articleId || buildingArticleIds.has(node.articleId)}
-                        onClick={() => {
-                          if (!node.articleId) return
-                          void buildArticleKnowledge(node.articleId)
-                        }}
-                      >
-                        {node.articleId && buildingArticleIds.has(node.articleId) ? "知识构建中…" : "构建知识"}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        disabled={!node.articleId}
-                        onClick={() => {
-                          if (!node.articleId) return
-                          void navigator.clipboard.writeText(node.articleId)
-                            .then(() => notify("已复制文章 ID"))
-                            .catch(() => toast.error("复制失败"))
-                        }}
-                      >
-                        复制文章ID
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        variant="destructive"
-                        disabled={!node.articleId}
-                        onClick={() => {
-                          if (!node.articleId) return
-                          setDeleteTarget({
-                            type: "article",
-                            articleId: node.articleId,
-                            nodeId: node.id,
-                            name: node.name,
-                            parentId: node.parentId,
-                          })
-                          setDeleteOpen(true)
-                        }}
-                      >
-                        删除
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                </ActionMenu>
-              </div>
-            </TreeNodeTrigger>
+    const folderId = dropIntent.nodeId
+    if (expandedIds.has(folderId)) {
+      return
+    }
 
-            {isFolder && hasChildren && (
-              <TreeNodeContent hasChildren={hasChildren}>
-                {Array.isArray(node.children) && node.children.length > 0 ? (
-                  node.children.map((child, index, children) => (
-                    renderNode(child, level + 1, index === children.length - 1, [...parentPath, isLast])
-                  ))
-                ) : (
-                  <div className="pl-6 py-1 text-muted-foreground text-sm flex items-center gap-2">
-                    {isLoadingChildren ? (
-                      <>
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                        加载中...
-                      </>
-                    ) : hasLoadError ? (
-                      <span
-                        className="text-destructive cursor-pointer hover:underline"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          void loadChildren(node.id)
-                        }}
-                      >
-                        加载失败，点击重试
-                      </span>
-                    ) : (
-                      <span className="opacity-50">空文件夹</span>
-                    )}
-                  </div>
-                )}
-              </TreeNodeContent>
-            )}
-          </TreeNode>
-        )}
-      </SortableKnowledgeBaseTreeNode>
-    )
-  }, [activeDragNodeId, buildArticleKnowledge, buildingArticleIds, dragDisabled, dragOverNodeId, expandedIds, isSearching, knowledgeBaseId, loadChildren, movingNodeId, navigate, nodeLoadErrorById, nodeLoadingById, openCreateArticle, openCreateFolder, openRenameFolder, roots])
+    const folder = findTreeNode(roots, folderId)
+    if (!folder || folder.type !== "FOLDER") {
+      return
+    }
+    if (!(folder.hasChildren ?? (folder.children?.length || 0) > 0)) {
+      return
+    }
+
+    springLoadTimerRef.current = window.setTimeout(() => {
+      springLoadTimerRef.current = null
+      handleTreeExpandedChange(folderId, true)
+    }, SPRING_LOAD_EXPAND_DELAY_MS)
+
+    return () => {
+      if (springLoadTimerRef.current != null) {
+        window.clearTimeout(springLoadTimerRef.current)
+        springLoadTimerRef.current = null
+      }
+    }
+  }, [activeDragNodeId, dropIntent, expandedIds, handleTreeExpandedChange, roots])
 
   const handlePageChange = React.useCallback(
     (nextPageIndex: number) => {
@@ -2078,7 +2070,7 @@ export function KnowledgeBaseTreePage() {
           </Button>
           <div className="min-w-0">
             <h1 className="sr-only">{knowledgeBase?.name || "我的文档"}</h1>
-            <SegmentedControl
+            <AnimatedTabs
               value={activeView}
               size="lg"
               options={[
@@ -2104,40 +2096,60 @@ export function KnowledgeBaseTreePage() {
                 },
               ]}
               ariaLabel="知识库视图"
-              className="-ml-3"
+              // 用位移而不是负 margin 做左对齐：负 margin 会把父级的 max-content 也减掉 12px，
+              // 标签栏自身的 max-w-full 就按这个夹窄的宽度收，最后一个触发区和指示条会被裁掉一截。
+              className="-translate-x-3"
               onValueChange={(value) => setActiveView(value === "knowledge" ? "knowledge" : "documents")}
             />
             {knowledgeBase?.description ? (
-              <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+              <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
                 {knowledgeBase.description}
               </p>
             ) : null}
           </div>
         </div>
-        {activeView === "documents" ? (
-          <div className="flex flex-wrap items-center gap-1">
-            <KnowledgeBaseHeaderAction
-              icon={FolderPlusIcon}
-              label="新建文件夹"
-              disabled={!knowledgeBaseId || loading || saving}
-              onClick={() => openCreateFolder(null)}
-            />
-            <KnowledgeBaseHeaderAction
-              icon={ArrowUpTrayIcon}
-              label="导入文档"
-              disabled={!knowledgeBaseId}
-              onClick={() => setImportDialogOpen(true)}
-            />
-            <KnowledgeBaseHeaderAction
-              icon={DocumentPlusIcon}
-              label="新建文章"
-              disabled={!knowledgeBaseId || loading || saving}
-              onClick={() => openCreateArticle(null)}
-            />
-          </div>
-        ) : null}
+        <AnimatePresence initial={false}>
+          {activeView === "documents" ? (
+            <motion.div
+              key="documents-actions"
+              className="flex flex-wrap items-center gap-1"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: prefersReducedMotion ? 0 : 0.18 }}
+            >
+              <KnowledgeBaseHeaderAction
+                icon={FolderPlusIcon}
+                label="新建文件夹"
+                disabled={!knowledgeBaseId || loading || saving}
+                onClick={() => openCreateFolder(null)}
+              />
+              <KnowledgeBaseHeaderAction
+                icon={ArrowUpTrayIcon}
+                label="导入文档"
+                disabled={!knowledgeBaseId}
+                onClick={() => setImportDialogOpen(true)}
+              />
+              <KnowledgeBaseHeaderAction
+                icon={DocumentPlusIcon}
+                label="新建文章"
+                disabled={!knowledgeBaseId || loading || saving}
+                onClick={() => openCreateArticle(null)}
+              />
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </div>
 
+      {/* 面板跟着切换滑动：旧视图先退场，新视图再从另一侧进来，方向和标签顺序一致。 */}
+      <AnimatePresence mode="wait" initial={false}>
+      <motion.div
+        key={activeView}
+        initial={{ opacity: 0, x: prefersReducedMotion ? 0 : -12 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: prefersReducedMotion ? 0 : 12 }}
+        transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: [0.32, 0.72, 0, 1] }}
+      >
       {activeView === "documents" ? (
         <>
           <div className="flex flex-col gap-4">
@@ -2317,27 +2329,23 @@ export function KnowledgeBaseTreePage() {
             sensors={sensors}
             collisionDetection={collisionDetection}
             onDragStart={handleDragStart}
-            onDragOver={handleDragOver}
+            onDragMove={handleDragMove}
             onDragCancel={() => {
               setActiveDragNodeId(null)
-              setDragOverNodeId(null)
+              setDropIntent(null)
             }}
             onDragEnd={(event) => {
               void handleDragEnd(event)
             }}
           >
-            <SortableContext items={visibleNodeDndIds} strategy={verticalListSortingStrategy}>
-              <TreeProvider
-                className="flex flex-col gap-1"
-                showLines={false}
-                indent={TREE_NODE_INDENT_PX}
+            <SortableContext items={visibleNodeDndIds} strategy={noSortingTransform}>
+              <NativeNestedList
+                className="p-2"
+                items={treeItems}
+                indentSize={TREE_NODE_INDENT_PX}
                 expandedIds={expandedIds}
-                onExpandedChange={setExpandedIds}
-              >
-                <TreeView>
-                  {roots.map((root, index) => renderNode(root, 0, index === roots.length - 1))}
-                </TreeView>
-              </TreeProvider>
+                onExpandedChange={handleTreeExpandedChange}
+              />
             </SortableContext>
             <DragOverlay>
               <KnowledgeBaseDragOverlay node={activeDragNode} />
@@ -2359,6 +2367,8 @@ export function KnowledgeBaseTreePage() {
       ) : knowledgeBaseId ? (
         <KnowledgeExplorerPanel knowledgeBaseId={knowledgeBaseId} />
       ) : null}
+      </motion.div>
+      </AnimatePresence>
 
       <ModalShell
         open={createFolderOpen}
@@ -2401,52 +2411,6 @@ export function KnowledgeBaseTreePage() {
               if (e.key !== "Enter") return
               e.preventDefault()
               void submitCreateFolder()
-            }}
-          />
-        </div>
-      </ModalShell>
-
-      <ModalShell
-        open={renameFolderOpen}
-        onOpenChange={(open) => {
-          if (!open && saving) return
-          setRenameFolderOpen(open)
-        }}
-        disableClose={saving}
-        title="重命名文件夹"
-        description="修改文件夹名称（同级目录下不可重名）。"
-        footer={
-          <>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={saving}
-              onClick={() => setRenameFolderOpen(false)}
-            >
-              取消
-            </Button>
-            <Button
-              type="button"
-              disabled={saving || !renameFolderId}
-              onClick={submitRenameFolder}
-            >
-              {saving ? "保存中..." : "保存"}
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-2">
-          <Label htmlFor="rename-folder-name">名称</Label>
-          <Input
-            id="rename-folder-name"
-            value={renameFolderName}
-            placeholder="请输入新名称"
-            disabled={saving}
-            onChange={(e) => setRenameFolderName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key !== "Enter") return
-              e.preventDefault()
-              void submitRenameFolder()
             }}
           />
         </div>
@@ -2700,7 +2664,7 @@ export function KnowledgeBaseTreePage() {
                     setCreateArticleParentName(null)
                   }}
                 />
-                <Folder className="size-4 shrink-0 text-muted-foreground" />
+                <Folder className="size-4 shrink-0 text-blue-500" />
                 <span className="truncate text-sm">根目录</span>
               </div>
 

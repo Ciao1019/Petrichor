@@ -1,11 +1,12 @@
 import * as React from "react"
 import { createPortal } from "react-dom"
-import { AlertCircle, ChevronUp, FileDown, FileUp, Flame, Hash, Plus, RefreshCw, Save, Share2, Sparkles, X } from "@/components/iconimate"
+import { AlertCircle, ChevronUp, FileDown, FileUp, Flame, Hash, ListTree, Plus, RefreshCw, Save, Share2, Sparkles, X } from "@/components/iconimate"
 import { toast } from "sonner"
 import { useParams } from "react-router-dom"
 
 import { resolveAxiosErrorMessage } from "@/components/knowledge/article-share-utils"
 import { PlateMarkdownEditor, type PlateMarkdownEditorHandle } from "@/components/plate/PlateMarkdownEditor"
+import { ArticleChunkDialog } from "@/components/knowledge/ArticleChunkDialog"
 import { ArticleShareDialog } from "@/components/knowledge/ArticleShareDialog"
 import { BurnLinkDialog } from "@/components/knowledge/BurnLinkDialog"
 import {
@@ -290,6 +291,7 @@ export function KnowledgeBaseArticleEditorPage() {
   const [refreshingPublicCache, setRefreshingPublicCache] = React.useState(false)
   const [shareDialogOpen, setShareDialogOpen] = React.useState(false)
   const [burnDialogOpen, setBurnDialogOpen] = React.useState(false)
+  const [chunkDialogOpen, setChunkDialogOpen] = React.useState(false)
   const [recoverableDraft, setRecoverableDraft] = React.useState<ArticleDraftRecord | null>(null)
   const [activeHeadingId, setActiveHeadingId] = React.useState("")
   // null = not yet measured; renders TOC only after we have the correct values
@@ -1203,6 +1205,17 @@ export function KnowledgeBaseArticleEditorPage() {
             <Button
               variant="ghost" size="sm"
               className="h-8 gap-1.5 text-muted-foreground hover:text-foreground px-2.5"
+              disabled={!articleId || loading}
+              onClick={() => setChunkDialogOpen(true)}
+            >
+              <ListTree className="size-3.5" />
+              <span className="text-sm hidden sm:inline">分片</span>
+            </Button>
+          ) : null}
+          {isOwner ? (
+            <Button
+              variant="ghost" size="sm"
+              className="h-8 gap-1.5 text-muted-foreground hover:text-foreground px-2.5"
               disabled={!articleId}
               onClick={() => setShareDialogOpen(true)}
             >
@@ -1367,6 +1380,14 @@ export function KnowledgeBaseArticleEditorPage() {
         open={burnDialogOpen}
         onOpenChange={setBurnDialogOpen}
         articleId={articleId}
+      />
+
+      <ArticleChunkDialog
+        open={chunkDialogOpen}
+        onOpenChange={setChunkDialogOpen}
+        knowledgeBaseId={knowledgeBaseId}
+        articleId={articleId}
+        readOnly={readOnly}
       />
 
       {/* TOC — portal so position:fixed is relative to viewport.

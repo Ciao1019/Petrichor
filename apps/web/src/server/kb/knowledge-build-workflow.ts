@@ -4,9 +4,23 @@ import { z } from "zod"
 import { callChatCompletion } from "@/server/ai/generation"
 
 const KNOWLEDGE_CHUNK_MAX_CHARS = 3_200
-const KNOWLEDGE_CHUNK_OVERLAP_CHARS = 180
-const KNOWLEDGE_CHUNK_LIMIT = 60
-const QUESTION_BATCH_SIZE = 8
+/** 贪心合并的目标尺寸；对齐 RAGFlow 512 token / LlamaIndex 1024 的主流区间 */
+const KNOWLEDGE_CHUNK_TARGET_CHARS = 1_200
+/** 贪心扫完后过小的尾块向前合并的阈值 */
+const KNOWLEDGE_CHUNK_MIN_TAIL_CHARS = 400
+/** 短标题守卫：不足此长度的段落不得独立成片（对标 RAGFlow _is_short_header 的 <50 token） */
+const KNOWLEDGE_SHORT_HEADING_CHARS = 120
+/** 合并后沿用某一段标题所需的字符占比 */
+const HEADING_DOMINANCE_RATIO = 0.6
+const KNOWLEDGE_CHUNK_OVERLAP_CHARS = 320
+const KNOWLEDGE_CHUNK_LIMIT = 120
+/**
+ * 问题生成的分批预算。按字符数而非固定条数分批：分片放大后，固定 8 条会让单次
+ * 请求塞进近万字并要求一次输出 24 个问题，模型的 JSON 会被截断，多数分片只能
+ * 回落到模板问题。条数上限只作兜底。
+ */
+const QUESTION_BATCH_MAX_CHARS = 4_000
+const QUESTION_BATCH_MAX_ITEMS = 4
 const QUESTION_BATCH_CONCURRENCY = 3
 const WIKI_DOCUMENT_MAX_CHARS = 72_000
 const WIKI_ITEM_LIMIT = 24
@@ -14,6 +28,13 @@ const WIKI_PAGE_BATCH_SIZE = 4
 const WIKI_PAGE_BATCH_CONCURRENCY = 3
 
 export const ARTICLE_KNOWLEDGE_BUILD_VERSION = 4
+
+/**
+ * 分片算法版本。与 ARTICLE_KNOWLEDGE_BUILD_VERSION 解耦：后者只用于筛选可复用的
+ * Wiki 目录路径，升它会让模型重新发明目录树。切分逻辑变更只应动这个常量。
+ * 存量数据没有该字段，读取时按 0 处理，从而被判定为过期并引导重建。
+ */
+export const CHUNK_ALGORITHM_VERSION = 2
 
 const existingWikiPageSchema = z.object({
     pageKey: z.string(),
@@ -39,12 +60,16 @@ const knowledgeChunkSchema = z.object({
     chunkKey: z.string(),
     position: z.number().int().nonnegative(),
     heading: z.string(),
+    /** 完整标题路径，如 ["架构", "存储"]；导语段为空数组 */
+    headingPath: z.array(z.string()),
     contentMd: z.string(),
     contentHash: z.string(),
 })
 
 const preparedDocumentSchema = workflowInputSchema.extend({
     chunks: z.array(knowledgeChunkSchema),
+    /** 分片阶段产生的告警（如触达数量上限被截断），并入最终 warnings */
+    chunkWarnings: z.array(z.string()),
 })
 
 const chunkQuestionsSchema = z.object({
@@ -115,31 +140,64 @@ type WorkflowInput = z.infer<typeof workflowInputSchema>
 const HEADING_PATTERN = /^(#{1,6})\s+(.+?)\s*#*\s*$/
 const FENCE_PATTERN = /^\s*(```|~~~)/
 
+export type MarkdownSection = {
+    /** 完整标题路径（不含文章标题），导语段为空数组 */
+    headingPath: string[]
+    heading: string
+    text: string
+}
+
+/** 围栏区间 [start, end)，断点不得落在其中，避免代码块被拦腰截断 */
+type FenceSpan = { start: number; end: number }
+
+function collectFenceSpans(text: string): FenceSpan[] {
+    const spans: FenceSpan[] = []
+    let offset = 0
+    let openAt: number | null = null
+    for (const line of text.split("\n")) {
+        if (FENCE_PATTERN.test(line)) {
+            if (openAt == null) openAt = offset
+            else {
+                spans.push({ start: openAt, end: offset + line.length })
+                openAt = null
+            }
+        }
+        offset += line.length + 1
+    }
+    // 未闭合围栏保护到文末
+    if (openAt != null) spans.push({ start: openAt, end: text.length })
+    return spans
+}
+
+function fenceSpanAt(spans: FenceSpan[], index: number): FenceSpan | null {
+    return spans.find((span) => index > span.start && index < span.end) ?? null
+}
+
 /**
- * 按 Markdown 标题与段落边界切片。切片仅服务于检索和推荐问题，
- * Wiki 的候选抽取与页面正文生成始终读取整篇 Markdown。
+ * 阶段 ①：结构解析。所有 h1–h6 都是候选边界（层级无关，不假设作者的标题习惯），
+ * 围栏内的 # 不算标题；每段记录完整标题路径，供合并后归属与问题生成定位使用。
  */
-export function splitMarkdownForKnowledgeBuild(
-    markdown: string,
-    articleTitle: string,
-    maxChars = KNOWLEDGE_CHUNK_MAX_CHARS,
-): Omit<RawChunk, "contentHash">[] {
+export function parseMarkdownSections(markdown: string, articleTitle: string): MarkdownSection[] {
     const normalized = markdown.replace(/\r\n?/g, "\n").trim()
     if (!normalized) return []
 
-    const lines = normalized.split("\n")
-    const sections: Array<{ heading: string; text: string }> = []
-    let heading = articleTitle.trim() || "文档正文"
+    const sections: MarkdownSection[] = []
+    const stack: Array<{ level: number; title: string }> = []
     let buffer: string[] = []
     let inFence = false
 
     const flush = () => {
         const text = buffer.join("\n").trim()
-        if (text) sections.push({ heading, text })
         buffer = []
+        if (!text) return
+        sections.push({
+            headingPath: stack.map((item) => item.title),
+            heading: stack.at(-1)?.title ?? (articleTitle.trim() || "文档正文"),
+            text,
+        })
     }
 
-    for (const line of lines) {
+    for (const line of normalized.split("\n")) {
         if (FENCE_PATTERN.test(line)) {
             inFence = !inFence
             buffer.push(line)
@@ -148,51 +206,193 @@ export function splitMarkdownForKnowledgeBuild(
         const match = inFence ? null : line.match(HEADING_PATTERN)
         if (match) {
             flush()
-            heading = match[2].trim() || articleTitle
-            buffer.push(line)
-            continue
+            const level = match[1].length
+            while (stack.length > 0 && stack.at(-1)!.level >= level) stack.pop()
+            stack.push({ level, title: match[2].trim() || articleTitle })
         }
         buffer.push(line)
     }
     flush()
-
-    const result: Omit<RawChunk, "contentHash">[] = []
-    for (const section of sections) {
-        const pieces = splitLongSection(section.text, maxChars, KNOWLEDGE_CHUNK_OVERLAP_CHARS)
-        for (const piece of pieces) {
-            if (result.length >= KNOWLEDGE_CHUNK_LIMIT) break
-            const position = result.length
-            result.push({
-                chunkKey: `chunk-${String(position + 1).padStart(3, "0")}`,
-                position,
-                heading: section.heading,
-                contentMd: piece,
-            })
-        }
-        if (result.length >= KNOWLEDGE_CHUNK_LIMIT) break
-    }
-    return result
+    return sections
 }
 
+/** 纯标题、正文极短的段落不得独立成片（对标 RAGFlow naive.py 的 _is_short_header） */
+function isShortHeadingOnly(section: MarkdownSection) {
+    return section.text.length <= KNOWLEDGE_SHORT_HEADING_CHARS
+}
+
+/**
+ * 合并后的身份归属：某一段占绝对多数（≥60% 字符）时沿用它的标题，
+ * 否则锚定到分片里第一个有实质内容的段落——分片从哪里开始就叫什么。
+ *
+ * 这里刻意不用最近公共祖先：文档顶层常常是 h2 而非单一 h1，跨同级标题合并时
+ * 公共祖先会退化成空路径，绝大多数分片都会掉回文章标题，等于没有路径。
+ */
+function resolveMergedHeading(group: MarkdownSection[], articleTitle: string) {
+    if (group.length === 1) return { heading: group[0].heading, headingPath: group[0].headingPath }
+    const total = group.reduce((sum, section) => sum + section.text.length, 0)
+    const dominant = group.find((section) => section.text.length >= total * HEADING_DOMINANCE_RATIO)
+    // 纯标题存根不配定义分片身份，锚点落到第一个有实质内容的段落
+    const anchor = dominant ?? group.find((section) => !isShortHeadingOnly(section)) ?? group[0]
+    return {
+        heading: anchor.headingPath.at(-1) ?? (articleTitle.trim() || "文档正文"),
+        headingPath: anchor.headingPath,
+    }
+}
+
+/** 顶层主题锚点：导语段（空路径）用哨兵值，保证只与导语自身合并 */
+function topLevelOf(section: MarkdownSection) {
+    return section.headingPath[0] ?? "\u0000导语"
+}
+
+function groupLength(group: MarkdownSection[]) {
+    return group.reduce((sum, section) => sum + section.text.length, 0)
+}
+
+/**
+ * 阶段 ②：贪心合并。相邻小节累加到接近 TARGET 为止；只含短标题的累积块
+ * 无条件继续吸收。两条硬约束：
+ * 1. 顶层主题边界（headingPath[0] 不同的两个小节不得同片）——否则「安装指南」
+ *    尾部会和「快速开始」缝在一起，身份标签也会随机落在中间主题上；
+ * 2. 兜底合并同样不得跨顶层主题、不得超过硬上限。
+ */
+function mergeSections(sections: MarkdownSection[], articleTitle: string) {
+    const groups: MarkdownSection[][] = []
+    let current: MarkdownSection[] = []
+    let currentLength = 0
+
+    for (const section of sections) {
+        if (current.length === 0) {
+            current = [section]
+            currentLength = section.text.length
+            continue
+        }
+        const sameTop = topLevelOf(section) === topLevelOf(current[0])
+        const onlyShortHeading = current.every(isShortHeadingOnly)
+        const projected = currentLength + section.text.length + 1
+        // 对标 RAGFlow 的 OVER_CAP：累积块还不达标时允许越过目标值一次，
+        // 否则「小节 + 紧随其后的大节」会把前面那个小块留成孤儿。
+        const mayOverflow = currentLength < KNOWLEDGE_CHUNK_MIN_TAIL_CHARS && projected <= KNOWLEDGE_CHUNK_MAX_CHARS
+        if (!sameTop || (!onlyShortHeading && !mayOverflow && projected > KNOWLEDGE_CHUNK_TARGET_CHARS)) {
+            groups.push(current)
+            current = [section]
+            currentLength = section.text.length
+            continue
+        }
+        current.push(section)
+        currentLength = projected
+    }
+    if (current.length > 0) groups.push(current)
+
+    // 小组兜底：不足 MIN 的组优先向后并入同主题邻组，其次向前并；均受硬上限约束。
+    // 只兜尾块不够：顶层主题切换处随时可能产生百来字的孤立小组。
+    for (let index = groups.length - 1; index >= 0; index -= 1) {
+        const group = groups[index]
+        if (groupLength(group) >= KNOWLEDGE_CHUNK_MIN_TAIL_CHARS) continue
+        const next = groups[index + 1]
+        const prev = groups[index - 1]
+        const length = groupLength(group)
+        if (next && topLevelOf(next[0]) === topLevelOf(group[0]) && length + groupLength(next) <= KNOWLEDGE_CHUNK_MAX_CHARS) {
+            groups.splice(index, 2, [...group, ...next])
+        } else if (prev && topLevelOf(prev[0]) === topLevelOf(group[0]) && length + groupLength(prev) <= KNOWLEDGE_CHUNK_MAX_CHARS) {
+            groups.splice(index - 1, 2, [...prev, ...group])
+        }
+    }
+
+    return groups.map((group) => ({
+        ...resolveMergedHeading(group, articleTitle),
+        text: group.map((section) => section.text).join("\n\n"),
+    }))
+}
+
+const SENTENCE_END_PATTERN = /[。！？；!?;]/g
+
+/** 在 [from, to) 内找最靠后的、不落在围栏中的分隔点；优先级 \n\n > \n > 句终符 */
+function findBreakPoint(text: string, from: number, to: number, spans: FenceSpan[]): number | null {
+    const candidates: number[] = []
+    const paragraph = text.lastIndexOf("\n\n", to)
+    if (paragraph > from) candidates.push(paragraph)
+    const line = text.lastIndexOf("\n", to)
+    if (line > from) candidates.push(line)
+    SENTENCE_END_PATTERN.lastIndex = 0
+    let sentence = -1
+    for (const match of text.slice(from, to).matchAll(SENTENCE_END_PATTERN)) {
+        sentence = from + match.index + match[0].length
+    }
+    if (sentence > from) candidates.push(sentence)
+    for (const candidate of candidates) {
+        if (!fenceSpanAt(spans, candidate)) return candidate
+    }
+    return null
+}
+
+/**
+ * 阶段 ③：超长回退切分。仅对单段就超过硬上限的内容生效；断点按分隔符优先级降级，
+ * 落在代码围栏内则改用围栏结束位（宁可超长也不切碎代码块）。
+ */
 function splitLongSection(text: string, maxChars: number, overlapChars: number): string[] {
     if (text.length <= maxChars) return [text]
+    const spans = collectFenceSpans(text)
     const chunks: string[] = []
     let cursor = 0
     while (cursor < text.length) {
         const hardEnd = Math.min(text.length, cursor + maxChars)
         let end = hardEnd
         if (hardEnd < text.length) {
-            const paragraphBreak = text.lastIndexOf("\n\n", hardEnd)
-            const lineBreak = text.lastIndexOf("\n", hardEnd)
-            const candidate = Math.max(paragraphBreak, lineBreak)
-            if (candidate > cursor + Math.floor(maxChars * 0.55)) end = candidate
+            const floor = cursor + Math.floor(maxChars * 0.55)
+            const candidate = findBreakPoint(text, floor, hardEnd, spans)
+            if (candidate != null) end = candidate
+            else {
+                // 找不到合法断点：若硬切点落在围栏内，顺延到围栏结束，保住代码块完整
+                const span = fenceSpanAt(spans, hardEnd)
+                end = span ? span.end : hardEnd
+            }
         }
         const value = text.slice(cursor, end).trim()
         if (value) chunks.push(value)
         if (end >= text.length) break
-        cursor = Math.max(end - overlapChars, cursor + 1)
+        // 重叠区对齐到行边界，避免半句重叠；回退点落在围栏内则放弃重叠，
+        // 否则下一个切片会从代码块中间开始，围栏标记不成对。
+        let next = Math.max(end - overlapChars, cursor + 1)
+        const overlapSpan = fenceSpanAt(spans, next)
+        if (overlapSpan) next = Math.max(overlapSpan.end, cursor + 1)
+        const aligned = text.indexOf("\n", next)
+        cursor = aligned > next && aligned < end ? aligned + 1 : next
     }
     return chunks
+}
+
+/**
+ * 按 Markdown 结构切片：结构解析 → 贪心合并 → 超长回退 → 组装。
+ * 切片服务于检索和推荐问题；Wiki 的候选抽取与页面正文生成始终读取整篇 Markdown。
+ */
+export function splitMarkdownForKnowledgeBuild(
+    markdown: string,
+    articleTitle: string,
+    maxChars = KNOWLEDGE_CHUNK_MAX_CHARS,
+): { chunks: Omit<RawChunk, "contentHash">[]; truncated: boolean } {
+    const sections = parseMarkdownSections(markdown, articleTitle)
+    if (sections.length === 0) return { chunks: [], truncated: false }
+
+    const chunks: Omit<RawChunk, "contentHash">[] = []
+    let truncated = false
+    for (const merged of mergeSections(sections, articleTitle)) {
+        for (const piece of splitLongSection(merged.text, maxChars, KNOWLEDGE_CHUNK_OVERLAP_CHARS)) {
+            if (chunks.length >= KNOWLEDGE_CHUNK_LIMIT) {
+                truncated = true
+                return { chunks, truncated }
+            }
+            const position = chunks.length
+            chunks.push({
+                chunkKey: `chunk-${String(position + 1).padStart(3, "0")}`,
+                position,
+                heading: merged.heading,
+                headingPath: merged.headingPath,
+                contentMd: piece,
+            })
+        }
+    }
+    return { chunks, truncated }
 }
 
 export function normalizeRecommendedQuestions(values: unknown, heading: string): [string, string, string] {
@@ -328,9 +528,37 @@ function renderExistingPageCatalog(pages: ExistingKnowledgePage[]) {
     ].join("")).join("\n")
 }
 
+/** 按字符预算分批，单片超预算时自成一批 */
+export function batchChunksByBudget<T extends { contentMd: string }>(
+    chunks: T[],
+    maxChars: number,
+    maxItems: number,
+): T[][] {
+    const batches: T[][] = []
+    let current: T[] = []
+    let currentChars = 0
+    for (const chunk of chunks) {
+        const size = chunk.contentMd.length
+        if (current.length > 0 && (current.length >= maxItems || currentChars + size > maxChars)) {
+            batches.push(current)
+            current = []
+            currentChars = 0
+        }
+        current.push(chunk)
+        currentChars += size
+    }
+    if (current.length > 0) batches.push(current)
+    return batches
+}
+
+/** 渲染切片的标题路径，如「架构 > 存储 > Redis」；导语段回落到叶子标题 */
+function renderHeadingTrail(chunk: { heading: string; headingPath: string[] }) {
+    return chunk.headingPath.length > 0 ? chunk.headingPath.join(" > ") : chunk.heading
+}
+
 async function generateChunkQuestions(input: z.infer<typeof preparedDocumentSchema>) {
     const warnings: string[] = []
-    const batches = batchValues(input.chunks, QUESTION_BATCH_SIZE)
+    const batches = batchChunksByBudget(input.chunks, QUESTION_BATCH_MAX_CHARS, QUESTION_BATCH_MAX_ITEMS)
     const outputs = await mapWithConcurrency(batches, QUESTION_BATCH_CONCURRENCY, async (batch) => {
         const fallback = batch.map((chunk) => ({
             chunkKey: chunk.chunkKey,
@@ -341,11 +569,12 @@ async function generateChunkQuestions(input: z.infer<typeof preparedDocumentSche
                 userId: input.userId,
                 systemPrompt: [
                     "你是知识库问题生成器。为每个 Markdown 切片生成恰好 3 个用户可能提出的推荐问题。",
+                    "heading 是该切片在文档中的完整标题路径（用 > 分隔），可据此判断切片所处的语境层级。",
                     "问题必须能仅依据对应切片回答，具体、互不重复，不要输出答案。",
                     "只输出 JSON：{\"questions\":{\"chunk-001\":[\"问题1\",\"问题2\",\"问题3\"]}}。",
                 ].join("\n"),
                 message: batch.map((chunk) => [
-                    `<chunk id="${chunk.chunkKey}" heading="${chunk.heading}">`,
+                    `<chunk id="${chunk.chunkKey}" heading="${renderHeadingTrail(chunk)}">`,
                     chunk.contentMd,
                     "</chunk>",
                 ].join("\n")).join("\n\n"),
@@ -354,6 +583,10 @@ async function generateChunkQuestions(input: z.infer<typeof preparedDocumentSche
             const questions = parsed?.questions
             if (!questions || typeof questions !== "object" || Array.isArray(questions)) return fallback
             const byKey = questions as Record<string, unknown>
+            const missing = batch.filter((chunk) => byKey[chunk.chunkKey] == null)
+            if (missing.length > 0) {
+                warnings.push(`${missing.length} 个切片未拿到模型问题，已使用模板问题`)
+            }
             return batch.map((chunk) => ({
                 chunkKey: chunk.chunkKey,
                 questions: normalizeRecommendedQuestions(byKey[chunk.chunkKey], chunk.heading),
@@ -757,13 +990,17 @@ const prepareChunksStep = createStep({
     id: "prepare-markdown-chunks",
     inputSchema: workflowInputSchema,
     outputSchema: preparedDocumentSchema,
-    execute: async ({ inputData }) => ({
-        ...inputData,
-        chunks: splitMarkdownForKnowledgeBuild(inputData.contentMd, inputData.articleTitle).map((chunk) => ({
-            ...chunk,
-            contentHash: simpleHash(chunk.contentMd),
-        })),
-    }),
+    execute: async ({ inputData }) => {
+        const { chunks, truncated } = splitMarkdownForKnowledgeBuild(inputData.contentMd, inputData.articleTitle)
+        return {
+            ...inputData,
+            chunks: chunks.map((chunk) => ({ ...chunk, contentHash: simpleHash(chunk.contentMd) })),
+            // 截断必须显式上报，不能像旧实现那样静默丢掉文档尾部
+            chunkWarnings: truncated
+                ? [`文档过长，仅前 ${KNOWLEDGE_CHUNK_LIMIT} 个切片参与了知识构建，后续内容未生成推荐问题`]
+                : [],
+        }
+    },
 })
 
 const generateQuestionsStep = createStep({
@@ -802,7 +1039,11 @@ const combineKnowledgeStep = createStep({
             documentSummary: extractionResult.documentSummary,
             candidates: extractionResult.candidates,
             relations: extractionResult.relations,
-            warnings: [...new Set([...questionResult.warnings, ...extractionResult.warnings])].slice(0, 8),
+            warnings: [...new Set([
+                ...prepared.chunkWarnings,
+                ...questionResult.warnings,
+                ...extractionResult.warnings,
+            ])].slice(0, 8),
         }
     },
 })

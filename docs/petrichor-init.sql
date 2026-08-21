@@ -300,6 +300,7 @@ create table if not exists petrichor_kb_article_chunk (
     heading text not null,
     content_md text not null,
     content_hash text not null,
+    heading_path_json text not null default '[]',
     recommended_questions_json text not null default '[]',
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()

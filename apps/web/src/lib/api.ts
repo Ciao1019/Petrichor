@@ -1273,6 +1273,38 @@ export interface ArticleKnowledgeBuildResponse {
   warnings: string[]
 }
 
+/** 「构建知识」持久化的单个文章切片及其推荐问题 */
+export interface ArticleKnowledgeChunkResponse {
+  id: string
+  chunkKey: string
+  position: number
+  heading: string
+  contentMd: string
+  charCount: number
+  contentHash: string
+  /** 完整标题路径，如 ["架构","存储"]；旧算法产出的分片为空数组 */
+  headingPath: string[]
+  recommendedQuestions: string[]
+  updatedAt: string | null
+}
+
+export interface ArticleKnowledgeChunkListResponse {
+  articleId: string
+  knowledgeBaseId: string
+  articleTitle: string
+  /** 是否已经构建过切片 */
+  built: boolean
+  /** 正文改动、或分片由旧版切分算法产出 */
+  stale: boolean
+  /** 产出这批分片的切分算法版本；存量数据为 0 */
+  chunkAlgorithmVersion: number
+  currentChunkAlgorithmVersion: number
+  builtAt: string | null
+  chunkCount: number
+  questionCount: number
+  chunks: ArticleKnowledgeChunkResponse[]
+}
+
 export const knowledgeBaseWikiAgentApi = {
   dashboard: (knowledgeBaseId: string) =>
     api.post<KnowledgeBaseWikiDashboardResponse>("/kb/wiki/dashboard", { knowledgeBaseId }),
@@ -1295,6 +1327,8 @@ export const knowledgeBaseWikiAgentApi = {
     articleId: string
     forceRebuild?: boolean
   }) => api.post<ArticleKnowledgeBuildResponse>("/kb/knowledge/build", data),
+  articleChunks: (data: { knowledgeBaseId: string; articleId: string }) =>
+    api.post<ArticleKnowledgeChunkListResponse>("/kb/knowledge/chunk/list", data),
   embedWiki: (knowledgeBaseId: string) =>
     api.post<KbWikiEmbeddingRunResult>("/kb/wiki/embedding/run", { knowledgeBaseId }),
   patches: (knowledgeBaseId: string) =>

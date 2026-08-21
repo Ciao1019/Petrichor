@@ -280,6 +280,8 @@ export const knowledgeBaseArticleChunks = pgTable("petrichor_kb_article_chunk", 
     heading: text("heading").notNull(),
     contentMd: text("content_md").notNull(),
     contentHash: text("content_hash").notNull(),
+    /** 完整标题路径 JSON 数组，如 ["架构","存储"]；存量数据为 [] */
+    headingPathJson: text("heading_path_json").notNull().default("[]"),
     recommendedQuestionsJson: text("recommended_questions_json").notNull().default("[]"),
     ...timestamps,
 }, (table) => [

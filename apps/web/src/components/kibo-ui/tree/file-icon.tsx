@@ -1,4 +1,4 @@
-import { FileCode, FileDigit, FileIcon as FileIconLucide, FileText } from "@/components/iconimate"
+import { FileCode, FileDigit, FileIcon as FileIconLucide, FileText, ImageIcon } from "@/components/iconimate"
 import { cn } from "@/lib/utils"
 
 export type FileType = "folder" | "file"
@@ -26,7 +26,15 @@ export function FileIcon({ name, isDirectory, className }: FileIconProps) {
       return <FileText className={cn("h-4 w-4 text-zinc-500", className)} />
     case "md":
       return <FileCode className={cn("h-4 w-4 text-emerald-500", className)} />
+    case "png":
+    case "jpg":
+    case "jpeg":
+    case "gif":
+    case "webp":
+    case "svg":
+    case "avif":
+      return <ImageIcon className={cn("h-4 w-4 text-purple-500", className)} />
     default:
-      return <FileIconLucide className={cn("h-4 w-4 text-muted-foreground", className)} />
+      return <FileIconLucide className={cn("h-4 w-4 text-gray-400", className)} />
   }
 }

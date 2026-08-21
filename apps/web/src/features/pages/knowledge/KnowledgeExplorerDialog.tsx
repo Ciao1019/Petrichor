@@ -5,14 +5,10 @@ import { useNavigate } from "react-router-dom"
 import {
   ArrowLeft,
   BookOpen,
-  ChevronDown,
-  ChevronRight,
   Clock,
-  ExternalLink,
   FileText,
   Folder,
   FolderOpen,
-  Link2,
   LightbulbIcon,
   Loader2,
   Search,
@@ -22,10 +18,12 @@ import {
 import { toast } from "sonner"
 
 import { MarkdownPreview } from "@/components/markdown/MarkdownPreview"
+import { wikiScribbleStyle } from "@/components/markdown/wiki-scribble"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { NativeNestedList, type ListItem } from "@/components/uitripled/native-nested-list-shadcnui"
 import {
   knowledgeBaseWikiAgentApi,
   type KnowledgeBaseWikiPageKind,
@@ -60,6 +58,23 @@ type RelatedKnowledge = {
   relationType: string
   description: string | null
   direction: "out" | "in"
+}
+
+type RelatedKnowledgeGroup = {
+  label: string
+  items: RelatedKnowledge[]
+}
+
+/** 出链的 relationType 是模型写的自由文本，常见的几个翻成中文，其余原样显示。 */
+const RELATION_LABEL: Record<string, string> = {
+  index: "相关知识",
+  extracts: "摘录",
+  related: "相关",
+  mentions: "提及",
+  contains: "包含",
+  part_of: "属于",
+  compares: "对比",
+  answers: "解答",
 }
 
 const KIND_LABEL: Record<KnowledgeBaseWikiPageKind, string> = {
@@ -125,69 +140,42 @@ function countFolderPages(folder: KnowledgeFolder): number {
   return folder.pages.length + folder.children.reduce((sum, child) => sum + countFolderPages(child), 0)
 }
 
-function FolderBranch({
-  folder,
-  expanded,
-  selectedPageKey,
-  onToggle,
-  onSelectPage,
-}: {
-  folder: KnowledgeFolder
-  expanded: Set<string>
-  selectedPageKey: string | null
-  onToggle: (key: string) => void
-  onSelectPage: (page: KnowledgeBaseWikiPageResponse) => void
-}) {
-  const open = expanded.has(folder.key)
-  return (
-    <div>
-      <button
-        type="button"
-        className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent"
-        style={{ paddingLeft: `${folder.depth * 12 + 8}px` }}
-        aria-expanded={open}
-        onClick={() => onToggle(folder.key)}
-      >
-        {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-        {open ? <FolderOpen className="size-4 text-primary" /> : <Folder className="size-4 text-muted-foreground" />}
-        <span className={cn("min-w-0 flex-1 truncate", folder.depth === 0 && "font-semibold")}>{folder.name}</span>
-        <span className="text-xs text-muted-foreground">{countFolderPages(folder)}</span>
-      </button>
-      {open ? (
-        <div>
-          {folder.children.map((child) => (
-            <FolderBranch
-              key={child.key}
-              folder={child}
-              expanded={expanded}
-              selectedPageKey={selectedPageKey}
-              onToggle={onToggle}
-              onSelectPage={onSelectPage}
-            />
-          ))}
-          {folder.pages.map((page) => (
-            <button
-              key={page.pageKey}
-              type="button"
-              className={cn(
-                "flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-sm hover:bg-accent",
-                selectedPageKey === page.pageKey && "bg-primary/10 text-primary",
-              )}
-              style={{ paddingLeft: `${(folder.depth + 1) * 12 + 14}px` }}
-              onClick={() => onSelectPage(page)}
-            >
-              {page.kind === "entity" ? (
-                <Tags className="size-3.5 shrink-0 text-emerald-500" aria-hidden="true" />
-              ) : (
-                <LightbulbIcon className="size-3.5 shrink-0 text-amber-500" aria-hidden="true" />
-              )}
-              <span className="truncate">{page.title}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  )
+const FOLDER_ITEM_PREFIX = "folder:"
+const PAGE_ITEM_PREFIX = "page:"
+
+/** 把知识文件夹树摊成 NativeNestedList 的 items：文件夹在前、页面在后。 */
+function toKnowledgeListItems(
+  folders: KnowledgeFolder[],
+  expandedKeys: Set<string>,
+  onSelectPage: (page: KnowledgeBaseWikiPageResponse) => void,
+): ListItem[] {
+  return folders.map((folder) => {
+    const open = expandedKeys.has(folder.key)
+    return {
+      id: `${FOLDER_ITEM_PREFIX}${folder.key}`,
+      label: folder.depth === 0 ? <span className="font-semibold">{folder.name}</span> : folder.name,
+      icon: open ? (
+        <FolderOpen className="size-4 text-yellow-500" />
+      ) : (
+        <Folder className="size-4 text-blue-500" />
+      ),
+      hasChildren: folder.children.length > 0 || folder.pages.length > 0,
+      trailing: <span className="pr-1 text-xs text-muted-foreground">{countFolderPages(folder)}</span>,
+      children: [
+        ...toKnowledgeListItems(folder.children, expandedKeys, onSelectPage),
+        ...folder.pages.map<ListItem>((page) => ({
+          id: `${PAGE_ITEM_PREFIX}${page.pageKey}`,
+          label: page.title,
+          icon: page.kind === "entity" ? (
+            <Tags className="size-3.5 shrink-0 text-emerald-500" aria-hidden="true" />
+          ) : (
+            <LightbulbIcon className="size-3.5 shrink-0 text-amber-500" aria-hidden="true" />
+          ),
+          onClick: () => onSelectPage(page),
+        })),
+      ],
+    }
+  })
 }
 
 function KnowledgePageRow({
@@ -279,6 +267,20 @@ function collectRelatedKnowledge(detail: KnowledgeBaseWikiPageDetailResponse): R
   })
 }
 
+function groupRelatedKnowledge(items: RelatedKnowledge[]): RelatedKnowledgeGroup[] {
+  const groups = new Map<string, RelatedKnowledgeGroup>()
+  for (const item of items) {
+    // 出链按关系类型各占一行；入链无论什么关系都收进「被链接」，免得页脚被反向关系拆成一堆小分组
+    const label = item.direction === "out"
+      ? RELATION_LABEL[item.relationType] ?? item.relationType
+      : "被链接"
+    const group = groups.get(label)
+    if (group) group.items.push(item)
+    else groups.set(label, { label, items: [item] })
+  }
+  return [...groups.values()]
+}
+
 export function KnowledgeExplorerPanel({
   knowledgeBaseId,
 }: {
@@ -332,6 +334,7 @@ export function KnowledgeExplorerPanel({
     [searching, folders, expanded],
   )
   const relatedKnowledge = React.useMemo(() => detail ? collectRelatedKnowledge(detail) : [], [detail])
+  const relatedKnowledgeGroups = React.useMemo(() => groupRelatedKnowledge(relatedKnowledge), [relatedKnowledge])
   // pageKey → 标题，用来把正文里的 [[source-9]] 渲染成真实页面名
   const pageTitleByKey = React.useMemo(() => {
     const map = new Map<string, string>()
@@ -365,6 +368,25 @@ export function KnowledgeExplorerPanel({
     }
   }, [knowledgeBaseId])
 
+  const folderItems = React.useMemo(
+    () => toKnowledgeListItems(folders, effectiveExpanded, (page) => void selectPageKey(page.pageKey)),
+    [folders, effectiveExpanded, selectPageKey],
+  )
+  const expandedItemIds = React.useMemo(() => {
+    const next = new Set<string>()
+    for (const key of effectiveExpanded) next.add(`${FOLDER_ITEM_PREFIX}${key}`)
+    return next
+  }, [effectiveExpanded])
+  const handleFolderExpandedChange = React.useCallback((id: string, nextExpanded: boolean) => {
+    if (!id.startsWith(FOLDER_ITEM_PREFIX)) return
+    const key = id.slice(FOLDER_ITEM_PREFIX.length)
+    setExpanded((current) => {
+      const next = new Set(current)
+      if (nextExpanded) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  }, [])
   const loadPages = React.useCallback(async () => {
     setHistory([])
     setQuery("")
@@ -509,21 +531,14 @@ export function KnowledgeExplorerPanel({
                     onSelect={() => void selectPageKey(page.pageKey)}
                   />
                 ))}
-                {folders.map((folder) => (
-                  <FolderBranch
-                    key={folder.key}
-                    folder={folder}
-                    expanded={effectiveExpanded}
-                    selectedPageKey={detail?.pageKey ?? null}
-                    onToggle={(key) => setExpanded((current) => {
-                      const next = new Set(current)
-                      if (next.has(key)) next.delete(key)
-                      else next.add(key)
-                      return next
-                    })}
-                    onSelectPage={(page) => void selectPageKey(page.pageKey)}
+                {folderItems.length > 0 ? (
+                  <NativeNestedList
+                    items={folderItems}
+                    activeId={detail ? `${PAGE_ITEM_PREFIX}${detail.pageKey}` : undefined}
+                    expandedIds={expandedItemIds}
+                    onExpandedChange={handleFolderExpandedChange}
                   />
-                ))}
+                ) : null}
                 {visibleOtherKnowledgePages.length > 0 ? (
                   <div className="pt-2">
                     <p className="px-2 pb-1 text-xs font-medium text-muted-foreground">主题与答案</p>
@@ -597,53 +612,47 @@ export function KnowledgeExplorerPanel({
                     />
                   </div>
 
-                  {relatedKnowledge.length > 0 ? (
-                    <section className="mt-8 border-t pt-5">
-                      <div className="flex items-center gap-2">
-                        <Link2 className="size-4 text-primary" />
-                        <h3 className="text-sm font-semibold">相关知识（{relatedKnowledge.length}）</h3>
-                      </div>
-                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                        {relatedKnowledge.map((item) => (
-                          <button
-                            key={item.key}
-                            type="button"
-                            className="group rounded-lg border p-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
-                            onClick={() => void selectPageKey(item.pageKey)}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <span className="font-medium text-primary group-hover:underline">{item.title}</span>
-                              <Badge variant="outline" className="shrink-0 text-[11px]">
-                                {item.direction === "out" ? item.relationType : `${item.relationType} · 反向`}
-                              </Badge>
-                            </div>
-                            {item.description || item.summary ? (
-                              <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                                {item.description || item.summary}
-                              </p>
-                            ) : null}
-                          </button>
+                  {relatedKnowledgeGroups.length > 0 || detail.sourceRefs.length > 0 ? (
+                    <section className="mt-10 border-t pt-5 text-sm">
+                      <dl className="space-y-4">
+                        {relatedKnowledgeGroups.map((group) => (
+                          <div key={group.label} className="flex flex-col gap-2 sm:flex-row sm:gap-6">
+                            <dt className="shrink-0 text-muted-foreground sm:w-20">{group.label}</dt>
+                            <dd className="flex min-w-0 flex-wrap gap-x-6 gap-y-3">
+                              {group.items.map((item) => (
+                                <button
+                                  key={item.key}
+                                  type="button"
+                                  title={item.description || item.summary || undefined}
+                                  className="cursor-pointer text-left font-medium text-foreground transition-colors hover:text-primary focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  style={wikiScribbleStyle(item.pageKey)}
+                                  onClick={() => void selectPageKey(item.pageKey)}
+                                >
+                                  {item.title}
+                                </button>
+                              ))}
+                            </dd>
+                          </div>
                         ))}
-                      </div>
-                    </section>
-                  ) : null}
-
-                  {detail.sourceRefs.length > 0 ? (
-                    <section className="mt-6 border-t pt-5">
-                      <p className="text-sm font-semibold">来源文章</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {detail.sourceRefs.map((ref) => (
-                          <button
-                            key={ref.id}
-                            type="button"
-                            className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-primary transition-colors hover:bg-primary/5 hover:underline"
-                            onClick={() => openSourceArticle(ref.articleId)}
-                          >
-                            {ref.articleTitle}
-                            <ExternalLink className="size-3.5" />
-                          </button>
-                        ))}
-                      </div>
+                        {detail.sourceRefs.length > 0 ? (
+                          <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
+                            <dt className="shrink-0 text-muted-foreground sm:w-20">来源文档</dt>
+                            <dd className="flex min-w-0 flex-wrap gap-x-6 gap-y-3">
+                              {detail.sourceRefs.map((ref) => (
+                                <button
+                                  key={ref.id}
+                                  type="button"
+                                  className="cursor-pointer text-left font-medium text-foreground transition-colors hover:text-primary focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  style={wikiScribbleStyle(ref.articleId)}
+                                  onClick={() => openSourceArticle(ref.articleId)}
+                                >
+                                  {ref.articleTitle}
+                                </button>
+                              ))}
+                            </dd>
+                          </div>
+                        ) : null}
+                      </dl>
                     </section>
                   ) : null}
                 </>

@@ -36,6 +36,7 @@ import {
 } from "@/server/kb/wiki-tree"
 import {
     ARTICLE_KNOWLEDGE_BUILD_VERSION,
+    CHUNK_ALGORITHM_VERSION,
     runArticleKnowledgeBuildWorkflow,
     type ExtractedKnowledgeItem,
     type ExtractedKnowledgeRelation,
@@ -101,6 +102,10 @@ export const wikiIngestInputSchema = knowledgeBaseIdInputSchema.extend({
 export const articleKnowledgeBuildInputSchema = knowledgeBaseIdInputSchema.extend({
     articleId: idSchema,
     forceRebuild: z.boolean().optional().default(false),
+})
+
+export const articleKnowledgeChunkListInputSchema = knowledgeBaseIdInputSchema.extend({
+    articleId: idSchema,
 })
 
 export const wikiPageDetailInputSchema = knowledgeBaseIdInputSchema.extend({
@@ -400,6 +405,87 @@ export async function loadWikiDashboard(userId: number, knowledgeBaseId: number)
 }
 
 /**
+ * 读取「构建知识」已持久化的文章切片与切片推荐问题。纯查询，不触发任何模型调用；
+ * 正文改动后按 sourceHash 判定切片是否过期，UI 据此提示重新构建。
+ */
+export async function listArticleKnowledgeChunks(input: {
+    userId: number
+    knowledgeBaseId: number
+    articleId: number
+}) {
+    const db = getDb()
+    await assertKnowledgeBaseOwner(db, input.userId, input.knowledgeBaseId)
+    const [article] = await db
+        .select()
+        .from(knowledgeBaseArticles)
+        .where(and(
+            eq(knowledgeBaseArticles.id, input.articleId),
+            eq(knowledgeBaseArticles.userId, input.userId),
+            eq(knowledgeBaseArticles.knowledgeBaseId, input.knowledgeBaseId),
+        ))
+        .limit(1)
+    if (!article) throw notFound("文章不存在")
+
+    const [chunkRows, sourcePage] = await Promise.all([
+        db
+            .select()
+            .from(knowledgeBaseArticleChunks)
+            .where(and(
+                eq(knowledgeBaseArticleChunks.userId, input.userId),
+                eq(knowledgeBaseArticleChunks.knowledgeBaseId, input.knowledgeBaseId),
+                eq(knowledgeBaseArticleChunks.articleId, article.id),
+            ))
+            .orderBy(asc(knowledgeBaseArticleChunks.position)),
+        loadWikiPage(db, input.userId, input.knowledgeBaseId, buildArticleSourcePageKey(article.id)),
+    ])
+
+    const builtHash = sourcePage ? getFrontmatterSourceHash(sourcePage) : null
+    const chunkAlgorithmVersion = sourcePage ? getFrontmatterChunkAlgorithmVersion(sourcePage) : 0
+    const currentHash = stableHash(`${article.title}\n${article.contentMd}`)
+    const builtAt = chunkRows.reduce<Date | null>(
+        (latest, row) => (latest && latest >= row.updatedAt ? latest : row.updatedAt),
+        null,
+    )
+
+    const chunks = chunkRows.map((row) => ({
+        id: String(row.id),
+        chunkKey: row.chunkKey,
+        position: row.position,
+        heading: row.heading,
+        contentMd: row.contentMd,
+        charCount: row.contentMd.length,
+        contentHash: row.contentHash,
+        headingPath: parseStringArray(row.headingPathJson),
+        recommendedQuestions: parseStringArray(row.recommendedQuestionsJson),
+        updatedAt: formatDate(row.updatedAt),
+    }))
+
+    return {
+        articleId: String(article.id),
+        knowledgeBaseId: String(input.knowledgeBaseId),
+        articleTitle: article.title,
+        built: chunks.length > 0,
+        // 两种过期：正文改动，或分片由旧版切分算法产出（存量数据无该字段，按 0 处理）。
+        stale: chunks.length > 0 && (
+            (builtHash != null && builtHash !== currentHash)
+            || chunkAlgorithmVersion < CHUNK_ALGORITHM_VERSION
+        ),
+        chunkAlgorithmVersion,
+        currentChunkAlgorithmVersion: CHUNK_ALGORITHM_VERSION,
+        builtAt: formatDate(builtAt),
+        chunkCount: chunks.length,
+        questionCount: chunks.reduce((total, chunk) => total + chunk.recommendedQuestions.length, 0),
+        chunks,
+    }
+}
+
+function parseStringArray(raw: string | null | undefined) {
+    const parsed = parseJsonObject(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.map((value) => String(value).trim()).filter(Boolean)
+}
+
+/**
  * 从知识库文章列表触发的单篇“构建知识”。Mastra Workflow 并发执行切片问题生成
  * 与整文候选抽取；候选确定后，再按页面批量生成独立 Wiki 正文并持久化页面关系。
  */
@@ -425,32 +511,6 @@ export async function buildArticleKnowledge(input: {
 
     const sourceHash = stableHash(`${article.title}\n${article.contentMd}`)
     const sourcePageKey = buildArticleSourcePageKey(article.id)
-    const existingSourcePage = await loadWikiPage(db, input.userId, input.knowledgeBaseId, sourcePageKey)
-    const existingMetadata = readKnowledgePageMetadata(existingSourcePage?.frontmatterJson)
-    const [chunkCountRow] = await db
-        .select({ value: count() })
-        .from(knowledgeBaseArticleChunks)
-        .where(and(
-            eq(knowledgeBaseArticleChunks.userId, input.userId),
-            eq(knowledgeBaseArticleChunks.articleId, input.articleId),
-        ))
-
-    if (
-        !input.forceRebuild
-        && existingMetadata.sourceHash === sourceHash
-        && existingMetadata.buildVersion === ARTICLE_KNOWLEDGE_BUILD_VERSION
-        && (chunkCountRow?.value ?? 0) > 0
-    ) {
-        return buildArticleKnowledgeResponse({
-            article,
-            sourcePage: existingSourcePage!,
-            fromCache: true,
-            chunkCount: chunkCountRow?.value ?? 0,
-            entityCount: existingMetadata.entityCount,
-            conceptCount: existingMetadata.conceptCount,
-            warnings: [],
-        })
-    }
 
     const existingKnowledgePageRows = await db
         .select()
@@ -499,6 +559,7 @@ export async function buildArticleKnowledge(input: {
             chunkKey: chunk.chunkKey,
             position: chunk.position,
             heading: chunk.heading,
+            headingPathJson: JSON.stringify(chunk.headingPath),
             contentMd: chunk.contentMd,
             contentHash: stableHash(chunk.contentMd),
             recommendedQuestionsJson: JSON.stringify(chunk.recommendedQuestions),
@@ -509,6 +570,11 @@ export async function buildArticleKnowledge(input: {
             userId: input.userId,
             knowledgeBaseId: input.knowledgeBaseId,
             articleId: article.id,
+        })
+        await deleteWikiPageByKey(tx, {
+            userId: input.userId,
+            knowledgeBaseId: input.knowledgeBaseId,
+            pageKey: sourcePageKey,
         })
 
         const generatedPages: KnowledgeBaseWikiPageRecord[] = []
@@ -533,6 +599,7 @@ export async function buildArticleKnowledge(input: {
             frontmatter: {
                 generatedBy: "article-knowledge-build",
                 buildVersion: ARTICLE_KNOWLEDGE_BUILD_VERSION,
+                chunkAlgorithmVersion: CHUNK_ALGORITHM_VERSION,
                 articleId: String(article.id),
                 sourceTitle: article.title,
                 sourceUpdatedAt: formatDate(article.updatedAt),
@@ -2367,36 +2434,11 @@ async function detachArticleFromGeneratedKnowledgePages(
         delete metadata.contributions[articleId]
         const remaining = Object.values(metadata.contributions)
         if (remaining.length === 0 && !metadata.baseContentMd) {
-            await db
-                .update(knowledgeBaseWikiPages)
-                .set({
-                    frontmatterJson: JSON.stringify({
-                        generatedBy: metadata.generatedBy,
-                        buildVersion: metadata.buildVersion,
-                        categoryPath: metadata.categoryPath,
-                        aliases: metadata.aliases,
-                        contributions: {},
-                    }),
-                    archivedAt: new Date(),
-                    updatedAt: new Date(),
-                })
-                .where(eq(knowledgeBaseWikiPages.id, page.id))
-            await db
-                .delete(knowledgeBaseWikiSourceRefs)
-                .where(and(
-                    eq(knowledgeBaseWikiSourceRefs.pageId, page.id),
-                    eq(knowledgeBaseWikiSourceRefs.articleId, input.articleId),
-                ))
-            await db
-                .delete(knowledgeBaseWikiLinks)
-                .where(or(
-                    eq(knowledgeBaseWikiLinks.fromPageId, page.id),
-                    and(
-                        eq(knowledgeBaseWikiLinks.userId, input.userId),
-                        eq(knowledgeBaseWikiLinks.knowledgeBaseId, input.knowledgeBaseId),
-                        eq(knowledgeBaseWikiLinks.toPageKey, page.pageKey),
-                    ),
-                ))
+            await deleteWikiPageByKey(db, {
+                userId: input.userId,
+                knowledgeBaseId: input.knowledgeBaseId,
+                pageKey: page.pageKey,
+            })
             continue
         }
         const updatedPage = await upsertWikiPage(db, {
@@ -2415,6 +2457,47 @@ async function detachArticleFromGeneratedKnowledgePages(
         })
         await replaceGeneratedKnowledgePageLinks(db, updatedPage, metadata)
     }
+}
+
+/**
+ * 物理删除单个 Wiki 页面及其派生数据，兼容本地 SQLite 没有外键级联的测试环境。
+ * 事件日志继续作为审计记录保留，但会解除对旧页面行的引用。
+ */
+async function deleteWikiPageByKey(
+    db: DbExecutor,
+    input: { userId: number; knowledgeBaseId: number; pageKey: string },
+) {
+    const page = await loadWikiPage(db, input.userId, input.knowledgeBaseId, input.pageKey)
+    if (!page) return false
+
+    await db
+        .update(knowledgeBaseWikiEventLogs)
+        .set({ pageId: null })
+        .where(eq(knowledgeBaseWikiEventLogs.pageId, page.id))
+    await db
+        .delete(knowledgeBaseWikiLinks)
+        .where(and(
+            eq(knowledgeBaseWikiLinks.userId, input.userId),
+            eq(knowledgeBaseWikiLinks.knowledgeBaseId, input.knowledgeBaseId),
+            or(
+                eq(knowledgeBaseWikiLinks.fromPageId, page.id),
+                eq(knowledgeBaseWikiLinks.toPageKey, page.pageKey),
+            ),
+        ))
+    await db
+        .delete(knowledgeBaseWikiSourceRefs)
+        .where(eq(knowledgeBaseWikiSourceRefs.pageId, page.id))
+    await db
+        .delete(knowledgeBaseWikiTreeNodes)
+        .where(eq(knowledgeBaseWikiTreeNodes.pageId, page.id))
+    await db
+        .delete(knowledgeBaseWikiPages)
+        .where(and(
+            eq(knowledgeBaseWikiPages.id, page.id),
+            eq(knowledgeBaseWikiPages.userId, input.userId),
+            eq(knowledgeBaseWikiPages.knowledgeBaseId, input.knowledgeBaseId),
+        ))
+    return true
 }
 
 async function upsertExtractedKnowledgePage(db: DbExecutor, input: {
@@ -2618,6 +2701,14 @@ function parseJsonObject(raw: string | null | undefined) {
     } catch {
         return null
     }
+}
+
+/** 存量 source 页没有该字段，按 0 处理，从而被判定为过期并引导重建 */
+function getFrontmatterChunkAlgorithmVersion(page: KnowledgeBaseWikiPageRecord) {
+    const frontmatter = parseJsonObject(page.frontmatterJson)
+    if (!frontmatter || typeof frontmatter !== "object" || Array.isArray(frontmatter)) return 0
+    const value = (frontmatter as { chunkAlgorithmVersion?: unknown }).chunkAlgorithmVersion
+    return typeof value === "number" && Number.isFinite(value) ? value : 0
 }
 
 function getFrontmatterSourceHash(page: KnowledgeBaseWikiPageRecord) {

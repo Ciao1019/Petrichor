@@ -8,8 +8,10 @@ import { ok, readJson, toErrorResponse } from "@/server/http/response"
 import {
     applyWikiPatch,
     articleKnowledgeBuildInputSchema,
+    articleKnowledgeChunkListInputSchema,
     buildArticleKnowledge,
     ingestKnowledgeBaseWiki,
+    listArticleKnowledgeChunks,
     listUserKnowledgeBases,
     listWikiPages,
     listWikiPatches,
@@ -91,6 +93,17 @@ export async function articleKnowledgeBuild(request: NextRequest) {
             knowledgeBaseId: input.knowledgeBaseId,
             articleId: input.articleId,
             forceRebuild: input.forceRebuild,
+        }))
+    })
+}
+
+export async function articleKnowledgeChunkList(request: NextRequest) {
+    return withUser(request, async (user) => {
+        const input = articleKnowledgeChunkListInputSchema.parse(await readJson(request))
+        return ok(await listArticleKnowledgeChunks({
+            userId: user.id,
+            knowledgeBaseId: input.knowledgeBaseId,
+            articleId: input.articleId,
         }))
     })
 }
