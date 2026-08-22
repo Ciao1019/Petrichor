@@ -18,7 +18,15 @@ import { ArrowUp, BookOpen, Copy, MessageCircleQuestion, RefreshCw, Square } fro
 import { MarkdownText } from "@/components/assistant-ui/markdown-text"
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback"
 import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
-import { QaMarkdownScope, QaMarkdownText, QaPreparing, WikiLinkClickProvider } from "@/features/pages/knowledge/QaMarkdown"
+import { QaMarkdownScope, QaPreparing, WikiLinkClickProvider } from "@/features/pages/knowledge/QaMarkdown"
+import {
+  AgentAnswerText,
+  AgentCitationBar,
+  AgentEventDataUI,
+  AgentRunPanel,
+  AgentStreamingAnswer,
+} from "@/features/pages/assistant/agent-run-ui"
+import { useAgentRunsStore } from "@/features/agent-runs/store"
 import { SignedUrlPublicAccessProvider } from "@/hooks/use-signed-url"
 import { publicSiteAppearanceApi, publicWikiApi } from "@/lib/api"
 import { PublicQaToolUIs } from "./public-qa-tool-ui"
@@ -26,7 +34,6 @@ import { WikiPagePreviewDialog } from "@/components/knowledge/WikiPagePreviewDia
 
 const VISITOR_ID_STORAGE_KEY = "petrichor.public-qa.visitor-id"
 const VISITOR_ID_HEADER = "X-Petrichor-Visitor-Id"
-const QA_MODE_HEADER = "X-Petrichor-Qa-Mode"
 
 /** 公开问答的 Wiki 悬停预览与弹窗都走公开接口（模块级常量保证 loader 引用稳定）。 */
 const loadPublicWikiDetail = (pageKey: string) =>
@@ -135,7 +142,7 @@ function CenteredHint({
 
 function PublicQaChat() {
   const visitorId = React.useMemo(() => ensureVisitorId(), [])
-  // 模式只影响下一次提问的检索链路（通过请求头告知后端），
+  // 模式只影响下一次提问的检索链路（随请求体 qaMode 字段告知后端，与后台一致），
   // 用 ref 注入而不是重建 transport，切换时保留当前对话历史。
   const [qaMode, setQaMode] = React.useState<QaMode>("normal")
   const qaModeRef = React.useRef<QaMode>("normal")
@@ -151,10 +158,22 @@ function PublicQaChat() {
         api: "/api/public/qa/chat",
         credentials: "omit",
         fetch: async (input, init) => {
-          const headers = new Headers(init?.headers)
+          // 与后台一致：Wiki 模式随请求体下发（qaMode 字段），服务端据此切换检索链路
+          let nextInit = init
+          if (init && typeof init.body === "string") {
+            try {
+              const parsed = JSON.parse(init.body) as Record<string, unknown> | null
+              if (parsed && typeof parsed === "object") {
+                if (qaModeRef.current === "wiki") parsed.qaMode = "wiki"
+                nextInit = { ...init, body: JSON.stringify(parsed) }
+              }
+            } catch {
+              // 非 JSON body 时保持原样
+            }
+          }
+          const headers = new Headers(nextInit?.headers)
           if (visitorId) headers.set(VISITOR_ID_HEADER, visitorId)
-          if (qaModeRef.current === "wiki") headers.set(QA_MODE_HEADER, "wiki")
-          const response = await fetch(input, { ...init, headers })
+          const response = await fetch(input, { ...nextInit, headers })
           if (response.ok) return response
           // 非流式错误（限流 / 关闭 / 异常）：后端返回的是 JSON 错误体，
           // 直接交给 AI SDK 会把 {"code":...} 原文当成消息显示。这里提取出
@@ -176,7 +195,18 @@ function PublicQaChat() {
     [visitorId],
   )
 
-  const runtime = useChatRuntime({ transport, suggestions: SUGGESTIONS })
+  // Agent 事件直接从流里消费，不依赖 data part 的重渲染（与后台一致）。
+  // final_answer_delta 复用同一个 part id 原地覆盖： onData 对每个 chunk 都回调一次，
+  // reducer 再按 sequence 幂等去重，保证流式答案不丢字。
+  const runtime = useChatRuntime({
+    transport,
+    suggestions: SUGGESTIONS,
+    onData: (part) => {
+      if (part.type === "data-agent-event") {
+        useAgentRunsStore.getState().appendUnknown(part.data)
+      }
+    },
+  })
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
@@ -188,6 +218,7 @@ function PublicQaChat() {
         >
           {/* 工具卡片也在 Provider 内，检索结果可以直接点开 Wiki 弹窗 */}
           <PublicQaToolUIs />
+          <AgentEventDataUI />
           <div className="flex h-full min-h-0 flex-col">
             {/* 不写死 light：前台已统一暗色，强制浅色会让内容变成暗底暗字 */}
             <QaMarkdownScope>
@@ -374,27 +405,35 @@ function AssistantMessageBubble() {
           <AuiIf
             condition={(s) =>
               s.thread.isRunning &&
+              // Agent 执行面板接管进度展示后，只在「尚无任何活动」时显示准备提示
               !s.message.parts.some(
                 (part) =>
                   (part.type === "text" && part.text.trim().length > 0) ||
                   part.type === "tool-call" ||
-                  part.type === "reasoning",
+                  part.type === "reasoning" ||
+                  part.type === "data",
               )
             }
           >
             <QaPreparing state="searching" />
           </AuiIf>
+          {/* 与后台一致：执行活动面板 + 结构化流式答案 + 引用条 */}
+          <AgentRunPanel />
+          <AgentStreamingAnswer />
           <div className="wrap-break-word text-white/90">
             <MessagePrimitive.Parts>
               {({ part }) => {
-                if (part.type === "text") return <QaMarkdownText />
+                if (part.type === "text") return <AgentAnswerText />
                 if (part.type === "tool-call") {
                   return <div className="not-prose my-3">{part.toolUI ?? <ToolFallback {...part} />}</div>
                 }
+                // 显式走 dataRendererUI；返回 null 抑制 DefaultPartFallback，避免与注册 UI 叠两层
+                if (part.type === "data") return part.dataRendererUI ?? null
                 return null
               }}
             </MessagePrimitive.Parts>
           </div>
+          <AgentCitationBar />
           <MessagePrimitive.Error>
             <ErrorPrimitive.Root className="mt-2 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-700 dark:border-red-400/30 dark:bg-red-500/15 dark:text-red-200">
               <ErrorPrimitive.Message className="line-clamp-3" />

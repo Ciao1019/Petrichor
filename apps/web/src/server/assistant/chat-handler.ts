@@ -29,6 +29,7 @@ import {
 import { buildContextPack } from "./context-pack"
 import { buildInstructionsWithContextExtras } from "./context-recall"
 import { assertAssistantFocusOwnership } from "./focus-guard"
+import { isUserRoleMessage, extractLastUserText } from "./message-text"
 import { isAssistantOperator } from "./operator-gate"
 import {
     assistantFocusSchema,
@@ -66,6 +67,7 @@ const chatRequestSchema = z.object({
 export const MAX_CONTEXT_TOKENS = 100_000
 
 export { buildAssistantSystemPrompt } from "./system-prompt"
+export { extractLastUserText } from "./message-text"
 
 const runtime = new PetrichorAgentRuntime()
 
@@ -322,33 +324,4 @@ async function resolveAssistantModel(userId: number, modelRefId: number | null) 
         }
         throw error
     }
-}
-
-function isUserRoleMessage(message: unknown): boolean {
-    if (!message || typeof message !== "object") return false
-    return (message as { role?: unknown }).role === "user"
-}
-
-export function extractLastUserText(messages: unknown[]): string {
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-        const message = messages[index] as { role?: unknown; content?: unknown; parts?: unknown }
-        if (message?.role !== "user") continue
-        if (typeof message.content === "string" && message.content.trim()) return message.content.trim()
-        const parts = Array.isArray(message.parts)
-            ? message.parts
-            : Array.isArray(message.content)
-                ? message.content
-                : []
-        const text = parts
-            .map((part) => {
-                if (!part || typeof part !== "object") return ""
-                const candidate = part as { type?: unknown; text?: unknown }
-                return candidate.type === "text" && typeof candidate.text === "string" ? candidate.text : ""
-            })
-            .filter(Boolean)
-            .join("\n")
-            .trim()
-        if (text) return text
-    }
-    return ""
 }

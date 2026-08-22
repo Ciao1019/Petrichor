@@ -137,6 +137,18 @@ export async function searchPublicWikiPages(input: {
     return { query: queries, items }
 }
 
+/**
+ * 按 pageKey 校验「公开可达」并返回目标页面；index 页在其知识库有公开文章时放行。
+ * 供公开问答的读取工具在做正文读取前先行做白名单判定（主题页 pageKey 不含文章 id，
+ * 无法靠读取结果的 articleId 归属校验）。
+ */
+export async function assertPublicWikiPageAccessible(
+    scope: PublicArticleScope,
+    pageKey: string,
+): Promise<KnowledgeBaseWikiPageRecord> {
+    return await resolveAccessiblePage(scope, pageKey)
+}
+
 /** 按 pageKey 找到公开可达的目标页面；index 页在知识库有公开文章时放行。 */
 async function resolveAccessiblePage(
     scope: PublicArticleScope,
