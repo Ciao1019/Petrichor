@@ -289,6 +289,41 @@ export const knowledgeBaseArticleChunks = pgTable("petrichor_kb_article_chunk", 
     index("idx_petrichor_kb_article_chunk_article").on(table.userId, table.knowledgeBaseId, table.articleId, table.position),
 ])
 
+// 文章分片的统一检索索引。原始分片和每个推荐问题各占一行，但都通过 chunkId
+// 指回同一分片：问题只是召回别名，最终证据始终读取原始分片正文。
+// embedding / search_vector 是 Postgres 专有列，由迁移 SQL 单独添加；SQLite 测试
+// 只保留内容、词元和生命周期元数据，走应用层 BM25 降级路径。
+export const knowledgeBaseArticleChunkIndexes = pgTable("petrichor_kb_article_chunk_index", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    knowledgeBaseId: bigint("knowledge_base_id", { mode: "number" }).notNull(),
+    articleId: bigint("article_id", { mode: "number" }).notNull(),
+    chunkId: bigint("chunk_id", { mode: "number" }).notNull(),
+    sourceKey: text("source_key").notNull(),
+    sourceType: text("source_type").notNull(),
+    sourcePosition: integer("source_position").notNull().default(0),
+    /** 原始分片正文或单个推荐问题；用于诊断和展示命中原因。 */
+    content: text("content").notNull(),
+    /** 真正送入 embedding / BM25 的文本，包含文章标题和分片标题路径。 */
+    embeddingText: text("embedding_text").notNull(),
+    contentHash: text("content_hash").notNull(),
+    searchTokens: text("search_tokens").notNull().default(""),
+    embeddingStatus: text("embedding_status").notNull().default("pending"),
+    embeddingModel: text("embedding_model"),
+    embeddingDimensions: integer("embedding_dimensions"),
+    embeddingVersion: integer("embedding_version").notNull().default(1),
+    embeddingError: text("embedding_error"),
+    embeddingUpdatedAt: timestamp("embedding_updated_at", { withTimezone: true }),
+    ...timestamps,
+}, (table) => [
+    uniqueIndex("ux_petrichor_kb_article_chunk_index_source")
+        .on(table.userId, table.articleId, table.sourceKey),
+    index("idx_petrichor_kb_article_chunk_index_scope")
+        .on(table.userId, table.knowledgeBaseId, table.sourceType, table.articleId),
+    index("idx_petrichor_kb_article_chunk_index_chunk")
+        .on(table.chunkId, table.sourceType, table.sourcePosition),
+])
+
 export const knowledgeBaseArticleTags = pgTable("petrichor_kb_article_tag", {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     articleId: bigint("article_id", { mode: "number" }).notNull(),
@@ -1276,6 +1311,7 @@ export type KnowledgeBaseRecord = typeof knowledgeBases.$inferSelect
 export type KnowledgeBaseNodeRecord = typeof knowledgeBaseNodes.$inferSelect
 export type KnowledgeBaseArticleRecord = typeof knowledgeBaseArticles.$inferSelect
 export type KnowledgeBaseArticleChunkRecord = typeof knowledgeBaseArticleChunks.$inferSelect
+export type KnowledgeBaseArticleChunkIndexRecord = typeof knowledgeBaseArticleChunkIndexes.$inferSelect
 export type KnowledgeBaseWikiPageRecord = typeof knowledgeBaseWikiPages.$inferSelect
 export type KnowledgeBaseWikiTreeNodeRecord = typeof knowledgeBaseWikiTreeNodes.$inferSelect
 export type KnowledgeBaseWikiPatchRecord = typeof knowledgeBaseWikiPatches.$inferSelect

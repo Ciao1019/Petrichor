@@ -57,6 +57,8 @@ export type AgentRunRequest = {
     workspaceId?: string
     systemRole?: string | null
     focus?: unknown
+    /** 问答模式：wiki 时优先走 Wiki 检索工具，并以 [[pageKey|标题]] 内联引用 */
+    qaMode?: "normal" | "wiki"
     goal: string
     /** 已裁剪的模型消息 */
     messages?: unknown[]
@@ -111,6 +113,24 @@ const SCOPED_KNOWLEDGE_FACT_PATTERN = /(?:是否|能否|能不能|支不支持|�
 const NON_KNOWLEDGE_ACTION_PATTERN = /(?:创建|新建|修改|更新|删除|移动|发布|分享|保存|导出|写一篇|生成一篇|改写|翻译|发邮件|联网|外部资料|网页搜索|历史对话|记住)/i
 const SYSTEM_OVERVIEW_PATTERN = /(?:(?:有多少|多少|几个|数量|清单|列出).{0,12}(?:知识库|文档库|文章|文档|对话)|(?:知识库|文档库|文章|文档|对话).{0,12}(?:有多少|多少|几个|数量|清单))/i
 const PROMPT_INJECTION_PATTERN = /(?:忽略.{0,16}(?:以上|之前|系统|开发者)(?:指令|提示)|(?:ignore|disregard).{0,24}(?:previous|system|developer).{0,12}(?:instruction|prompt)|system\s*prompt|developer\s*message|jailbreak|越狱)/i
+
+/**
+ * Wiki 问答模式（参考 Tencent/WeKnora 的 Wiki 检索策略）：
+ * 先看概览掌握全貌 → 多关键词搜索定位页面（带命中片段）→ 读页面全文并沿关联页面多跳；
+ * 回答正文必须用 [[pageKey|标题]] 内联引用用到的页面，前端会把它们渲染成
+ * 带手绘波浪线的可点击链接，读者点开即可查看页面内容。
+ */
+const WIKI_QA_MODE_GUIDANCE = [
+    "## Wiki 问答模式",
+    "当前是「Wiki 问答」：优先依据知识库的 Wiki 页面回答，而不是原始分片。",
+    "检索策略：",
+    "1. 回答内容型问题前，先用 wiki_overview 掌握全貌（主题与知识页 / 源文档页两组目录）。",
+    "2. 定位页面用 search_wiki_pages：queries 一次传多个关键词（同义概念、别名词一起搜），从 pageKey、摘要与命中片段判断相关性；不要只用单个宽泛词。",
+    "3. 对最相关页面调用 read_wiki_page_detail 读全文；返回里的 links/inLinks 是关联页面（带摘要），相关就继续读，形成多跳推理。若 Wiki 页面信息不足需要读源文档补充，回答时仍要引用对应的 Wiki 页面。",
+    "4. 【引用格式（最重要）】答案正文中凡是来自某个 Wiki 页面的信息，必须紧跟内联引用 [[pageKey|页面标题]]，例如：Mole 是一款开源清理工具 [[concept-mole|Mole]]。pageKey 必须来自检索结果，严禁编造；证据列表里每条 Wiki 证据都附有「Wiki 引用」提示，照抄即可。",
+    "5. 不要输出 [1]、[2] 这类数字角标来标注 Wiki 来源——本模式一律用 [[..]] 内联引用，前端会渲染成可点击的波浪线链接；同一页面多次提及时首次引用即可。",
+    "6. 严禁编造或使用 Wiki 之外的知识；检索不到就如实说明，不要杜撰。",
+].join("\n")
 
 /**
  * 高频简单知识问答快车道。
@@ -320,6 +340,7 @@ export class PetrichorAgentRuntime {
             conversationId: request.conversationId,
             ...(request.workspaceId ? { workspaceId: request.workspaceId } : {}),
             ...(request.focus !== undefined ? { focus: request.focus } : {}),
+            ...(request.qaMode === "wiki" ? { qaMode: "wiki" as const } : {}),
             systemRole: request.systemRole ?? null,
             delegationDepth: 0,
             state: state.current,
@@ -339,8 +360,10 @@ export class PetrichorAgentRuntime {
         // 定义/功能/用法类问题不需要让模型先后决定 search 与 read_many。
         // 先通过统一 ToolExecutor 执行一次只读复合检索；命中后只保留一轮无工具生成，
         // 未命中或读取失败则原样回到完整 Agentic Loop。
+        // Wiki 模式不走快车道：它面向分片/章节，而 Wiki 模式要求页面级检索与 [[..]] 引用。
         let simpleKnowledgeFastPath = false
-        if (!request.abortSignal?.aborted
+        if (request.qaMode !== "wiki"
+            && !request.abortSignal?.aborted
             && this.tools.has("knowledge.lookup")
             && shouldUseSimpleKnowledgeFastPath({
                 goal: request.goal,
@@ -389,7 +412,7 @@ export class PetrichorAgentRuntime {
 
                 const tools = simpleKnowledgeFastPath
                     ? []
-                    : this.resolveActiveTools(skillLoader, complexity, request.isOperator === true)
+                    : this.resolveActiveTools(skillLoader, complexity, request.isOperator === true, request.qaMode)
                 const built = contextManager.build({
                     state: state.current,
                     observations,
@@ -401,6 +424,7 @@ export class PetrichorAgentRuntime {
                     conversationSummary: request.conversationSummary ?? null,
                     conversationBackground: request.conversationBackground ?? null,
                     routingHint: actionableHint,
+                    ...(request.qaMode === "wiki" ? { modeGuidance: WIKI_QA_MODE_GUIDANCE, qaMode: "wiki" as const } : {}),
                     remainingToolCalls: stopPolicy.remainingToolCalls(state.current),
                 })
 
@@ -598,9 +622,16 @@ export class PetrichorAgentRuntime {
         skillLoader: SkillLoader,
         complexity: TaskComplexity,
         isOperator: boolean,
+        qaMode?: "normal" | "wiki",
     ): AgentToolDefinition[] {
         if (complexity === "direct") return []
         const ids = new Set([...this.tools.coreToolIds({ isOperator }), ...skillLoader.activeToolIds])
+        if (qaMode === "wiki") {
+            // Wiki 模式按需解锁带 wiki 标签的工具，不占用常态核心工具名额（§10）
+            for (const tool of this.tools.list({ namespace: "knowledge" })) {
+                if (tool.tags?.includes("wiki")) ids.add(tool.id)
+            }
+        }
         return [...ids]
             .map((id) => this.tools.get(id))
             .filter((tool): tool is AgentToolDefinition => {
@@ -630,11 +661,13 @@ export class PetrichorAgentRuntime {
         /** 同一个问题重答一遍：前端要丢弃上一版，而不是追加到它后面 */
         replacePrevious?: boolean
     }): Promise<string> {
+        // 强制收敛也要遵守 Wiki 模式的引用规范（[[pageKey|标题]] 替代 [n] 角标）
         const plan = buildFinalAnswerPlan({
             state: input.state.current,
             evidence: input.evidence,
             observations: input.observations,
             ...(input.stopReason ? { stopReason: input.stopReason } : {}),
+            ...(input.request.qaMode === "wiki" ? { wikiMode: true } : {}),
         })
 
         const controller = new SegmentController()

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { prepareWikiMarkdown } from "./knowledge-wiki-markdown"
+import { convertAnswerWikiLinks, prepareWikiMarkdown } from "./knowledge-wiki-markdown"
 
 describe("prepareWikiMarkdown", () => {
   it("将显式 Wiki 引用转换为可跳转链接", () => {
@@ -56,6 +56,29 @@ describe("prepareWikiMarkdown", () => {
       [{ pageKey: "concept-deep-clean", title: "深度清理" }],
     )).toBe(
       "`深度清理` [深度清理](https://example.com)\n\n正文中的[深度清理](#wiki-page=concept-deep-clean)。",
+    )
+  })
+})
+
+describe("convertAnswerWikiLinks", () => {
+  it("把对话文本中的 [[pageKey|标题]] 转成页内链接", () => {
+    expect(convertAnswerWikiLinks("详见 [[concept-rag|RAG 概念]] 与 [[source-9]]。")).toBe(
+      "详见 [RAG 概念](#wiki-page=concept-rag) 与 [source-9](#wiki-page=source-9)。",
+    )
+  })
+
+  it("流式中途未闭合的 [[ 不转换", () => {
+    expect(convertAnswerWikiLinks("详见 [[concept-ra")).toBe("详见 [[concept-ra")
+  })
+
+  it("不处理裸文本，也不剥标题", () => {
+    const text = "# RAG 概念\n\n正文提到深度清理但没有显式引用。"
+    expect(convertAnswerWikiLinks(text)).toBe(text)
+  })
+
+  it("对 pageKey 做 URI 编码", () => {
+    expect(convertAnswerWikiLinks("[[概念/检索|RAG]]")).toBe(
+      "[RAG](#wiki-page=%E6%A6%82%E5%BF%B5%2F%E6%A3%80%E7%B4%A2)",
     )
   })
 })

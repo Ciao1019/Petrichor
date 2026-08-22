@@ -40,7 +40,12 @@ import { toast } from "sonner"
 import { MarkdownText } from "@/components/assistant-ui/markdown-text"
 import { UserMessageAttachments } from "@/components/assistant-ui/attachment"
 import { Button } from "@/components/ui/button"
-import { QaMarkdownScope, QaPreparing } from "@/features/pages/knowledge/QaMarkdown"
+import {
+  QaMarkdownScope,
+  QaPreparing,
+  WikiLinkClickProvider,
+} from "@/features/pages/knowledge/QaMarkdown"
+import { WikiPagePreviewDialog } from "@/components/knowledge/WikiPagePreviewDialog"
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback"
 import { AssistantTaskRail, TASK_TOOL_NAMES } from "@/features/pages/assistant/AssistantTaskRail"
 import {
@@ -77,6 +82,7 @@ import {
   type AssistantPersistedPlan,
   type AssistantThreadSummary,
   assistantApi,
+  assistantWikiApi,
   knowledgeBaseQaApi,
   type KnowledgeBaseQaModelInfo,
   type KnowledgeBaseQaSummary,
@@ -122,10 +128,12 @@ import {
   ReadKnowledgeToolUI,
   SearchGraphToolUI,
   SaveArtifactToolUI,
+  SearchWikiPagesToolUI,
   SpawnResearchFanoutToolUI,
   SpawnResearchSubagentToolUI,
   SpawnWriteSubagentToolUI,
   StepBudgetDataUI,
+  WikiOverviewToolUI,
 } from "./assistant-tool-renders"
 import {
   AgentAnswerText,
@@ -141,6 +149,9 @@ const CHAT_THREAD_HEADER = "X-Petrichor-Assistant-Thread-Id"
 const SKIP_DELETE_CONFIRM_KEY = "petrichor:assistant.skipDeleteConfirm"
 const THREAD_PAGE_SIZE = 30
 
+/** 问答模式：normal 走分片/章节链路；wiki 参考 WeKnora 的 Wiki 页面检索链路。 */
+export type AssistantQaMode = "normal" | "wiki"
+
 export function AssistantChatPage() {
   const isMobile = useIsMobile()
   const [threads, setThreads] = React.useState<AssistantThreadSummary[]>([])
@@ -152,6 +163,8 @@ export function AssistantChatPage() {
   const [modelInfo, setModelInfo] = React.useState<KnowledgeBaseQaModelInfo | null>(null)
   const [selectedConfigId, setSelectedConfigId] = React.useState<string | null>(null)
   const [focusSelection, setFocusSelection] = React.useState<AssistantFocusSelection>({ kind: "none" })
+  // 问答模式只影响下一次提问的检索链路（请求体 qaMode 字段），不重置当前对话。
+  const [qaMode, setQaMode] = React.useState<AssistantQaMode>("normal")
   const [activeThreadId, setActiveThreadId] = React.useState<string | null>(null)
   const [initialMessages, setInitialMessages] = React.useState<AssistantUIMessage[]>([])
   const [persistedPlans, setPersistedPlans] = React.useState<AssistantPersistedPlan[]>([])
@@ -729,6 +742,8 @@ export function AssistantChatPage() {
           <QaChatPanel
             key={runtimeSeed}
             focusSelection={focusSelection}
+            qaMode={qaMode}
+            onQaModeChange={setQaMode}
             threadId={activeThreadId}
             initialMessages={initialMessages}
             persistedPlans={persistedPlans}
@@ -852,6 +867,8 @@ export function AssistantChatPage() {
 
 function QaChatPanel({
   focusSelection,
+  qaMode,
+  onQaModeChange,
   threadId,
   initialMessages,
   persistedPlans,
@@ -868,6 +885,8 @@ function QaChatPanel({
   onComposerFocus,
 }: {
   focusSelection: AssistantFocusSelection
+  qaMode: AssistantQaMode
+  onQaModeChange: (next: AssistantQaMode) => void
   threadId: string | null
   initialMessages: AssistantUIMessage[]
   persistedPlans: AssistantPersistedPlan[]
@@ -883,6 +902,10 @@ function QaChatPanel({
   onConfigChange: (next: string) => void
   onComposerFocus?: () => void
 }) {
+  // 用 ref 注入请求体：切换模式不重建 transport，当前对话历史原样保留。
+  const qaModeRef = React.useRef(qaMode)
+  qaModeRef.current = qaMode
+  const [wikiPreviewKey, setWikiPreviewKey] = React.useState<string | null>(null)
   const focusBody = React.useMemo(
     () => focusToRequestBody(focusSelection),
     [focusSelection],
@@ -894,24 +917,26 @@ function QaChatPanel({
       focus: focusBody,
     },
     credentials: "include",
-    fetch: async (input, init) => {
-      const currentConfigId = selectedConfigId
-      let nextInit = init
-      if (init && typeof init.body === "string") {
-        try {
-          const parsed = JSON.parse(init.body)
-          if (parsed && typeof parsed === "object") {
-            parsed.focus = focusBody
-            // 重试：带上被重试的 runId，后端据此记录 retryOfRunKey，不复用已失败 State（§162.24）
-            const retryOfRunId = consumePendingRetryRunId()
-            if (retryOfRunId) parsed.retryOfRunId = retryOfRunId
-            if (currentConfigId) parsed.configId = currentConfigId
-            nextInit = { ...init, body: JSON.stringify(parsed) }
+      fetch: async (input, init) => {
+        const currentConfigId = selectedConfigId
+        let nextInit = init
+        if (init && typeof init.body === "string") {
+          try {
+            const parsed = JSON.parse(init.body)
+            if (parsed && typeof parsed === "object") {
+              parsed.focus = focusBody
+              // Wiki 问答模式：随请求体下发，服务端据此切换检索链路与提示词
+              if (qaModeRef.current === "wiki") parsed.qaMode = "wiki"
+              // 重试：带上被重试的 runId，后端据此记录 retryOfRunKey，不复用已失败 State（§162.24）
+              const retryOfRunId = consumePendingRetryRunId()
+              if (retryOfRunId) parsed.retryOfRunId = retryOfRunId
+              if (currentConfigId) parsed.configId = currentConfigId
+              nextInit = { ...init, body: JSON.stringify(parsed) }
+            }
+          } catch {
+            // 非 JSON body 时保持原样
           }
-        } catch {
-          // 非 JSON body 时保持原样
         }
-      }
       if (isDemoMode()) {
         // 演示模式：不触网，走脚本化 SSE 回放（见 lib/demo/demo-chat.ts）
         const { demoAssistantChatResponse } = await import("@/lib/demo/demo-chat")
@@ -991,48 +1016,68 @@ function QaChatPanel({
     },
   })
 
+  // focus 指定知识库时传给弹窗，用于消除跨库同名 pageKey 的歧义
+  const loadWikiDetail = React.useCallback(
+    (pageKey: string) => assistantWikiApi
+      .detail(pageKey, focusSelection.kind === "knowledge" ? focusSelection.knowledgeBaseId : null)
+      .then((res) => res.data),
+    [focusSelection],
+  )
+
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <PlanToolUI />
-      <ProgressToolUI />
-      <ConfirmationToolUI />
-      <SpawnResearchSubagentToolUI />
-      <SpawnResearchFanoutToolUI />
-      <SpawnWriteSubagentToolUI />
-      <ContextCompressDataUI />
-      <IntentRouteDataUI />
-      <AgentEventDataUI />
-      <StepBudgetDataUI />
-      <CitationToolUI />
-      <DataTableToolUI />
-      <ListSystemOverviewToolUI />
-      <ListKbToolUI />
-      <ListDocLibrariesToolUI />
-      <SearchKnowledgeToolUI />
-      <SearchDocumentsToolUI />
-      <SearchGraphToolUI />
-      <ReadKnowledgeToolUI />
-      <ReadDocumentToolUI />
-      <SaveArtifactToolUI />
-      <PreviewArticleUpdateToolUI />
-      <QaMarkdownScope>
-      <div className="h-full min-h-0">
-        <GrokThread
-          scopeName={scopeName}
-          focusSelection={focusSelection}
-          knowledgeBases={knowledgeBases}
-          docLibraries={docLibraries}
-          onFocusChange={onFocusChange}
-          modelInfo={modelInfo}
-          selectedConfigId={selectedConfigId}
-          onConfigChange={onConfigChange}
-          onComposerFocus={onComposerFocus}
-          persistedPlans={persistedPlans}
-          threadId={threadId}
-          onPlanPatched={onPlanPatched}
-        />
-      </div>
-      </QaMarkdownScope>
+      {/* 工具卡片与消息渲染都在 Provider 内：回答和检索结果里的 Wiki 引用可点开弹窗 */}
+      <WikiLinkClickProvider onOpenWikiPage={setWikiPreviewKey}>
+        <PlanToolUI />
+        <ProgressToolUI />
+        <ConfirmationToolUI />
+        <SpawnResearchSubagentToolUI />
+        <SpawnResearchFanoutToolUI />
+        <SpawnWriteSubagentToolUI />
+        <ContextCompressDataUI />
+        <IntentRouteDataUI />
+        <AgentEventDataUI />
+        <StepBudgetDataUI />
+        <CitationToolUI />
+        <DataTableToolUI />
+        <ListSystemOverviewToolUI />
+        <ListKbToolUI />
+        <ListDocLibrariesToolUI />
+        <SearchKnowledgeToolUI />
+        <SearchDocumentsToolUI />
+        <SearchGraphToolUI />
+        <WikiOverviewToolUI />
+        <SearchWikiPagesToolUI />
+        <ReadKnowledgeToolUI />
+        <ReadDocumentToolUI />
+        <SaveArtifactToolUI />
+        <PreviewArticleUpdateToolUI />
+        <QaMarkdownScope>
+        <div className="h-full min-h-0">
+          <GrokThread
+            scopeName={scopeName}
+            focusSelection={focusSelection}
+            qaMode={qaMode}
+            onQaModeChange={onQaModeChange}
+            knowledgeBases={knowledgeBases}
+            docLibraries={docLibraries}
+            onFocusChange={onFocusChange}
+            modelInfo={modelInfo}
+            selectedConfigId={selectedConfigId}
+            onConfigChange={onConfigChange}
+            onComposerFocus={onComposerFocus}
+            persistedPlans={persistedPlans}
+            threadId={threadId}
+            onPlanPatched={onPlanPatched}
+          />
+        </div>
+        </QaMarkdownScope>
+      </WikiLinkClickProvider>
+      <WikiPagePreviewDialog
+        pageKey={wikiPreviewKey}
+        onClose={() => setWikiPreviewKey(null)}
+        loadDetail={loadWikiDetail}
+      />
     </AssistantRuntimeProvider>
   )
 }
@@ -1040,6 +1085,8 @@ function QaChatPanel({
 function GrokThread({
   scopeName,
   focusSelection,
+  qaMode,
+  onQaModeChange,
   knowledgeBases,
   docLibraries,
   onFocusChange,
@@ -1053,6 +1100,8 @@ function GrokThread({
 }: {
   scopeName: string | null
   focusSelection: AssistantFocusSelection
+  qaMode: AssistantQaMode
+  onQaModeChange: (next: AssistantQaMode) => void
   knowledgeBases: KnowledgeBaseQaSummary[]
   docLibraries: DocLibrary[]
   onFocusChange: (next: AssistantFocusSelection) => void
@@ -1077,6 +1126,8 @@ function GrokThread({
     focusSelection,
     onFocusChange,
     scopeLabel,
+    qaMode,
+    onQaModeChange,
     modelInfo,
     selectedConfigId,
     onConfigChange,

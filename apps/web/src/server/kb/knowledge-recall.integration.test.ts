@@ -16,8 +16,10 @@ describe.runIf(hasSqlite)("knowledge recall integration", () => {
     let recallAcross: typeof import("./knowledge-recall").recallKnowledgeCandidatesAcrossKbs
     let recallFocused: typeof import("./knowledge-recall").recallKnowledgeCandidates
     let readTreeNode: typeof import("./wiki-tree").readTreeNodeForAgent
+    let readChunk: typeof import("./article-knowledge-index").readArticleKnowledgeChunkForAgent
     let userId = 0
     let knowledgeBaseId = 0
+    let modernChunkId = 0
     let targetKey = ""
     let emptyParentKey = ""
 
@@ -31,6 +33,7 @@ describe.runIf(hasSqlite)("knowledge recall integration", () => {
         ;({ recallKnowledgeCandidatesAcrossKbs: recallAcross, recallKnowledgeCandidates: recallFocused }
             = await import("./knowledge-recall"))
         ;({ readTreeNodeForAgent: readTreeNode } = await import("./wiki-tree"))
+        ;({ readArticleKnowledgeChunkForAgent: readChunk } = await import("./article-knowledge-index"))
 
         const db = getDb()
         const [user] = await db.insert(schema.users).values({
@@ -63,6 +66,46 @@ describe.runIf(hasSqlite)("knowledge recall integration", () => {
             contentMd: "历史页面",
             contentHash: "history-page",
         }).returning({ id: schema.knowledgeBaseWikiPages.id })
+
+        const [modernChunk] = await db.insert(schema.knowledgeBaseArticleChunks).values({
+            userId,
+            knowledgeBaseId,
+            articleId: article.id,
+            chunkKey: "chunk-recovery",
+            position: 0,
+            heading: "灾备恢复",
+            headingPathJson: JSON.stringify(["运维", "灾备恢复"]),
+            contentMd: "冷备节点切换前必须校验 WAL 追平，并在切流后检查写入延迟。",
+            contentHash: "modern-chunk",
+            recommendedQuestionsJson: JSON.stringify(["液压鲲鹏故障时如何恢复服务？"]),
+        }).returning({ id: schema.knowledgeBaseArticleChunks.id })
+        modernChunkId = modernChunk.id
+
+        const { buildArticleKnowledgeIndexValues } = await import("./article-knowledge-index")
+        await db.insert(schema.knowledgeBaseArticleChunkIndexes).values(buildArticleKnowledgeIndexValues({
+            userId,
+            knowledgeBaseId,
+            articleId: article.id,
+            articleTitle: "历史部署记录",
+            chunks: [{
+                id: modernChunk.id,
+                chunkKey: "chunk-recovery",
+                heading: "灾备恢复",
+                headingPathJson: JSON.stringify(["运维", "灾备恢复"]),
+                contentMd: "冷备节点切换前必须校验 WAL 追平，并在切流后检查写入延迟。",
+                recommendedQuestionsJson: JSON.stringify(["液压鲲鹏故障时如何恢复服务？"]),
+            }],
+        }))
+        await db.insert(schema.knowledgeBaseWikiPages).values({
+            userId,
+            knowledgeBaseId,
+            pageKey: "concept-wal-failover",
+            title: "WAL 故障转移",
+            kind: "concept",
+            summary: "解释 WAL 追平与故障转移之间的关系。",
+            contentMd: "# WAL 故障转移\n\n概念页用于理解恢复策略，精确步骤应回读原文分片。",
+            contentHash: "concept-wal-failover",
+        })
 
         targetKey = `article-${article.id}:target`
         emptyParentKey = `article-${article.id}:empty-parent`
@@ -173,5 +216,37 @@ describe.runIf(hasSqlite)("knowledge recall integration", () => {
         expect(result?.contentMd).not.toContain("整篇文章独有标记")
         expect(result?.contentMd).not.toContain("空父章节子树以外的内容")
         expect(result?.contextMd).toContain("直接子章节")
+    })
+
+    it("问题命中映射回对应原文分片", async () => {
+        const result = await recallFocused({
+            userId,
+            knowledgeBaseId,
+            query: "液压鲲鹏故障如何恢复",
+        })
+
+        expect(result.candidates[0]).toMatchObject({
+            candidateKind: "chunk",
+            chunkId: String(modernChunkId),
+        })
+        expect(result.candidates[0]?.recallSources).toContain("question_bm25")
+
+        const evidence = await readChunk(userId, knowledgeBaseId, modernChunkId)
+        expect(evidence?.contentMd).toContain("WAL 追平")
+    })
+
+    it("Wiki 概念页作为独立检索面参与召回", async () => {
+        const result = await recallFocused({
+            userId,
+            knowledgeBaseId,
+            query: "WAL 故障转移关系",
+        })
+
+        expect(result.candidates.some((item) => (
+            item.candidateKind === "wiki"
+            && item.pageKey === "concept-wal-failover"
+            && item.recallSources.includes("wiki")
+        ))).toBe(true)
+        expect(result.diagnostics.wikiKeys).toContain(`wiki:${knowledgeBaseId}:concept-wal-failover`)
     })
 })

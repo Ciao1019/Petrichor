@@ -105,6 +105,34 @@ describe("ContextManager", () => {
         expect(built.instructions).toContain("[1] (knowledge) 先到但较弱")
     })
 
+    it("普通模式的证据区也给出 Wiki 内联引用规则，wiki 模式保持原有措辞", () => {
+        const state = new AgentStateStore({ conversationId: "c", userId: "1", goal: "目标" })
+        const evidence = new EvidenceStore()
+        evidence.add({
+            source: "knowledge",
+            title: "Fastfetch 使用说明",
+            content: "正文",
+            sourceId: "source-8",
+            metadata: { pageKey: "source-8" },
+        })
+        const base = {
+            state: state.current,
+            observations: new ObservationStore(),
+            evidence,
+            skillInstructions: [],
+            skillCatalog: [],
+            tools: [],
+            recentMessages: [],
+        }
+
+        const normal = new ContextManager().build(base)
+        expect(normal.instructions).toContain("不同页面要分别引用、不要只链其中一个")
+        expect(normal.instructions).toContain("Wiki 引用：[[source-8|Fastfetch 使用说明]]")
+
+        const wiki = new ContextManager().build({ ...base, qaMode: "wiki" as const })
+        expect(wiki.instructions).toContain("不要输出 [n] 角标")
+    })
+
     it("老观察被折叠而不是无限堆积", () => {
         const { built } = build({ observationCount: 200, budgetTotal: 4_000 })
         expect(built.dropped.observations).toBeGreaterThan(0)
@@ -155,6 +183,74 @@ describe("最终回答上下文", () => {
             observations: new ObservationStore(),
         })
         expect(context).toContain("没有获取到可引用的证据")
+    })
+
+    it("普通模式的引用规则允许 Wiki 来源改用内联引用", () => {
+        const state = new AgentStateStore({ conversationId: "c", userId: "1", goal: "目标" })
+        const evidence = new EvidenceStore()
+        const item = evidence.add({
+            source: "knowledge",
+            title: "Fastfetch 使用说明",
+            content: "正文",
+            sourceId: "source-8",
+            metadata: { pageKey: "source-8" },
+        })
+
+        const normal = buildFinalAnswerContext({
+            state: state.current,
+            evidence: [item],
+            observations: new ObservationStore(),
+        })
+        expect(normal).toContain("不同页面分别引用、不要只链其中一个")
+        expect(normal).toContain("Wiki 引用：[[source-8|Fastfetch 使用说明]]")
+
+        // wiki 模式保持强制内联、禁用角标的措辞
+        const wiki = buildFinalAnswerContext({
+            state: state.current,
+            evidence: [item],
+            observations: new ObservationStore(),
+            wikiMode: true,
+        })
+        expect(wiki).toContain("不要输出 [n] 数字角标")
+    })
+
+    it("检索命中但未深读的 Wiki 页面会作为可链接候选列出", () => {
+        const state = new AgentStateStore({ conversationId: "c", userId: "1", goal: "目标" })
+        const evidence = new EvidenceStore()
+        const item = evidence.add({
+            source: "knowledge",
+            title: "Fastfetch 使用说明",
+            content: "正文",
+            sourceId: "source-8",
+            metadata: { pageKey: "source-8" },
+        })
+        const observations = new ObservationStore()
+        // 检索观察：一条已深读（应排除），两条未深读（应列出）
+        observations.add(createObservation({
+            type: "knowledge_search",
+            source: "knowledge.search",
+            summary: "找到 3 个相关章节",
+            data: {
+                hits: [
+                    { pageKey: "source-8", title: "Fastfetch 使用说明" },
+                    { pageKey: "concept-neofetch", title: "Neofetch" },
+                    { pageKey: "concept-jsonc", title: "JSONC 配置" },
+                    { nodeKey: "a1-3", title: "普通章节（无 pageKey，不列）" },
+                ],
+            },
+        }))
+
+        const context = buildFinalAnswerContext({
+            state: state.current,
+            evidence: [item],
+            observations,
+        })
+
+        expect(context).toContain("## 其他可引用的 Wiki 页面")
+        expect(context).toContain("[[concept-neofetch|Neofetch]]")
+        expect(context).toContain("[[concept-jsonc|JSONC 配置]]")
+        // 已深读的页面不再重复列进候选清单（证据区自己的「Wiki 引用」提示除外）
+        expect(context).not.toContain("- [[source-8|")
     })
 })
 

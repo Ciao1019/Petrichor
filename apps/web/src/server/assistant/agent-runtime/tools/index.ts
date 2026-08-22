@@ -3,7 +3,7 @@ import { agentToolRegistry } from "../tool-registry"
 import { agentSkillRegistry } from "../skill-registry"
 import { agentMetaTools } from "./agent"
 import { graphTools } from "./graph"
-import { knowledgeTools } from "./knowledge"
+import { knowledgeTools, wikiQaTools } from "./knowledge"
 import { documentExportTools } from "./document"
 import { buildLegacyAgentTools } from "./legacy"
 import { memoryTools } from "./memory"
@@ -24,6 +24,7 @@ export function buildAllAgentTools(): AgentToolDefinition[] {
     return [
         ...agentMetaTools,
         ...knowledgeTools,
+        ...wikiQaTools,
         ...graphTools,
         ...researchTools,
         ...writerTools,

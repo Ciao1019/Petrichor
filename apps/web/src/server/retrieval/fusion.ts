@@ -1,12 +1,21 @@
 /**
  * 召回融合（§28）。
  *
- * Tree / Vector / BM25 三路召回不能简单 append：各自分值不可比。
+ * 分片向量 / 问题向量 / 词法 / Wiki 等召回不能简单 append：各自分值不可比。
  * 用 RRF（Reciprocal Rank Fusion）只依赖排名，天然跨召回源可比，
  * 并且对某一路失效有天然容错——那一路不贡献排名即可（§141）。
  */
 
-export type RecallSource = "tree" | "vector" | "bm25"
+export type RecallSource =
+    | "chunk_vector"
+    | "question_vector"
+    | "chunk_bm25"
+    | "question_bm25"
+    | "wiki"
+    // 以下三类只用于尚未重建到新版文章索引的存量兼容。
+    | "tree"
+    | "vector"
+    | "bm25"
 
 export type RecallHit = {
     nodeKey: string

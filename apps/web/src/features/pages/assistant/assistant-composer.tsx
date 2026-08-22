@@ -7,11 +7,13 @@ import {
 } from "@assistant-ui/react"
 import {
   ArrowUp,
+  BookOpen,
   Check,
   ChevronDown,
   FileText,
   Globe2,
   Library,
+  MessageCircleQuestion,
   Square,
 } from "@/components/iconimate"
 
@@ -62,6 +64,8 @@ export function GrokComposer({
   focusSelection,
   onFocusChange,
   scopeLabel,
+  qaMode,
+  onQaModeChange,
   modelInfo,
   selectedConfigId,
   onConfigChange,
@@ -73,6 +77,8 @@ export function GrokComposer({
   focusSelection: AssistantFocusSelection
   onFocusChange: (next: AssistantFocusSelection) => void
   scopeLabel: string
+  qaMode: "normal" | "wiki"
+  onQaModeChange: (next: "normal" | "wiki") => void
   modelInfo: KnowledgeBaseQaModelInfo | null
   selectedConfigId: string | null
   onConfigChange: (next: string) => void
@@ -102,6 +108,9 @@ export function GrokComposer({
               onFocus={onComposerFocus}
               className="ml-1 max-h-100 min-h-8 min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[#0d0d0d] text-base leading-6 outline-none placeholder:text-[#9a9a9a] dark:text-white dark:placeholder:text-[#6b6b6b]"
             />
+
+            {/* 问答模式：普通（分片/章节）或 Wiki（页面级检索 + 内联引用） */}
+            <InlineModeSwitch value={qaMode} onChange={onQaModeChange} />
 
             <InlineScopeSelector
               knowledgeBases={knowledgeBases}
@@ -165,6 +174,53 @@ export function ComposerContextBar({ contextWindow }: { contextWindow: number })
       side="top"
       usage={usage}
     />
+  )
+}
+
+const QA_MODE_OPTIONS = [
+  { key: "normal" as const, label: "问答", icon: MessageCircleQuestion, title: "普通问答：检索知识库分片与章节回答" },
+  { key: "wiki" as const, label: "Wiki", icon: BookOpen, title: "Wiki 问答：基于 Wiki 页面回答，答案内嵌可点击的页面引用" },
+]
+
+/** 问答模式切换（普通 / Wiki）：Wiki 模式下服务端走 WeKnora 式页面检索，回答带 [[..]] 引用。 */
+export function InlineModeSwitch({
+  value,
+  onChange,
+}: {
+  value: "normal" | "wiki"
+  onChange: (next: "normal" | "wiki") => void
+}) {
+  return (
+    <div
+      className="flex h-8 shrink-0 items-center gap-0.5 rounded-full bg-[#f0f0f0] p-0.5 dark:bg-[#2a2a2a]"
+      role="group"
+      aria-label="问答模式"
+    >
+      {QA_MODE_OPTIONS.map((option) => {
+        const active = option.key === value
+        const Icon = option.icon
+        return (
+          <button
+            key={option.key}
+            type="button"
+            title={option.title}
+            aria-pressed={active}
+            onClick={() => onChange(option.key)}
+            className={cn(
+              "flex h-7 items-center gap-1 rounded-full px-2.5 text-xs font-medium outline-none transition-colors",
+              active
+                ? "bg-white text-[#0d0d0d] shadow-xs dark:bg-[#3a3a3a] dark:text-white"
+                : "text-[#6b6b6b] hover:text-[#0d0d0d] dark:text-[#9a9a9a] dark:hover:text-white",
+            )}
+          >
+            <Icon className={cn("size-3.5 shrink-0", active && option.key === "wiki" && "text-violet-600 dark:text-violet-300")} />
+            <span className={cn(option.key === "wiki" && active && "text-violet-600 dark:text-violet-300")}>
+              {option.label}
+            </span>
+          </button>
+        )
+      })}
+    </div>
   )
 }
 

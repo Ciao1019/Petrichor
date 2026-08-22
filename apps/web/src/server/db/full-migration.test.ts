@@ -43,6 +43,7 @@ describe("buildInitialMigrationSql", () => {
         expect(sql).toContain("add column if not exists original_author_name text")
         expect(sql).toContain("create table if not exists petrichor_kb_article_burn_link")
         expect(sql).toContain("create table if not exists petrichor_kb_article_chunk")
+        expect(sql).toContain("create table if not exists petrichor_kb_article_chunk_index")
         expect(sql).toContain("recommended_questions_json text not null default '[]'")
         expect(sql).toContain("max_views integer not null default 1")
         expect(sql).toContain("status text not null default 'ACTIVE'")
@@ -124,6 +125,7 @@ describe("buildInitialMigrationSql", () => {
         expect(ddl).not.toContain("using hnsw (embedding vector_cosine_ops)")
 
         for (const table of [
+            "petrichor_kb_article_chunk_index",
             "petrichor_kb_wiki_tree_node",
             "petrichor_agent_memory",
             "petrichor_assistant_message_embedding",

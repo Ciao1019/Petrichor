@@ -8,6 +8,14 @@ import { createReranker, rerankAdaptively, type Reranker } from "@/server/retrie
 import { buildQueryTokens, buildTsQuery } from "@/server/retrieval/tokenize"
 import { assertKnowledgeBaseOwner } from "./wiki-agent-logic"
 import {
+    lexicalSearchArticleKnowledge,
+    searchKnowledgeWikiPages,
+    semanticSearchArticleKnowledge,
+    type ArticleKnowledgeSearchGroups,
+    type ArticleKnowledgeSearchHit,
+    type WikiKnowledgeSearchHit,
+} from "./article-knowledge-index"
+import {
     retrieveTreeNodesForAgent,
     semanticSearchTreeNodes,
     semanticSearchTreeNodesAcrossKbs,
@@ -25,6 +33,11 @@ import {
 
 export type KnowledgeCandidate = {
     nodeKey: string
+    /** RRF / 去重使用的全局候选键；新索引不再把 chunk/page 冒充旧 Tree nodeKey。 */
+    candidateKey?: string
+    candidateKind?: "chunk" | "wiki" | "tree"
+    chunkId?: string
+    pageKey?: string
     articleId: string
     knowledgeBaseId: string
     title: string
@@ -42,6 +55,11 @@ export type RecallDiagnostics = {
     treeKeys: string[]
     vectorKeys: string[]
     bm25Keys: string[]
+    chunkVectorKeys: string[]
+    questionVectorKeys: string[]
+    chunkBm25Keys: string[]
+    questionBm25Keys: string[]
+    wikiKeys: string[]
     fusionKeys: string[]
     finalKeys: string[]
     /** 两阶段召回第一阶段选中的文章；第二阶段只在这些文章内选章节 */
@@ -82,164 +100,11 @@ export type KnowledgeRecallInput = {
 }
 
 export async function recallKnowledgeCandidates(input: KnowledgeRecallInput): Promise<KnowledgeRecallResult> {
-    const startedAt = Date.now()
-    const flags = readAgentFeatureFlags()
-    const config = resolveRecallConfig(input.config)
-    const queries = [input.query, ...(input.subQueries ?? [])].filter((q) => q.trim()).slice(0, 4)
-
     await assertKnowledgeBaseOwner(getDb(), input.userId, input.knowledgeBaseId)
-
-    const degraded: Partial<Record<RecallSource, string>> = {}
-    const nodeIndex = new Map<string, TreeRetrievalHit | Bm25Node>()
-
-    // ---- 快速召回优先；任意一路失败只记降级原因 -----------------------------
-    const vectorPromise = settleAll(queries.map((query) =>
-            semanticSearchTreeNodes({
-                userId: input.userId,
-                knowledgeBaseId: input.knowledgeBaseId,
-                query,
-                limit: config.vectorTopK,
-                ...(input.articleId != null ? { articleId: input.articleId } : {}),
-                maxContentChars: 600,
-            }),
-        )).then((r) => collect(r, degraded, "vector"))
-    const bm25Promise = flags.bm25
-        ? settleAll(queries.map((query) =>
-                bm25RecallTreeNodes({
-                    userId: input.userId,
-                    knowledgeBaseId: input.knowledgeBaseId,
-                    query,
-                    limit: config.bm25TopK,
-                    ...(input.articleId != null ? { articleId: input.articleId } : {}),
-                }),
-            )).then((r) => collect(r, degraded, "bm25"))
-        : Promise.resolve<Bm25RecallHit[][]>([])
-
-    const treeMode = input.treeMode ?? "always"
-    let treeAttempted = treeMode === "always"
-    const treePromise = treeMode === "always"
-        ? runTreeRecall(input, config, queries[0] ?? input.query, degraded)
-        : Promise.resolve<TreeRetrievalHit[][]>([])
-
-    const [vectorResults, bm25Results, initialTreeResults] = await Promise.all([
-        vectorPromise,
-        bm25Promise,
-        treePromise,
-    ])
-    let treeResults = initialTreeResults
-
-    // 简单问题只在 Vector + BM25 都没有候选时才付 Tree LLM 的成本。
-    if (treeMode === "fallback" && !hasAnyHit(vectorResults) && !hasAnyHit(bm25Results)) {
-        treeAttempted = true
-        treeResults = await runTreeRecall(input, config, queries[0] ?? input.query, degraded)
-    }
-
-    for (const group of [...treeResults, ...vectorResults]) {
-        for (const hit of group) nodeIndex.set(hit.nodeKey, hit)
-    }
-    for (const group of bm25Results) {
-        for (const hit of group) if (!nodeIndex.has(hit.nodeKey)) nodeIndex.set(hit.nodeKey, hit.node)
-    }
-
-    const treeKeys = flatKeys(treeResults)
-    const vectorKeys = flatKeys(vectorResults)
-    const bm25Keys = bm25Results.flatMap((group) => group.map((hit) => hit.nodeKey))
-
-    // ---- 融合 -------------------------------------------------------------
-    const groups: Array<Array<{ nodeKey: string; score?: number }>> = []
-    const sources: RecallSource[] = []
-    for (const group of treeResults) {
-        groups.push(group.map((hit) => ({ nodeKey: hit.nodeKey })))
-        sources.push("tree")
-    }
-    for (const group of vectorResults) {
-        groups.push(group.map((hit) => ({ nodeKey: hit.nodeKey })))
-        sources.push("vector")
-    }
-    for (const group of bm25Results) {
-        groups.push(group.map((hit) => ({ nodeKey: hit.nodeKey, score: hit.score })))
-        sources.push("bm25")
-    }
-
-    const fused: FusedCandidate[] = flags.rrf
-        ? reciprocalRankFusion(
-            groups.map((group, index) => toRecallHits(sources[index], group)),
-            { k: config.rrfK, topK: config.fusionTopK },
-        )
-        : appendFallback(groups, sources, config.fusionTopK)
-
-    // ---- 两阶段：先选文章，再在候选文章里精排章节 -------------------------
-    // 宽召回结果如果直接截 Top-K，很容易被同一篇长文章的相似章节占满。
-    // 第一阶段按文章聚合相关度，第二阶段再均衡地选出各篇文章内的候选章节。
-    const broadCandidates = fused.map((item) => toCandidate(item, nodeIndex, input.knowledgeBaseId))
-    const articleStage = selectArticleStage(broadCandidates, {
-        articleTopK: input.articleId != null ? 1 : config.articleTopK,
-        perArticleTopK: config.perArticleTopK,
-        ...(input.articleId != null ? { focusedArticleId: String(input.articleId) } : {}),
+    return await recallModernKnowledge({
+        ...input,
+        retrievalScope: input.articleId != null ? "focused_article" : "article_then_chapter",
     })
-
-    // ---- 自适应重排 -------------------------------------------------------
-    const reranker = input.reranker ?? createReranker()
-    const reranked = await rerankAdaptively(
-        reranker,
-        input.query,
-        articleStage.candidates.slice(0, config.rerankTopK).map((candidate) => ({
-            ...candidate,
-            content: readContent(nodeIndex.get(candidate.nodeKey)),
-        })),
-        { topN: Math.max(config.finalTopK, config.maxPerArticle * articleStage.articleIds.length), ...(input.signal ? { signal: input.signal } : {}) },
-    )
-
-    const diversified = selectDiverseCandidates(
-        reranked.items,
-        config.finalTopK,
-        input.articleId != null ? config.finalTopK : config.maxPerArticle,
-    )
-
-    // rerank 输入里带了 content 供打分，回给调用方时去掉——search 只返回定位信息（§30）
-    const finalCandidates: KnowledgeCandidate[] = diversified.items
-        .map((item) => {
-            const candidate: Record<string, unknown> = { ...item }
-            delete candidate.content
-            return candidate as unknown as KnowledgeCandidate
-        })
-        .slice(0, config.finalTopK)
-
-    // 候选过少时从同一文章阶段补齐；仍然遵守内容去重与每篇文章上限。
-    if (finalCandidates.length < config.finalTopK) {
-        for (const candidate of articleStage.candidates) {
-            if (finalCandidates.length >= config.finalTopK) break
-            if (finalCandidates.some((item) => item.nodeKey === candidate.nodeKey)) continue
-            if (!canAppendCandidate(finalCandidates, candidate, input.articleId != null ? config.finalTopK : config.maxPerArticle)) continue
-            finalCandidates.push(candidate)
-        }
-    }
-
-    return {
-        candidates: finalCandidates,
-        diagnostics: {
-            query: input.query,
-            rewrittenQueries: input.subQueries ?? [],
-            treeKeys,
-            vectorKeys,
-            bm25Keys,
-            fusionKeys: fused.map((item) => item.nodeKey),
-            finalKeys: finalCandidates.map((item) => item.nodeKey),
-            selectedArticleIds: articleStage.articleIds,
-            diversityDroppedKeys: diversified.droppedKeys,
-            rerankApplied: reranked.applied,
-            rerankStrategy: reranked.strategy,
-            ...(reranked.error ? { rerankError: reranked.error } : {}),
-            treeAttempted,
-            ...(treeAttempted
-                ? { treeReason: treeMode === "always" ? "complex_query" as const : "fast_recall_empty" as const }
-                : {}),
-            retrievalScope: input.articleId != null ? "focused_article" : "article_then_chapter",
-            degraded,
-            retrievalMs: Date.now() - startedAt,
-            rerankMs: reranked.durationMs,
-        },
-    }
 }
 
 /**
@@ -258,77 +123,293 @@ export async function recallKnowledgeCandidatesAcrossKbs(input: {
     reranker?: Reranker
     signal?: AbortSignal
 }): Promise<KnowledgeRecallResult> {
+    return await recallModernKnowledge({
+        ...input,
+        config: {
+            ...input.config,
+            ...(input.limit != null ? { finalTopK: input.limit } : {}),
+        },
+        treeMode: "off",
+        retrievalScope: "cross_kb_article_then_chapter",
+    })
+}
+
+type ModernRecallInput = {
+    userId: number
+    query: string
+    subQueries?: string[]
+    knowledgeBaseId?: number
+    articleId?: number
+    config?: Partial<RecallConfig>
+    reranker?: Reranker
+    signal?: AbortSignal
+    treeMode?: "always" | "fallback" | "off"
+    retrievalScope: RecallDiagnostics["retrievalScope"]
+}
+
+type IndexedCandidate = { candidate: KnowledgeCandidate; content: string }
+
+function candidateFromChunk(hit: ArticleKnowledgeSearchHit): IndexedCandidate {
+    return {
+        candidate: {
+            nodeKey: hit.candidateKey,
+            candidateKey: hit.candidateKey,
+            candidateKind: "chunk",
+            chunkId: hit.chunkId,
+            articleId: hit.articleId,
+            knowledgeBaseId: hit.knowledgeBaseId,
+            title: hit.title,
+            path: hit.path,
+            summary: hit.summary,
+            ...(hit.matchedSource === "question" ? { reason: `推荐问题命中：${hit.matchedContent}` } : {}),
+            recallSources: [],
+        },
+        content: hit.contentMd,
+    }
+}
+
+function candidateFromWiki(hit: WikiKnowledgeSearchHit): IndexedCandidate {
+    return {
+        candidate: {
+            nodeKey: hit.candidateKey,
+            candidateKey: hit.candidateKey,
+            candidateKind: "wiki",
+            pageKey: hit.pageKey,
+            articleId: hit.articleId,
+            knowledgeBaseId: hit.knowledgeBaseId,
+            title: hit.title,
+            summary: hit.summary,
+            reason: `${hit.kind} Wiki 页面命中`,
+            recallSources: [],
+        },
+        content: hit.contentMd,
+    }
+}
+
+function candidateFromTree(hit: TreeRetrievalHit | Bm25Node, candidateKey: string): IndexedCandidate {
+    const path = "path" in hit && hit.path
+        ? String(hit.path).split(/\s*(?:›|\/)\s*/).filter(Boolean)
+        : undefined
+    return {
+        candidate: {
+            nodeKey: hit.nodeKey,
+            candidateKey,
+            candidateKind: "tree",
+            articleId: hit.articleId,
+            knowledgeBaseId: hit.knowledgeBaseId,
+            title: hit.title,
+            ...(path ? { path } : {}),
+            ...(hit.summary ? { summary: hit.summary } : {}),
+            ...( "reason" in hit && hit.reason ? { reason: hit.reason } : {}),
+            recallSources: [],
+        },
+        content: hit.contentMd,
+    }
+}
+
+function splitSearchGroups(
+    results: Array<PromiseSettledResult<ArticleKnowledgeSearchGroups>>,
+    degraded: Partial<Record<RecallSource, string>>,
+    chunkSource: RecallSource,
+    questionSource: RecallSource,
+) {
+    const chunk: ArticleKnowledgeSearchHit[][] = []
+    const question: ArticleKnowledgeSearchHit[][] = []
+    for (const result of results) {
+        if (result.status === "fulfilled") {
+            chunk.push(result.value.chunk)
+            question.push(result.value.question)
+            continue
+        }
+        const reason = result.reason instanceof Error ? result.reason.message : String(result.reason)
+        degraded[chunkSource] = reason
+        degraded[questionSource] = reason
+    }
+    return { chunk, question }
+}
+
+function addRecallGroup(
+    groups: Array<Array<{ nodeKey: string; score?: number }>>,
+    sources: RecallSource[],
+    source: RecallSource,
+    hits: Array<{ candidateKey: string; score?: number }>,
+) {
+    if (hits.length === 0) return
+    groups.push(hits.map((hit) => ({ nodeKey: hit.candidateKey, ...(hit.score == null ? {} : { score: hit.score }) })))
+    sources.push(source)
+}
+
+async function recallModernKnowledge(input: ModernRecallInput): Promise<KnowledgeRecallResult> {
     const startedAt = Date.now()
     const flags = readAgentFeatureFlags()
-    const config = resolveRecallConfig({
-        ...input.config,
-        ...(input.limit != null ? { finalTopK: input.limit } : {}),
-    })
+    const config = resolveRecallConfig(input.config)
     const queries = [input.query, ...(input.subQueries ?? [])]
         .map((query) => query.trim())
         .filter(Boolean)
         .slice(0, 4)
     const degraded: Partial<Record<RecallSource, string>> = {}
+    const candidateIndex = new Map<string, IndexedCandidate>()
 
-    const [vectorResults, bm25Results] = await Promise.all([
-        settleAll(queries.map((query) => semanticSearchTreeNodesAcrossKbs({
+    const [vectorSettled, lexicalSettled, wikiSettled] = await Promise.all([
+        settleAll(queries.map((query) => semanticSearchArticleKnowledge({
             userId: input.userId,
+            ...(input.knowledgeBaseId != null ? { knowledgeBaseId: input.knowledgeBaseId } : {}),
+            ...(input.articleId != null ? { articleId: input.articleId } : {}),
             query,
             limit: config.vectorTopK,
-            maxContentChars: 600,
-        }))).then((results) => collect(results, degraded, "vector")),
+        }))),
         flags.bm25
-            ? settleAll(queries.map((query) => bm25RecallTreeNodesAcrossKbs({
+            ? settleAll(queries.map((query) => lexicalSearchArticleKnowledge({
                 userId: input.userId,
+                ...(input.knowledgeBaseId != null ? { knowledgeBaseId: input.knowledgeBaseId } : {}),
+                ...(input.articleId != null ? { articleId: input.articleId } : {}),
                 query,
                 limit: config.bm25TopK,
-            }))).then((results) => collect(results, degraded, "bm25"))
-            : Promise.resolve<Bm25RecallHit[][]>([]),
+            })))
+            : Promise.resolve<Array<PromiseSettledResult<ArticleKnowledgeSearchGroups>>>([]),
+        settleAll(queries.map((query) => searchKnowledgeWikiPages({
+            userId: input.userId,
+            ...(input.knowledgeBaseId != null ? { knowledgeBaseId: input.knowledgeBaseId } : {}),
+            query,
+            limit: config.bm25TopK,
+        }))),
     ])
 
-    const nodeIndex = new Map<string, TreeRetrievalHit | Bm25Node>()
-    const vectorGroups = vectorResults.map((group) => group.map((hit) => {
-        const key = crossNodeKey(hit)
-        nodeIndex.set(key, hit)
-        return { nodeKey: key }
-    }))
-    const bm25Groups = bm25Results.map((group) => group.map((hit) => {
-        const key = crossNodeKey(hit.node)
-        nodeIndex.set(key, hit.node)
-        return { nodeKey: key, score: hit.score }
-    }))
-    const groups = [...vectorGroups, ...bm25Groups]
-    const sources: RecallSource[] = [
-        ...vectorGroups.map(() => "vector" as const),
-        ...bm25Groups.map(() => "bm25" as const),
-    ]
+    const vector = splitSearchGroups(vectorSettled, degraded, "chunk_vector", "question_vector")
+    const lexical = splitSearchGroups(lexicalSettled, degraded, "chunk_bm25", "question_bm25")
+    const wiki = collect(wikiSettled, degraded, "wiki")
+
+    for (const group of [...vector.chunk, ...lexical.chunk]) {
+        for (const hit of group) candidateIndex.set(hit.candidateKey, candidateFromChunk(hit))
+    }
+    for (const group of [...vector.question, ...lexical.question]) {
+        for (const hit of group) {
+            if (!candidateIndex.has(hit.candidateKey)) candidateIndex.set(hit.candidateKey, candidateFromChunk(hit))
+            else {
+                const indexed = candidateIndex.get(hit.candidateKey)
+                if (indexed && !indexed.candidate.reason) indexed.candidate.reason = `推荐问题命中：${hit.matchedContent}`
+            }
+        }
+    }
+    for (const group of wiki) {
+        for (const hit of group) candidateIndex.set(hit.candidateKey, candidateFromWiki(hit))
+    }
+
+    const groups: Array<Array<{ nodeKey: string; score?: number }>> = []
+    const sources: RecallSource[] = []
+    for (const group of vector.chunk) addRecallGroup(groups, sources, "chunk_vector", group)
+    for (const group of vector.question) addRecallGroup(groups, sources, "question_vector", group)
+    for (const group of lexical.chunk) addRecallGroup(groups, sources, "chunk_bm25", group)
+    for (const group of lexical.question) addRecallGroup(groups, sources, "question_bm25", group)
+    for (const group of wiki) addRecallGroup(groups, sources, "wiki", group)
+
+    let treeAttempted = false
+    let treeResults: TreeRetrievalHit[][] = []
+    let legacyVectorResults: TreeRetrievalHit[][] = []
+    let legacyBm25Results: Bm25RecallHit[][] = []
+
+    // 存量兼容：只有新版分片/问题/Wiki 三路全空时，才回退旧 Wiki Tree。
+    if (!hasAnyHit(groups)) {
+        if (input.knowledgeBaseId != null) {
+            const [vectorResults, bm25Results] = await Promise.all([
+                settleAll(queries.map((query) => semanticSearchTreeNodes({
+                    userId: input.userId,
+                    knowledgeBaseId: input.knowledgeBaseId!,
+                    query,
+                    limit: config.vectorTopK,
+                    ...(input.articleId != null ? { articleId: input.articleId } : {}),
+                    maxContentChars: 600,
+                }))).then((results) => collect(results, degraded, "vector")),
+                flags.bm25
+                    ? settleAll(queries.map((query) => bm25RecallTreeNodes({
+                        userId: input.userId,
+                        knowledgeBaseId: input.knowledgeBaseId!,
+                        query,
+                        limit: config.bm25TopK,
+                        ...(input.articleId != null ? { articleId: input.articleId } : {}),
+                    }))).then((results) => collect(results, degraded, "bm25"))
+                    : Promise.resolve<Bm25RecallHit[][]>([]),
+            ])
+            legacyVectorResults = vectorResults
+            legacyBm25Results = bm25Results
+            const treeMode = input.treeMode ?? "fallback"
+            if (treeMode === "always" || (treeMode === "fallback" && !hasAnyHit(vectorResults) && !hasAnyHit(bm25Results))) {
+                treeAttempted = true
+                treeResults = await runTreeRecall(input as KnowledgeRecallInput, config, queries[0] ?? input.query, degraded)
+            }
+            for (const group of [...treeResults, ...legacyVectorResults]) {
+                for (const hit of group) {
+                    const key = `tree:${hit.knowledgeBaseId}:${hit.nodeKey}`
+                    candidateIndex.set(key, candidateFromTree(hit, key))
+                }
+            }
+            for (const group of legacyBm25Results) {
+                for (const hit of group) {
+                    const key = `tree:${hit.node.knowledgeBaseId}:${hit.nodeKey}`
+                    if (!candidateIndex.has(key)) candidateIndex.set(key, candidateFromTree(hit.node, key))
+                }
+            }
+        } else {
+            const [vectorResults, bm25Results] = await Promise.all([
+                settleAll(queries.map((query) => semanticSearchTreeNodesAcrossKbs({
+                    userId: input.userId,
+                    query,
+                    limit: config.vectorTopK,
+                    maxContentChars: 600,
+                }))).then((results) => collect(results, degraded, "vector")),
+                flags.bm25
+                    ? settleAll(queries.map((query) => bm25RecallTreeNodesAcrossKbs({
+                        userId: input.userId,
+                        query,
+                        limit: config.bm25TopK,
+                    }))).then((results) => collect(results, degraded, "bm25"))
+                    : Promise.resolve<Bm25RecallHit[][]>([]),
+            ])
+            legacyVectorResults = vectorResults
+            legacyBm25Results = bm25Results
+            for (const group of legacyVectorResults) {
+                for (const hit of group) {
+                    const key = `tree:${hit.knowledgeBaseId}:${hit.nodeKey}`
+                    candidateIndex.set(key, candidateFromTree(hit, key))
+                }
+            }
+            for (const group of legacyBm25Results) {
+                for (const hit of group) {
+                    const key = `tree:${hit.node.knowledgeBaseId}:${hit.nodeKey}`
+                    if (!candidateIndex.has(key)) candidateIndex.set(key, candidateFromTree(hit.node, key))
+                }
+            }
+        }
+
+        for (const group of treeResults) {
+            groups.push(group.map((hit) => ({ nodeKey: `tree:${hit.knowledgeBaseId}:${hit.nodeKey}` })))
+            sources.push("tree")
+        }
+        for (const group of legacyVectorResults) {
+            groups.push(group.map((hit) => ({ nodeKey: `tree:${hit.knowledgeBaseId}:${hit.nodeKey}` })))
+            sources.push("vector")
+        }
+        for (const group of legacyBm25Results) {
+            groups.push(group.map((hit) => ({ nodeKey: `tree:${hit.node.knowledgeBaseId}:${hit.nodeKey}`, score: hit.score })))
+            sources.push("bm25")
+        }
+    }
+
     const fused = flags.rrf
         ? reciprocalRankFusion(
             groups.map((group, index) => toRecallHits(sources[index], group)),
             { k: config.rrfK, topK: config.fusionTopK },
         )
         : appendFallback(groups, sources, config.fusionTopK)
-
-    const broadCandidates: KnowledgeCandidate[] = fused.flatMap((item) => {
-        const node = nodeIndex.get(item.nodeKey)
-        if (!node) return []
-        const isTreeHit = "path" in node && typeof node.path === "string"
-        return [{
-            nodeKey: node.nodeKey,
-            articleId: node.articleId,
-            knowledgeBaseId: node.knowledgeBaseId,
-            title: node.title,
-            ...(isTreeHit && node.path
-                ? { path: String(node.path).split(/\s*(?:›|\/)\s*/).filter(Boolean) }
-                : {}),
-            ...(node.summary ? { summary: node.summary } : {}),
-            score: item.fusedScore,
-            recallSources: item.recallSources,
-        }]
+    const broadCandidates = fused.flatMap((item) => {
+        const indexed = candidateIndex.get(item.nodeKey)
+        if (!indexed) return []
+        return [{ ...indexed.candidate, score: item.fusedScore, recallSources: item.recallSources }]
     })
     const articleStage = selectArticleStage(broadCandidates, {
-        articleTopK: config.articleTopK,
+        articleTopK: input.articleId != null ? 1 : config.articleTopK,
         perArticleTopK: config.perArticleTopK,
+        ...(input.articleId != null ? { focusedArticleId: String(input.articleId) } : {}),
     })
     const reranker = input.reranker ?? createReranker()
     const reranked = await rerankAdaptively(
@@ -336,11 +417,15 @@ export async function recallKnowledgeCandidatesAcrossKbs(input: {
         input.query,
         articleStage.candidates.slice(0, config.rerankTopK).map((candidate) => ({
             ...candidate,
-            content: nodeIndex.get(crossCandidateKey(candidate))?.contentMd.slice(0, 1_200),
+            content: candidateIndex.get(knowledgeCandidateKey(candidate))?.content.slice(0, 1_200),
         })),
-        { topN: Math.max(config.finalTopK, config.maxPerArticle * articleStage.articleIds.length), ...(input.signal ? { signal: input.signal } : {}) },
+        { topN: Math.max(config.finalTopK, config.maxPerArticle * Math.max(articleStage.articleIds.length, 1)), ...(input.signal ? { signal: input.signal } : {}) },
     )
-    const diversified = selectDiverseCandidates(reranked.items, config.finalTopK, config.maxPerArticle)
+    const diversified = selectDiverseCandidates(
+        reranked.items,
+        config.finalTopK,
+        input.articleId != null ? config.finalTopK : config.maxPerArticle,
+    )
     const finalCandidates = diversified.items.map((item) => {
         const candidate: Record<string, unknown> = { ...item }
         delete candidate.content
@@ -350,29 +435,48 @@ export async function recallKnowledgeCandidatesAcrossKbs(input: {
     if (finalCandidates.length < config.finalTopK) {
         for (const candidate of articleStage.candidates) {
             if (finalCandidates.length >= config.finalTopK) break
-            if (finalCandidates.some((item) => crossCandidateKey(item) === crossCandidateKey(candidate))) continue
-            if (!canAppendCandidate(finalCandidates, candidate, config.maxPerArticle)) continue
+            if (finalCandidates.some((item) => knowledgeCandidateKey(item) === knowledgeCandidateKey(candidate))) continue
+            if (!canAppendCandidate(finalCandidates, candidate, input.articleId != null ? config.finalTopK : config.maxPerArticle)) continue
             finalCandidates.push(candidate)
         }
     }
+
+    const chunkVectorKeys = vector.chunk.flatMap((group) => group.map((hit) => hit.candidateKey))
+    const questionVectorKeys = vector.question.flatMap((group) => group.map((hit) => hit.candidateKey))
+    const chunkBm25Keys = lexical.chunk.flatMap((group) => group.map((hit) => hit.candidateKey))
+    const questionBm25Keys = lexical.question.flatMap((group) => group.map((hit) => hit.candidateKey))
+    const wikiKeys = wiki.flatMap((group) => group.map((hit) => hit.candidateKey))
+    const treeKeys = treeResults.flatMap((group) => group.map((hit) => hit.nodeKey))
+    const legacyVectorKeys = legacyVectorResults.flatMap((group) => group.map((hit) => (
+        input.knowledgeBaseId == null ? `${hit.knowledgeBaseId}:${hit.nodeKey}` : hit.nodeKey
+    )))
+    const legacyBm25Keys = legacyBm25Results.flatMap((group) => group.map((hit) => (
+        input.knowledgeBaseId == null ? `${hit.node.knowledgeBaseId}:${hit.nodeKey}` : hit.nodeKey
+    )))
 
     return {
         candidates: finalCandidates,
         diagnostics: {
             query: input.query,
             rewrittenQueries: input.subQueries ?? [],
-            treeKeys: [],
-            vectorKeys: vectorGroups.flatMap((group) => group.map((item) => item.nodeKey)),
-            bm25Keys: bm25Groups.flatMap((group) => group.map((item) => item.nodeKey)),
+            treeKeys,
+            vectorKeys: [...chunkVectorKeys, ...questionVectorKeys, ...legacyVectorKeys],
+            bm25Keys: [...chunkBm25Keys, ...questionBm25Keys, ...legacyBm25Keys],
+            chunkVectorKeys,
+            questionVectorKeys,
+            chunkBm25Keys,
+            questionBm25Keys,
+            wikiKeys,
             fusionKeys: fused.map((item) => item.nodeKey),
-            finalKeys: finalCandidates.map(crossCandidateKey),
+            finalKeys: finalCandidates.map(knowledgeCandidateKey),
             selectedArticleIds: articleStage.articleIds,
             diversityDroppedKeys: diversified.droppedKeys,
             rerankApplied: reranked.applied,
             rerankStrategy: reranked.strategy,
             ...(reranked.error ? { rerankError: reranked.error } : {}),
-            treeAttempted: false,
-            retrievalScope: "cross_kb_article_then_chapter",
+            treeAttempted,
+            ...(treeAttempted ? { treeReason: "fast_recall_empty" as const } : {}),
+            retrievalScope: input.retrievalScope,
             degraded,
             retrievalMs: Date.now() - startedAt,
             rerankMs: reranked.durationMs,
@@ -643,16 +747,16 @@ function collect<T>(
     return out
 }
 
-function flatKeys(groups: TreeRetrievalHit[][]): string[] {
-    return [...new Set(groups.flatMap((group) => group.map((hit) => hit.nodeKey)))]
-}
-
 function crossNodeKey(node: Pick<Bm25Node, "knowledgeBaseId" | "nodeKey">): string {
     return `${node.knowledgeBaseId}:${node.nodeKey}`
 }
 
-function crossCandidateKey(candidate: Pick<KnowledgeCandidate, "knowledgeBaseId" | "nodeKey">): string {
-    return `${candidate.knowledgeBaseId}:${candidate.nodeKey}`
+function crossCandidateKey(candidate: Pick<KnowledgeCandidate, "knowledgeBaseId" | "nodeKey" | "candidateKey">): string {
+    return candidate.candidateKey ?? `${candidate.knowledgeBaseId}:${candidate.nodeKey}`
+}
+
+function knowledgeCandidateKey(candidate: Pick<KnowledgeCandidate, "knowledgeBaseId" | "nodeKey" | "candidateKey">): string {
+    return candidate.candidateKey ?? `${candidate.knowledgeBaseId}:${candidate.nodeKey}`
 }
 
 type ArticleStageOptions = {
@@ -738,10 +842,10 @@ function canAppendCandidate<T extends CandidateWithContent>(
     return !selected.some((item) => candidateSimilarity(item, candidate) >= 0.88)
 }
 
-function articleCandidateKey(candidate: Pick<KnowledgeCandidate, "knowledgeBaseId" | "articleId" | "nodeKey">): string {
+function articleCandidateKey(candidate: Pick<KnowledgeCandidate, "knowledgeBaseId" | "articleId" | "nodeKey" | "candidateKey">): string {
     return candidate.articleId
         ? `${candidate.knowledgeBaseId}:${candidate.articleId}`
-        : `${candidate.knowledgeBaseId}:node:${candidate.nodeKey}`
+        : candidate.candidateKey ?? `${candidate.knowledgeBaseId}:node:${candidate.nodeKey}`
 }
 
 function candidateSimilarity(left: CandidateWithContent, right: CandidateWithContent): number {
@@ -793,30 +897,4 @@ function appendFallback(
         })
     })
     return [...seen.values()].slice(0, topK)
-}
-
-function toCandidate(
-    fused: FusedCandidate,
-    index: Map<string, TreeRetrievalHit | Bm25Node>,
-    knowledgeBaseId: number,
-): KnowledgeCandidate {
-    const node = index.get(fused.nodeKey)
-    const isTreeHit = node != null && "path" in node && typeof node.path === "string"
-    return {
-        nodeKey: fused.nodeKey,
-        articleId: node?.articleId ?? "",
-        knowledgeBaseId: String(knowledgeBaseId),
-        title: node?.title ?? fused.nodeKey,
-        ...(isTreeHit && node.path ? { path: String(node.path).split(/\s*(?:›|\/)\s*/).filter(Boolean) } : {}),
-        ...(node && "summary" in node && node.summary ? { summary: String(node.summary) } : {}),
-        score: fused.fusedScore,
-        recallSources: fused.recallSources,
-        ...(node && "reason" in node && node.reason ? { reason: String(node.reason) } : {}),
-    }
-}
-
-function readContent(node: TreeRetrievalHit | Bm25Node | undefined): string | undefined {
-    if (!node) return undefined
-    if ("contentMd" in node && node.contentMd) return String(node.contentMd).slice(0, 1_200)
-    return undefined
 }

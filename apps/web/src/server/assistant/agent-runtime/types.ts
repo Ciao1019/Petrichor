@@ -67,6 +67,7 @@ export type AgentObservation = {
 
 export type AgentEvidenceSource =
     | "knowledge"
+    | "wiki"
     | "web"
     | "memory"
     | "graph"
@@ -86,6 +87,12 @@ export type AgentEvidence = {
     confidence?: number
     /** 新鲜度 0~1，越大越新（§20） */
     freshness?: number
+    /**
+     * 整页/整篇全文证据：段内回传给模型时不按片段预算裁剪（见 mastra-bridge.evidenceForModel）。
+     * read_wiki_page_detail 这类工具对模型承诺"读全文"，静默截断会让它认定页面不完整，
+     * 从而绕去读源文档，白白多花工具调用。
+     */
+    fullRead?: boolean
     metadata?: EvidenceMetadata
     createdAt: number
 }
@@ -198,6 +205,8 @@ export type ToolExecutionContext = {
     workspaceId?: string
     /** 站内 focus（知识库/文档库/文章范围） */
     focus?: unknown
+    /** 问答模式：wiki 时模型被引导优先走 Wiki 检索链路并以 [[pageKey|标题]] 引用 */
+    qaMode?: "normal" | "wiki"
     systemRole?: string | null
     /** 当前委派深度，主 Agent 为 0 */
     delegationDepth: number

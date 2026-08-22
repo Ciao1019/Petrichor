@@ -25,6 +25,7 @@ export const PROCESS_TOOL_NAMES = new Set([
   "list_knowledge_bases",
   "list_doc_libraries",
   "list_system_overview",
+  "read_wiki_page_detail",
 ])
 
 /** 超过这个步数默认收起，避免长检索把回答顶下去 */
@@ -96,6 +97,14 @@ function describeCall(
         status: chatStatus,
         label: "阅读知识",
         target: firstString(payload?.title) ?? "知识节点",
+        stats: firstString(payload?.kind),
+      }
+    }
+    case "read_wiki_page_detail": {
+      return {
+        status: chatStatus,
+        label: "阅读 Wiki",
+        target: firstString(payload?.title, payload?.pageKey) ?? "Wiki 页面",
         stats: firstString(payload?.kind),
       }
     }

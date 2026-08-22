@@ -45,10 +45,10 @@ import {
     loadWikiPageDetail,
     readWikiPageForAgent,
     runWikiLint,
-    searchWikiPagesAcrossKbs,
-    searchWikiPagesForAgent,
 } from "@/server/kb/wiki-agent-logic"
 import { retrieveTreeNodesForAgent, semanticSearchTreeNodes } from "@/server/kb/wiki-tree"
+import { recallKnowledgeCandidates, recallKnowledgeCandidatesAcrossKbs } from "@/server/kb/knowledge-recall"
+import { readArticleKnowledgeChunkForAgent } from "@/server/kb/article-knowledge-index"
 import { invalidatePublicArticleDetailCache, invalidatePublicArticleListCache } from "@/server/public-content-cache"
 import { getServerConfig } from "@/config/server"
 import { deleteS3Objects, extractS4ObjectKeysFromArticleContent } from "@/server/upload/s3-delete"
@@ -214,10 +214,11 @@ const agentWikiIngestSchema = z.object({
 })
 
 type AgentDocumentHit = {
-    type: "wiki" | "article"
+    type: "wiki" | "article" | "chunk"
     knowledgeBaseId: string
     knowledgeBaseName?: string | null
     articleId?: string | null
+    chunkId?: string | null
     pageKey?: string | null
     title: string
     summary: string
@@ -1475,102 +1476,35 @@ async function searchAgentDocuments(input: {
     query: string
     limit: number
 }): Promise<AgentDocumentHit[]> {
-    const [wikiHits, articleHits] = await Promise.all([
-        searchAgentWikiDocuments(input),
-        searchSourceArticles(input),
-    ])
-
-    const seen = new Set<string>()
-    const items: AgentDocumentHit[] = []
-    for (const hit of [...wikiHits, ...articleHits]) {
-        const key = `${hit.type}:${hit.knowledgeBaseId}:${hit.pageKey ?? hit.articleId ?? hit.title}`
-        if (seen.has(key)) continue
-        seen.add(key)
-        items.push(hit)
-        if (items.length >= input.limit) break
-    }
-    return items
-}
-
-async function searchAgentWikiDocuments(input: {
-    userId: number
-    knowledgeBaseId: number | null
-    query: string
-    limit: number
-}): Promise<AgentDocumentHit[]> {
-    if (input.knowledgeBaseId != null) {
-        await assertKnowledgeBaseOwner(getDb(), input.userId, input.knowledgeBaseId)
-        const rows = await searchWikiPagesForAgent({
+    const result = input.knowledgeBaseId != null
+        ? await recallKnowledgeCandidates({
             userId: input.userId,
             knowledgeBaseId: input.knowledgeBaseId,
             query: input.query,
+            config: { finalTopK: input.limit },
+            treeMode: "fallback",
+        })
+        : await recallKnowledgeCandidatesAcrossKbs({
+            userId: input.userId,
+            query: input.query,
             limit: input.limit,
         })
-        return rows.map((row) => ({
-            type: "wiki",
-            knowledgeBaseId: String(input.knowledgeBaseId),
-            articleId: row.articleId,
-            pageKey: row.pageKey,
-            title: row.title,
-            summary: row.summary,
-            updatedAt: row.updatedAt,
-        }))
-    }
-
-    const rows = await searchWikiPagesAcrossKbs({
-        userId: input.userId,
-        query: input.query,
-        limit: input.limit,
-    })
-    return rows.map((row) => ({
-        type: "wiki",
-        knowledgeBaseId: row.knowledgeBaseId,
-        knowledgeBaseName: row.knowledgeBaseName,
-        articleId: row.articleId,
-        pageKey: row.pageKey,
-        title: row.title,
-        summary: row.summary,
-        updatedAt: row.updatedAt,
-    }))
-}
-
-async function searchSourceArticles(input: {
-    userId: number
-    knowledgeBaseId: number | null
-    query: string
-    limit: number
-}): Promise<AgentDocumentHit[]> {
-    const db = getDb()
-    const filters: SQL[] = [eq(knowledgeBaseArticles.userId, input.userId)]
-    if (input.knowledgeBaseId != null) {
-        filters.push(eq(knowledgeBaseArticles.knowledgeBaseId, input.knowledgeBaseId))
-    }
-    const keyword = `%${escapeLike(input.query)}%`
-    filters.push(or(
-        ilike(knowledgeBaseArticles.title, keyword),
-        ilike(knowledgeBaseArticles.contentMd, keyword),
-    )!)
-
-    const rows = await db
-        .select({
-            article: knowledgeBaseArticles,
-            kbName: knowledgeBases.name,
-        })
-        .from(knowledgeBaseArticles)
-        .innerJoin(knowledgeBases, eq(knowledgeBaseArticles.knowledgeBaseId, knowledgeBases.id))
-        .where(and(...filters))
-        .orderBy(desc(knowledgeBaseArticles.updatedAt), desc(knowledgeBaseArticles.id))
-        .limit(input.limit)
-
-    return rows.map(({ article, kbName }) => ({
-        type: "article",
-        knowledgeBaseId: String(article.knowledgeBaseId),
-        knowledgeBaseName: kbName,
-        articleId: String(article.id),
-        pageKey: null,
-        title: article.title,
-        summary: summarizeMarkdown(article.contentMd, 220),
-        updatedAt: formatDate(article.updatedAt),
+    const owned = await listUserKnowledgeBases(input.userId)
+    const knowledgeBaseNames = new Map(owned.map((item) => [item.id, item.name]))
+    return result.candidates.map((candidate) => ({
+        type: candidate.candidateKind === "wiki"
+            ? "wiki" as const
+            : candidate.candidateKind === "chunk"
+                ? "chunk" as const
+                : "article" as const,
+        knowledgeBaseId: candidate.knowledgeBaseId,
+        knowledgeBaseName: knowledgeBaseNames.get(candidate.knowledgeBaseId) ?? null,
+        articleId: candidate.articleId || null,
+        chunkId: candidate.chunkId ?? null,
+        pageKey: candidate.pageKey ?? null,
+        title: candidate.title,
+        summary: candidate.summary ?? "",
+        updatedAt: null,
     }))
 }
 
@@ -1589,6 +1523,15 @@ async function loadAgentDocumentContexts(input: {
 
     const contexts: AgentDocumentContext[] = []
     for (const hit of hits) {
+        if (hit.type === "chunk" && hit.chunkId) {
+            const chunk = await readArticleKnowledgeChunkForAgent(
+                input.userId,
+                Number(hit.knowledgeBaseId),
+                Number(hit.chunkId),
+            )
+            contexts.push({ ...hit, contentMd: chunk.contentMd })
+            continue
+        }
         if (hit.type === "wiki" && hit.pageKey) {
             const page = await readWikiPageForAgent(input.userId, Number(hit.knowledgeBaseId), hit.pageKey)
             contexts.push({
@@ -1612,9 +1555,10 @@ function buildQaPrompt(question: string, contexts: AgentDocumentContext[]) {
     const contextText = contexts
         .map((item, index) => [
             `## 文档 ${index + 1}: ${item.title}`,
-            `类型：${item.type === "wiki" ? "Wiki 页面" : "源文章"}`,
+            `类型：${item.type === "wiki" ? "Wiki 页面" : item.type === "chunk" ? "原始分片" : "源文章"}`,
             `知识库 ID：${item.knowledgeBaseId}`,
             item.articleId ? `文章 ID：${item.articleId}` : null,
+            item.chunkId ? `分片 ID：${item.chunkId}` : null,
             item.pageKey ? `页面 Key：${item.pageKey}` : null,
             "",
             truncateText(item.contentMd, 6000),
@@ -1635,19 +1579,12 @@ function toCitation(item: AgentDocumentContext) {
         knowledgeBaseId: item.knowledgeBaseId,
         knowledgeBaseName: item.knowledgeBaseName ?? null,
         articleId: item.articleId ?? null,
+        chunkId: item.chunkId ?? null,
         pageKey: item.pageKey ?? null,
         title: item.title,
         summary: item.summary,
         updatedAt: item.updatedAt,
     }
-}
-
-function escapeLike(value: string) {
-    return value.replace(/[%_\\]/g, (char) => `\\${char}`)
-}
-
-function summarizeMarkdown(markdown: string, maxLength: number) {
-    return truncateText(markdown.replace(/[`*_>#\-[\]()!]/g, " ").replace(/\s+/g, " ").trim(), maxLength)
 }
 
 function truncateText(value: string, maxLength: number) {

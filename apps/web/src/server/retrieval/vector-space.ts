@@ -25,6 +25,7 @@ import { getDb, isSqliteDatabase } from "@/server/db/client"
 
 /** 带向量列的表，以及各自的向量列名 */
 export const VECTOR_TABLES = [
+    { table: "petrichor_kb_article_chunk_index", column: "embedding" },
     { table: "petrichor_kb_wiki_tree_node", column: "embedding" },
     { table: "petrichor_agent_memory", column: "embedding" },
     { table: "petrichor_assistant_message_embedding", column: "embedding" },

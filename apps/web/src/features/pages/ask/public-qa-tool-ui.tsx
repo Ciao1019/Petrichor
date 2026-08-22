@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleAlert,
+  BookOpen,
   FileText,
   Library,
   ListTree,
@@ -18,6 +19,7 @@ import {
 import { GraphRetrievalBody, parseGraphRetrievalResult } from "@/components/site-graph/GraphPathChain"
 import { CitationList } from "@/components/tool-ui/citation"
 import { safeParseSerializableCitation } from "@/components/tool-ui/citation/schema"
+import { readWikiPageKeyFromHref, useOpenWikiPage } from "@/features/pages/knowledge/QaMarkdown"
 import { DataTable } from "@/components/tool-ui/data-table"
 import { safeParseSerializableDataTable } from "@/components/tool-ui/data-table/schema"
 import { Plan } from "@/components/tool-ui/plan"
@@ -132,11 +134,18 @@ const ProgressToolUI = makeAssistantToolUI({
 
 function CitationToolRender({ result, args, status }: { result: unknown; args: unknown; status?: ToolCallMessagePartStatus }) {
   const navigate = useNavigate()
+  const openWikiPage = useOpenWikiPage()
   const payload = asRecord(result ?? args)
   const citations = Array.isArray(payload?.citations)
     ? payload.citations.map((item) => safeParseSerializableCitation(item)).filter(isPresent)
     : []
   const handleNavigate = React.useCallback((href: string) => {
+    // Wiki 引用（#wiki-page=<pageKey>）不跳转，直接打开弹窗预览。
+    const wikiPageKey = readWikiPageKeyFromHref(href)
+    if (wikiPageKey) {
+      openWikiPage?.(wikiPageKey)
+      return
+    }
     if (isInternalAppPath(href)) {
       navigate(href)
       return
@@ -144,7 +153,7 @@ function CitationToolRender({ result, args, status }: { result: unknown; args: u
     if (typeof window !== "undefined") {
       window.open(href, "_blank", "noopener,noreferrer")
     }
-  }, [navigate])
+  }, [navigate, openWikiPage])
   if (citations.length === 0) return <ToolStatusCard title="引用来源" status={status} />
   return (
     <CitationList
@@ -323,17 +332,167 @@ const ReadTreeNodeToolUI = makeAssistantToolUI({
   },
 })
 
+function WikiPageReadRender({ result, status, title }: { result: unknown; status?: ToolCallMessagePartStatus; title: string }) {
+  const payload = asRecord(result)
+  const pageTitle = typeof payload?.title === "string" ? payload.title : "Wiki 页面"
+  const pageKey = typeof payload?.pageKey === "string" ? payload.pageKey : ""
+  return (
+    <ToolStatusCard title={title} status={status} icon={<BookOpen className="size-4" />}>
+      <div className="flex items-center justify-between gap-3">
+        <span className="min-w-0 truncate text-sm font-medium">{pageTitle}</span>
+        {pageKey ? <Badge variant="outline" className="text-[10px]">{pageKey}</Badge> : null}
+      </div>
+    </ToolStatusCard>
+  )
+}
+
 const ReadWikiToolUI = makeAssistantToolUI({
   toolName: "read_wiki_page",
+  render: ({ result, status }) => (
+    <WikiPageReadRender result={result} status={status} title="读取 Wiki 页面" />
+  ),
+})
+
+const ReadWikiDetailToolUI = makeAssistantToolUI({
+  toolName: "read_wiki_page_detail",
+  render: ({ result, status }) => (
+    <WikiPageReadRender result={result} status={status} title="阅读 Wiki 页面" />
+  ),
+})
+
+/** 可点击的 Wiki 页面条目：点击直接打开弹窗预览。 */
+function WikiPageHitButton({
+  pageKey,
+  title,
+  summary,
+  kindLabel,
+}: {
+  pageKey: string
+  title: string
+  summary?: string
+  kindLabel?: string
+}) {
+  const openWikiPage = useOpenWikiPage()
+  return (
+    <button
+      type="button"
+      onClick={() => openWikiPage?.(pageKey)}
+      className="block w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-left text-white transition-colors hover:bg-white/10 disabled:cursor-default"
+      disabled={!openWikiPage}
+    >
+      <span className="flex items-center gap-2">
+        {kindLabel ? <Badge variant="outline" className="shrink-0 text-[10px]">{kindLabel}</Badge> : null}
+        <span className="line-clamp-1 min-w-0 text-sm font-medium">{title}</span>
+      </span>
+      {summary ? <p className="mt-1 line-clamp-2 text-xs text-white/60">{summary}</p> : null}
+    </button>
+  )
+}
+
+const KIND_LABELS: Record<string, string> = {
+  index: "索引",
+  source: "源文档",
+  entity: "实体",
+  concept: "概念",
+  comparison: "对比",
+  answer: "答案",
+}
+
+const WikiOverviewToolUI = makeAssistantToolUI({
+  toolName: "wiki_overview",
   render: ({ result, status }) => {
     const payload = asRecord(result)
-    const title = typeof payload?.title === "string" ? payload.title : "Wiki 页面"
-    const pageKey = typeof payload?.pageKey === "string" ? payload.pageKey : ""
+    const groups = Array.isArray(payload?.groups) ? payload.groups.map(asRecord).filter(isPresent) : []
+    if (groups.length === 0) {
+      return (
+        <ToolStatusCard title="Wiki 总览" status={status} icon={<BookOpen className="size-4" />}>
+          {typeof payload?.emptyMessage === "string" ? (
+            <p className="text-xs text-white/60">{payload.emptyMessage}</p>
+          ) : null}
+        </ToolStatusCard>
+      )
+    }
     return (
-      <ToolStatusCard title="读取 Wiki 页面" status={status} icon={<FileText className="size-4" />}>
-        <div className="flex items-center justify-between gap-3">
-          <span className="min-w-0 truncate text-sm font-medium">{title}</span>
-          {pageKey ? <Badge variant="outline" className="text-[10px]">{pageKey}</Badge> : null}
+      <ToolStatusCard title="Wiki 总览" status={status} icon={<BookOpen className="size-4" />} collapsible defaultOpen={false}>
+        <div className="space-y-3">
+          {groups.map((group, groupIndex) => {
+            const pages = Array.isArray(group.pages) ? group.pages.map(asRecord).filter(isPresent) : []
+            if (pages.length === 0) return null
+            const label = typeof group.label === "string" ? group.label : `分组 ${groupIndex + 1}`
+            return (
+              <div key={String(group.key ?? groupIndex)} className="space-y-1.5">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-white/50">
+                  {label}（{pages.length}）
+                </p>
+                {pages.slice(0, 8).map((page, index) => {
+                  const pageKey = typeof page.pageKey === "string" ? page.pageKey : ""
+                  const kind = typeof page.kind === "string" ? page.kind : ""
+                  return (
+                    <WikiPageHitButton
+                      key={pageKey || index}
+                      pageKey={pageKey}
+                      title={typeof page.title === "string" ? page.title : pageKey}
+                      summary={typeof page.summary === "string" ? page.summary : undefined}
+                      kindLabel={KIND_LABELS[kind] ?? kind}
+                    />
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
+      </ToolStatusCard>
+    )
+  },
+})
+
+const SearchWikiPagesToolUI = makeAssistantToolUI({
+  toolName: "search_wiki_pages",
+  render: ({ result, status }) => {
+    const payload = asRecord(result)
+    const rows = Array.isArray(payload?.items) ? payload.items.map(asRecord).filter(isPresent) : []
+    const queries = Array.isArray(payload?.query) ? payload.query.filter((q): q is string => typeof q === "string") : []
+    if (rows.length === 0) {
+      return (
+        <ToolStatusCard
+          title={`检索 Wiki${queries.length > 0 ? `：${queries.join(" / ")}` : ""}`}
+          status={status}
+          icon={<Search className="size-4" />}
+        >
+          {typeof payload?.emptyMessage === "string" ? (
+            <p className="text-xs text-white/60">{payload.emptyMessage}</p>
+          ) : null}
+        </ToolStatusCard>
+      )
+    }
+    return (
+      <ToolStatusCard
+        title={`检索 Wiki（${rows.length}${queries.length > 0 ? `：${queries.join(" / ")}` : ""}）`}
+        status={status}
+        icon={<Search className="size-4" />}
+        collapsible
+        defaultOpen={false}
+      >
+        <div className="space-y-1.5">
+          {rows.slice(0, 10).map((row, index) => {
+            const pageKey = typeof row.pageKey === "string" ? row.pageKey : ""
+            const kind = typeof row.kind === "string" ? row.kind : ""
+            return (
+              <WikiPageHitButton
+                key={pageKey || index}
+                pageKey={pageKey}
+                title={typeof row.title === "string" ? row.title : pageKey}
+                summary={
+                  typeof row.snippet === "string" && row.snippet
+                    ? row.snippet
+                    : typeof row.summary === "string"
+                      ? row.summary
+                      : undefined
+                }
+                kindLabel={KIND_LABELS[kind] ?? kind}
+              />
+            )
+          })}
         </div>
       </ToolStatusCard>
     )
@@ -377,7 +536,10 @@ export function PublicQaToolUIs() {
       <SearchGraphToolUI />
       <SearchTreeToolUI />
       <ReadTreeNodeToolUI />
+      <WikiOverviewToolUI />
+      <SearchWikiPagesToolUI />
       <ReadWikiToolUI />
+      <ReadWikiDetailToolUI />
       <ReadSourceToolUI />
     </>
   )

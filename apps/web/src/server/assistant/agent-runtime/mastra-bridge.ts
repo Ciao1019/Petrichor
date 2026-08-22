@@ -141,18 +141,30 @@ export function toModelResult(outcome: ToolRunOutcome): unknown {
 }
 
 const MODEL_EVIDENCE_MAX_ITEMS = 12
+/** 片段类证据（章节深读、网页片段）的合计预算 */
 const MODEL_EVIDENCE_MAX_CHARS = 6_000
 // Mastra 会把多次 tool result 累积在同一段消息里；单条过大会在第三次 read 时挤掉用户消息。
 // 1,200 字足以覆盖一个章节的核心段落，也明显高于旧实现仅给模型的 400 字 excerpt。
 const MODEL_EVIDENCE_ITEM_MAX_CHARS = 1_200
+/**
+ * 全文类证据（fullRead）单独计预算：这类工具对模型承诺"读全文"，再按片段裁到 1,200 字，
+ * 模型会发现 summary 里的字数和拿到的正文对不上，判定内容被截断并绕去读源文档。
+ * 这里的上限只是异常兜底（正常 Wiki 页面几百到几千字），触发时会显式写明还剩多少。
+ */
+const MODEL_FULL_READ_ITEM_MAX_CHARS = 20_000
+const MODEL_FULL_READ_MAX_CHARS = 40_000
 
 /** 给段内下一次 LLM 的是精选 Evidence，不是原始输出；同时设总预算，避免大批证据挤掉用户消息。 */
 function evidenceForModel(outcome: ToolRunOutcome) {
-    let remaining = MODEL_EVIDENCE_MAX_CHARS
+    let snippetRemaining = MODEL_EVIDENCE_MAX_CHARS
+    let fullReadRemaining = MODEL_FULL_READ_MAX_CHARS
     return outcome.evidence.slice(0, MODEL_EVIDENCE_MAX_ITEMS).map((item, index) => {
-        const take = Math.min(item.content.length, MODEL_EVIDENCE_ITEM_MAX_CHARS, remaining)
-        const content = take > 0 ? item.content.slice(0, take) : ""
-        remaining -= take
+        const take = item.fullRead
+            ? Math.min(item.content.length, MODEL_FULL_READ_ITEM_MAX_CHARS, fullReadRemaining)
+            : Math.min(item.content.length, MODEL_EVIDENCE_ITEM_MAX_CHARS, snippetRemaining)
+        if (item.fullRead) fullReadRemaining -= take
+        else snippetRemaining -= take
+        const content = take > 0 ? withTruncationNotice(item.content, take) : ""
         return {
             ref: outcome.evidenceCitationIndices[index] ?? index + 1,
             id: item.id,
@@ -163,6 +175,15 @@ function evidenceForModel(outcome: ToolRunOutcome) {
             ...(item.metadata?.path ? { path: item.metadata.path } : {}),
         }
     })
+}
+
+/**
+ * 截断必须显式告知：模型只有知道"还有多少没给"，才能判断是继续追读还是就此作答；
+ * 静默截断会被它当成内容缺失，从而重复检索或改读源文档。
+ */
+function withTruncationNotice(content: string, take: number): string {
+    if (take >= content.length) return content
+    return `${content.slice(0, take)}\n\n[正文过长，本次仅给出前 ${take} 字，共 ${content.length} 字]`
 }
 
 /** 执行一段推理：一次 Mastra agent.stream，内部可含多次工具调用 */

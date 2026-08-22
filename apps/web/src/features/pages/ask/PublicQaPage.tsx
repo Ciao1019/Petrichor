@@ -13,18 +13,22 @@ import {
   useAuiState,
 } from "@assistant-ui/react"
 import { AssistantChatTransport, useChatRuntime } from "@assistant-ui/react-ai-sdk"
-import { ArrowUp, Copy, MessageCircleQuestion, RefreshCw, Square } from "@/components/iconimate"
+import { ArrowUp, BookOpen, Copy, MessageCircleQuestion, RefreshCw, Square } from "@/components/iconimate"
 
 import { MarkdownText } from "@/components/assistant-ui/markdown-text"
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback"
 import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
-import { QaMarkdownScope, QaMarkdownText, QaPreparing } from "@/features/pages/knowledge/QaMarkdown"
+import { QaMarkdownScope, QaMarkdownText, QaPreparing, WikiLinkClickProvider } from "@/features/pages/knowledge/QaMarkdown"
 import { SignedUrlPublicAccessProvider } from "@/hooks/use-signed-url"
 import { publicSiteAppearanceApi } from "@/lib/api"
 import { PublicQaToolUIs } from "./public-qa-tool-ui"
+import { WikiPagePreviewDialog } from "@/components/knowledge/WikiPagePreviewDialog"
 
 const VISITOR_ID_STORAGE_KEY = "petrichor.public-qa.visitor-id"
 const VISITOR_ID_HEADER = "X-Petrichor-Visitor-Id"
+const QA_MODE_HEADER = "X-Petrichor-Qa-Mode"
+
+type QaMode = "normal" | "wiki"
 
 /** 读取/生成稳定的 visitor-id（localStorage），作为限流主键。 */
 function ensureVisitorId(): string {
@@ -45,6 +49,11 @@ const SUGGESTIONS = [
   { prompt: "用一段话总结本站公开内容的核心主题。" },
   { prompt: "我想了解作者在某个主题上的观点，帮我找找相关文章。" },
   { prompt: "把相关公开文章的要点整理成一个表格。" },
+]
+
+const QA_MODE_OPTIONS: Array<{ key: QaMode; label: string; icon: typeof MessageCircleQuestion }> = [
+  { key: "normal", label: "普通问答", icon: MessageCircleQuestion },
+  { key: "wiki", label: "Wiki 问答", icon: BookOpen },
 ]
 
 type Availability = "loading" | "enabled" | "disabled" | "error"
@@ -122,6 +131,15 @@ function CenteredHint({
 
 function PublicQaChat() {
   const visitorId = React.useMemo(() => ensureVisitorId(), [])
+  // 模式只影响下一次提问的检索链路（通过请求头告知后端），
+  // 用 ref 注入而不是重建 transport，切换时保留当前对话历史。
+  const [qaMode, setQaMode] = React.useState<QaMode>("normal")
+  const qaModeRef = React.useRef<QaMode>("normal")
+  const switchQaMode = React.useCallback((mode: QaMode) => {
+    qaModeRef.current = mode
+    setQaMode(mode)
+  }, [])
+  const [wikiPreviewKey, setWikiPreviewKey] = React.useState<string | null>(null)
 
   const transport = React.useMemo(
     () =>
@@ -131,6 +149,7 @@ function PublicQaChat() {
         fetch: async (input, init) => {
           const headers = new Headers(init?.headers)
           if (visitorId) headers.set(VISITOR_ID_HEADER, visitorId)
+          if (qaModeRef.current === "wiki") headers.set(QA_MODE_HEADER, "wiki")
           const response = await fetch(input, { ...init, headers })
           if (response.ok) return response
           // 非流式错误（限流 / 关闭 / 异常）：后端返回的是 JSON 错误体，
@@ -159,24 +178,68 @@ function PublicQaChat() {
     <AssistantRuntimeProvider runtime={runtime}>
       {/* publicAccess：未登录访客的媒体走免鉴权的公开预签名接口，否则图片会卡在「加载中」 */}
       <SignedUrlPublicAccessProvider publicAccess>
-        <PublicQaToolUIs />
-        <div className="flex h-full min-h-0 flex-col">
-          {/* 不写死 light：前台已统一暗色，强制浅色会让内容变成暗底暗字 */}
-          <QaMarkdownScope>
-            <PublicQaThread />
-          </QaMarkdownScope>
-        </div>
+        <WikiLinkClickProvider onOpenWikiPage={setWikiPreviewKey}>
+          {/* 工具卡片也在 Provider 内，检索结果可以直接点开 Wiki 弹窗 */}
+          <PublicQaToolUIs />
+          <div className="flex h-full min-h-0 flex-col">
+            {/* 不写死 light：前台已统一暗色，强制浅色会让内容变成暗底暗字 */}
+            <QaMarkdownScope>
+              <PublicQaThread mode={qaMode} onModeChange={switchQaMode} />
+            </QaMarkdownScope>
+          </div>
+        </WikiLinkClickProvider>
+        <WikiPagePreviewDialog pageKey={wikiPreviewKey} onClose={() => setWikiPreviewKey(null)} />
       </SignedUrlPublicAccessProvider>
     </AssistantRuntimeProvider>
   )
 }
 
-function PublicQaThread() {
+function QaModeSwitch({
+  mode,
+  onChange,
+}: {
+  mode: QaMode
+  onChange: (mode: QaMode) => void
+}) {
+  return (
+    <div className="mb-3 flex w-fit items-center gap-1 self-center rounded-full border border-white/15 bg-white/5 p-1 backdrop-blur-sm">
+      {QA_MODE_OPTIONS.map((option) => {
+        const active = option.key === mode
+        const Icon = option.icon
+        return (
+          <button
+            key={option.key}
+            type="button"
+            onClick={() => onChange(option.key)}
+            aria-pressed={active}
+            className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
+              active
+                ? "bg-yellow-300 text-blue-950"
+                : "text-white/70 hover:bg-white/10 hover:text-white"
+            }`}
+          >
+            <Icon className="size-3.5" />
+            {option.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function PublicQaThread({
+  mode,
+  onModeChange,
+}: {
+  mode: QaMode
+  onModeChange: (mode: QaMode) => void
+}) {
   return (
     <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col items-stretch">
       <AuiIf condition={(s) => s.thread.isEmpty}>
         <div className="flex h-full flex-col items-center justify-center">
           <PublicQaComposer placeholder="" />
+          <QaModeSwitch mode={mode} onChange={onModeChange} />
           <div className="mt-4 flex w-full max-w-3xl flex-wrap justify-center gap-2 px-2">
             <ThreadPrimitive.Suggestions>{() => <SuggestionChip />}</ThreadPrimitive.Suggestions>
           </div>
@@ -187,9 +250,12 @@ function PublicQaThread() {
         <ThreadPrimitive.Viewport className="flex grow flex-col overflow-y-auto pt-2 scrollbar-hide">
           <ThreadPrimitive.Messages>{() => <ChatMessage />}</ThreadPrimitive.Messages>
         </ThreadPrimitive.Viewport>
+        <div className="mx-auto flex w-full max-w-3xl justify-center">
+          <QaModeSwitch mode={mode} onChange={onModeChange} />
+        </div>
         <PublicQaComposer placeholder="继续提问…" />
         <p className="mx-auto w-full max-w-3xl pb-1 text-center text-xs text-white/70">
-          回答由 AI 生成，仅基于本站公开文章，请自行核验关键信息。
+          回答由 AI 生成，仅基于本站公开内容，请自行核验关键信息。
         </p>
       </AuiIf>
     </ThreadPrimitive.Root>

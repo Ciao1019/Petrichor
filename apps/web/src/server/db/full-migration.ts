@@ -313,6 +313,53 @@ create unique index if not exists ux_petrichor_kb_article_chunk_key
 create index if not exists idx_petrichor_kb_article_chunk_article
     on petrichor_kb_article_chunk(user_id, knowledge_base_id, article_id, position);
 
+-- 原始分片和推荐问题分别建立检索条目，但都指回同一 chunk_id。
+-- 推荐问题只扩大用户问法的召回面，最终证据始终读取原始分片。
+create table if not exists petrichor_kb_article_chunk_index (
+    id bigint generated always as identity primary key,
+    user_id bigint not null references petrichor_user(id) on delete cascade,
+    knowledge_base_id bigint not null references petrichor_kb_knowledge_base(id) on delete cascade,
+    article_id bigint not null references petrichor_kb_article(id) on delete cascade,
+    chunk_id bigint not null references petrichor_kb_article_chunk(id) on delete cascade,
+    source_key text not null,
+    source_type text not null check (source_type in ('chunk', 'question')),
+    source_position integer not null default 0,
+    content text not null,
+    embedding_text text not null,
+    content_hash text not null,
+    search_tokens text not null default '',
+    embedding_status text not null default 'pending',
+    embedding_model text,
+    embedding_dimensions integer,
+    embedding_version integer not null default 1,
+    embedding_error text,
+    embedding_updated_at timestamptz,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create unique index if not exists ux_petrichor_kb_article_chunk_index_source
+    on petrichor_kb_article_chunk_index(user_id, article_id, source_key);
+
+create index if not exists idx_petrichor_kb_article_chunk_index_scope
+    on petrichor_kb_article_chunk_index(user_id, knowledge_base_id, source_type, article_id);
+
+create index if not exists idx_petrichor_kb_article_chunk_index_chunk
+    on petrichor_kb_article_chunk_index(chunk_id, source_type, source_position);
+
+alter table petrichor_kb_article_chunk_index
+    add column if not exists embedding vector;
+
+alter table petrichor_kb_article_chunk_index
+    add column if not exists search_vector tsvector
+    generated always as (to_tsvector('simple', coalesce(search_tokens, ''))) stored;
+
+create index if not exists petrichor_kb_article_chunk_index_search_idx
+    on petrichor_kb_article_chunk_index using gin (search_vector);
+
+-- HNSW 索引按实际向量维度动态创建（见 server/retrieval/vector-space.ts）。
+alter table petrichor_kb_article_chunk_index alter column embedding type vector;
+
 create table if not exists petrichor_kb_article_tag (
     id bigint generated always as identity primary key,
     article_id bigint not null references petrichor_kb_article(id) on delete cascade,

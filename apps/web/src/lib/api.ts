@@ -620,6 +620,45 @@ export const publicSiteAppearanceApi = {
   detail: () => api.get<SiteAppearanceResponse>("/public/appearance"),
 }
 
+export interface PublicWikiNeighborPage {
+  pageKey: string
+  title: string
+  kind: string | null
+  summary: string | null
+  linkType: string
+}
+
+/** 前台问答 Wiki 弹窗用的页面详情（仅限关联了公开文章的页面）。 */
+export interface PublicWikiPageDetail {
+  pageKey: string
+  title: string
+  kind: string
+  summary: string
+  aliases: string[]
+  contentMd: string
+  links: PublicWikiNeighborPage[]
+  inLinks: PublicWikiNeighborPage[]
+  sourceArticles: Array<{
+    articleId: string
+    title: string
+    href: string
+    note: string | null
+  }>
+}
+
+export const publicWikiApi = {
+  detail: (pageKey: string) =>
+    api.get<PublicWikiPageDetail>("/public/wiki/page", { params: { pageKey } }),
+}
+
+/** 后台助手 Wiki 弹窗：读取当前用户自己的 Wiki 页面详情。 */
+export const assistantWikiApi = {
+  detail: (pageKey: string, knowledgeBaseId?: string | null) =>
+    api.get<PublicWikiPageDetail>("/assistant/wiki/page", {
+      params: { pageKey, ...(knowledgeBaseId ? { knowledgeBaseId } : {}) },
+    }),
+}
+
 export const adminSiteAppearanceApi = {
   detail: () => api.get<SiteAppearanceResponse>("/admin/appearance"),
   update: (data: SiteAppearanceUpdateRequest) => api.post<SiteAppearanceResponse>("/admin/appearance", data),
@@ -1198,8 +1237,18 @@ export interface KnowledgeBaseQaSummary {
 export interface KnowledgeBaseWikiDashboardResponse {
   pages: KnowledgeBaseWikiPageResponse[]
   lint: KnowledgeBaseWikiLintResponse
+  /** 新“构建知识”产出的原始文章分片数 */
+  chunkCount: number
+  /** 仅用于存量 Wiki Tree 兼容展示 */
   treeNodeCount: number
   embedding: KbWikiEmbeddingStatus
+}
+
+export interface KbArticleKnowledgeIndexPhaseStatus {
+  total: number
+  embedded: number
+  pending: number
+  failed: number
 }
 
 export interface KbWikiEmbeddingStatus {
@@ -1209,6 +1258,8 @@ export interface KbWikiEmbeddingStatus {
   embedded: number
   pending: number
   failed: number
+  chunk: KbArticleKnowledgeIndexPhaseStatus
+  question: KbArticleKnowledgeIndexPhaseStatus
   /** 当前 EMBEDDING 绑定的模型与维度；换模型后旧向量会被计入 pending */
   model: string | null
   dimensions: number | null
@@ -1218,11 +1269,15 @@ export interface KbWikiEmbeddingStatus {
 export interface KbWikiEmbeddingRunResult {
   /** 本次实际写入的条数 */
   embedded: number
+  embeddedChunks: number
+  embeddedQuestions: number
   /** 写入后累计已就绪的条数 */
   ready: number
   total: number
   pending: number
   failed: number
+  chunk: KbArticleKnowledgeIndexPhaseStatus
+  question: KbArticleKnowledgeIndexPhaseStatus
   model: string | null
   dimensions: number | null
   version: number | null

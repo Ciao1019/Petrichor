@@ -91,10 +91,11 @@ where vector_dims(embedding) = N
 - `embedding_dimensions` —— 实际维度
 - `embedding_version` —— 分块/归一化策略版本（`EMBEDDING_VERSION`，改策略时 +1）
 
-三者任一对不上就算待重算。目前只有 `petrichor_kb_wiki_tree_node` 带这套元数据，
-它是唯一有「补写 / 重算」流程的表。`petrichor_assistant_message_embedding` 是滚动的
-会话缓存，按维度过滤即可，过期条目自然淘汰；`petrichor_agent_memory.embedding`
-当前没有读写方。
+三者任一对不上就算待重算。目前 `petrichor_kb_article_chunk_index` 与存量兼容表
+`petrichor_kb_wiki_tree_node` 都带这套元数据和「补写 / 重算」流程。前者还按
+`chunk → question` 两阶段补写，分片向量未全部就绪时不会开始问题向量。
+`petrichor_assistant_message_embedding` 是滚动的会话缓存，按维度过滤即可，过期条目
+自然淘汰；`petrichor_agent_memory.embedding` 当前没有读写方。
 
 ## 迁移
 
@@ -103,6 +104,7 @@ where vector_dims(embedding) = N
 ```text
 docs/migrations/2026-08-15-rebuild-ai-model-config.sql
 docs/migrations/2026-08-16-dynamic-embedding-dimensions.sql
+docs/migrations/2026-08-21-article-knowledge-retrieval-index.sql
 ```
 
 第一个会 **删除** `petrichor_ai_model_config` 且不迁移存量数据，执行后需要在「模型配置」页重新接入。
@@ -114,6 +116,11 @@ docs/migrations/2026-08-16-dynamic-embedding-dimensions.sql
 存量向量原样保留，`embedding_model` 有意留空——我们无从得知它们是哪个模型写的，
 留空会让它们在下次绑定模型后被判定为待重算。这是保守但正确的行为：
 宁可重算，不要拿来源不明的向量做检索。
+
+第三个新增文章知识检索索引：每个原文分片一条 `chunk` 记录，每个推荐问题一条
+`question` 记录；问题通过 `chunk_id` 指回原文分片。它同时创建全文检索生成列，向量
+HNSW 索引仍由维度探测流程动态创建。迁移会直接回填已有分片和问题的检索行（状态为
+`pending`），无需重新调用大模型构建 Wiki；迁移后在 Wiki 页面触发一次“生成向量”即可补齐。
 
 全新库不用跑这两个脚本，`full-migration.ts` 里已经是最终形态。
 执行前请确认已备份，并确认连接的是目标库。

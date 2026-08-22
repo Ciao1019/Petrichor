@@ -58,6 +58,15 @@ function replaceWikiLinks(markdown: string, resolveLabel: (pageKey: string) => s
 }
 
 /**
+ * 对话回答等自由文本里的 [[pageKey]] / [[pageKey|别名]] 转成页内链接。
+ * 与 prepareWikiMarkdown 的区别：不做裸文本首提自动链接、不剥标题，
+ * 只做显式语法的忠实转换；未闭合的 `[[`（流式中途）自然跳过，下一帧补上。
+ */
+export function convertAnswerWikiLinks(markdown: string) {
+  return replaceWikiLinks(markdown, (pageKey) => pageKey)
+}
+
+/**
  * 把正文中的显式 [[pageKey|标题]] 和相关知识的首次裸文本提及统一转换为页内 Wiki 链接。
  * 代码块、行内代码、已有 Markdown 链接、图片和 HTML 标签保持原样。
  */

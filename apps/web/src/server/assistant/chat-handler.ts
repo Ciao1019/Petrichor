@@ -57,6 +57,8 @@ const chatRequestSchema = z.object({
     messages: z.array(z.unknown()).min(1),
     configId: assistantIdSchema.optional().nullable(),
     focus: assistantFocusSchema.optional().nullable(),
+    /** Wiki 问答模式：检索优先走 Wiki 页面链路，回答以 [[pageKey|标题]] 内联引用 */
+    qaMode: z.enum(["normal", "wiki"]).optional(),
     /** 重试时指向被重试的 Run；用于审计与"这次是重试"的追溯（§162.24） */
     retryOfRunId: z.string().trim().min(1).max(64).optional().nullable(),
 })
@@ -218,6 +220,7 @@ export async function assistantChat(request: NextRequest) {
                             threadId: thread.id,
                             systemRole: user.systemRole,
                             focus,
+                            ...(input.qaMode === "wiki" ? { qaMode: "wiki" as const } : {}),
                             goal,
                             messages: modelMessages as unknown[],
                             ...(conversationBackground ? { conversationBackground } : {}),

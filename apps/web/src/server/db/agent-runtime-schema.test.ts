@@ -27,7 +27,10 @@ const AGENT_TABLES = [
     "petrichor_agent_evidence",
     "petrichor_agent_subtask",
 ]
-const KNOWLEDGE_BUILD_TABLES = ["petrichor_kb_article_chunk"]
+const KNOWLEDGE_BUILD_TABLES = [
+    "petrichor_kb_article_chunk",
+    "petrichor_kb_article_chunk_index",
+]
 
 describe("初始化 SQL", () => {
     const sql = buildInitialMigrationSql()
@@ -43,6 +46,9 @@ describe("初始化 SQL", () => {
             expect(sql, table).toContain(`create table if not exists ${table}`)
         }
         expect(sql).toContain("recommended_questions_json text not null default '[]'")
+        expect(sql).toContain("source_type text not null check (source_type in ('chunk', 'question'))")
+        expect(sql).toContain("embedding_text text not null")
+        expect(sql).toContain("petrichor_kb_article_chunk_index_search_idx")
     })
 
     it("BM25 词元列写在 create table 里，而不只有 alter table", () => {

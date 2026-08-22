@@ -237,13 +237,13 @@ export function KnowledgeWikiPage() {
     setEmbedding(true)
     try {
       const res = await knowledgeBaseWikiAgentApi.embedWiki(selectedKbId)
-      const { embedded, pending } = res.data
+      const { embedded, embeddedChunks, embeddedQuestions, pending } = res.data
       if (embedded === 0 && pending === 0) {
-        toast.success("所有章节均已向量化")
+        toast.success("所有分片与推荐问题均已向量化")
       } else if (pending > 0) {
-        toast.success(`已向量化 ${embedded} 个章节，还剩 ${pending} 个，可再次点击继续`)
+        toast.success(`已生成 ${embeddedChunks} 个分片向量、${embeddedQuestions} 个问题向量，还剩 ${pending} 个`)
       } else {
-        toast.success(`已向量化 ${embedded} 个章节，全部完成`)
+        toast.success(`已生成 ${embeddedChunks} 个分片向量、${embeddedQuestions} 个问题向量，全部完成`)
       }
       await loadDashboard(selectedKbId)
     } catch (error) {
@@ -398,10 +398,10 @@ export function KnowledgeWikiPage() {
               disabled={!selectedKbId || busy || embeddingStatus.total === 0 || embeddingStatus.pending === 0}
               title={
                 embeddingStatus.total === 0
-                  ? "请先更新 Wiki 生成目录树节点，再生成向量"
+                  ? "请先在文章上执行“构建知识”，再生成分片与问题向量"
                   : embeddingStatus.pending === 0
-                    ? "所有章节均已向量化，可用于语义检索"
-                    : `为 ${embeddingStatus.pending} 个未向量化的章节节点生成向量`
+                    ? "所有分片与推荐问题均已向量化"
+                    : `先补齐分片向量，再为对应推荐问题生成向量（剩余 ${embeddingStatus.pending} 条）`
               }
             >
               <Wand2 className={cn("mr-1.5 size-3.5", embedding && "animate-spin")} />
@@ -456,11 +456,11 @@ export function KnowledgeWikiPage() {
             />
             <StatCard
               icon={ListTree}
-              label="目录树节点"
-              value={dashboard?.treeNodeCount ?? 0}
+              label="文章分片索引"
+              value={dashboard?.chunkCount ?? 0}
               detail={embeddingStatus?.supported
-                ? `${embeddingStatus.embedded}/${embeddingStatus.total} 个节点已向量化`
-                : "按源文章组织的层级结构"}
+                ? `分片 ${embeddingStatus.chunk.embedded}/${embeddingStatus.chunk.total} · 问题 ${embeddingStatus.question.embedded}/${embeddingStatus.question.total}`
+                : "分片与推荐问题的混合检索入口"}
             />
             <StatCard
               icon={Link2}

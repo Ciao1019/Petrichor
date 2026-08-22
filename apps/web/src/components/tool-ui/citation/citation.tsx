@@ -3,6 +3,7 @@
 import * as React from "react";
 import type { LucideIcon } from "@/components/iconimate";
 import {
+  BookOpen,
   FileText,
   Globe,
   Code2,
@@ -26,6 +27,7 @@ const TYPE_ICONS: Record<CitationType, LucideIcon> = {
   webpage: Globe,
   document: FileText,
   article: Newspaper,
+  wiki: BookOpen,
   api: Database,
   code: Code2,
   other: File,

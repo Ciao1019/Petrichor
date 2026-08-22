@@ -5,6 +5,11 @@ import {
     recallKnowledgeCandidatesAcrossKbs,
 } from "@/server/kb/knowledge-recall"
 import { listUserKnowledgeBases, searchWikiPagesAcrossKbs } from "@/server/kb/wiki-agent-logic"
+import {
+    listUserWikiOverview,
+    readUserWikiPageDetail,
+    searchUserWikiPages,
+} from "@/server/kb/wiki-qa-user"
 import { rewriteQuery } from "@/server/retrieval/query-rewrite"
 import { readKnowledgeNode } from "../../tools/knowledge"
 import { defineTool } from "./adapter"
@@ -37,12 +42,13 @@ const searchSchema = z.object({
 const readSchema = z.object({
     knowledgeBaseId: idSchema.optional().nullable(),
     nodeKey: z.string().trim().min(1).optional(),
+    chunkId: idSchema.optional(),
     pageKey: z.string().trim().min(1).optional(),
     articleId: idSchema.optional(),
 }).superRefine((value, ctx) => {
-    const count = [value.nodeKey, value.pageKey, value.articleId].filter((item) => item != null).length
+    const count = [value.nodeKey, value.chunkId, value.pageKey, value.articleId].filter((item) => item != null).length
     if (count !== 1) {
-        ctx.addIssue({ code: "custom", message: "nodeKey、pageKey、articleId 必须且只能提供一个" })
+        ctx.addIssue({ code: "custom", message: "nodeKey、chunkId、pageKey、articleId 必须且只能提供一个" })
     }
 })
 
@@ -111,6 +117,8 @@ function normalizeKnowledgeRead(output: unknown, input: unknown): ToolNormalizer
         title?: string
         articleTitle?: string
         nodeKey?: string
+        chunkId?: string
+        pageKey?: string
         articleId?: string
         knowledgeBaseId?: string
         path?: string
@@ -131,7 +139,11 @@ function normalizeKnowledgeRead(output: unknown, input: unknown): ToolNormalizer
     // 放在前面，确保模型既知道章节所处层级、有图可引，也仍有足够预算阅读正文。
     const contextPrefix = context ? `[章节定位上下文]\n${context.slice(0, 360)}\n\n` : ""
     const mediaPrefix = renderMediaManifest(media)
-    const evidenceContent = `${contextPrefix}${mediaPrefix}[目标章节正文]\n${content}`.slice(0, 4_000)
+    // read_knowledge_node 传 pageKey 时读的是整张 Wiki 页面，和 read_wiki_page_detail
+    // 一样属于全文读取，不按章节片段裁剪；分片/章节仍走 4,000 字上限。
+    const isWikiPage = record.kind === "wiki_page"
+    const body = `${contextPrefix}${mediaPrefix}[${isWikiPage ? "Wiki 页面正文" : "目标章节正文"}]\n${content}`
+    const evidenceContent = isWikiPage ? body : body.slice(0, 4_000)
     const fromSubtree = record.contentFrom === "subtree"
 
     return {
@@ -142,6 +154,7 @@ function normalizeKnowledgeRead(output: unknown, input: unknown): ToolNormalizer
             kind: record.kind,
             title,
             nodeKey: record.nodeKey,
+            chunkId: record.chunkId,
             articleId: record.articleId,
             contentFrom: record.contentFrom,
             ...(media.length > 0 ? { media } : {}),
@@ -153,13 +166,21 @@ function normalizeKnowledgeRead(output: unknown, input: unknown): ToolNormalizer
                 source: "knowledge",
                 title,
                 content: evidenceContent,
-                ...(record.nodeKey ? { sourceId: record.nodeKey } : {}),
+                ...(isWikiPage ? { fullRead: true } : {}),
+                // Wiki 页面读取也带 sourceId，与 read_wiki_page_detail 的证据去重口径一致
+                ...((record.chunkId ?? record.nodeKey ?? record.pageKey)
+                    ? { sourceId: record.chunkId ?? record.nodeKey ?? record.pageKey }
+                    : {}),
                 relevance: 0.8,
                 confidence: 0.8,
                 metadata: {
                     ...(record.nodeKey ? { nodeKey: record.nodeKey } : {}),
+                    ...(record.chunkId ? { chunkId: record.chunkId } : {}),
                     ...(record.articleId ? { articleId: String(record.articleId) } : {}),
                     ...(record.knowledgeBaseId ? { knowledgeBaseId: String(record.knowledgeBaseId) } : {}),
+                    // pageKey 进 metadata 后，证据渲染会附带「Wiki 引用」提示，
+                    // 普通问答的回答才能内联 [[pageKey|标题]] 供前端高亮
+                    ...(record.pageKey ? { pageKey: record.pageKey } : {}),
                     ...(path ? { path } : {}),
                     ...(record.contentFrom ? { contentFrom: record.contentFrom } : {}),
                     requestedBy: input,
@@ -172,6 +193,9 @@ function normalizeKnowledgeRead(output: unknown, input: unknown): ToolNormalizer
 function retrievalDisplaySummary(diagnostics: {
     vectorKeys?: unknown[]
     bm25Keys?: unknown[]
+    chunkVectorKeys?: unknown[]
+    questionVectorKeys?: unknown[]
+    wikiKeys?: unknown[]
     treeKeys?: unknown[]
     treeAttempted?: boolean
     rerankStrategy?: string
@@ -179,11 +203,14 @@ function retrievalDisplaySummary(diagnostics: {
 } | undefined): string {
     if (!diagnostics) return "混合检索"
     const methods: string[] = []
-    if ((diagnostics.vectorKeys?.length ?? 0) > 0) methods.push("语义")
-    if ((diagnostics.bm25Keys?.length ?? 0) > 0) methods.push("关键词")
-    if (diagnostics.treeAttempted) methods.push("Wiki 目录导航")
+    if ((diagnostics.chunkVectorKeys?.length ?? 0) > 0) methods.push("分片语义")
+    if ((diagnostics.questionVectorKeys?.length ?? 0) > 0) methods.push("问题语义")
+    if ((diagnostics.bm25Keys?.length ?? 0) > 0) methods.push("分片关键词")
+    if ((diagnostics.wikiKeys?.length ?? 0) > 0) methods.push("Wiki 页面")
+    if (methods.length === 0 && (diagnostics.vectorKeys?.length ?? 0) > 0) methods.push("存量章节语义")
+    if (diagnostics.treeAttempted) methods.push("存量目录导航")
     const methodLabel = methods.length > 0
-        ? `Wiki 章节索引：${methods.join(" + ")}`
+        ? methods.join(" + ")
         : "兼容检索"
 
     const rerank = diagnostics.rerankStrategy === "external"
@@ -255,6 +282,8 @@ function normalizeKnowledgeReadBatch(output: unknown): ToolNormalizerResult {
 function readRequestFromSearchHit(hit: Record<string, unknown>): z.infer<typeof readSchema> | null {
     const knowledgeBaseId = Number(hit.knowledgeBaseId)
     const scope = Number.isInteger(knowledgeBaseId) && knowledgeBaseId > 0 ? { knowledgeBaseId } : {}
+    const chunkId = Number(hit.chunkId)
+    if (Number.isInteger(chunkId) && chunkId > 0) return { ...scope, chunkId }
     if (typeof hit.nodeKey === "string" && hit.nodeKey.trim()) {
         return { ...scope, nodeKey: hit.nodeKey.trim() }
     }
@@ -272,7 +301,7 @@ function uniqueReadRequests(hits: Array<Record<string, unknown>>): Array<z.infer
     for (const hit of hits) {
         const node = readRequestFromSearchHit(hit)
         if (!node) continue
-        const key = `${node.knowledgeBaseId ?? ""}:${node.nodeKey ?? node.pageKey ?? node.articleId ?? ""}`
+        const key = `${node.knowledgeBaseId ?? ""}:${node.chunkId ?? node.nodeKey ?? node.pageKey ?? node.articleId ?? ""}`
         if (seen.has(key)) continue
         seen.add(key)
         nodes.push(node)
@@ -289,10 +318,10 @@ export const knowledgeTools: AgentToolDefinition[] = [
         riskLevel: "low",
         sideEffect: false,
         description:
-            "检索站内知识库，返回候选章节列表（不含全文）。"
-            + "何时用：需要站内资料支撑结论时，作为第一步定位相关章节。"
+            "检索站内知识库，联合原始分片、分片推荐问题和 Wiki 页面返回候选（不含全文）。"
+            + "何时用：需要站内资料支撑结论时，作为第一步定位相关分片或 Wiki 页面。"
             + "输入：query（检索问题）；可选 knowledgeBaseId 限定库、subQueries 拆分复杂问题。"
-            + "输出：候选列表，含 nodeKey / 标题 / 路径 / 摘要 / 命中来源 / 相关度。"
+            + "输出：候选列表，分片含 chunkId，Wiki 含 pageKey；存量数据可能返回 nodeKey。"
             + "何时不用：需要正文时改用 read_knowledge_node；问「有多少库/文章」用概览工具。",
         inputSchema: searchSchema,
         execute: async (ctx, raw) => {
@@ -324,7 +353,11 @@ export const knowledgeTools: AgentToolDefinition[] = [
                         mode: "cross_kb" as const,
                         retrievalMode: "hybrid" as const,
                         hits: result.candidates.map((candidate) => ({
-                            nodeKey: candidate.nodeKey,
+                            ...(candidate.candidateKind === "tree" || (!candidate.chunkId && !candidate.pageKey)
+                                ? { nodeKey: candidate.nodeKey }
+                                : {}),
+                            ...(candidate.chunkId ? { chunkId: candidate.chunkId } : {}),
+                            ...(candidate.pageKey ? { pageKey: candidate.pageKey } : {}),
                             articleId: candidate.articleId,
                             knowledgeBaseId: candidate.knowledgeBaseId,
                             knowledgeBaseName: knowledgeBaseNames.get(candidate.knowledgeBaseId) ?? null,
@@ -386,7 +419,11 @@ export const knowledgeTools: AgentToolDefinition[] = [
                 knowledgeBaseId: String(knowledgeBaseId),
                 knowledgeBaseName,
                 hits: result.candidates.map((candidate) => ({
-                    nodeKey: candidate.nodeKey,
+                    ...(candidate.candidateKind === "tree" || (!candidate.chunkId && !candidate.pageKey)
+                        ? { nodeKey: candidate.nodeKey }
+                        : {}),
+                    ...(candidate.chunkId ? { chunkId: candidate.chunkId } : {}),
+                    ...(candidate.pageKey ? { pageKey: candidate.pageKey } : {}),
                     articleId: candidate.articleId,
                     knowledgeBaseId: candidate.knowledgeBaseId,
                     title: candidate.title,
@@ -433,6 +470,7 @@ export const knowledgeTools: AgentToolDefinition[] = [
                     mode: record.mode,
                     hits: hits.map((hit) => ({
                         nodeKey: hit.nodeKey,
+                        chunkId: hit.chunkId,
                         pageKey: hit.pageKey,
                         articleId: hit.articleId,
                         knowledgeBaseId: hit.knowledgeBaseId,
@@ -521,6 +559,7 @@ export const knowledgeTools: AgentToolDefinition[] = [
                     mode: record.mode,
                     hits: hits.map((hit) => ({
                         nodeKey: hit.nodeKey,
+                        chunkId: hit.chunkId,
                         pageKey: hit.pageKey,
                         articleId: hit.articleId,
                         knowledgeBaseId: hit.knowledgeBaseId,
@@ -547,7 +586,7 @@ export const knowledgeTools: AgentToolDefinition[] = [
         description:
             "一次并行读取多个知识章节，是 search 后深读候选的首选工具。"
             + "何时用：需要比较或综合 2~4 个候选章节；简单问题最多读取 2 个，复杂问题最多 4 个。"
-            + "输入：nodes 数组，每项均为 nodeKey、pageKey、articleId 三选一，并可携带 knowledgeBaseId。"
+            + "输入：nodes 数组，每项均为 chunkId、pageKey、nodeKey、articleId 四选一，并可携带 knowledgeBaseId。"
             + "输出：每个章节的正文、层级上下文与独立可追溯证据。"
             + "何时不用：只需读取一个明确章节时用 read_knowledge_node。",
         inputSchema: readManySchema,
@@ -567,9 +606,9 @@ export const knowledgeTools: AgentToolDefinition[] = [
         riskLevel: "low",
         sideEffect: false,
         description:
-            "读取知识库某个节点/页面/文章的正文。"
+            "读取知识库某个原始分片、Wiki 页面、存量节点或整篇文章的正文。"
             + "何时用：search 定位到候选后，对真正相关的 1~3 条深读。"
-            + "输入：nodeKey、pageKey、articleId 三选一；跨库检索命中的条目必须带上其 knowledgeBaseId。"
+            + "输入：chunkId、pageKey、nodeKey、articleId 四选一；跨库检索命中的条目必须带上其 knowledgeBaseId。"
             + "输出：正文、面包屑、子节点、媒体引用。"
             + "何时不用：不要把所有候选都读一遍；只需要标题清单时用 search。",
         inputSchema: readSchema,
@@ -593,6 +632,213 @@ export const knowledgeTools: AgentToolDefinition[] = [
         normalize: (output): ToolNormalizerResult => {
             const list = Array.isArray(output) ? output : []
             return { summary: `共 ${list.length} 个知识库`, data: { knowledgeBases: list } }
+        },
+    }),
+]
+
+const wikiQueriesSchema = z.object({
+    queries: z.array(z.string().trim().min(1).max(200)).min(1).max(6),
+    knowledgeBaseId: idSchema.optional().nullable(),
+    limit: z.number().int().min(1).max(20).optional(),
+})
+
+/**
+ * Wiki 问答工具组（参考 Tencent/WeKnora 的 wiki_overview / wiki_search / wiki_read_page）。
+ * 带 wiki 标签：常态不占用核心工具名额，Wiki 问答模式下由 Runtime 解锁。
+ */
+export const wikiQaTools: AgentToolDefinition[] = [
+    defineTool({
+        id: "knowledge.wiki_overview",
+        name: "wiki_overview",
+        namespace: "knowledge",
+        riskLevel: "low",
+        sideEffect: false,
+        tags: ["wiki"],
+        description:
+            "列出 Wiki 页面分组概览：主题与知识页（概念/实体/对比/答案）+ 源文档页，每页含 pageKey、标题与摘要。"
+            + "何时用：Wiki 问答的第一步，先掌握全貌再决定读哪些页面。"
+            + "输入：无；可选 knowledgeBaseId 限定库（缺省沿用当前提问范围）。"
+            + "输出：分组页面目录。已知 pageKey 时可直接 read_wiki_page_detail。",
+        inputSchema: z.object({}),
+        execute: async (ctx) => {
+            const overview = await listUserWikiOverview({
+                userId: ctx.userId,
+                knowledgeBaseId: focusKnowledgeBaseId(ctx.focus),
+            })
+            return {
+                ...overview,
+                emptyMessage: overview.total === 0 ? "当前范围内还没有可用的 Wiki 页面" : undefined,
+            }
+        },
+        normalize: (output): ToolNormalizerResult => {
+            const record = output as {
+                groups?: Array<{ key?: string; label?: string; pages?: Array<Record<string, unknown>> }>
+                total?: number
+                emptyMessage?: string
+            }
+            const total = record.total ?? 0
+            if (total === 0) {
+                return {
+                    summary: record.emptyMessage ?? "没有可用的 Wiki 页面",
+                    data: { total: 0 },
+                }
+            }
+            return {
+                progress: true,
+                summary: `Wiki 共 ${total} 个页面：${(record.groups ?? [])
+                    .map((group) => `${group.label ?? group.key}${group.pages?.length ?? 0}`)
+                    .join("、")}`,
+                data: {
+                    total,
+                    pages: (record.groups ?? []).flatMap((group) =>
+                        (group.pages ?? []).map((page) => ({
+                            pageKey: page.pageKey,
+                            title: page.title,
+                            kind: page.kind,
+                            summary: page.summary,
+                        })),
+                    ).slice(0, 60),
+                },
+                suggestedActions: ["knowledge.search_wiki_pages", "knowledge.read_wiki_page_detail"],
+            }
+        },
+    }),
+
+    defineTool({
+        id: "knowledge.search_wiki_pages",
+        name: "search_wiki_pages",
+        namespace: "knowledge",
+        riskLevel: "low",
+        sideEffect: false,
+        tags: ["wiki"],
+        description:
+            "在 Wiki 页面里做多关键词检索：queries 一次传多个词（同义概念、别名词一起搜），"
+            + "命中标题/摘要/别名/正文，返回 pageKey、标题、类型、别名、摘要与正文命中片段。"
+            + "何时用：不知道确切 pageKey 时定位 Wiki 页面。"
+            + "何时不用：要浏览全貌用 wiki_overview；要正文用 read_wiki_page_detail。",
+        inputSchema: wikiQueriesSchema,
+        execute: async (ctx, raw) => {
+            const input = wikiQueriesSchema.parse(raw)
+            return await searchUserWikiPages({
+                userId: ctx.userId,
+                queries: input.queries,
+                limit: input.limit,
+                knowledgeBaseId: input.knowledgeBaseId ?? focusKnowledgeBaseId(ctx.focus),
+            })
+        },
+        normalize: (output): ToolNormalizerResult => {
+            const record = output as { query?: string[]; items?: Array<Record<string, unknown>>; emptyMessage?: string }
+            const items = record.items ?? []
+            if (items.length === 0) {
+                return {
+                    summary: record.emptyMessage ?? "没有匹配的 Wiki 页面",
+                    data: { items: [] },
+                    suggestedActions: ["knowledge.wiki_overview", "rewrite_query"],
+                }
+            }
+            return {
+                progress: true,
+                summary: `命中 ${items.length} 个 Wiki 页面（关键词：${(record.query ?? []).join(" / ")}）`,
+                data: {
+                    items: items.map((item) => ({
+                        pageKey: item.pageKey,
+                        title: item.title,
+                        kind: item.kind,
+                        aliases: item.aliases,
+                        summary: item.summary,
+                        snippet: item.snippet,
+                    })),
+                },
+                suggestedActions: ["knowledge.read_wiki_page_detail"],
+            }
+        },
+    }),
+
+    defineTool({
+        id: "knowledge.read_wiki_page_detail",
+        name: "read_wiki_page_detail",
+        namespace: "knowledge",
+        riskLevel: "low",
+        sideEffect: false,
+        tags: ["wiki"],
+        description:
+            "按 pageKey 读取一篇 Wiki 页面：全文 Markdown + 关联页面（links/inLinks，各带标题与摘要）+ 来源文章。"
+            + "何时用：search_wiki_pages 或 wiki_overview 定位到相关页面后深读。"
+            + "输入：pageKey 必填；可选 knowledgeBaseId 消除跨库同名歧义。"
+            + "输出：页面全文与关联信息；回答时用 [[pageKey|标题]] 引用该页面。",
+        inputSchema: z.object({
+            pageKey: z.string().trim().min(1).max(200),
+            knowledgeBaseId: idSchema.optional().nullable(),
+        }),
+        execute: async (ctx, raw) => {
+            const input = z.object({
+                pageKey: z.string().trim().min(1).max(200),
+                knowledgeBaseId: idSchema.optional().nullable(),
+            }).parse(raw)
+            return await readUserWikiPageDetail({
+                userId: ctx.userId,
+                pageKey: input.pageKey,
+                knowledgeBaseId: input.knowledgeBaseId ?? focusKnowledgeBaseId(ctx.focus),
+            })
+        },
+        normalize: (output): ToolNormalizerResult => {
+            const record = output as {
+                pageKey?: string
+                title?: string
+                kind?: string
+                contentMd?: string
+                links?: Array<Record<string, unknown>>
+                inLinks?: Array<Record<string, unknown>>
+                sourceArticles?: Array<Record<string, unknown>>
+            }
+            const title = record.title ?? record.pageKey ?? "Wiki 页面"
+            const content = (record.contentMd ?? "").trim()
+            if (!content) {
+                return {
+                    summary: `「${title}」没有可引用的正文内容`,
+                    data: { pageKey: record.pageKey, title },
+                }
+            }
+            const neighborCount = (record.links?.length ?? 0) + (record.inLinks?.length ?? 0)
+            // 全文读取：正文完整进证据，不在这里裁。工具说明和提示词都写着"读全文"，
+            // 截一刀会让模型看到 summary 的字数与正文对不上，判定页面被截断并绕去读源文档。
+            // 体积由 mastra-bridge（段内回传）与 context-manager（evidence budget）统一兜底。
+            const evidenceContent = `[Wiki 页面 ${title}]\n\n${content}`
+            return {
+                progress: true,
+                summary: `已读取 Wiki 页面「${title}」（${content.length} 字${neighborCount > 0 ? `，${neighborCount} 个关联页面` : ""}），回答时请用 [[${record.pageKey}|${title}]] 引用`,
+                data: {
+                    pageKey: record.pageKey,
+                    title,
+                    kind: record.kind,
+                    excerpt: content.slice(0, 400),
+                    links: (record.links ?? []).slice(0, 12).map((link) => ({
+                        pageKey: link.pageKey,
+                        title: link.title,
+                        summary: link.summary,
+                    })),
+                    inLinks: (record.inLinks ?? []).slice(0, 12).map((link) => ({
+                        pageKey: link.pageKey,
+                        title: link.title,
+                        summary: link.summary,
+                    })),
+                    sourceArticles: record.sourceArticles ?? [],
+                },
+                evidence: [{
+                    source: "wiki",
+                    title,
+                    content: evidenceContent,
+                    fullRead: true,
+                    ...(record.pageKey ? { sourceId: record.pageKey } : {}),
+                    relevance: 0.85,
+                    confidence: 0.85,
+                    metadata: {
+                        ...(record.pageKey ? { pageKey: record.pageKey } : {}),
+                        kind: record.kind,
+                    },
+                }],
+                suggestedActions: ["knowledge.read_wiki_page_detail"],
+            }
         },
     }),
 ]

@@ -25,6 +25,8 @@ export function buildFinalAnswerPlan(input: {
     observations: ObservationStore
     stopReason?: AgentStopReason
     maxEvidence?: number
+    /** Wiki 问答模式：引用格式从 [n] 角标切换为 [[pageKey|标题]] 内联 */
+    wikiMode?: boolean
 }): FinalAnswerPlan {
     const citedEvidence = input.evidence.topN(input.maxEvidence ?? 12)
     const limitations: string[] = []
@@ -44,8 +46,9 @@ export function buildFinalAnswerPlan(input: {
         )
     }
 
+    const wikiMode = input.wikiMode === true
     const instructions = [
-        FINAL_ANSWER_PROMPT,
+        wikiMode ? WIKI_FINAL_ANSWER_PROMPT : FINAL_ANSWER_PROMPT,
         `## 本题详略要求\n${buildAnswerQualityGuidance(input.state.goal)}`,
         buildFinalAnswerContext({
             state: input.state,
@@ -53,6 +56,7 @@ export function buildFinalAnswerPlan(input: {
             citationIndex: (item) => input.evidence.citationIndex(item.id),
             observations: input.observations,
             limitations,
+            wikiMode,
         }),
     ].join("\n\n")
 
@@ -65,11 +69,25 @@ export const FINAL_ANSWER_PROMPT = `
 要求：
 - 直接回答用户的问题，不要复述执行过程，不要输出内部推理。
 - 结论必须来自下面列出的证据；引用某条证据时在句末标注 [n]，n 是证据编号。
+- 【Wiki 内联引用】凡有对应 Wiki 页面的内容都要内联引用：每条带「Wiki 引用」提示的证据，在其支撑的表述处写成 [[pageKey|页面标题]]；检索结果里带 pageKey 的其他 Wiki 页面，正文明确提及时也按此格式链接。不同页面分别引用，不要只给一个词加链接；同一页面多次提及只在首次加链接。pageKey 必须来自检索结果，严禁编造。这类来源不必再标 [n]。
 - 内部知识库来源用标题与路径说明，外部来源说明站点与时间。
 - 证据冲突时：先说明冲突点，再比较来源可信度与时间，最后给出结论并说明不确定性。
 - 没有覆盖到的部分要明确说明，不要用常识补全内部实现细节。
 - 默认追求完整、可用的回答，不要因为问题句子短就只答一句；只有用户明确要求简短时才压缩。
 - 语言与用户保持一致，默认中文。
+`.trim()
+
+export const WIKI_FINAL_ANSWER_PROMPT = `
+现在请基于已获取的 Wiki 信息给出最终回答。
+
+要求：
+- 直接回答用户的问题，不要复述执行过程，不要输出内部推理。
+- 结论必须来自下面列出的证据。
+- 【引用格式（最重要）】凡是来自 Wiki 页面的信息，必须在正文中内联写成 [[pageKey|页面标题]]，例如 [[concept-rag|RAG]]。pageKey 见每条证据的「Wiki 引用」提示。读者可以直接点击这些链接打开页面。
+- 不要输出 [1]、[2] 这类数字角标；Wiki 页面来源一律使用 [[..]] 内联引用。同一页面多次提及时首次引用即可。
+- 非Wiki 来源（网页等）仍可用 [n] 标注。
+- 没有覆盖到的部分要明确说明，不要用常识补全内部实现细节。
+- 默认追求完整、可用的回答；语言与用户保持一致，默认中文。
 `.trim()
 
 /**

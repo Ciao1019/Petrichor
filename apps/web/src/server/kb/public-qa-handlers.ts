@@ -28,8 +28,20 @@ import {
     searchPublicArticles,
     type PublicArticleScope,
 } from "@/server/kb/public-qa-logic"
+import {
+    listPublicWikiOverview,
+    readPublicWikiPageDetail,
+    searchPublicWikiPages,
+} from "@/server/kb/public-wiki-qa"
 import { retrieveFromGraph } from "@/server/site-graph/qa-retrieval"
 import { loadPublicSiteGraph } from "@/server/site-graph/public-graph"
+
+/** 前台问答模式：normal 走文章/目录树链路；wiki 参考 WeKnora 的 Wiki 检索链路。 */
+type PublicQaMode = "normal" | "wiki"
+
+function resolveQaMode(request: NextRequest): PublicQaMode {
+    return request.headers.get("x-petrichor-qa-mode") === "wiki" ? "wiki" : "normal"
+}
 
 export const maxDuration = 300
 
@@ -70,7 +82,7 @@ const citationToolSchema = z.object({
         title: z.string(),
         snippet: z.string().optional(),
         domain: z.string().optional(),
-        type: z.enum(["webpage", "document", "article", "api", "code", "other"]).optional(),
+        type: z.enum(["webpage", "document", "article", "wiki", "api", "code", "other"]).optional(),
     })).min(1),
 })
 
@@ -113,11 +125,14 @@ export async function publicQaChat(request: NextRequest) {
 
         const { model } = await createChatLanguageModel({ userId: ownerUserId, modelRefId: null })
         const scope = await loadPublicArticleScope()
-        const tools = buildPublicQaTools(scope)
+        const mode = resolveQaMode(request)
+        const tools = mode === "wiki"
+            ? buildWikiQaTools(scope)
+            : buildPublicQaTools(scope)
 
         const result = streamText({
             model,
-            instructions: buildPublicQaSystemPrompt(),
+            instructions: mode === "wiki" ? buildWikiQaSystemPrompt() : buildPublicQaSystemPrompt(),
             messages: await convertToModelMessages(input.messages as UIMessage[]),
             tools,
             stopWhen: isStepCount(8),
@@ -254,6 +269,95 @@ function buildPublicQaTools(scope: PublicArticleScope) {
             }),
         }),
     }
+}
+
+function buildWikiQaTools(scope: PublicArticleScope) {
+    return {
+        show_agent_plan: tool({
+            description: "当问题需要多步检索、阅读、分析时，先展示清晰执行计划。",
+            inputSchema: planToolSchema,
+            execute: async (input) => ({
+                id: `plan-${Date.now()}`,
+                title: input.title,
+                description: input.description,
+                todos: input.todos,
+            }),
+        }),
+        show_progress: tool({
+            description: "展示当前检索、阅读、分析的执行进度。",
+            inputSchema: progressToolSchema,
+            execute: async (input) => ({
+                id: `progress-${Date.now()}`,
+                title: input.title,
+                description: input.description,
+                steps: input.steps,
+            }),
+        }),
+        wiki_overview: tool({
+            description: "列出本站公开 Wiki 的全部分组概览：主题与知识页（概念/实体/对比/答案）+ 源文档页，每页含 pageKey、标题与摘要。回答任何问题前先读它掌握全貌；已知 pageKey 时直接用 read_wiki_page_detail。",
+            inputSchema: z.object({}),
+            execute: async () => {
+                const overview = await listPublicWikiOverview(scope)
+                return {
+                    ...overview,
+                    emptyMessage: overview.total === 0 ? "本站暂无公开的 Wiki 页面" : undefined,
+                }
+            },
+        }),
+        search_wiki_pages: tool({
+            description: "在公开 Wiki 页面里做多关键词检索：queries 一次可传多个词（同义概念、别名词都搜），命中标题/摘要/别名/正文，返回 pageKey、标题、类型、别名、摘要与正文命中片段。不知道确切 pageKey 时用它定位页面。",
+            inputSchema: z.object({
+                queries: z.array(z.string().min(1)).min(1).max(6),
+                limit: z.number().int().min(1).max(20).optional(),
+            }),
+            execute: async ({ queries, limit }) => {
+                const result = await searchPublicWikiPages({ scope, queries, limit })
+                return { ...result, emptyMessage: "没有匹配的 Wiki 页面，试试换个关键词或用 wiki_overview 浏览目录" }
+            },
+        }),
+        read_wiki_page_detail: tool({
+            description: "按 pageKey 读取一篇 Wiki 页面：全文 Markdown + 关联页面（links/inLinks，各带标题与摘要）+ 来源文章。回答时优先依据页面内容；关联页面相关时可继续读取或在答案中引用。",
+            inputSchema: z.object({
+                pageKey: z.string().min(1),
+            }),
+            execute: async ({ pageKey }) => await readPublicWikiPageDetail(scope, pageKey),
+        }),
+        show_citations: tool({
+            description: "把最终答案使用的来源渲染为引用卡片。Wiki 页面引用写 href 为 `#wiki-page=<pageKey>`、type 为 \"wiki\"；来源文章引用 href 用公开页路径 `/p/<shareCode>`。",
+            inputSchema: citationToolSchema,
+            execute: async ({ citations }) => ({
+                id: `citations-${Date.now()}`,
+                citations,
+                variant: "default" as const,
+            }),
+        }),
+        show_data_table: tool({
+            description: "当答案包含结构化对比、清单或矩阵时渲染为表格。",
+            inputSchema: dataTableToolSchema,
+            execute: async ({ columns, data, title }) => ({
+                id: `table-${Date.now()}`,
+                title,
+                columns,
+                data,
+                emptyMessage: "暂无数据",
+            }),
+        }),
+    }
+}
+
+function buildWikiQaSystemPrompt() {
+    return [
+        "你是本站的公开 Wiki 问答助手，面向未登录的访客，知识范围严格限定在本站「公开 Wiki 页面」之内。",
+        "检索策略（参考 WeKnora 的 Wiki 检索）：",
+        "1. 回答任何内容型问题前，先调用 wiki_overview 掌握 Wiki 全貌（分组目录：主题与知识页 / 源文档页）。",
+        "2. 定位具体页面时用 search_wiki_pages：queries 数组一次传多个关键词（把问题拆成同义概念、别名词一起搜），比单关键词效果更好；从返回的 pageKey、摘要与命中片段判断哪些页面最相关。",
+        "3. 对最相关的页面调用 read_wiki_page_detail 读全文；返回里的 links/inLinks 是关联页面（带摘要），若与问题相关可以继续读，形成多跳推理。",
+        "4. 答案正文中必须内联引用用到的 Wiki 页面：写成 [[pageKey|页面标题]]（如 [[concept-rag|RAG 概念]]）。读者可以直接点开这些链接查看页面，务必使用检索结果里真实的 pageKey，严禁编造。",
+        "5. 结尾调用 show_citations 列出引用：Wiki 页面 href 写 `#wiki-page=<pageKey>`（type 填 \"wiki\"），来源文章 href 写 `/p/<shareCode>`（shareCode 从 read_wiki_page_detail 的 sourceArticles 获取）。",
+        "6. 严禁编造或使用公开 Wiki 之外的知识。检索不到就如实回答「本站 Wiki 暂无相关资料」，不要杜撰。",
+        "7. 遇到自我介绍、寒暄等元问题直接简短回答，不要调用检索工具；对比/清单类结果可用 show_data_table 整理。",
+        "8. 只使用中文回答。答案要直接、结构清晰，优先综合多个页面的知识给出完整回答。",
+    ].join("\n")
 }
 
 function buildPublicQaSystemPrompt() {

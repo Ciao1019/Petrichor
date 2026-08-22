@@ -5,7 +5,16 @@ import { useMessagePartText } from "@assistant-ui/react"
 import { Markdown, remarkVideo, ThemeProvider, type MarkdownProps } from "@lobehub/ui"
 import { ThinkingOrb, type OrbState } from "thinking-orbs"
 
+import { wikiScribbleStyle } from "@/components/markdown/wiki-scribble"
 import { useTheme } from "@/components/theme-provider"
+// Wiki 内链的 context / anchor 与 assistant-ui 渲染管线共用一份实现
+export {
+  readWikiPageKeyFromHref,
+  useOpenWikiPage,
+  WikiLinkClickProvider,
+} from "@/components/markdown/wiki-link-context"
+import { readWikiPageKeyFromHref, useOpenWikiPage } from "@/components/markdown/wiki-link-context"
+import { convertAnswerWikiLinks } from "./knowledge-wiki-markdown"
 import { useGentleReveal } from "./use-gentle-reveal"
 import { LIVE_MARKDOWN_STREAM_PROPS, useStreamPacer } from "./use-stream-pacer"
 import { AgentCitationMark } from "@/components/agent/agent-citation-mark"
@@ -20,6 +29,42 @@ import {
   SignedMarkdownFile,
   SignedMarkdownVideo,
 } from "@/components/assistant-ui/signed-markdown-media"
+
+/** 从 #wiki-page=<encoded> 链接里解出 pageKey；非该类链接返回 null。 */
+// readWikiPageKeyFromHref 已抽到共享模块（上方 re-export），供公开问答工具卡片复用。
+
+/**
+ * 回答正文里的 Wiki 内链：去系统下划线，描一道按 href 稳定取色的
+ * 手绘马克笔波浪（与知识库「知识关联」视觉一致），点击交给弹窗。
+ */
+function QaMarkdownAnchor(props: React.ComponentProps<"a"> & { node?: unknown }) {
+  const { href, children, style, node, ...rest } = props
+  void node
+  const pageKey = readWikiPageKeyFromHref(href)
+  const onOpenWikiPage = useOpenWikiPage()
+  if (!pageKey) {
+    return (
+      <a href={href} style={style} {...rest}>
+        {children}
+      </a>
+    )
+  }
+  return (
+    <a
+      href={href}
+      className="cursor-pointer font-medium underline-offset-4 hover:opacity-80"
+      title={onOpenWikiPage ? "点击查看 Wiki 页面" : undefined}
+      onClick={(event) => {
+        event.preventDefault()
+        onOpenWikiPage?.(pageKey)
+      }}
+      style={{ ...wikiScribbleStyle(pageKey), ...style }}
+      {...rest}
+    >
+      {children}
+    </a>
+  )
+}
 
 const QA_REACT_MARKDOWN_PROPS = {
   urlTransform: storageMarkdownUrlTransform,
@@ -38,6 +83,7 @@ const QA_MARKDOWN_COMPONENTS: NonNullable<MarkdownProps["components"]> = {
   video: SignedMarkdownVideo,
   audio: SignedMarkdownAudio,
   file: SignedMarkdownFile,
+  a: QaMarkdownAnchor,
 }
 
 // 允许调用方（如前台 /ask 蓝底页面）强制明暗，覆盖 app 主题判断。
@@ -163,12 +209,16 @@ export function QaStreamingMarkdown({
   revealCps?: number
   catchupMs?: number | null
 }) {
+  // 只有注册了 Wiki 弹窗回调的问答场景才把 [[..]] 转成内链；
+  // 其他复用场景保持原文，避免把字面 [[..]] 变成死链接。
+  const hasWikiLinkHandler = useOpenWikiPage() != null
+  const normalizedText = hasWikiLinkHandler ? convertAnswerWikiLinks(text) : text
   // 两条路径的差别不是参数，是"谁来控制节奏"，所以拆成两个组件而不是一个分支：
   // 流式路径完全不该挂 useGentleReveal 的 rAF 循环。
   if (revealOnMount) {
-    return <QaRevealedMarkdown text={text} revealCps={revealCps} catchupMs={catchupMs} />
+    return <QaRevealedMarkdown text={normalizedText} revealCps={revealCps} catchupMs={catchupMs} />
   }
-  return <QaLiveMarkdown text={text} running={running} />
+  return <QaLiveMarkdown text={normalizedText} running={running} />
 }
 
 /**

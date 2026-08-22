@@ -24,7 +24,8 @@ import {
     wikiPatchDecisionInputSchema,
     wikiTreeInputSchema,
 } from "./wiki-agent-logic"
-import { embedKnowledgeBaseTreeNodes, loadDocumentTreeOutline } from "@/server/kb/wiki-tree"
+import { loadDocumentTreeOutline } from "@/server/kb/wiki-tree"
+import { embedKnowledgeBaseArticleIndex } from "@/server/kb/article-knowledge-index"
 
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
 
@@ -111,7 +112,7 @@ export async function articleKnowledgeChunkList(request: NextRequest) {
 export async function wikiEmbeddingRun(request: NextRequest) {
     return withUser(request, async (user) => {
         const input = wikiIngestInputSchema.pick({ knowledgeBaseId: true }).parse(await readJson(request))
-        return ok(await embedKnowledgeBaseTreeNodes(user.id, input.knowledgeBaseId))
+        return ok(await embedKnowledgeBaseArticleIndex(user.id, input.knowledgeBaseId))
     })
 }
 

@@ -12,6 +12,7 @@ import {
     semanticSearchTreeNodes,
     type TreeRetrievalHit,
 } from "@/server/kb/wiki-tree"
+import { readArticleKnowledgeChunkForAgent } from "@/server/kb/article-knowledge-index"
 import { badRequest, notFound } from "@/server/http/response"
 import { retrieveFromGraph } from "@/server/site-graph/qa-retrieval"
 import { loadPublicSiteGraph } from "@/server/site-graph/public-graph"
@@ -41,16 +42,17 @@ const searchKnowledgeSchema = z.object({
 const readKnowledgeNodeSchema = z.object({
     knowledgeBaseId: idSchema.optional().nullable(),
     nodeKey: z.string().trim().min(1).optional(),
+    chunkId: idSchema.optional(),
     pageKey: z.string().trim().min(1).optional(),
     articleId: idSchema.optional(),
 }).superRefine((value, ctx) => {
-    const addressCount = [value.nodeKey, value.pageKey, value.articleId]
+    const addressCount = [value.nodeKey, value.chunkId, value.pageKey, value.articleId]
         .filter((item) => item != null)
         .length
     if (addressCount !== 1) {
         ctx.addIssue({
             code: "custom",
-            message: "nodeKey、pageKey、articleId 必须且只能提供一个",
+            message: "nodeKey、chunkId、pageKey、articleId 必须且只能提供一个",
         })
     }
 })
@@ -164,6 +166,9 @@ export async function readKnowledgeNode(
             href: knowledgeBaseArticlePath(String(knowledgeBaseId), node.articleId),
         }
     }
+    if (input.chunkId != null) {
+        return await readArticleKnowledgeChunkForAgent(ctx.userId, knowledgeBaseId, input.chunkId)
+    }
     if (input.pageKey) {
         const page = await readWikiPageForAgent(ctx.userId, knowledgeBaseId, input.pageKey)
         const { kind: pageKind, ...rest } = page
@@ -223,7 +228,7 @@ export const knowledgeAssistantTools: AssistantToolRegistration[] = [
         name: "read_knowledge_node",
         domain: "knowledge",
         risk: "read",
-        description: "读取检索命中的知识内容；nodeKey、pageKey、articleId 三选一。knowledgeBaseId 仅在当前对话已锁定知识库时可省略；若上一步是跨库检索（search_knowledge 返回 mode=cross_kb），必须把该命中项的 hits[].knowledgeBaseId 一并传入，否则无法定位。若内容含图片/附件，会在 media 字段返回可直接渲染的引用（src 多为 s4key:…）；需要展示图片时在最终答案中输出 Markdown：`![说明](media.src)`。",
+        description: "读取检索命中的知识内容；chunkId、pageKey、nodeKey、articleId 四选一。分片/问题召回优先使用 chunkId 读取原始分片，Wiki 命中使用 pageKey；knowledgeBaseId 仅在当前对话已锁定知识库时可省略。Wiki/存量节点若含图片或附件会返回 media。",
         inputSchema: readKnowledgeNodeSchema,
         execute: async (ctx, input) => await readKnowledgeNode(ctx, readKnowledgeNodeSchema.parse(input)),
     },

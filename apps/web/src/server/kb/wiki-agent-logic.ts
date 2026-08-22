@@ -11,6 +11,7 @@ import {
     knowledgeBaseAgentRuns,
     knowledgeBaseAgentSteps,
     knowledgeBaseAgentThreads,
+    knowledgeBaseArticleChunkIndexes,
     knowledgeBaseArticleChunks,
     knowledgeBaseArticles,
     knowledgeBaseNodes,
@@ -32,7 +33,6 @@ import { scoreSearchFields } from "@/server/kb/search-terms"
 import {
     buildArticleTree,
     embedKnowledgeBaseTreeNodesBestEffort,
-    getKbWikiEmbeddingStatus,
 } from "@/server/kb/wiki-tree"
 import {
     ARTICLE_KNOWLEDGE_BUILD_VERSION,
@@ -42,6 +42,11 @@ import {
     type ExtractedKnowledgeRelation,
     type KnowledgeBuildWorkflowResult,
 } from "@/server/kb/knowledge-build-workflow"
+import {
+    buildArticleKnowledgeIndexValues,
+    embedKnowledgeBaseArticleIndexBestEffort,
+    getKnowledgeBaseArticleIndexStatus,
+} from "@/server/kb/article-knowledge-index"
 
 type Db = ReturnType<typeof getDb>
 type DbExecutor = Pick<Db, "delete" | "insert" | "select" | "update">
@@ -384,7 +389,7 @@ export async function loadWikiDashboard(userId: number, knowledgeBaseId: number)
     const db = getDb()
     await assertKnowledgeBaseOwner(db, userId, knowledgeBaseId)
     const pageRows = await loadWikiPageRows(db, userId, knowledgeBaseId)
-    const [lint, treeNodeRows, embedding] = await Promise.all([
+    const [lint, treeNodeRows, chunkRows, embedding] = await Promise.all([
         buildWikiLint(db, userId, knowledgeBaseId, pageRows),
         db
             .select({ value: count() })
@@ -393,13 +398,21 @@ export async function loadWikiDashboard(userId: number, knowledgeBaseId: number)
                 eq(knowledgeBaseWikiTreeNodes.userId, userId),
                 eq(knowledgeBaseWikiTreeNodes.knowledgeBaseId, knowledgeBaseId),
             )),
-        getKbWikiEmbeddingStatus(userId, knowledgeBaseId),
+        db
+            .select({ value: count() })
+            .from(knowledgeBaseArticleChunks)
+            .where(and(
+                eq(knowledgeBaseArticleChunks.userId, userId),
+                eq(knowledgeBaseArticleChunks.knowledgeBaseId, knowledgeBaseId),
+            )),
+        getKnowledgeBaseArticleIndexStatus(userId, knowledgeBaseId),
     ])
 
     return {
         pages: pageRows.map(toWikiPageResponse),
         lint,
         treeNodeCount: treeNodeRows[0]?.value ?? 0,
+        chunkCount: chunkRows[0]?.value ?? 0,
         embedding,
     }
 }
@@ -552,7 +565,7 @@ export async function buildArticleKnowledge(input: {
                 eq(knowledgeBaseArticleChunks.userId, input.userId),
                 eq(knowledgeBaseArticleChunks.articleId, article.id),
             ))
-        await tx.insert(knowledgeBaseArticleChunks).values(workflowResult.chunks.map((chunk) => ({
+        const insertedChunks = await tx.insert(knowledgeBaseArticleChunks).values(workflowResult.chunks.map((chunk) => ({
             userId: input.userId,
             knowledgeBaseId: input.knowledgeBaseId,
             articleId: article.id,
@@ -564,7 +577,18 @@ export async function buildArticleKnowledge(input: {
             contentHash: stableHash(chunk.contentMd),
             recommendedQuestionsJson: JSON.stringify(chunk.recommendedQuestions),
             updatedAt: new Date(),
-        })))
+        }))).returning()
+
+        const indexValues = buildArticleKnowledgeIndexValues({
+            userId: input.userId,
+            knowledgeBaseId: input.knowledgeBaseId,
+            articleId: article.id,
+            articleTitle: article.title,
+            chunks: insertedChunks,
+        })
+        if (indexValues.length > 0) {
+            await tx.insert(knowledgeBaseArticleChunkIndexes).values(indexValues)
+        }
 
         await detachArticleFromGeneratedKnowledgePages(tx, {
             userId: input.userId,
@@ -632,6 +656,14 @@ export async function buildArticleKnowledge(input: {
         entityCount: workflowResult.items.filter((item) => item.kind === "entity").length,
         conceptCount: workflowResult.items.filter((item) => item.kind === "concept").length,
         warnings: workflowResult.warnings,
+    })
+
+    // 外部向量调用不能占用数据库事务。提交后严格按“全部分片 → 全部问题”的顺序
+    // best-effort 建索引；失败时 Wiki 与 BM25 仍可用，不回滚已经生成的知识。
+    await embedKnowledgeBaseArticleIndexBestEffort(input.userId, input.knowledgeBaseId).catch((error: unknown) => {
+        workflowResult.warnings.push(error instanceof Error
+            ? `分片检索向量生成失败：${error.message}`
+            : "分片检索向量生成失败")
     })
 
     return buildArticleKnowledgeResponse({

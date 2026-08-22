@@ -168,6 +168,8 @@ function mergeEvidence(existing: AgentEvidence, incoming: EvidenceInput): void {
     if (incoming.content && incoming.content.length > existing.content.length) {
         existing.content = incoming.content
     }
+    // 同一页面被片段读与全文读先后命中时，按全文对待
+    if (incoming.fullRead) existing.fullRead = true
     if (incoming.relevance != null) {
         existing.relevance = Math.max(existing.relevance ?? 0, incoming.relevance)
     }

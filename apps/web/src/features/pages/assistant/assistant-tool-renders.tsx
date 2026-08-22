@@ -10,6 +10,7 @@ import {
 } from "@assistant-ui/react"
 import { useNavigate } from "react-router-dom"
 import {
+  BookOpen,
   CheckCircle2,
   ChevronDown,
   CircleAlert,
@@ -27,6 +28,7 @@ import { toast } from "sonner"
 
 import { QaPreparing } from "@/features/pages/knowledge/QaMarkdown"
 import { GraphRetrievalBody, parseGraphRetrievalResult } from "@/components/site-graph/GraphPathChain"
+import { useOpenWikiPage } from "@/components/markdown/wiki-link-context"
 import { CitationList } from "@/components/tool-ui/citation"
 import { safeParseSerializableCitation } from "@/components/tool-ui/citation/schema"
 import { DataTable } from "@/components/tool-ui/data-table"
@@ -693,3 +695,140 @@ export function LoadingRows({ count }: { count: number }) {
     </div>
   )
 }
+
+const WIKI_KIND_LABELS: Record<string, string> = {
+  index: "索引",
+  source: "源文档",
+  entity: "实体",
+  concept: "概念",
+  comparison: "对比",
+  answer: "答案",
+}
+
+/** 可点击的 Wiki 页面条目：点击直接打开弹窗预览（与回答内 [[..]] 引用一致）。 */
+function WikiPageHitRow({
+  pageKey,
+  title,
+  summary,
+  kindLabel,
+}: {
+  pageKey: string
+  title: string
+  summary?: string
+  kindLabel?: string
+}) {
+  const openWikiPage = useOpenWikiPage()
+  return (
+    <button
+      type="button"
+      onClick={() => openWikiPage?.(pageKey)}
+      className="block w-full rounded-md border border-border/50 bg-muted/20 px-3 py-2 text-left transition-colors hover:bg-muted/50 disabled:cursor-default"
+      disabled={!openWikiPage}
+    >
+      <span className="flex items-center gap-2">
+        {kindLabel ? <Badge variant="outline" className="shrink-0 text-[10px]">{kindLabel}</Badge> : null}
+        <span className="line-clamp-1 min-w-0 text-sm font-medium">{title}</span>
+      </span>
+      {summary ? <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{summary}</p> : null}
+    </button>
+  )
+}
+
+export const WikiOverviewToolUI = makeAssistantToolUI({
+  toolName: "wiki_overview",
+  render: ({ result, status }) => {
+    const payload = asRecord(result)
+    const groups = Array.isArray(payload?.groups) ? payload.groups.map(asRecord).filter(isPresent) : []
+    if (groups.length === 0) {
+      return (
+        <ToolStatusCard title="Wiki 总览" status={status} icon={<BookOpen className="size-4" />}>
+          {typeof payload?.emptyMessage === "string" ? (
+            <p className="text-xs text-muted-foreground">{payload.emptyMessage}</p>
+          ) : null}
+        </ToolStatusCard>
+      )
+    }
+    return (
+      <ToolStatusCard title="Wiki 总览" status={status} icon={<BookOpen className="size-4" />} collapsible defaultOpen={false}>
+        <div className="space-y-3">
+          {groups.map((group, groupIndex) => {
+            const pages = Array.isArray(group.pages) ? group.pages.map(asRecord).filter(isPresent) : []
+            if (pages.length === 0) return null
+            const label = typeof group.label === "string" ? group.label : `分组 ${groupIndex + 1}`
+            return (
+              <div key={String(group.key ?? groupIndex)} className="space-y-1.5">
+                <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                  {label}（{pages.length}）
+                </p>
+                {pages.slice(0, 8).map((page, index) => {
+                  const pageKey = typeof page.pageKey === "string" ? page.pageKey : ""
+                  const kind = typeof page.kind === "string" ? page.kind : ""
+                  return (
+                    <WikiPageHitRow
+                      key={pageKey || index}
+                      pageKey={pageKey}
+                      title={typeof page.title === "string" ? page.title : pageKey}
+                      summary={typeof page.summary === "string" ? page.summary : undefined}
+                      kindLabel={WIKI_KIND_LABELS[kind] ?? kind}
+                    />
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
+      </ToolStatusCard>
+    )
+  },
+})
+
+export const SearchWikiPagesToolUI = makeAssistantToolUI({
+  toolName: "search_wiki_pages",
+  render: ({ result, status }) => {
+    const payload = asRecord(result)
+    const rows = Array.isArray(payload?.items) ? payload.items.map(asRecord).filter(isPresent) : []
+    const queries = Array.isArray(payload?.query)
+      ? payload.query.filter((q): q is string => typeof q === "string")
+      : []
+    if (rows.length === 0) {
+      return (
+        <ToolStatusCard
+          title={`检索 Wiki${queries.length > 0 ? `：${queries.join(" / ")}` : ""}`}
+          status={status}
+          icon={<Search className="size-4" />}
+        >
+          {typeof payload?.emptyMessage === "string" ? (
+            <p className="text-xs text-muted-foreground">{payload.emptyMessage}</p>
+          ) : null}
+        </ToolStatusCard>
+      )
+    }
+    return (
+      <ToolStatusCard
+        title={`检索 Wiki（${rows.length}${queries.length > 0 ? `：${queries.join(" / ")}` : ""}）`}
+        status={status}
+        icon={<Search className="size-4" />}
+        collapsible
+        defaultOpen={false}
+      >
+        <div className="space-y-1.5">
+          {rows.slice(0, 10).map((row, index) => {
+            const pageKey = typeof row.pageKey === "string" ? row.pageKey : ""
+            const kind = typeof row.kind === "string" ? row.kind : ""
+            const snippet = typeof row.snippet === "string" && row.snippet ? row.snippet : undefined
+            const summary = typeof row.summary === "string" && !snippet ? row.summary : undefined
+            return (
+              <WikiPageHitRow
+                key={pageKey || index}
+                pageKey={pageKey}
+                title={typeof row.title === "string" ? row.title : pageKey}
+                summary={snippet ?? summary}
+                kindLabel={WIKI_KIND_LABELS[kind] ?? kind}
+              />
+            )
+          })}
+        </div>
+      </ToolStatusCard>
+    )
+  },
+})

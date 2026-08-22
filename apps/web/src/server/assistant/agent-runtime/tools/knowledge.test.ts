@@ -17,7 +17,7 @@ vi.mock("@/server/kb/wiki-agent-logic", () => ({
 }))
 
 import type { ToolExecutionContext } from "../types"
-import { knowledgeTools } from "./knowledge"
+import { knowledgeTools, wikiQaTools } from "./knowledge"
 
 function context(complexity: "simple" | "complex" = "simple"): ToolExecutionContext {
     return {
@@ -214,5 +214,76 @@ describe("knowledge.read 的媒体透传", () => {
         const result = readTool!.normalize!(withoutMedia, { nodeKey: "a1-3" })
         expect(result.evidence?.[0]?.content ?? "").not.toContain("可引用的媒体")
         expect((result.data as { media?: unknown }).media).toBeUndefined()
+    })
+})
+
+/**
+ * "读全文"就必须是全文。
+ *
+ * 工具说明与 Wiki 问答提示词都写着 read_wiki_page_detail 读全文，summary 里也报了真实字数。
+ * 若正文在归一化时被悄悄裁到 4,000 字，模型会发现字数对不上，判定"Wiki 页面内容被截断了"，
+ * 转而去读源文档——多烧两次工具调用，答案还更粗。
+ */
+describe("Wiki 全文读取不裁剪", () => {
+    /** 旧实现在这里切一刀 */
+    const LEGACY_EVIDENCE_MAX_CHARS = 4_000
+    const longBody = "Wiki 正文段落。".repeat(800)
+
+    it("read_wiki_page_detail 把整页正文交给证据，并标记为全文读取", () => {
+        const tool = wikiQaTools.find((item) => item.id === "knowledge.read_wiki_page_detail")!
+        const result = tool.normalize!({
+            pageKey: "source-8",
+            title: "Fastfetch 使用说明文档",
+            kind: "source",
+            contentMd: `${longBody}\n\n## 来源\n- 源文档 ID：8`,
+            links: [],
+            inLinks: [],
+            sourceArticles: [],
+        }, { pageKey: "source-8" })
+
+        const evidence = result.evidence?.[0]
+        expect(evidence?.content.length).toBeGreaterThan(LEGACY_EVIDENCE_MAX_CHARS)
+        expect(evidence?.fullRead).toBe(true)
+        // 尾部的来源段最容易被旧上限切掉
+        expect(evidence?.content).toContain("源文档 ID：8")
+        expect(result.summary).toContain(String(`${longBody}\n\n## 来源\n- 源文档 ID：8`.length))
+    })
+
+    it("read_knowledge_node 传 pageKey 读到的整页同样不裁剪", () => {
+        const tool = knowledgeTools.find((item) => item.id === "knowledge.read")!
+        const result = tool.normalize!({
+            kind: "wiki_page",
+            pageKind: "source",
+            title: "Fastfetch 使用说明文档",
+            pageKey: "source-8",
+            knowledgeBaseId: "1",
+            contentMd: longBody,
+        }, { pageKey: "source-8" })
+
+        const evidence = result.evidence?.[0]
+        expect(evidence?.content.length).toBeGreaterThan(LEGACY_EVIDENCE_MAX_CHARS)
+        expect(evidence?.fullRead).toBe(true)
+        expect(evidence?.content).toContain("[Wiki 页面正文]")
+        // 普通问答也要能内联 [[pageKey|标题]]：证据必须带 pageKey（渲染「Wiki 引用」提示），
+        // 且 sourceId 与 read_wiki_page_detail 同口径，两种读取方式命中同一页面时可去重合并
+        expect(evidence?.metadata?.pageKey).toBe("source-8")
+        expect(evidence?.sourceId).toBe("source-8")
+    })
+
+    it("章节深读仍按片段上限裁剪，不受影响", () => {
+        const tool = knowledgeTools.find((item) => item.id === "knowledge.read")!
+        const result = tool.normalize!({
+            kind: "tree_node",
+            title: "安装与配置",
+            nodeKey: "a1-3",
+            articleId: "1",
+            knowledgeBaseId: "1",
+            contentFrom: "node",
+            contentMd: longBody,
+        }, { nodeKey: "a1-3" })
+
+        const evidence = result.evidence?.[0]
+        expect(evidence?.content.length).toBe(LEGACY_EVIDENCE_MAX_CHARS)
+        expect(evidence?.fullRead).toBeUndefined()
     })
 })

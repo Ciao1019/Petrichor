@@ -10,6 +10,7 @@ export const CitationTypeSchema = z.enum([
   "webpage",
   "document",
   "article",
+  "wiki",
   "api",
   "code",
   "other",
@@ -21,13 +22,19 @@ export const CitationVariantSchema = z.enum(["default", "inline", "stacked"]);
 
 export type CitationVariant = z.infer<typeof CitationVariantSchema>;
 
-// 允许绝对 URL 或站内根路径 (/dashboard/...)
+/** Wiki 页面内链锚点（问答弹窗打开），如 #wiki-page=concept-rag。 */
+export function isWikiPageCitationHref(href: string): boolean {
+  return href.startsWith("#wiki-page=");
+}
+
+// 允许绝对 URL、站内根路径 (/dashboard/...) 或 Wiki 页面锚点 (#wiki-page=...)
 const CitationHrefSchema = z
   .string()
   .min(1)
   .refine((value) => {
     const trimmed = value.trim();
     if (!trimmed) return false;
+    if (isWikiPageCitationHref(trimmed)) return true;
     if (trimmed.startsWith("/") && !trimmed.startsWith("//")) return true;
     try {
       const url = new URL(trimmed);
@@ -35,7 +42,7 @@ const CitationHrefSchema = z
     } catch {
       return false;
     }
-  }, "href must be an http(s) URL or a root-relative path");
+  }, "href must be an http(s) URL, a root-relative path, or a #wiki-page anchor");
 
 export const SerializableCitationSchema = z.object({
   id: ToolUIIdSchema,

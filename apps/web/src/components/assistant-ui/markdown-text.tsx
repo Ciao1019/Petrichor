@@ -21,13 +21,17 @@ import {
   SignedMarkdownFile,
   SignedMarkdownVideo,
 } from "@/components/assistant-ui/signed-markdown-media";
+import { WikiScribbleAnchor, readWikiPageKeyFromHref } from "@/components/markdown/wiki-link-context";
+import { remarkWikiLinks } from "@/components/markdown/remark-wiki-links";
 import { cn } from "@/lib/utils";
 
 // 把 <video>/<audio>/<file> 标签从原始 HTML 节点转成可渲染元素（无需 allowHtml）。
+// remarkWikiLinks 把回答里的 [[pageKey|标题]] 转成可点击的 Wiki 内链。
 const remarkPlugins: ComponentProps<typeof MarkdownTextPrimitive>["remarkPlugins"] = [
   remarkGfm,
   [remarkVideo, { videoTags: ["video", "audio", "file"] }],
   remarkStripDanglingMediaTags,
+  remarkWikiLinks,
 ];
 
 // video/audio 是标准标签；file 为自定义标签（remarkVideo 透传 hName），
@@ -159,15 +163,22 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  a: ({ className, ...props }) => (
-    <a
-      className={cn(
-        "aui-md-a text-primary underline underline-offset-2 hover:text-primary/80",
-        className,
-      )}
-      {...props}
-    />
-  ),
+  a: ({ className, href, ...props }) => {
+    // Wiki 内链：手绘波浪线 + 点击打开弹窗（由 WikiLinkClickProvider 决定行为）
+    if (readWikiPageKeyFromHref(href)) {
+      return <WikiScribbleAnchor className={cn("aui-md-a", className)} href={href} {...props} />
+    }
+    return (
+      <a
+        className={cn(
+          "aui-md-a text-primary underline underline-offset-2 hover:text-primary/80",
+          className,
+        )}
+        href={href}
+        {...props}
+      />
+    );
+  },
   img: SignedMarkdownImage,
   ...mediaComponents,
   blockquote: ({ className, ...props }) => (

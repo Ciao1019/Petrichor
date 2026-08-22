@@ -9,6 +9,7 @@ import {
   Newspaper,
   Database,
   File,
+  BookOpen,
   ExternalLink,
 } from "@/components/iconimate";
 import { cn, Popover, PopoverContent, PopoverTrigger } from "./_adapter";
@@ -27,6 +28,7 @@ const TYPE_ICONS: Record<CitationType, LucideIcon> = {
   webpage: Globe,
   document: FileText,
   article: Newspaper,
+  wiki: BookOpen,
   api: Database,
   code: Code2,
   other: File,

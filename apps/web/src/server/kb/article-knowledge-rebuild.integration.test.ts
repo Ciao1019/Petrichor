@@ -106,6 +106,25 @@ describe.runIf(hasSqlite)("单篇文章知识重建", () => {
         expect(chunks[0]).toMatchObject({ contentMd: "新切片" })
         expect(chunks[0]?.id).not.toBe(oldChunk?.id)
 
+        const retrievalIndexes = await db
+            .select({
+                chunkId: schema.knowledgeBaseArticleChunkIndexes.chunkId,
+                sourceType: schema.knowledgeBaseArticleChunkIndexes.sourceType,
+                content: schema.knowledgeBaseArticleChunkIndexes.content,
+            })
+            .from(schema.knowledgeBaseArticleChunkIndexes)
+            .where(eq(schema.knowledgeBaseArticleChunkIndexes.articleId, articleId))
+        expect(retrievalIndexes).toHaveLength(4)
+        expect(retrievalIndexes.filter((item) => item.sourceType === "chunk")).toHaveLength(1)
+        expect(retrievalIndexes.filter((item) => item.sourceType === "question")).toHaveLength(3)
+        expect(retrievalIndexes.every((item) => item.chunkId === chunks[0]?.id)).toBe(true)
+        expect(retrievalIndexes.map((item) => item.content)).toEqual(expect.arrayContaining([
+            "新切片",
+            "问题一",
+            "问题二",
+            "问题三",
+        ]))
+
         const deletedPageIds = [oldSourcePageId, oldConceptPage?.id].filter((id): id is number => id != null)
         const deletedPages = await db
             .select({ id: schema.knowledgeBaseWikiPages.id })
