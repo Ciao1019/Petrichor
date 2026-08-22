@@ -47,8 +47,8 @@ describe("知识库章节溯源", () => {
         expect(link.getAttribute("href")).toContain("citeChunkId=article-12-node-3")
     })
 
-    it("显式公开 URL 优先于后台章节链接", () => {
-        const href = evidenceHref({ ...chapterEvidence, url: "/p/public-share-code" })
-        expect(href).toBe("/p/public-share-code")
+    it("有文章定位信息时优先使用章节链接，而不是笼统 URL", () => {
+        const href = evidenceHref({ ...chapterEvidence, url: "https://example.com/article" })
+        expect(href).toMatch(/^\/dashboard\/knowledge\/5\/articles\/12\?/)
     })
 })

@@ -183,9 +183,6 @@ function EvidenceSourceIcon({ source }: { source: EvidenceViewModel["source"] })
 }
 
 export function evidenceHref(evidence: EvidenceViewModel): string | null {
-    // 显式 url 优先：公开问答的证据指向文章公开页 /p/<shareCode>，
-    // 不能按 kbId/articleId 拼后台路由
-    if (evidence.url) return evidence.url
     if (evidence.knowledgeBaseId && evidence.articleId) {
         const params = new URLSearchParams()
         params.set("citeIndex", String(evidence.citationIndex))
@@ -202,5 +199,6 @@ export function evidenceHref(evidence: EvidenceViewModel): string | null {
         if (terms.length > 0) params.set("citeTerms", terms.join("\n"))
         return `${knowledgeBaseArticlePath(evidence.knowledgeBaseId, evidence.articleId)}?${params.toString()}`
     }
+    if (evidence.url) return evidence.url
     return null
 }

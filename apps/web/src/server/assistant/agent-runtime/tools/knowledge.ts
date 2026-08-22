@@ -56,50 +56,6 @@ const readManySchema = z.object({
     nodes: z.array(readSchema).min(1).max(4),
 })
 
-export function normalizeKnowledgeSearch(output: unknown): ToolNormalizerResult {
-    const record = output as {
-        mode?: string
-        hits?: Array<Record<string, unknown>>
-        diagnostics?: {
-            vectorKeys?: unknown[]
-            bm25Keys?: unknown[]
-            treeKeys?: unknown[]
-            treeAttempted?: boolean
-            rerankStrategy?: string
-            degraded?: Record<string, string>
-        }
-    }
-    const hits = record.hits ?? []
-    if (hits.length === 0) {
-        return {
-            summary: "知识库中未检索到相关内容",
-            data: { hits: [] },
-            suggestedActions: ["rewrite_query", "load_skill:research"],
-        }
-    }
-    return {
-        // 找到候选就是进展：正文要靠 knowledge.read 才有证据（§31）
-        progress: true,
-        summary: `找到 ${hits.length} 个相关章节（${retrievalDisplaySummary(record.diagnostics)}）`,
-        // 只回传定位信息，正文交给 read（§30）
-        data: {
-            mode: record.mode,
-            hits: hits.map((hit) => ({
-                nodeKey: hit.nodeKey,
-                chunkId: hit.chunkId,
-                pageKey: hit.pageKey,
-                articleId: hit.articleId,
-                knowledgeBaseId: hit.knowledgeBaseId,
-                title: hit.title,
-                path: hit.path,
-                summary: hit.summary,
-                recallSources: hit.recallSources,
-            })),
-        },
-        suggestedActions: ["knowledge.read_many", "knowledge.read"],
-    }
-}
-
 function focusKnowledgeBaseId(focus: unknown): number | null {
     const raw = (focus as { knowledgeBaseId?: string | null } | null)?.knowledgeBaseId
     if (raw == null) return null
@@ -155,7 +111,7 @@ function renderMediaManifest(media: NodeMediaReference[]): string {
     return `[本章节可引用的媒体]\n${lines.join("\n")}\n\n`
 }
 
-export function normalizeKnowledgeRead(output: unknown, input: unknown): ToolNormalizerResult {
+function normalizeKnowledgeRead(output: unknown, input: unknown): ToolNormalizerResult {
     const record = output as {
         kind?: string
         title?: string
@@ -234,7 +190,7 @@ export function normalizeKnowledgeRead(output: unknown, input: unknown): ToolNor
     }
 }
 
-export function retrievalDisplaySummary(diagnostics: {
+function retrievalDisplaySummary(diagnostics: {
     vectorKeys?: unknown[]
     bm25Keys?: unknown[]
     chunkVectorKeys?: unknown[]
@@ -269,7 +225,7 @@ export function retrievalDisplaySummary(diagnostics: {
     return [methodLabel, tree, rerank, degraded].filter(Boolean).join("；")
 }
 
-export type KnowledgeReadBatchOutput = {
+type KnowledgeReadBatchOutput = {
     items: Array<{ requested?: unknown; output?: unknown; error?: string }>
     requestedCount: number
     skippedCount: number
@@ -297,7 +253,7 @@ async function executeKnowledgeReadBatch(
     }
 }
 
-export function normalizeKnowledgeReadBatch(output: unknown): ToolNormalizerResult {
+function normalizeKnowledgeReadBatch(output: unknown): ToolNormalizerResult {
     const record = output as KnowledgeReadBatchOutput
     const normalized = (record.items ?? [])
         .filter((item) => item.output != null)
@@ -484,7 +440,49 @@ export const knowledgeTools: AgentToolDefinition[] = [
                 diagnostics: result.diagnostics,
             }
         },
-        normalize: normalizeKnowledgeSearch,
+        normalize: (output): ToolNormalizerResult => {
+            const record = output as {
+                mode?: string
+                hits?: Array<Record<string, unknown>>
+                diagnostics?: {
+                    vectorKeys?: unknown[]
+                    bm25Keys?: unknown[]
+                    treeKeys?: unknown[]
+                    treeAttempted?: boolean
+                    rerankStrategy?: string
+                    degraded?: Record<string, string>
+                }
+            }
+            const hits = record.hits ?? []
+            if (hits.length === 0) {
+                return {
+                    summary: "知识库中未检索到相关内容",
+                    data: { hits: [] },
+                    suggestedActions: ["rewrite_query", "load_skill:research"],
+                }
+            }
+            return {
+                // 找到候选就是进展：正文要靠 knowledge.read 才有证据（§31）
+                progress: true,
+                summary: `找到 ${hits.length} 个相关章节（${retrievalDisplaySummary(record.diagnostics)}）`,
+                // 只回传定位信息，正文交给 read（§30）
+                data: {
+                    mode: record.mode,
+                    hits: hits.map((hit) => ({
+                        nodeKey: hit.nodeKey,
+                        chunkId: hit.chunkId,
+                        pageKey: hit.pageKey,
+                        articleId: hit.articleId,
+                        knowledgeBaseId: hit.knowledgeBaseId,
+                        title: hit.title,
+                        path: hit.path,
+                        summary: hit.summary,
+                        recallSources: hit.recallSources,
+                    })),
+                },
+                suggestedActions: ["knowledge.read_many", "knowledge.read"],
+            }
+        },
     }),
 
     defineTool({
@@ -672,7 +670,38 @@ export const wikiQaTools: AgentToolDefinition[] = [
                 emptyMessage: overview.total === 0 ? "当前范围内还没有可用的 Wiki 页面" : undefined,
             }
         },
-        normalize: normalizeWikiOverview,
+        normalize: (output): ToolNormalizerResult => {
+            const record = output as {
+                groups?: Array<{ key?: string; label?: string; pages?: Array<Record<string, unknown>> }>
+                total?: number
+                emptyMessage?: string
+            }
+            const total = record.total ?? 0
+            if (total === 0) {
+                return {
+                    summary: record.emptyMessage ?? "没有可用的 Wiki 页面",
+                    data: { total: 0 },
+                }
+            }
+            return {
+                progress: true,
+                summary: `Wiki 共 ${total} 个页面：${(record.groups ?? [])
+                    .map((group) => `${group.label ?? group.key}${group.pages?.length ?? 0}`)
+                    .join("、")}`,
+                data: {
+                    total,
+                    pages: (record.groups ?? []).flatMap((group) =>
+                        (group.pages ?? []).map((page) => ({
+                            pageKey: page.pageKey,
+                            title: page.title,
+                            kind: page.kind,
+                            summary: page.summary,
+                        })),
+                    ).slice(0, 60),
+                },
+                suggestedActions: ["knowledge.search_wiki_pages", "knowledge.read_wiki_page_detail"],
+            }
+        },
     }),
 
     defineTool({
@@ -697,7 +726,32 @@ export const wikiQaTools: AgentToolDefinition[] = [
                 knowledgeBaseId: input.knowledgeBaseId ?? focusKnowledgeBaseId(ctx.focus),
             })
         },
-        normalize: normalizeWikiSearchPages,
+        normalize: (output): ToolNormalizerResult => {
+            const record = output as { query?: string[]; items?: Array<Record<string, unknown>>; emptyMessage?: string }
+            const items = record.items ?? []
+            if (items.length === 0) {
+                return {
+                    summary: record.emptyMessage ?? "没有匹配的 Wiki 页面",
+                    data: { items: [] },
+                    suggestedActions: ["knowledge.wiki_overview", "rewrite_query"],
+                }
+            }
+            return {
+                progress: true,
+                summary: `命中 ${items.length} 个 Wiki 页面（关键词：${(record.query ?? []).join(" / ")}）`,
+                data: {
+                    items: items.map((item) => ({
+                        pageKey: item.pageKey,
+                        title: item.title,
+                        kind: item.kind,
+                        aliases: item.aliases,
+                        summary: item.summary,
+                        snippet: item.snippet,
+                    })),
+                },
+                suggestedActions: ["knowledge.read_wiki_page_detail"],
+            }
+        },
     }),
 
     defineTool({
@@ -727,126 +781,64 @@ export const wikiQaTools: AgentToolDefinition[] = [
                 knowledgeBaseId: input.knowledgeBaseId ?? focusKnowledgeBaseId(ctx.focus),
             })
         },
-        normalize: normalizeWikiPageDetail,
+        normalize: (output): ToolNormalizerResult => {
+            const record = output as {
+                pageKey?: string
+                title?: string
+                kind?: string
+                contentMd?: string
+                links?: Array<Record<string, unknown>>
+                inLinks?: Array<Record<string, unknown>>
+                sourceArticles?: Array<Record<string, unknown>>
+            }
+            const title = record.title ?? record.pageKey ?? "Wiki 页面"
+            const content = (record.contentMd ?? "").trim()
+            if (!content) {
+                return {
+                    summary: `「${title}」没有可引用的正文内容`,
+                    data: { pageKey: record.pageKey, title },
+                }
+            }
+            const neighborCount = (record.links?.length ?? 0) + (record.inLinks?.length ?? 0)
+            // 全文读取：正文完整进证据，不在这里裁。工具说明和提示词都写着"读全文"，
+            // 截一刀会让模型看到 summary 的字数与正文对不上，判定页面被截断并绕去读源文档。
+            // 体积由 mastra-bridge（段内回传）与 context-manager（evidence budget）统一兜底。
+            const evidenceContent = `[Wiki 页面 ${title}]\n\n${content}`
+            return {
+                progress: true,
+                summary: `已读取 Wiki 页面「${title}」（${content.length} 字${neighborCount > 0 ? `，${neighborCount} 个关联页面` : ""}），回答时请用 [[${record.pageKey}|${title}]] 引用`,
+                data: {
+                    pageKey: record.pageKey,
+                    title,
+                    kind: record.kind,
+                    excerpt: content.slice(0, 400),
+                    links: (record.links ?? []).slice(0, 12).map((link) => ({
+                        pageKey: link.pageKey,
+                        title: link.title,
+                        summary: link.summary,
+                    })),
+                    inLinks: (record.inLinks ?? []).slice(0, 12).map((link) => ({
+                        pageKey: link.pageKey,
+                        title: link.title,
+                        summary: link.summary,
+                    })),
+                    sourceArticles: record.sourceArticles ?? [],
+                },
+                evidence: [{
+                    source: "wiki",
+                    title,
+                    content: evidenceContent,
+                    fullRead: true,
+                    ...(record.pageKey ? { sourceId: record.pageKey } : {}),
+                    relevance: 0.85,
+                    confidence: 0.85,
+                    metadata: {
+                        ...(record.pageKey ? { pageKey: record.pageKey } : {}),
+                        kind: record.kind,
+                    },
+                }],
+                suggestedActions: ["knowledge.read_wiki_page_detail"],
+            }
+        },
     }),
 ]
-
-export function normalizeWikiOverview(output: unknown): ToolNormalizerResult {
-    const record = output as {
-        groups?: Array<{ key?: string; label?: string; pages?: Array<Record<string, unknown>> }>
-        total?: number
-        emptyMessage?: string
-    }
-    const total = record.total ?? 0
-    if (total === 0) {
-        return {
-            summary: record.emptyMessage ?? "没有可用的 Wiki 页面",
-            data: { total: 0 },
-        }
-    }
-    return {
-        progress: true,
-        summary: `Wiki 共 ${total} 个页面：${(record.groups ?? [])
-            .map((group) => `${group.label ?? group.key}${group.pages?.length ?? 0}`)
-            .join("、")}`,
-        data: {
-            total,
-            pages: (record.groups ?? []).flatMap((group) =>
-                (group.pages ?? []).map((page) => ({
-                    pageKey: page.pageKey,
-                    title: page.title,
-                    kind: page.kind,
-                    summary: page.summary,
-                })),
-            ).slice(0, 60),
-        },
-        suggestedActions: ["knowledge.search_wiki_pages", "knowledge.read_wiki_page_detail"],
-    }
-}
-
-export function normalizeWikiSearchPages(output: unknown): ToolNormalizerResult {
-    const record = output as { query?: string[]; items?: Array<Record<string, unknown>>; emptyMessage?: string }
-    const items = record.items ?? []
-    if (items.length === 0) {
-        return {
-            summary: record.emptyMessage ?? "没有匹配的 Wiki 页面",
-            data: { items: [] },
-            suggestedActions: ["knowledge.wiki_overview", "rewrite_query"],
-        }
-    }
-    return {
-        progress: true,
-        summary: `命中 ${items.length} 个 Wiki 页面（关键词：${(record.query ?? []).join(" / ")}）`,
-        data: {
-            items: items.map((item) => ({
-                pageKey: item.pageKey,
-                title: item.title,
-                kind: item.kind,
-                aliases: item.aliases,
-                summary: item.summary,
-                snippet: item.snippet,
-            })),
-        },
-        suggestedActions: ["knowledge.read_wiki_page_detail"],
-    }
-}
-
-export function normalizeWikiPageDetail(output: unknown): ToolNormalizerResult {
-    const record = output as {
-        pageKey?: string
-        title?: string
-        kind?: string
-        contentMd?: string
-        links?: Array<Record<string, unknown>>
-        inLinks?: Array<Record<string, unknown>>
-        sourceArticles?: Array<Record<string, unknown>>
-    }
-    const title = record.title ?? record.pageKey ?? "Wiki 页面"
-    const content = (record.contentMd ?? "").trim()
-    if (!content) {
-        return {
-            summary: `「${title}」没有可引用的正文内容`,
-            data: { pageKey: record.pageKey, title },
-        }
-    }
-    const neighborCount = (record.links?.length ?? 0) + (record.inLinks?.length ?? 0)
-    // 全文读取：正文完整进证据，不在这里裁。工具说明和提示词都写着"读全文"，
-    // 截一刀会让模型看到 summary 的字数与正文对不上，判定页面被截断并绕去读源文档。
-    // 体积由 mastra-bridge（段内回传）与 context-manager（evidence budget）统一兜底。
-    const evidenceContent = `[Wiki 页面 ${title}]\n\n${content}`
-    return {
-        progress: true,
-        summary: `已读取 Wiki 页面「${title}」（${content.length} 字${neighborCount > 0 ? `，${neighborCount} 个关联页面` : ""}），回答时请用 [[${record.pageKey}|${title}]] 引用`,
-        data: {
-            pageKey: record.pageKey,
-            title,
-            kind: record.kind,
-            excerpt: content.slice(0, 400),
-            links: (record.links ?? []).slice(0, 12).map((link) => ({
-                pageKey: link.pageKey,
-                title: link.title,
-                summary: link.summary,
-            })),
-            inLinks: (record.inLinks ?? []).slice(0, 12).map((link) => ({
-                pageKey: link.pageKey,
-                title: link.title,
-                summary: link.summary,
-            })),
-            sourceArticles: record.sourceArticles ?? [],
-        },
-        evidence: [{
-            source: "wiki",
-            title,
-            content: evidenceContent,
-            fullRead: true,
-            ...(record.pageKey ? { sourceId: record.pageKey } : {}),
-            relevance: 0.85,
-            confidence: 0.85,
-            metadata: {
-                ...(record.pageKey ? { pageKey: record.pageKey } : {}),
-                kind: record.kind,
-            },
-        }],
-        suggestedActions: ["knowledge.read_wiki_page_detail"],
-    }
-}
