@@ -5,15 +5,19 @@ import { useMessagePartText } from "@assistant-ui/react"
 import { Markdown, remarkVideo, ThemeProvider, type MarkdownProps } from "@lobehub/ui"
 import { ThinkingOrb, type OrbState } from "thinking-orbs"
 
-import { wikiScribbleStyle } from "@/components/markdown/wiki-scribble"
 import { useTheme } from "@/components/theme-provider"
 // Wiki 内链的 context / anchor 与 assistant-ui 渲染管线共用一份实现
 export {
   readWikiPageKeyFromHref,
   useOpenWikiPage,
   WikiLinkClickProvider,
+  type WikiPageDetailLoader,
 } from "@/components/markdown/wiki-link-context"
-import { readWikiPageKeyFromHref, useOpenWikiPage } from "@/components/markdown/wiki-link-context"
+import {
+  readWikiPageKeyFromHref,
+  useOpenWikiPage,
+  WikiPreviewLink,
+} from "@/components/markdown/wiki-link-context"
 import { convertAnswerWikiLinks } from "./knowledge-wiki-markdown"
 import { useGentleReveal } from "./use-gentle-reveal"
 import { LIVE_MARKDOWN_STREAM_PROPS, useStreamPacer } from "./use-stream-pacer"
@@ -35,13 +39,13 @@ import {
 
 /**
  * 回答正文里的 Wiki 内链：去系统下划线，描一道按 href 稳定取色的
- * 手绘马克笔波浪（与知识库「知识关联」视觉一致），点击交给弹窗。
+ * 手绘马克笔波浪（与知识库「知识关联」视觉一致），悬停出预览小卡，
+ * 点击交给弹窗。
  */
 function QaMarkdownAnchor(props: React.ComponentProps<"a"> & { node?: unknown }) {
   const { href, children, style, node, ...rest } = props
   void node
   const pageKey = readWikiPageKeyFromHref(href)
-  const onOpenWikiPage = useOpenWikiPage()
   if (!pageKey) {
     return (
       <a href={href} style={style} {...rest}>
@@ -50,19 +54,15 @@ function QaMarkdownAnchor(props: React.ComponentProps<"a"> & { node?: unknown })
     )
   }
   return (
-    <a
+    <WikiPreviewLink
+      pageKey={pageKey}
       href={href}
       className="cursor-pointer font-medium underline-offset-4 hover:opacity-80"
-      title={onOpenWikiPage ? "点击查看 Wiki 页面" : undefined}
-      onClick={(event) => {
-        event.preventDefault()
-        onOpenWikiPage?.(pageKey)
-      }}
-      style={{ ...wikiScribbleStyle(pageKey), ...style }}
+      style={style}
       {...rest}
     >
       {children}
-    </a>
+    </WikiPreviewLink>
   )
 }
 

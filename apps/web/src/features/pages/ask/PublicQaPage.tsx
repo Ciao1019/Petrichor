@@ -20,13 +20,17 @@ import { ToolFallback } from "@/components/assistant-ui/tool-fallback"
 import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import { QaMarkdownScope, QaMarkdownText, QaPreparing, WikiLinkClickProvider } from "@/features/pages/knowledge/QaMarkdown"
 import { SignedUrlPublicAccessProvider } from "@/hooks/use-signed-url"
-import { publicSiteAppearanceApi } from "@/lib/api"
+import { publicSiteAppearanceApi, publicWikiApi } from "@/lib/api"
 import { PublicQaToolUIs } from "./public-qa-tool-ui"
 import { WikiPagePreviewDialog } from "@/components/knowledge/WikiPagePreviewDialog"
 
 const VISITOR_ID_STORAGE_KEY = "petrichor.public-qa.visitor-id"
 const VISITOR_ID_HEADER = "X-Petrichor-Visitor-Id"
 const QA_MODE_HEADER = "X-Petrichor-Qa-Mode"
+
+/** 公开问答的 Wiki 悬停预览与弹窗都走公开接口（模块级常量保证 loader 引用稳定）。 */
+const loadPublicWikiDetail = (pageKey: string) =>
+  publicWikiApi.detail(pageKey).then((res) => res.data)
 
 type QaMode = "normal" | "wiki"
 
@@ -178,7 +182,10 @@ function PublicQaChat() {
     <AssistantRuntimeProvider runtime={runtime}>
       {/* publicAccess：未登录访客的媒体走免鉴权的公开预签名接口，否则图片会卡在「加载中」 */}
       <SignedUrlPublicAccessProvider publicAccess>
-        <WikiLinkClickProvider onOpenWikiPage={setWikiPreviewKey}>
+        <WikiLinkClickProvider
+          onOpenWikiPage={setWikiPreviewKey}
+          previewLoader={loadPublicWikiDetail}
+        >
           {/* 工具卡片也在 Provider 内，检索结果可以直接点开 Wiki 弹窗 */}
           <PublicQaToolUIs />
           <div className="flex h-full min-h-0 flex-col">

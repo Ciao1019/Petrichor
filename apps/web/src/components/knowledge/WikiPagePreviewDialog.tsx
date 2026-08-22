@@ -5,23 +5,22 @@ import { ArrowLeft, BookOpen, ExternalLink, FileText, Loader2 } from "@/componen
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ModalShell } from "@/components/petrichor-ui/modal-shell"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
 import { MarkdownPreview } from "@/components/markdown/MarkdownPreview"
 import { wikiScribbleStyle } from "@/components/markdown/wiki-scribble"
+// 类型中文名与悬停预览小卡共用同一份定义，避免两处文案漂移
+import { WIKI_KIND_LABEL } from "@/components/markdown/wiki-link-context"
 import { publicWikiApi, type PublicWikiPageDetail } from "@/lib/api"
 import {
   prepareWikiMarkdown,
   type WikiMarkdownLinkTarget,
 } from "@/features/pages/knowledge/knowledge-wiki-markdown"
-
-const KIND_LABEL: Record<string, string> = {
-  index: "Wiki 索引",
-  source: "文章摘要",
-  entity: "实体",
-  concept: "概念",
-  comparison: "对比",
-  answer: "答案",
-}
 
 /** 页面详情加载器：公开问答用 publicWikiApi，后台助手传 assistantWikiApi 的包装。 */
 export type WikiPageDetailLoader = (pageKey: string) => Promise<PublicWikiPageDetail>
@@ -32,8 +31,8 @@ function resolveApiErrorMessage(error: unknown, fallback: string) {
 }
 
 /**
- * Wiki 页面预览弹窗：点击回答里的波浪线 Wiki 引用时打开（公开问答与后台助手共用）。
- * 弹窗内可以继续点页面里的内链跳到关联页面，带返回栈；底部可跳来源文档。
+ * Wiki 页面预览抽屉：点击回答里的波浪线 Wiki 引用时从右侧滑出（公开问答与后台助手共用）。
+ * 抽屉内可以继续点页面里的内链跳到关联页面，带返回栈；底部可跳来源文档。
  */
 export function WikiPagePreviewDialog({
   pageKey,
@@ -136,23 +135,88 @@ export function WikiPagePreviewDialog({
   ), [detail, relatedTargets, resolvePageTitle])
 
   return (
-    <ModalShell
+    <Sheet
       open={Boolean(pageKey)}
       onOpenChange={(open) => {
         if (!open) onClose()
       }}
-      title={
-        <span className="flex min-w-0 items-center gap-2">
-          <BookOpen className="size-5 shrink-0 text-primary" />
-          <span className="truncate">{detail?.title ?? "Wiki 页面"}</span>
-        </span>
-      }
-      description={detail?.summary || undefined}
-      contentClassName="sm:max-w-2xl lg:max-w-3xl"
-      bodyClassName="bg-card"
-      footer={
-        detail && detail.sourceArticles.length > 0 ? (
-          <div className="flex w-full flex-wrap items-center justify-end gap-2">
+    >
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col gap-0 p-0 shadow-2xl shadow-black/25 sm:max-w-xl lg:max-w-2xl"
+      >
+        <SheetHeader className="shrink-0 space-y-1.5 border-b pr-12">
+          <SheetTitle className="flex min-w-0 items-center gap-2 text-lg leading-snug">
+            <BookOpen className="size-5 shrink-0 text-primary" />
+            <span className="truncate">{detail?.title ?? "Wiki 页面"}</span>
+          </SheetTitle>
+          <SheetDescription className="line-clamp-2">
+            {detail?.summary || "Wiki 页面预览"}
+          </SheetDescription>
+        </SheetHeader>
+
+        {/* 中段可滚动正文，头尾始终可见（与原弹窗三段式一致） */}
+        <div className="app-scrollbar min-h-0 flex-1 overflow-y-auto bg-card px-5 py-5">
+          {detail ? (
+            <div className="pb-1">
+              <div className="mb-4 flex min-h-8 flex-wrap items-center justify-between gap-2 border-b pb-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  {history.length > 0 ? (
+                    <Button variant="ghost" size="sm" className="-ml-2 h-8" onClick={goBack}>
+                      <ArrowLeft className="size-4" />
+                      返回
+                    </Button>
+                  ) : null}
+                  <Badge variant="secondary">{WIKI_KIND_LABEL[detail.kind] ?? detail.kind}</Badge>
+                  {detail.aliases.map((alias) => (
+                    <Badge key={alias} variant="outline">{alias}</Badge>
+                  ))}
+                </div>
+              </div>
+              <div onClick={handleMarkdownClick} className="text-[15px]">
+                <MarkdownPreview value={markdownValue} variant="typography" />
+              </div>
+              {(detail.links.length > 0 || detail.inLinks.length > 0) ? (
+                <section className="mt-8 space-y-4 border-t pt-4 text-sm">
+                  {[
+                    { label: "关联知识", items: detail.links },
+                    { label: "被引用", items: detail.inLinks },
+                  ].map((group) => group.items.length === 0 ? null : (
+                    <div key={group.label} className="flex flex-col gap-2 sm:flex-row sm:gap-6">
+                      <span className="shrink-0 pt-0.5 text-muted-foreground sm:w-16">{group.label}</span>
+                      <div className="flex min-w-0 flex-wrap gap-x-5 gap-y-2">
+                        {group.items.map((item) => (
+                          <button
+                            key={`${group.label}-${item.pageKey}`}
+                            type="button"
+                            title={item.summary || undefined}
+                            className="cursor-pointer text-left font-medium transition-colors hover:text-primary focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            style={wikiScribbleStyle(item.pageKey)}
+                            onClick={() => openInDialog(item.pageKey)}
+                          >
+                            {item.title}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </section>
+              ) : null}
+            </div>
+          ) : loading ? (
+            <div className="flex min-h-40 items-center justify-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              正在加载 Wiki 页面…
+            </div>
+          ) : error ? (
+            <div className="flex min-h-32 items-center justify-center px-6 text-center text-sm text-muted-foreground">
+              {error}
+            </div>
+          ) : null}
+        </div>
+
+        {detail && detail.sourceArticles.length > 0 ? (
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t p-4">
             <span className="mr-auto text-xs text-muted-foreground">来源文档</span>
             {detail.sourceArticles.map((article) => (
               <Button key={article.articleId} variant="outline" size="sm" asChild>
@@ -164,66 +228,9 @@ export function WikiPagePreviewDialog({
               </Button>
             ))}
           </div>
-        ) : undefined
-      }
-    >
-      {detail ? (
-        <div className="px-1 pb-2">
-          <div className="mb-4 flex min-h-8 flex-wrap items-center justify-between gap-2 border-b pb-3">
-            <div className="flex flex-wrap items-center gap-2">
-              {history.length > 0 ? (
-                <Button variant="ghost" size="sm" className="-ml-2 h-8" onClick={goBack}>
-                  <ArrowLeft className="size-4" />
-                  返回
-                </Button>
-              ) : null}
-              <Badge variant="secondary">{KIND_LABEL[detail.kind] ?? detail.kind}</Badge>
-              {detail.aliases.map((alias) => (
-                <Badge key={alias} variant="outline">{alias}</Badge>
-              ))}
-            </div>
-          </div>
-          <div onClick={handleMarkdownClick} className="text-[15px]">
-            <MarkdownPreview value={markdownValue} variant="typography" />
-          </div>
-          {(detail.links.length > 0 || detail.inLinks.length > 0) ? (
-            <section className="mt-8 space-y-4 border-t pt-4 text-sm">
-              {[
-                { label: "关联知识", items: detail.links },
-                { label: "被引用", items: detail.inLinks },
-              ].map((group) => group.items.length === 0 ? null : (
-                <div key={group.label} className="flex flex-col gap-2 sm:flex-row sm:gap-6">
-                  <span className="shrink-0 pt-0.5 text-muted-foreground sm:w-16">{group.label}</span>
-                  <div className="flex min-w-0 flex-wrap gap-x-5 gap-y-2">
-                    {group.items.map((item) => (
-                      <button
-                        key={`${group.label}-${item.pageKey}`}
-                        type="button"
-                        title={item.summary || undefined}
-                        className="cursor-pointer text-left font-medium transition-colors hover:text-primary focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        style={wikiScribbleStyle(item.pageKey)}
-                        onClick={() => openInDialog(item.pageKey)}
-                      >
-                        {item.title}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </section>
-          ) : null}
-        </div>
-      ) : loading ? (
-        <div className="flex min-h-40 items-center justify-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
-          正在加载 Wiki 页面…
-        </div>
-      ) : error ? (
-        <div className="flex min-h-32 items-center justify-center px-6 text-center text-sm text-muted-foreground">
-          {error}
-        </div>
-      ) : null}
-    </ModalShell>
+        ) : null}
+      </SheetContent>
+    </Sheet>
   )
 }
 

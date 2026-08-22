@@ -23,6 +23,8 @@ export type ModalShellProps = {
   contentClassName?: string
   /** 追加到可滚动正文容器上的类名。 */
   bodyClassName?: string
+  /** 追加到遮罩层上的类名，用于局部调整模糊/透明度等。 */
+  overlayClassName?: string
   /** 为 true 时忽略遮罩点击 / ESC 等关闭请求，只能由业务代码显式关闭。 */
   disableClose?: boolean
 }
@@ -40,6 +42,7 @@ export function ModalShell({
   footer,
   contentClassName,
   bodyClassName,
+  overlayClassName,
   disableClose = false,
 }: ModalShellProps) {
   const requestOpenChange = (nextOpen: boolean) => {
@@ -50,7 +53,10 @@ export function ModalShell({
 
   return (
     <Dialog open={open} onOpenChange={requestOpenChange}>
-      <DialogContent className={cn("flex max-h-[calc(100vh-2rem)] flex-col sm:max-w-lg", contentClassName)}>
+      <DialogContent
+        className={cn("flex max-h-[calc(100vh-2rem)] flex-col sm:max-w-lg", contentClassName)}
+        overlayClassName={overlayClassName}
+      >
         <DialogHeader className="shrink-0">
           <DialogTitle className="text-xl">{title}</DialogTitle>
           {description ? <DialogDescription className="text-base">{description}</DialogDescription> : null}
