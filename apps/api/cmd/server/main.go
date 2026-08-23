@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"petrichor/api/internal/aicore"
 	"petrichor/api/internal/config"
 	_ "petrichor/api/internal/db"
 	httpx "petrichor/api/internal/httpx"
@@ -14,6 +15,7 @@ import (
 
 func main() {
 	cfg := config.Get()
+	aicore.WireInvokers()
 	if !config.IsProduction() {
 		gin.SetMode(gin.DebugMode)
 	} else {
