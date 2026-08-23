@@ -1375,6 +1375,10 @@ export const knowledgeBaseWikiAgentApi = {
     forceRebuild?: boolean
     /** 完全重建：先清空该知识库现有 Wiki 再从零编译 */
     fullRebuild?: boolean
+    /** 仅清空不编译；配合逐篇编译的分批流程，完全重建时先调一次 */
+    purgeOnly?: boolean
+    /** 编译后是否补写目录树向量；逐篇批量调用时传 false，收尾调用默认 true */
+    embed?: boolean
   }) =>
     api.post<KnowledgeBaseWikiIngestResponse>("/kb/wiki/ingest", data),
   buildArticleKnowledge: (data: {

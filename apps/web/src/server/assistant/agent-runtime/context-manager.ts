@@ -188,6 +188,17 @@ export class ContextManager {
             sections.push(`## 最近执行观察\n${prefix}${kept.join("\n")}`)
         }
 
+        // 检索命中但未深读的 Wiki 页面单独列出：深读名额有限，命中的页面不一定被读过，
+        // 不给 pageKey 清单的话模型在正文提到这些主题时想链也无从下手。
+        const wikiTargets = collectWikiPageTargets(input.observations, input.evidence.all)
+        if (wikiTargets.length > 0) {
+            sections.push(
+                `## 检索命中的 Wiki 页面\n`
+                + `这些页面本轮检索命中但没有深读。正文明确提到其主题时，用 [[pageKey|标题]] 内联链接（格式已给全；只允许使用清单内的 pageKey）：\n`
+                + wikiTargets.map((target) => `- [[${target.pageKey}|${target.title}]]`).join("\n"),
+            )
+        }
+
         if (input.state.openQuestions.length > 0) {
             sections.push(`## 待解决问题\n${input.state.openQuestions.map((q) => `- ${q}`).join("\n")}`)
         }

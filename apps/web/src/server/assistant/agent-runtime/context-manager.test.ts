@@ -133,6 +133,38 @@ describe("ContextManager", () => {
         expect(wiki.instructions).toContain("不要输出 [n] 角标")
     })
 
+    it("检索命中但未深读的 Wiki 页面会进入主循环上下文供正文链接", () => {
+        const state = new AgentStateStore({ conversationId: "c", userId: "1", goal: "目标" })
+        const evidence = new EvidenceStore()
+        const observations = new ObservationStore()
+        observations.add(createObservation({
+            type: "knowledge_lookup",
+            source: "knowledge.lookup",
+            summary: "找到 2 个相关章节并深读 2 个",
+            data: {
+                hits: [
+                    { pageKey: "concept-neofetch", title: "Neofetch", summary: "前身工具" },
+                    { chunkId: "501", title: "分片一" },
+                ],
+            },
+        }))
+
+        const built = new ContextManager().build({
+            state: state.current,
+            observations,
+            evidence,
+            skillInstructions: [],
+            skillCatalog: [],
+            tools: [],
+            recentMessages: [],
+        })
+
+        expect(built.instructions).toContain("## 检索命中的 Wiki 页面")
+        expect(built.instructions).toContain("[[concept-neofetch|Neofetch]]")
+        // 没有分片候选时不出空段落
+        expect(built.instructions).not.toContain("[[501|")
+    })
+
     it("老观察被折叠而不是无限堆积", () => {
         const { built } = build({ observationCount: 200, budgetTotal: 4_000 })
         expect(built.dropped.observations).toBeGreaterThan(0)

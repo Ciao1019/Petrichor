@@ -82,6 +82,8 @@ export async function wikiIngest(request: NextRequest) {
             articleIds: input.articleIds,
             forceRebuild: input.forceRebuild,
             fullRebuild: input.fullRebuild,
+            purgeOnly: input.purgeOnly,
+            embed: input.embed,
         }))
     })
 }
