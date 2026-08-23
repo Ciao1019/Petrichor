@@ -7,6 +7,31 @@ const turbopackRoot = fs.existsSync(path.join(workspaceRoot, "pnpm-workspace.yam
     ? workspaceRoot
     : process.cwd()
 
+// ===== Go API 绞杀者分流（可选）=====
+// PETRICHOR_GO_API_URL 指向 Go 服务（如 http://127.0.0.1:8080）时，
+// 命中 PETRICHOR_GO_API_PREFIXES（逗号分隔，默认整个 /api）的请求被反代到 Go；
+// 未设置该环境变量时行为与原版完全一致。
+function buildGoApiRewrites() {
+    const goApiUrl = process.env.PETRICHOR_GO_API_URL?.trim().replace(/\/+$/, "")
+    if (!goApiUrl) {
+        return []
+    }
+    const rawPrefixes = (process.env.PETRICHOR_GO_API_PREFIXES ?? "")
+        .split(",")
+        .map((item) => item.trim().replace(/^\/+|\/+$/g, ""))
+        .filter(Boolean)
+    const prefixes = rawPrefixes.length > 0 ? rawPrefixes : ["api"]
+    return prefixes.map((prefix) => ({
+        source: `/${prefix}/:path*`,
+        destination: `${goApiUrl}/${prefix}/:path*`,
+    }))
+}
+
+const goApiRewrites = buildGoApiRewrites()
+if (goApiRewrites.length > 0) {
+    console.log(`[next-config] /api 分流到 Go 后端：${process.env.PETRICHOR_GO_API_URL}`)
+}
+
 const nextConfig: NextConfig = {
     reactStrictMode: true,
     // Docker 部署用：产出精简的 standalone server（含 node_modules 裁剪），
@@ -26,6 +51,14 @@ const nextConfig: NextConfig = {
     // @firecrawl/pdf-inspector：napi-rs 原生绑定，按平台走 optionalDependencies 解析。
     serverExternalPackages: ["better-sqlite3", "sharp", "@ast-grep/napi", "@firecrawl/pdf-inspector"],
     typedRoutes: false,
+    // Go 后端分流（见文件顶部 buildGoApiRewrites）；beforeFiles 保证先于路由匹配。
+    async rewrites() {
+        return {
+            beforeFiles: goApiRewrites,
+            afterFiles: [],
+            fallback: [],
+        }
+    },
     // Vercel 上偶发卡在 "Running TypeScript ..." 直到 45min 超时；类型检查交给 CI/本地 typecheck。
     typescript: {
         ignoreBuildErrors: true,
