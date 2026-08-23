@@ -102,10 +102,6 @@ export const wikiIngestInputSchema = knowledgeBaseIdInputSchema.extend({
     forceRebuild: z.boolean().optional().default(false),
     // 完全重建：清空该知识库下已有的 Wiki 页面/目录树后再从零编译
     fullRebuild: z.boolean().optional().default(false),
-    // 仅清空不编译：完全重建拆成「先清空、再由前端逐篇编译」两阶段时的第一步
-    purgeOnly: z.boolean().optional().default(false),
-    // 编译后是否补写目录树向量；逐篇批量调用时应关闭，收尾调用统一执行
-    embed: z.boolean().optional().default(true),
 })
 
 export const articleKnowledgeBuildInputSchema = knowledgeBaseIdInputSchema.extend({
@@ -688,39 +684,11 @@ export async function ingestKnowledgeBaseWiki(input: {
     forceRebuild?: boolean
     /** 完全重建：先清空该知识库下的全部 Wiki 数据，再从源文章从零编译。 */
     fullRebuild?: boolean
-    /** 仅清空：清掉全部 Wiki 数据并重建空索引页，不编译文章；供前端分批驱动使用。 */
-    purgeOnly?: boolean
-    /** 编译后是否 best-effort 补写目录树向量；前端逐篇批量调用时应关闭，收尾时统一执行。 */
-    embed?: boolean
 }) {
     const db = getDb()
     const kb = await assertKnowledgeBaseOwner(db, input.userId, input.knowledgeBaseId)
     if (input.fullRebuild && input.articleIds?.length) {
         throw badRequest("完全重建会清空整个知识库的 Wiki，不能同时指定文章范围")
-    }
-    if (input.purgeOnly && (input.articleIds?.length || input.forceRebuild)) {
-        throw badRequest("仅清空模式不能指定文章范围或强制重建")
-    }
-
-    // 仅清空分支：纯数据库操作，毫秒级返回；后续由前端逐篇文章触发编译。
-    // Serverless 函数有时长硬上限，整库一次性编译容易超时，这是分批方案的第一步。
-    if (input.purgeOnly) {
-        const summary = await purgeKnowledgeBaseWiki(db, input.userId, input.knowledgeBaseId)
-        const indexPage = await rebuildWikiIndex(db, input.userId, input.knowledgeBaseId, kb.name)
-        await logWikiEvent(db, input.userId, input.knowledgeBaseId, "REBUILD", indexPage.id, null, {
-            purgeOnly: true,
-            articleCount: 0,
-            pageCount: 1,
-            purged: summary,
-            warnings: [],
-        })
-        return {
-            knowledgeBaseId: String(input.knowledgeBaseId),
-            indexPage: toWikiPageResponse(indexPage),
-            pages: [],
-            purged: summary,
-            warnings: [] as string[],
-        }
     }
 
     // 完全重建先清空旧数据，再走与增量一致的编译流程；清空后所有缓存判定自然失效，
@@ -829,13 +797,10 @@ export async function ingestKnowledgeBaseWiki(input: {
         warnings,
     })
 
-    // best-effort：编译后自动为新章节节点补写向量（已配置向量模型时才执行），失败不影响编译结果。
-    // 前端逐篇批量编译时会传 embed=false 跳过，避免每次请求都全库扫描待向量化节点，收尾时统一执行一次。
-    if (input.embed !== false) {
-        await embedKnowledgeBaseTreeNodesBestEffort(input.userId, input.knowledgeBaseId).catch((error: unknown) => {
-            warnings.push(error instanceof Error ? `向量生成失败：${error.message}` : "向量生成失败")
-        })
-    }
+    // best-effort：编译后自动为新章节节点补写向量（已配置向量模型时才执行），失败不影响编译结果
+    await embedKnowledgeBaseTreeNodesBestEffort(input.userId, input.knowledgeBaseId).catch((error: unknown) => {
+        warnings.push(error instanceof Error ? `向量生成失败：${error.message}` : "向量生成失败")
+    })
 
     return {
         knowledgeBaseId: String(input.knowledgeBaseId),

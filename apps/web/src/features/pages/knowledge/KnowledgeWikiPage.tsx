@@ -19,11 +19,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { AppPagination } from "@/components/app-pagination"
 import { ModalShell } from "@/components/petrichor-ui/modal-shell"
 import {
-  knowledgeBaseNodeApi,
   knowledgeBaseQaApi,
   knowledgeBaseWikiAgentApi,
   type KnowledgeBaseQaSummary,
-  type KnowledgeBaseTreeNode,
   type KnowledgeBaseWikiDashboardResponse,
   type KnowledgeBaseWikiPageDetailResponse,
   type KnowledgeBaseWikiPageKind,
@@ -73,26 +71,6 @@ function kindLabel(kind: KnowledgeBaseWikiPageKind) {
 function articleIdFromPageKey(pageKey: string): string | null {
   const match = pageKey.match(/^source-(\d+)$/)
   return match ? match[1] : null
-}
-
-/** 深度遍历知识库目录树，收集全部文章 ID 及标题映射 */
-function collectArticleIds(roots: KnowledgeBaseTreeNode[], titles: Map<string, string>): string[] {
-  const ids: string[] = []
-  const visit = (node: KnowledgeBaseTreeNode) => {
-    if (node.articleId) {
-      ids.push(node.articleId)
-      titles.set(node.articleId, node.name)
-    }
-    for (const child of node.children ?? []) visit(child)
-  }
-  for (const root of roots) visit(root)
-  return ids
-}
-
-type IngestProgress = { done: number; total: number }
-
-function formatIngestProgress(progress: IngestProgress | null) {
-  return progress && progress.total > 0 ? ` (${progress.done}/${progress.total})` : ""
 }
 
 /** PageIndex 式文档目录树：把扁平节点按 depth 缩进渲染成层级大纲。 */
@@ -160,7 +138,6 @@ export function KnowledgeWikiPage() {
   const [dashboardError, setDashboardError] = React.useState<string | null>(null)
   const [ingesting, setIngesting] = React.useState(false)
   const [fullRebuilding, setFullRebuilding] = React.useState(false)
-  const [ingestProgress, setIngestProgress] = React.useState<IngestProgress | null>(null)
   const [fullRebuildOpen, setFullRebuildOpen] = React.useState(false)
   const [linting, setLinting] = React.useState(false)
   const [embedding, setEmbedding] = React.useState(false)
@@ -227,64 +204,24 @@ export function KnowledgeWikiPage() {
   }, [selectedKbId, loadDashboard])
 
   /**
-   * 编译 Wiki。默认增量（命中缓存的文章跳过模型调用），
+   * 编译 Wiki。默认增量（命中缓存的文章跳过），
    * fullRebuild 为 true 时先清空该知识库的全部 Wiki 再从零编译。
-   *
-   * Serverless 函数有硬时长上限（Hobby 计划 300s），整库一次性编译文章一多必然超时，
-   * 因此改为前端逐篇驱动：每篇文章单独请求（缓存命中时只是轻量数据库操作，很快），
-   * 全部完成后收尾调用一次统一重建索引页、清理孤儿页并补写目录树向量。
    */
   const runIngest = React.useCallback(async (options: { fullRebuild?: boolean } = {}) => {
     if (!selectedKbId) return
     const fullRebuild = Boolean(options.fullRebuild)
     const setBusy = fullRebuild ? setFullRebuilding : setIngesting
     setBusy(true)
-    setIngestProgress(null)
     try {
-      let purgedPageCount: number | null = null
-      if (fullRebuild) {
-        const purgeRes = await knowledgeBaseWikiAgentApi.ingest({ knowledgeBaseId: selectedKbId, purgeOnly: true })
-        purgedPageCount = purgeRes.data.purged?.pageCount ?? 0
-      }
-
-      const titles = new Map<string, string>()
-      const treeRes = await knowledgeBaseNodeApi.tree(selectedKbId)
-      const articleIds = collectArticleIds(treeRes.data.roots ?? [], titles)
-
-      const failures: string[] = []
-      for (let index = 0; index < articleIds.length; index += 1) {
-        const articleId = articleIds[index]
-        setIngestProgress({ done: index + 1, total: articleIds.length })
-        try {
-          await knowledgeBaseWikiAgentApi.ingest({
-            knowledgeBaseId: selectedKbId,
-            articleIds: [articleId],
-            embed: false,
-          })
-        } catch (error) {
-          const title = titles.get(articleId) ?? `#${articleId}`
-          failures.push(`《${title}》编译失败：${resolveApiErrorMessage(error, "未知错误")}`)
-        }
-      }
-
-      // 收尾：重建索引页、清理失去源文章的孤儿页并统一补写向量。
-      // 完全重建且知识库没有文章时跳过（服务端会因无可编译内容报错）。
-      let pageCount = 0
-      let finalWarnings: string[] = []
-      if (articleIds.length > 0 || !fullRebuild) {
-        const res = await knowledgeBaseWikiAgentApi.ingest({ knowledgeBaseId: selectedKbId })
-        pageCount = res.data.pages.length
-        finalWarnings = res.data.warnings ?? []
-      }
-
-      const prefix = purgedPageCount != null ? `已清空 ${purgedPageCount} 个旧页面，` : ""
-      if (failures.length > 0) {
-        toast.warning(`${prefix}编译完成：${articleIds.length - failures.length}/${articleIds.length} 篇成功，${failures[0]}`)
-      } else {
-        toast.success(`${prefix}已生成 ${pageCount} 个 Wiki 页面`)
-      }
-      if (!failures.length && finalWarnings.length) {
-        toast.warning(finalWarnings[0])
+      const res = await knowledgeBaseWikiAgentApi.ingest({ knowledgeBaseId: selectedKbId, fullRebuild })
+      const purgedPageCount = res.data.purged?.pageCount ?? 0
+      toast.success(
+        fullRebuild
+          ? `已清空 ${purgedPageCount} 个旧页面，重新生成 ${res.data.pages.length} 个 Wiki 页面`
+          : `已生成 ${res.data.pages.length} 个 Wiki 页面`,
+      )
+      if (res.data.warnings?.length) {
+        toast.warning(res.data.warnings[0])
       }
       setFullRebuildOpen(false)
       await loadDashboard(selectedKbId)
@@ -292,7 +229,6 @@ export function KnowledgeWikiPage() {
       toast.error(resolveApiErrorMessage(error, fullRebuild ? "完全重建 Wiki 失败" : "生成 Wiki 失败"))
     } finally {
       setBusy(false)
-      setIngestProgress(null)
     }
   }, [selectedKbId, loadDashboard])
 
@@ -435,14 +371,14 @@ export function KnowledgeWikiPage() {
           </Select>
           <Button className="sm:min-w-28" onClick={() => runIngest()} disabled={!selectedKbId || busy}>
             <Sparkles className={cn("mr-2 size-4", ingesting && "animate-spin")} />
-            {ingesting ? `更新中${formatIngestProgress(ingestProgress)}…` : "更新 Wiki"}
+            {ingesting ? "更新中…" : "更新 Wiki"}
           </Button>
           </div>
         </div>
 
         <div className="relative mt-5 flex flex-col gap-3 border-t border-border/60 pt-4 lg:flex-row lg:items-center lg:justify-between">
           <p className="text-xs text-muted-foreground">
-            默认仅更新有变化的文章；编译按文章逐篇分批执行，避免单次请求超出部署平台的时长上限。
+            默认仅更新有变化的文章；完全重建会清空现有 Wiki 后重新调用模型。
           </p>
           <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" variant="outline" className="bg-background/70" onClick={() => selectedKbId && loadDashboard(selectedKbId)} disabled={!selectedKbId || loading}>
@@ -485,7 +421,7 @@ export function KnowledgeWikiPage() {
             title="清空当前知识库的全部 Wiki 页面与目录树，再从源文章从零编译"
           >
             <RotateCcw className={cn("mr-2 size-4", fullRebuilding && "animate-spin")} />
-            {fullRebuilding ? `重建中${formatIngestProgress(ingestProgress)}…` : "完全重建"}
+            {fullRebuilding ? "重建中…" : "完全重建"}
           </Button>
           </div>
         </div>
@@ -682,7 +618,7 @@ export function KnowledgeWikiPage() {
               ) : (
                 <RotateCcw className="mr-1 size-4" />
               )}
-              {fullRebuilding ? `重建中${formatIngestProgress(ingestProgress)}…` : "确认完全重建"}
+              {fullRebuilding ? "重建中…" : "确认完全重建"}
             </Button>
           </>
         }

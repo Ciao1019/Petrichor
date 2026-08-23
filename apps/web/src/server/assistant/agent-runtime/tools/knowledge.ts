@@ -309,29 +309,6 @@ function uniqueReadRequests(hits: Array<Record<string, unknown>>): Array<z.infer
     return nodes
 }
 
-/**
- * 深读名额有限时保住 Wiki 页面的出场机会。
- *
- * 检索排序每次都可能把分片/章节排在 Wiki 页面前面；快车道只深读 top-N，
- * 一旦 N 个名额全被分片占走，证据里就没有任何 pageKey，回答自然无法生成
- * 可点击的 Wiki 引用。这里在「选中集合完全没有 Wiki 请求」时，用最后一个
- * 名额换入排名最高的 Wiki 页面：Wiki 是为问答蒸馏的中间层，整页不裁剪，
- * 兼顾引用锚点与内容质量。
- */
-function withGuaranteedWikiRead(
-    nodes: Array<z.infer<typeof readSchema>>,
-    limit: number,
-): Array<z.infer<typeof readSchema>> {
-    if (limit < 2 || nodes.length <= limit) return nodes
-    const selected = nodes.slice(0, limit)
-    if (selected.some((node) => typeof node.pageKey === "string" && node.pageKey)) return nodes
-    const wikiIndex = nodes.findIndex((node) => typeof node.pageKey === "string" && node.pageKey)
-    if (wikiIndex < limit) return nodes
-    const next = [...nodes]
-    next[limit - 1] = nodes[wikiIndex]
-    return next
-}
-
 export const knowledgeTools: AgentToolDefinition[] = [
     defineTool({
         id: "knowledge.search",
@@ -535,7 +512,7 @@ export const knowledgeTools: AgentToolDefinition[] = [
             const searchRecord = searchOutput as {
                 hits?: Array<Record<string, unknown>>
             }
-            const nodes = withGuaranteedWikiRead(uniqueReadRequests(searchRecord.hits ?? []), 2)
+            const nodes = uniqueReadRequests(searchRecord.hits ?? [])
             const reads = await executeKnowledgeReadBatch(ctx, nodes, 2)
             return {
                 ...(searchOutput as Record<string, unknown>),
