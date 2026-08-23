@@ -32,9 +32,9 @@ type redisClient struct {
 }
 
 var (
-	once      sync.Once
-	client    *redisClient // nil = 未配置，禁用缓存
-	memStore  sync.Map     // 本地兜底缓存（单实例语义）
+	once     sync.Once
+	client   *redisClient // nil = 未配置，禁用缓存
+	memStore sync.Map     // 本地兜底缓存（单实例语义）
 )
 
 func getClient() *redisClient {

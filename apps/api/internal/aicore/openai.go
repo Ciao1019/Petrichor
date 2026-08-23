@@ -16,9 +16,9 @@ import (
 
 // ChatMessage 对话消息；Parts 非空时为多模态内容。
 type ChatMessage struct {
-	Role    string       `json:"role"` // system | user | assistant
-	Content string       `json:"content,omitempty"`
-	Parts   []MediaPart  `json:"-"`
+	Role    string      `json:"role"` // system | user | assistant
+	Content string      `json:"content,omitempty"`
+	Parts   []MediaPart `json:"-"`
 }
 
 // MediaPart 多模态片段。
@@ -32,8 +32,8 @@ type MediaPart struct {
 
 // ChatResult 补全结果。
 type ChatResult struct {
-	Answer    string
-	Reasoning *string
+	Answer       string
+	Reasoning    *string
 	InputTokens  int64
 	OutputTokens int64
 }
@@ -63,13 +63,13 @@ func applyHeaders(req *http.Request, r RuntimeConfig, extra map[string]string) {
 // ===== OpenAI 兼容协议 =====
 
 type openAIChatRequest struct {
-	Model          string             `json:"model"`
-	Messages       []openAIMessage    `json:"messages"`
-	Temperature    *float64           `json:"temperature,omitempty"`
-	MaxTokens      *int64             `json:"max_tokens,omitempty"`
-	Stream         bool               `json:"stream"`
-	ResponseFormat *openAIRespFormat  `json:"response_format,omitempty"`
-	Thinking       *openAIThinking    `json:"thinking,omitempty"`
+	Model          string            `json:"model"`
+	Messages       []openAIMessage   `json:"messages"`
+	Temperature    *float64          `json:"temperature,omitempty"`
+	MaxTokens      *int64            `json:"max_tokens,omitempty"`
+	Stream         bool              `json:"stream"`
+	ResponseFormat *openAIRespFormat `json:"response_format,omitempty"`
+	Thinking       *openAIThinking   `json:"thinking,omitempty"`
 }
 
 type openAIThinking struct {
@@ -81,8 +81,8 @@ type openAIRespFormat struct {
 }
 
 type openAIMessage struct {
-	Role    string        `json:"role"`
-	Content any           `json:"content"` // string 或 parts 数组
+	Role    string `json:"role"`
+	Content any    `json:"content"` // string 或 parts 数组
 }
 
 func toOpenAIMessages(msgs []ChatMessage) []openAIMessage {
@@ -105,7 +105,7 @@ func toOpenAIMessages(msgs []ChatMessage) []openAIMessage {
 					url = "data:" + mime + ";base64," + b64(p.Data)
 				}
 				parts = append(parts, map[string]any{
-					"type": "image_url",
+					"type":      "image_url",
 					"image_url": map[string]string{"url": url},
 				})
 			default:

@@ -17,7 +17,7 @@ type HttpError struct {
 
 func (e *HttpError) Error() string { return e.Message }
 
-func BadRequest(msg string) *HttpError        { return &HttpError{http.StatusBadRequest, msg} }
+func BadRequest(msg string) *HttpError { return &HttpError{http.StatusBadRequest, msg} }
 func Unauthorized(msg ...string) *HttpError {
 	m := "请先登录"
 	if len(msg) > 0 && msg[0] != "" {

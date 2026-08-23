@@ -156,8 +156,8 @@ func parseAnthropicResponse(data []byte) (*ChatResult, error) {
 			InputTokens  int64 `json:"input_tokens"`
 			OutputTokens int64 `json:"output_tokens"`
 		} `json:"usage"`
-		Type   string `json:"type"`
-		Error  *struct{ Message string } `json:"error"`
+		Type  string                    `json:"type"`
+		Error *struct{ Message string } `json:"error"`
 	}
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		return nil, err
@@ -253,15 +253,18 @@ func googleChat(ctx context.Context, rt RuntimeConfig, modelID string, msgs []Ch
 		body["systemInstruction"] = map[string]any{"parts": []gPart{{Text: system}}}
 	}
 	action := ":generateContent"
+	query := map[string]string{"key": rt.APIKey}
 	if stream {
-		action = ":streamGenerateContent?alt=sse"
+		// alt=sse 必须走 Query 拼接；直接嵌进 URL 会与 executeProtocol 追加的 key= 产生双问号
+		action = ":streamGenerateContent"
+		query["alt"] = "sse"
 	}
 	raw, _ := json.Marshal(body)
 	base := rt.effectiveBaseURL("https://generativelanguage.googleapis.com/v1beta")
 	return executeProtocol(ctx, protocolRequest{
-		URL:           base + "/models/" + modelID + action,
-		Body:          raw,
-		Query:         map[string]string{"key": rt.APIKey},
+		URL:   base + "/models/" + modelID + action,
+		Body:  raw,
+		Query: query,
 	}, stream, onDelta, parseGoogleResponse, googleSSEDelta)
 }
 

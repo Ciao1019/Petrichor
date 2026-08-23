@@ -18,8 +18,8 @@ func BetterAuthCookieName(production bool) string {
 }
 
 const (
-	SessionCookieName       = "petrichor_session"    // 自建会话 cookie
-	betterAuthCookiePrefix  = "petrichor"
+	SessionCookieName      = "petrichor_session" // 自建会话 cookie
+	betterAuthCookiePrefix = "petrichor"
 )
 
 // SignBetterAuthCookieValue 计算 better-auth 签名 cookie 值：

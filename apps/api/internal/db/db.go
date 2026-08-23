@@ -44,4 +44,3 @@ func Pool() *pgxpool.Pool {
 	}
 	return poolIns
 }
-

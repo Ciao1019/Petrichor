@@ -10,21 +10,21 @@ import (
 
 // User 对应 petrichor_user 表记录。
 type User struct {
-	ID                int64      `db:"id"`
-	AuthUserID        *string    `db:"auth_user_id"`
-	Email             string     `db:"email"`
-	PasswordHash      string     `db:"password_hash"`
-	SystemRole        string     `db:"system_role"`
-	UserType          string     `db:"user_type"`
-	LinuxDoAccountID  *string    `db:"linuxdo_account_id"`
-	LinuxDoUsername   *string    `db:"linuxdo_username"`
-	LinuxDoEmail      *string    `db:"linuxdo_email"`
-	Username          *string    `db:"username"`
-	Nickname          *string    `db:"nickname"`
-	Avatar            *string    `db:"avatar"`
-	Signature         *string    `db:"signature"`
-	CreatedAt         time.Time  `db:"created_at"`
-	UpdatedAt         time.Time  `db:"updated_at"`
+	ID               int64     `db:"id"`
+	AuthUserID       *string   `db:"auth_user_id"`
+	Email            string    `db:"email"`
+	PasswordHash     string    `db:"password_hash"`
+	SystemRole       string    `db:"system_role"`
+	UserType         string    `db:"user_type"`
+	LinuxDoAccountID *string   `db:"linuxdo_account_id"`
+	LinuxDoUsername  *string   `db:"linuxdo_username"`
+	LinuxDoEmail     *string   `db:"linuxdo_email"`
+	Username         *string   `db:"username"`
+	Nickname         *string   `db:"nickname"`
+	Avatar           *string   `db:"avatar"`
+	Signature        *string   `db:"signature"`
+	CreatedAt        time.Time `db:"created_at"`
+	UpdatedAt        time.Time `db:"updated_at"`
 }
 
 // IsSuperAdmin 是否超级管理员。

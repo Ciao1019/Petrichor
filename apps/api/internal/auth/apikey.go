@@ -37,10 +37,10 @@ var scopeSet = func() map[string]struct{} {
 
 // AgentAuthContext Agent Key 鉴权上下文。
 type AgentAuthContext struct {
-	ApiKeyID   int64
-	KeyPrefix  string
-	Scopes     []string
-	UserID     int64
+	ApiKeyID  int64
+	KeyPrefix string
+	Scopes    []string
+	UserID    int64
 }
 
 const agentKeyCtx = "petrichor.agentAuth"

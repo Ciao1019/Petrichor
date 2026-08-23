@@ -30,15 +30,15 @@ type S3Config struct {
 
 // Config 服务端运行配置。
 type Config struct {
-	DatabaseURL       string
-	LocalStorageDir   string
-	S3                *S3Config
-	SessionExpire     time.Duration
-	SessionSecret     string
-	BaseURL           string
-	RegisterEnabled   bool
+	DatabaseURL         string
+	LocalStorageDir     string
+	S3                  *S3Config
+	SessionExpire       time.Duration
+	SessionSecret       string
+	BaseURL             string
+	RegisterEnabled     bool
 	RegisterDefaultRole string // USER 或 SUPER_ADMIN
-	APIPort           string
+	APIPort             string
 }
 
 var cached *Config

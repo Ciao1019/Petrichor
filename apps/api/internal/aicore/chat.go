@@ -51,7 +51,6 @@ func (e *unsupportedProtocolError) Error() string {
 	return "该供应商(" + e.providerKey + ")的协议暂不支持，请改用 OpenAI 兼容 / Anthropic / Google 供应商"
 }
 
-
 func effectiveSDK(providerKey string) SdkKind {
 	if e, ok := Catalog[providerKey]; ok {
 		return e.Sdk

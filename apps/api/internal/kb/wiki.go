@@ -349,141 +349,145 @@ func WikiPageDetail(c *ginContext) {
 		if pageKey == "" || len([]rune(pageKey)) > 200 {
 			return nil, badReq("pageKey 必须在 1 到 200 个字符之间")
 		}
-		q := pool()
-		if _, err := assertKnowledgeBaseOwner(q, user.ID, kbID); err != nil {
-			return nil, err
-		}
-		page, err := loadWikiPage(q, user.ID, kbID, pageKey)
-		if err != nil {
-			return nil, err
-		}
-		if page == nil {
-			return nil, notFoundErr("Wiki 页面不存在")
-		}
+		return wikiPageDetailCore(pool(), user.ID, kbID, pageKey)
+	})
+}
 
-		sourceRefs, err := querySourceRefs(q,
-			`SELECT `+sourceRefColumns+` FROM petrichor_kb_wiki_source_ref WHERE page_id = $1 ORDER BY id ASC`, page.ID)
-		if err != nil {
-			return nil, err
-		}
-		refTitles := map[int64]string{}
-		if len(sourceRefs) > 0 {
-			articleIDs := make([]int64, 0, len(sourceRefs))
-			for i := range sourceRefs {
-				articleIDs = append(articleIDs, sourceRefs[i].ArticleID)
-			}
-			titles, terr := loadIDNameMap(q,
-				`SELECT id, title FROM petrichor_kb_article WHERE id = ANY($1)`, articleIDs)
-			if terr != nil {
-				return nil, terr
-			}
-			refTitles = titles
-		}
+// wikiPageDetailCore Wiki 页面详情组装（用户端与 Agent 端共用）。
+func wikiPageDetailCore(q execQuerier, userID, kbID int64, pageKey string) (map[string]any, error) {
+	if _, err := assertKnowledgeBaseOwner(q, userID, kbID); err != nil {
+		return nil, err
+	}
+	page, err := loadWikiPage(q, userID, kbID, pageKey)
+	if err != nil {
+		return nil, err
+	}
+	if page == nil {
+		return nil, notFoundErr("Wiki 页面不存在")
+	}
 
-		outLinks, err := queryLinks(q,
-			`SELECT `+wikiLinkColumns+` FROM petrichor_kb_wiki_link WHERE from_page_id = $1 ORDER BY to_page_key ASC`,
-			page.ID)
-		if err != nil {
-			return nil, err
+	sourceRefs, err := querySourceRefs(q,
+		`SELECT `+sourceRefColumns+` FROM petrichor_kb_wiki_source_ref WHERE page_id = $1 ORDER BY id ASC`, page.ID)
+	if err != nil {
+		return nil, err
+	}
+	refTitles := map[int64]string{}
+	if len(sourceRefs) > 0 {
+		articleIDs := make([]int64, 0, len(sourceRefs))
+		for i := range sourceRefs {
+			articleIDs = append(articleIDs, sourceRefs[i].ArticleID)
 		}
-		inLinks, err := queryLinks(q,
-			`SELECT `+wikiLinkColumns+` FROM petrichor_kb_wiki_link
+		titles, terr := loadIDNameMap(q,
+			`SELECT id, title FROM petrichor_kb_article WHERE id = ANY($1)`, articleIDs)
+		if terr != nil {
+			return nil, terr
+		}
+		refTitles = titles
+	}
+
+	outLinks, err := queryLinks(q,
+		`SELECT `+wikiLinkColumns+` FROM petrichor_kb_wiki_link WHERE from_page_id = $1 ORDER BY to_page_key ASC`,
+		page.ID)
+	if err != nil {
+		return nil, err
+	}
+	inLinks, err := queryLinks(q,
+		`SELECT `+wikiLinkColumns+` FROM petrichor_kb_wiki_link
 			 WHERE user_id = $1 AND knowledge_base_id = $2 AND to_page_key = $3 ORDER BY from_page_id ASC`,
-			user.ID, kbID, page.PageKey)
-		if err != nil {
-			return nil, err
-		}
-		activePages, err := loadWikiPageRows(q, user.ID, kbID)
-		if err != nil {
-			return nil, err
-		}
-		pageByID := map[int64]*WikiPageRow{}
-		pageByKey := map[string]*WikiPageRow{}
-		for i := range activePages {
-			pageByID[activePages[i].ID] = &activePages[i]
-			pageByKey[activePages[i].PageKey] = &activePages[i]
-		}
-		metadata := readKnowledgePageMetadata(page.FrontmatterJson)
-		outgoingRelations := map[string]map[string]string{}
-		for _, relation := range collectKnowledgePageRelations(metadata) {
-			outgoingRelations[relation["toPageKey"]+"|"+relation["relationType"]] = relation
-		}
+		userID, kbID, page.PageKey)
+	if err != nil {
+		return nil, err
+	}
+	activePages, err := loadWikiPageRows(q, userID, kbID)
+	if err != nil {
+		return nil, err
+	}
+	pageByID := map[int64]*WikiPageRow{}
+	pageByKey := map[string]*WikiPageRow{}
+	for i := range activePages {
+		pageByID[activePages[i].ID] = &activePages[i]
+		pageByKey[activePages[i].PageKey] = &activePages[i]
+	}
+	metadata := readKnowledgePageMetadata(page.FrontmatterJson)
+	outgoingRelations := map[string]map[string]string{}
+	for _, relation := range collectKnowledgePageRelations(metadata) {
+		outgoingRelations[relation["toPageKey"]+"|"+relation["relationType"]] = relation
+	}
 
-		linkMaps := make([]map[string]any, 0, len(outLinks))
-		for i := range outLinks {
-			link := &outLinks[i]
-			toPage := pageByKey[link.ToPageKey]
-			description := any(nil)
-			if relation, ok := outgoingRelations[link.ToPageKey+"|"+link.LinkType]; ok && relation["description"] != "" {
-				description = relation["description"]
-			}
-			item := map[string]any{
-				"id":          strconv.FormatInt(link.ID, 10),
-				"toPageKey":   link.ToPageKey,
-				"linkType":    link.LinkType,
-				"description": description,
-			}
-			if toPage != nil {
-				item["toPageTitle"] = toPage.Title
-				item["toPageKind"] = toPage.Kind
-				item["toPageSummary"] = toPage.Summary
-			} else {
-				item["toPageTitle"] = link.ToPageKey
-				item["toPageKind"] = nil
-				item["toPageSummary"] = nil
-			}
-			linkMaps = append(linkMaps, item)
+	linkMaps := make([]map[string]any, 0, len(outLinks))
+	for i := range outLinks {
+		link := &outLinks[i]
+		toPage := pageByKey[link.ToPageKey]
+		description := any(nil)
+		if relation, ok := outgoingRelations[link.ToPageKey+"|"+link.LinkType]; ok && relation["description"] != "" {
+			description = relation["description"]
 		}
+		item := map[string]any{
+			"id":          strconv.FormatInt(link.ID, 10),
+			"toPageKey":   link.ToPageKey,
+			"linkType":    link.LinkType,
+			"description": description,
+		}
+		if toPage != nil {
+			item["toPageTitle"] = toPage.Title
+			item["toPageKind"] = toPage.Kind
+			item["toPageSummary"] = toPage.Summary
+		} else {
+			item["toPageTitle"] = link.ToPageKey
+			item["toPageKind"] = nil
+			item["toPageSummary"] = nil
+		}
+		linkMaps = append(linkMaps, item)
+	}
 
-		inLinkMaps := make([]map[string]any, 0, len(inLinks))
-		for i := range inLinks {
-			link := &inLinks[i]
-			fromPage := pageByID[link.FromPageID]
-			fromKey := ""
-			fromTitle := "未知页面"
-			var fromKind, fromSummary any
-			description := any(nil)
-			if fromPage != nil {
-				fromKey = fromPage.PageKey
-				fromTitle = fromPage.Title
-				fromKind = fromPage.Kind
-				fromSummary = fromPage.Summary
-				fromMetadata := readKnowledgePageMetadata(fromPage.FrontmatterJson)
-				for _, relation := range collectKnowledgePageRelations(fromMetadata) {
-					if relation["toPageKey"] == page.PageKey && relation["relationType"] == link.LinkType {
-						if relation["description"] != "" {
-							description = relation["description"]
-						}
-						break
+	inLinkMaps := make([]map[string]any, 0, len(inLinks))
+	for i := range inLinks {
+		link := &inLinks[i]
+		fromPage := pageByID[link.FromPageID]
+		fromKey := ""
+		fromTitle := "未知页面"
+		var fromKind, fromSummary any
+		description := any(nil)
+		if fromPage != nil {
+			fromKey = fromPage.PageKey
+			fromTitle = fromPage.Title
+			fromKind = fromPage.Kind
+			fromSummary = fromPage.Summary
+			fromMetadata := readKnowledgePageMetadata(fromPage.FrontmatterJson)
+			for _, relation := range collectKnowledgePageRelations(fromMetadata) {
+				if relation["toPageKey"] == page.PageKey && relation["relationType"] == link.LinkType {
+					if relation["description"] != "" {
+						description = relation["description"]
 					}
+					break
 				}
 			}
-			inLinkMaps = append(inLinkMaps, map[string]any{
-				"id":              strconv.FormatInt(link.ID, 10),
-				"fromPageKey":     fromKey,
-				"fromPageTitle":   fromTitle,
-				"fromPageKind":    fromKind,
-				"fromPageSummary": fromSummary,
-				"linkType":        link.LinkType,
-				"description":     description,
-			})
 		}
+		inLinkMaps = append(inLinkMaps, map[string]any{
+			"id":              strconv.FormatInt(link.ID, 10),
+			"fromPageKey":     fromKey,
+			"fromPageTitle":   fromTitle,
+			"fromPageKind":    fromKind,
+			"fromPageSummary": fromSummary,
+			"linkType":        link.LinkType,
+			"description":     description,
+		})
+	}
 
-		detail := toWikiPageResponse(page)
-		refMaps := make([]map[string]any, 0, len(sourceRefs))
-		for i := range sourceRefs {
-			ref := &sourceRefs[i]
-			refMaps = append(refMaps, map[string]any{
-				"id":           strconv.FormatInt(ref.ID, 10),
-				"articleId":    strconv.FormatInt(ref.ArticleID, 10),
-				"articleTitle": refTitles[ref.ArticleID],
-				"anchor":       ref.Anchor,
-				"note":         ref.Note,
-			})
-		}
-		detail["sourceRefs"] = refMaps
-		detail["links"] = linkMaps
-		detail["inLinks"] = inLinkMaps
-		return detail, nil
-	})
+	detail := toWikiPageResponse(page)
+	refMaps := make([]map[string]any, 0, len(sourceRefs))
+	for i := range sourceRefs {
+		ref := &sourceRefs[i]
+		refMaps = append(refMaps, map[string]any{
+			"id":           strconv.FormatInt(ref.ID, 10),
+			"articleId":    strconv.FormatInt(ref.ArticleID, 10),
+			"articleTitle": refTitles[ref.ArticleID],
+			"anchor":       ref.Anchor,
+			"note":         ref.Note,
+		})
+	}
+	detail["sourceRefs"] = refMaps
+	detail["links"] = linkMaps
+	detail["inLinks"] = inLinkMaps
+	return detail, nil
 }

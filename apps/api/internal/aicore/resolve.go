@@ -12,9 +12,9 @@ import (
 
 // 用途与模型类型（对应 config-logic.ts）。
 const (
-	PurposeChat     = "CHAT"
-	PurposeVision   = "VISION"
-	PurposeDocQA    = "DOC_QA"
+	PurposeChat      = "CHAT"
+	PurposeVision    = "VISION"
+	PurposeDocQA     = "DOC_QA"
 	PurposeEmbedding = "EMBEDDING"
 )
 
@@ -34,10 +34,10 @@ func modelKindForPurpose(purpose string) string {
 
 // GenerationOptions 绑定级生成参数。
 type GenerationOptions struct {
-	Temperature            *float64 `json:"temperature"`
-	MaxTokens              *int64   `json:"maxTokens"`
-	Thinking               *string  `json:"thinking"` // enabled/disabled
-	DisableThinkingForTools *bool   `json:"disableThinkingForTools"`
+	Temperature             *float64 `json:"temperature"`
+	MaxTokens               *int64   `json:"maxTokens"`
+	Thinking                *string  `json:"thinking"` // enabled/disabled
+	DisableThinkingForTools *bool    `json:"disableThinkingForTools"`
 }
 
 // RuntimeConfig 模型工厂入参（对应 ProviderRuntimeConfig）。
@@ -52,16 +52,16 @@ type RuntimeConfig struct {
 
 // ResolvedModel 解析结果。
 type ResolvedModel struct {
-	ModelID    int64
-	UserID     int64
-	ModelRef   string // ai_model.model_id
-	Kind       string
+	ModelID       int64
+	UserID        int64
+	ModelRef      string // ai_model.model_id
+	Kind          string
 	ContextWindow int64
-	ProviderID int64
-	ProviderKey string
-	CredentialID int64
-	Options    GenerationOptions
-	Runtime    RuntimeConfig
+	ProviderID    int64
+	ProviderKey   string
+	CredentialID  int64
+	Options       GenerationOptions
+	Runtime       RuntimeConfig
 }
 
 // ResolveModelForPurpose 复刻 resolution.ts：优先 modelRefId（历史重放），回落用途绑定。
@@ -92,9 +92,9 @@ func ResolveModelForPurpose(ctx context.Context, userID int64, purpose string, m
 
 func loadResolvedModel(ctx context.Context, userID, modelRefID int64, purpose string) *ResolvedModel {
 	var (
-		m           ModelRow
-		p           ProviderRow
-		c           CredentialRow
+		m ModelRow
+		p ProviderRow
+		c CredentialRow
 	)
 	err := db.Pool().QueryRow(ctx, `
 		SELECT m.id, m.user_id, m.model_id, m.kind, COALESCE(m.context_window,0), m.enabled,
@@ -114,8 +114,8 @@ func loadResolvedModel(ctx context.Context, userID, modelRefID int64, purpose st
 	return &ResolvedModel{
 		ModelID: m.ID, UserID: m.UserID, ModelRef: m.ModelID, Kind: m.Kind,
 		ContextWindow: m.ContextWindow,
-		ProviderID: p.ID, ProviderKey: p.ProviderKey, CredentialID: c.ID,
-		Options:    parseGenerationOptions(nil),
+		ProviderID:    p.ID, ProviderKey: p.ProviderKey, CredentialID: c.ID,
+		Options: parseGenerationOptions(nil),
 		Runtime: BuildRuntimeConfig(p.ProviderKey, p.BaseURLStr, DecodeApiKey(deref(c.APIKeyEnc)), DecodeExtra(deref(c.ExtraEnc)), nil, Quirks{}),
 	}
 }
