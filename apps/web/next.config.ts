@@ -3,14 +3,14 @@ import fs from "node:fs"
 import path from "node:path"
 
 const workspaceRoot = path.resolve(process.cwd(), "../..")
-const turbopackRoot = fs.existsSync(path.join(workspaceRoot, "pnpm-workspace.yaml"))
+const turbopackRoot = fs.existsSync(path.join(workspaceRoot, "apps/web/package.json"))
     ? workspaceRoot
     : process.cwd()
 
 const nextConfig: NextConfig = {
     reactStrictMode: true,
     // Docker 部署用：产出精简的 standalone server（含 node_modules 裁剪），
-    // 追踪根设为 monorepo 根，避免把 pnpm-lock.yaml 所在目录之外的文件误判进/出依赖树。
+    // 追踪根设为 monorepo 根，确保 Bun workspace 的依赖都进入 standalone 产物。
     output: "standalone",
     outputFileTracingRoot: turbopackRoot,
     turbopack: {
@@ -24,7 +24,7 @@ const nextConfig: NextConfig = {
     // 原生 / 非 ESM 可打包模块交给运行时 require，不要打进 server bundle。
     // @ast-grep/napi：Mastra 依赖，Turbopack/webpack 都无法正确打包其原生绑定。
     // @firecrawl/pdf-inspector：napi-rs 原生绑定，按平台走 optionalDependencies 解析。
-    serverExternalPackages: ["better-sqlite3", "sharp", "pino", "@ast-grep/napi", "@firecrawl/pdf-inspector"],
+    serverExternalPackages: ["sharp", "pino", "@ast-grep/napi", "@firecrawl/pdf-inspector"],
     typedRoutes: false,
     // Vercel 上偶发卡在 "Running TypeScript ..." 直到 45min 超时；类型检查交给 CI/本地 typecheck。
     typescript: {

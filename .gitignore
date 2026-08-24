@@ -20,7 +20,7 @@ helloagents/history/
 helloagents/wiki/modules/reminder-session-p0.md
 helloagents/wiki/modules/go-launcher.md
 skills-lock.json
-# Node.js
+# JavaScript 依赖与构建产物
 node_modules/
 .vercel/
 .next/

@@ -128,9 +128,9 @@ await measurePerformance('processData', async () => {
 
 ✅ **单元测试增强** (`vitest.config.ts`)
 ```bash
-pnpm test              # 运行测试
-pnpm test:coverage     # 覆盖率报告
-pnpm test:ui           # 交互式 UI
+bun test              # 运行测试
+bun test:coverage     # 覆盖率报告
+bun test:ui           # 交互式 UI
 ```
 - 覆盖率目标：60%+
 - 并发运行测试
@@ -138,8 +138,8 @@ pnpm test:ui           # 交互式 UI
 
 ✅ **E2E 测试** (`playwright.config.ts` + `e2e/example.spec.ts`)
 ```bash
-pnpm exec playwright install  # 安装浏览器
-pnpm exec playwright test      # 运行测试
+bunx playwright install  # 安装浏览器
+bunx playwright test      # 运行测试
 ```
 - 多浏览器支持（Chrome/Firefox/Safari）
 - 移动端测试
@@ -152,8 +152,8 @@ pnpm exec playwright test      # 运行测试
 
 ✅ **代码质量工具** (`biome.json`)
 ```bash
-pnpm biome:check    # 检查代码
-pnpm biome:fix      # 自动修复
+bun biome:check    # 检查代码
+bun biome:fix      # 自动修复
 ```
 - 比 ESLint 快 50 倍
 - 内置格式化器
@@ -165,7 +165,7 @@ pnpm biome:fix      # 自动修复
 
 ✅ **配置完成**
 ```bash
-pnpm analyze  # 生成 bundle 分析报告
+bun analyze  # 生成 bundle 分析报告
 ```
 - 查看 `.next/analyze/client.html`
 - 识别大型依赖
@@ -190,22 +190,22 @@ pnpm analyze  # 生成 bundle 分析报告
 ### 立即执行：
 1. ✅ **运行类型检查**
 ```bash
-pnpm typecheck
+bun typecheck
 ```
 
 2. ✅ **运行 Biome 检查**
 ```bash
-pnpm biome:check
+bun biome:check
 ```
 
 3. ✅ **生成 Bundle 分析**
 ```bash
-pnpm analyze
+bun analyze
 ```
 
 4. ✅ **运行测试套件**
 ```bash
-pnpm test:coverage
+bun test:coverage
 ```
 
 ### 生产部署前：
@@ -234,26 +234,26 @@ pnpm test:coverage
 
 ```bash
 # 开发
-pnpm dev
+bun dev
 
 # 构建
-pnpm build
+bun build
 
 # 测试
-pnpm test
-pnpm test:coverage
-pnpm test:ui
+bun test
+bun test:coverage
+bun test:ui
 
 # E2E 测试
-pnpm exec playwright test
+bunx playwright test
 
 # 代码质量
-pnpm typecheck
-pnpm lint
-pnpm biome:check
+bun typecheck
+bun lint
+bun biome:check
 
 # Bundle 分析
-pnpm analyze
+bun analyze
 ```
 
 ---
@@ -267,4 +267,4 @@ pnpm analyze
 
 ---
 
-优化已全部完成！🎉 现在可以运行 `pnpm dev` 测试所有功能。
+优化已全部完成！🎉 现在可以运行 `bun dev` 测试所有功能。

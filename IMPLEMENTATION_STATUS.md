@@ -119,24 +119,24 @@
 
 ### 1. 构建优化
 ```bash
-pnpm build  # 自动应用所有构建优化
+bun build  # 自动应用所有构建优化
 ```
 
 ### 2. Bundle 分析
 ```bash
-pnpm analyze  # 生成 bundle 分析报告
+bun analyze  # 生成 bundle 分析报告
 ```
 
 ### 3. 代码质量检查
 ```bash
-pnpm biome:check  # 检查代码质量
-pnpm biome:fix    # 自动修复
+bun biome:check  # 检查代码质量
+bun biome:fix    # 自动修复
 ```
 
 ### 4. 测试（需要先修复类型错误）
 ```bash
-pnpm test              # 单元测试
-pnpm test:coverage     # 覆盖率报告
+bun test              # 单元测试
+bun test:coverage     # 覆盖率报告
 ```
 
 ### 5. 新 API 开发
@@ -186,7 +186,7 @@ export const POST = withRateLimit(handler, rateLimitPresets.moderate)
 
 3. **运行 Bundle 分析**
    ```bash
-   pnpm analyze
+   bun analyze
    ```
    查看哪些依赖最大，考虑优化策略
 
@@ -213,7 +213,7 @@ export const POST = withRateLimit(handler, rateLimitPresets.moderate)
 
 4. **集成错误追踪**
    ```bash
-   pnpm add @sentry/nextjs
+   bun add @sentry/nextjs
    ```
 
 ### 长期（1-2个月）

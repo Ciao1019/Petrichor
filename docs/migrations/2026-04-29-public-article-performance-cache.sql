@@ -1,7 +1,7 @@
 -- 公开文章列表/详情性能缓存字段与索引。
 -- 幂等执行：只新增缺失列/索引，并对尚未回填的旧文章做非破坏性回填。
 -- toc_json 需要复用应用层 Markdown slug 逻辑，执行本 SQL 后可运行：
--- pnpm --filter "@petrichor/web" db:backfill-public-article-metadata
+-- bun --filter "@petrichor/web" db:backfill-public-article-metadata
 
 alter table petrichor_kb_article
     add column if not exists public_excerpt text;

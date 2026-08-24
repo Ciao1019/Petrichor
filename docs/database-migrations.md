@@ -31,8 +31,8 @@ Vercel Production 环境至少需要 `DATABASE_URL`。建议额外配置
 
 ```bash
 # 本地/运维环境执行全部待处理迁移
-DATABASE_URL=... pnpm db:migrate
+DATABASE_URL=... bun db:migrate
 
 # Vercel 构建入口；非 production 环境会跳过迁移
-VERCEL_ENV=production DATABASE_URL=... pnpm vercel-build
+VERCEL_ENV=production DATABASE_URL=... bun vercel-build
 ```

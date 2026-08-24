@@ -81,14 +81,14 @@ StopPolicy / LoopDetection / Trace / Budget。
 本地或紧急情况下也可以手动执行：
 
 ```bash
-DATABASE_URL=... pnpm db:run-sql docs/migrations/2026-08-18-agent-runtime-v2.sql
+DATABASE_URL=... bun db:run-sql docs/migrations/2026-08-18-agent-runtime-v2.sql
 ```
 
 未执行时 Runtime 仍能正常回答（持久化层读写都 fail-open），但会失去：
 Trace/Evidence 落库、刷新恢复执行面板、Debug 页面数据。
 日志会带 `code: 42P01` 与该跑哪个迁移的提示。
 
-全新安装走 `pnpm db:sql` 生成的初始化 SQL，其中已包含这些表与列。
+全新安装走 `bun db:sql` 生成的初始化 SQL，其中已包含这些表与列。
 
 ## Feature Flag
 

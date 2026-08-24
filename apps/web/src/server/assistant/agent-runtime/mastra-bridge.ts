@@ -227,7 +227,7 @@ export async function runAgentSegment(
 
         // 用 fullStream 而不是 textStream：需要看见 tool-call 才能区分
         // "回答前的旁白" 与 "真正的最终答案"。textStream 会把两者混在一起。
-        const reader = (result as { fullStream: ReadableStream<{ type: string; payload?: unknown }> })
+        const reader = (result as unknown as { fullStream: ReadableStream<{ type: string; payload?: unknown }> })
             .fullStream.getReader()
         try {
             while (true) {

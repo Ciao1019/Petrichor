@@ -1,20 +1,20 @@
 # @petrichor/web
 
-Next.js + TypeScript 全栈应用，目标运行环境为 **Vercel**，数据层使用 **Supabase PostgreSQL**。
+Next.js + TypeScript 全栈应用，包管理、本地服务与生产服务端运行时统一使用 **Bun 1.3.14**，目标部署环境为 **Vercel**，数据层使用 **Supabase PostgreSQL**。
 
 > 📖 完整的简介、功能特性、Vercel 一键部署、环境变量速查表请看仓库根目录的 [`README.md`](../../README.md)。
 
 ## 本地开发
 
 ```bash
-pnpm install
-pnpm dev
+bun install
+bun dev
 ```
 
 只运行当前应用：
 
 ```bash
-pnpm --filter "@petrichor/web" dev
+bun --filter "@petrichor/web" dev
 ```
 
 ## 环境变量
@@ -30,7 +30,7 @@ cp apps/web/.env.example apps/web/.env.local
 ## 初始化数据库
 
 ```bash
-pnpm --silent --filter "@petrichor/web" db:sql > petrichor-init.sql
+bun --silent run db:sql > petrichor-init.sql
 ```
 
 将输出 SQL 放到 Supabase SQL Editor 执行。SQL 会创建 Better Auth 认证表和业务表。
@@ -40,8 +40,8 @@ pnpm --silent --filter "@petrichor/web" db:sql > petrichor-init.sql
 ## 质量检查
 
 ```bash
-pnpm test
-pnpm typecheck
-pnpm lint
-pnpm build
+bun test
+bun typecheck
+bun lint
+bun build
 ```

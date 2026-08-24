@@ -7,6 +7,7 @@ import {
     needsJsonPromptInjectionForStructuredOutput,
     needsQuirkFetch,
     resolveQuirks,
+    type ProviderFetch,
 } from "./provider-quirks"
 
 afterEach(() => {
@@ -97,7 +98,7 @@ describe("createQuirkFetch", () => {
     })
 
     it("只改写 /chat/completions 请求", async () => {
-        const base = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }))
+        const base = vi.fn<ProviderFetch>(async () => new Response("{}", { status: 200 }))
         vi.stubGlobal("fetch", base)
 
         const quirkFetch = createQuirkFetch({
@@ -122,7 +123,7 @@ describe("createQuirkFetch", () => {
      * 怪癖修正会静默失效——请求照发，但 json_schema 降级没应用，表现为莫名其妙的 400。
      */
     it("Responses 协议的请求同样被改写", async () => {
-        const base = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }))
+        const base = vi.fn<ProviderFetch>(async () => new Response("{}", { status: 200 }))
         vi.stubGlobal("fetch", base)
 
         const quirkFetch = createQuirkFetch({
@@ -140,7 +141,7 @@ describe("createQuirkFetch", () => {
     })
 
     it("URL 里只是碰巧含 responses 字样的路径不被改写", async () => {
-        const base = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }))
+        const base = vi.fn<ProviderFetch>(async () => new Response("{}", { status: 200 }))
         vi.stubGlobal("fetch", base)
 
         const quirkFetch = createQuirkFetch({
@@ -158,7 +159,7 @@ describe("createQuirkFetch", () => {
     })
 
     it("请求体不是 JSON 时原样透传", async () => {
-        const base = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }))
+        const base = vi.fn<ProviderFetch>(async () => new Response("{}", { status: 200 }))
         vi.stubGlobal("fetch", base)
         const quirkFetch = createQuirkFetch({ providerKey: "deepseek", modelId: "deepseek-chat" })!
         await quirkFetch("https://api.deepseek.com/v1/chat/completions", {

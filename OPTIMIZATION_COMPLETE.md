@@ -169,18 +169,18 @@ await measurePerformance('processArticle', async () => {
 **可用命令**:
 ```bash
 # 单元测试
-pnpm test
-pnpm test:coverage
-pnpm test:ui
+bun test
+bun test:coverage
+bun test:ui
 
 # 代码质量
-pnpm biome:check
-pnpm biome:fix
+bun biome:check
+bun biome:fix
 
 # E2E 测试（需要先安装）
-pnpm add -D @playwright/test
-pnpm exec playwright install
-pnpm exec playwright test
+bun add -d @playwright/test
+bunx playwright install
+bunx playwright test
 ```
 
 ---
@@ -191,7 +191,7 @@ pnpm exec playwright test
 
 **命令**:
 ```bash
-pnpm analyze
+bun analyze
 ```
 
 生成的报告位置：`.next/analyze/client.html`
@@ -214,24 +214,24 @@ pnpm analyze
 
 ```bash
 # 开发
-pnpm dev
+bun dev
 
 # 构建（自动应用所有优化）
-pnpm build
+bun build
 
 # 类型检查
-pnpm typecheck  # ✅ 已通过
+bun typecheck  # ✅ 已通过
 
 # 代码质量
-pnpm biome:check
-pnpm biome:fix
+bun biome:check
+bun biome:fix
 
 # Bundle 分析
-pnpm analyze
+bun analyze
 
 # 测试
-pnpm test
-pnpm test:coverage
+bun test
+bun test:coverage
 ```
 
 ---
@@ -260,7 +260,7 @@ pnpm test:coverage
 
 **如何启用？**  
 1. 取消注释 `noUncheckedIndexedAccess`
-2. 运行 `pnpm typecheck` 查看错误
+2. 运行 `bun typecheck` 查看错误
 3. 逐个修复（或使用 `!` 非空断言）
 
 ---
@@ -271,7 +271,7 @@ pnpm test:coverage
 
 1. ✅ **运行 Bundle 分析**
    ```bash
-   pnpm analyze
+   bun analyze
    ```
    查看哪些依赖最大
 
@@ -293,7 +293,7 @@ pnpm test:coverage
 
 6. **集成错误追踪**
    ```bash
-   pnpm add @sentry/nextjs
+   bun add @sentry/nextjs
    ```
 
 ### 1-2 周内
@@ -354,6 +354,6 @@ pnpm test:coverage
 4. **更高的代码质量** - TypeScript 严格、Biome
 5. **更完善的测试** - Vitest、Playwright
 
-**现在可以直接运行 `pnpm dev` 或 `pnpm build` 使用所有优化！** 🚀
+**现在可以直接运行 `bun dev` 或 `bun build` 使用所有优化！** 🚀
 
 有任何问题随时问我！

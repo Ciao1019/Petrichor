@@ -49,7 +49,7 @@ Closes #
 - [ ] 本 PR 包含 schema 变更
 - [ ] 已在 `docs/migrations/` 添加增量 SQL 文件
 - [ ] 已在 `apps/web/src/server/db/schema.ts` 同步更新
-- [ ] 已验证 `pnpm --silent --filter @petrichor/web db:sql` 生成的 SQL 在新库可一次性执行
+- [ ] 已验证 `bun --silent run db:sql` 生成的 SQL 在新库可一次性执行
 
 迁移文件： `docs/migrations/____.sql`
 
@@ -59,16 +59,16 @@ Closes #
 
 ```bash
 # 例如
-pnpm dev
+bun dev
 # 然后访问 /xxx，执行 …
 ```
 
 完整验证：
 
-- [ ] `pnpm typecheck` 通过
-- [ ] `pnpm lint` 通过
-- [ ] `pnpm test` 通过
-- [ ] `pnpm build` 通过（涉及路由 / 构建产物时）
+- [ ] `bun typecheck` 通过
+- [ ] `bun lint` 通过
+- [ ] `bun test` 通过
+- [ ] `bun build` 通过（涉及路由 / 构建产物时）
 - [ ] 桌面浏览器人工验证
 - [ ] 移动视口人工验证（如涉及 UI）
 
@@ -86,7 +86,7 @@ pnpm dev
 - [ ] PR 标题遵循 Conventional Commits（如 `feat(kb): 新增文章拖拽排序`）
 - [ ] 单 PR 只做一件事；改动范围最小且完整
 - [ ] 没有提交 `.env.local`、密钥、Token 等敏感信息
-- [ ] 没有提交无关的 `pnpm-lock.yaml` 变更
+- [ ] 没有提交无关的 `bun.lock` 变更
 - [ ] 注释 / 文档已同步更新（如有必要）
 - [ ] 不引入未接线的"半成品"功能或 TODO 占位
 

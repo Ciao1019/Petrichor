@@ -63,7 +63,7 @@ body:
       label: 部署环境
       options:
         - Vercel
-        - 本地开发 (pnpm dev)
+        - 本地开发 (bun dev)
         - 自托管 (其他)
     validations:
       required: true

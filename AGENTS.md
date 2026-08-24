@@ -12,7 +12,7 @@
 
 ## 项目概览
 
-- 仓库根目录是 `pnpm` workspace，目前工作区应用为 `apps/web`。
+- 仓库根目录是 Bun workspace，目前工作区应用为 `apps/web`。
 - 根包名为 `petrichor`，当前仓库目录名为 `dosphere`。
 - `apps/web` 是 Next.js + React + TypeScript 全栈应用，目标部署环境为 Vercel。
 - 前端主体是客户端 SPA：`apps/web/app/spa-entry.tsx` 动态加载
@@ -30,27 +30,27 @@
 在仓库根目录执行：
 
 ```bash
-pnpm dev
-pnpm build
-pnpm test
-pnpm typecheck
-pnpm lint
+bun dev
+bun build
+bun test
+bun typecheck
+bun lint
 ```
 
 只针对 Web 应用执行时使用：
 
 ```bash
-pnpm --filter "@petrichor/web" dev
-pnpm --filter "@petrichor/web" test
-pnpm --filter "@petrichor/web" typecheck
-pnpm --filter "@petrichor/web" lint
-pnpm --filter "@petrichor/web" build
+bun --filter "@petrichor/web" dev
+bun --filter "@petrichor/web" test
+bun --filter "@petrichor/web" typecheck
+bun --filter "@petrichor/web" lint
+bun --filter "@petrichor/web" build
 ```
 
-生成初始化 SQL 时必须使用 `--silent`，避免 pnpm 日志混入 SQL：
+生成初始化 SQL 时必须使用 `--silent`，避免 Bun 日志混入 SQL：
 
 ```bash
-pnpm --silent --filter "@petrichor/web" db:sql
+bun --silent run db:sql
 ```
 
 ## 目录约定
@@ -110,10 +110,10 @@ pnpm --silent --filter "@petrichor/web" db:sql
 - 优先运行与改动相关的定向测试；完整验证按风险选择：
 
 ```bash
-pnpm test
-pnpm typecheck
-pnpm lint
-pnpm build
+bun test
+bun typecheck
+bun lint
+bun build
 ```
 
 - 后台执行单元测试时注意控制时长，避免超过 60 秒卡住当前任务。

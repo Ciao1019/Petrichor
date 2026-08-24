@@ -19,6 +19,11 @@ export const DEFAULT_QUIRK_OPTIONS: ProviderQuirkOptions = {
     disableThinkingForTools: true,
 }
 
+export type ProviderFetch = (
+    resource: Parameters<typeof fetch>[0],
+    init?: Parameters<typeof fetch>[1],
+) => ReturnType<typeof fetch>
+
 interface ProviderQuirks {
     /** 不支持 response_format.json_schema，需要降级为 json_object 并把 schema 塞进 prompt */
     downgradeJsonSchema: boolean
@@ -72,7 +77,7 @@ export function createQuirkFetch(input: {
     const options: ProviderQuirkOptions = { ...DEFAULT_QUIRK_OPTIONS, ...input.options }
     const quirks = resolveQuirks(providerKey, modelId)
 
-    return async (resource, init) => {
+    return (async (resource, init) => {
         if (!init?.body || !isGenerationRequest(resource)) {
             return fetch(resource, init)
         }
@@ -85,7 +90,7 @@ export function createQuirkFetch(input: {
             return fetch(resource, init)
         }
         return fetch(resource, { ...init, body: JSON.stringify(next) })
-    }
+    }) as typeof fetch
 }
 
 export function applyQuirks(
@@ -154,12 +159,12 @@ export function extractReasoning(message: { reasoning_content?: string; reasonin
  * 请求照发，但 json_schema 降级和 thinking 注入都不会应用，
  * 表现为「换了个协议就开始 400」，很难排查。
  */
-function isGenerationRequest(resource: Parameters<typeof fetch>[0]): boolean {
+function isGenerationRequest(resource: Parameters<ProviderFetch>[0]): boolean {
     const url = getFetchUrl(resource)
     return url.includes("/chat/completions") || /\/responses(\?|$)/.test(url)
 }
 
-function getFetchUrl(resource: Parameters<typeof fetch>[0]): string {
+function getFetchUrl(resource: Parameters<ProviderFetch>[0]): string {
     if (typeof resource === "string") return resource
     if (resource instanceof URL) return resource.toString()
     if (typeof Request !== "undefined" && resource instanceof Request) return resource.url

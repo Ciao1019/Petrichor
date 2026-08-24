@@ -75,7 +75,7 @@ git push origin feat/your-feature-name
 
 - ✅ **PR 描述**：按 [`PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) 填写改动说明、关联 Issue、验证方式
 - ✅ **小而完整**：单个 PR 聚焦一件事，避免把多个无关变更打包提交
-- ✅ **不修改 `pnpm-lock.yaml`**，除非确实新增 / 升级了依赖
+- ✅ **不修改 `bun.lock`**，除非确实新增 / 升级了依赖
 - ✅ **数据库迁移**：所有新增的表结构 / 字段变更需放到 `docs/migrations/<yyyy-mm-dd>-<short-name>.sql`，并保证幂等
 - ✅ **不提交密钥**：检查 `.env.local`、连接串、API Key、Token 不能出现在 diff 中
 - ✅ **保持向后兼容**：除非有充分理由并在 PR 中说明
@@ -88,22 +88,22 @@ git push origin feat/your-feature-name
 
 | 工具 | 版本 |
 | --- | --- |
-| Node.js | ≥ 22 |
-| pnpm | 10.x（推荐 `corepack enable && corepack prepare pnpm@10.28.1 --activate`） |
+| Bun | 1.3.14（包管理、本地服务与生产服务端运行时） |
+| Node.js | ≥ 22（仅用于本地质量工具） |
 | PostgreSQL | 16+（推荐直接用 Supabase 免费实例） |
 | S3 兼容存储 | Bitiful / S3 / MinIO 任选 |
 
 ### 启动
 
 ```bash
-pnpm install
+bun install
 cp apps/web/.env.example apps/web/.env.local
 # 编辑 apps/web/.env.local 填入真实值，详见 README
 
-pnpm --silent --filter @petrichor/web db:sql > petrichor-init.sql
+bun --silent run db:sql > petrichor-init.sql
 # 把上面生成的 SQL 在 Supabase SQL Editor 跑一遍
 
-pnpm dev
+bun dev
 ```
 
 ---
@@ -180,15 +180,15 @@ feat(ai-review): 新增 AI 周报 / 月报功能
 **提交 PR 前必须全部通过**：
 
 ```bash
-pnpm typecheck       # TypeScript 类型检查
-pnpm lint            # ESLint
-pnpm test            # Vitest 单元测试
+bun typecheck       # TypeScript 类型检查
+bun lint            # ESLint
+bun test            # Vitest 单元测试
 ```
 
 涉及构建产物或路由变更时追加：
 
 ```bash
-pnpm build
+bun build
 ```
 
 如果有 UI 改动，请在 PR 描述中附上桌面 + 移动视口的截图或录屏。

@@ -150,11 +150,11 @@ openssl rand -hex 8
    ```bash
    git clone https://github.com/你的用户名/petrichor.git
    cd petrichor
-   pnpm install
+   bun install
    ```
 2. 生成初始化 SQL：
    ```bash
-   pnpm --silent --filter @petrichor/web db:sql > petrichor-init.sql
+   bun --silent run db:sql > petrichor-init.sql
    ```
 3. 打开 Supabase → **SQL Editor** → **New query**，把 `petrichor-init.sql` 全部内容粘贴进去，点 **Run** 执行。
 4. 看到 “Success. No rows returned” 即代表表结构已就绪。
@@ -187,9 +187,9 @@ openssl rand -hex 8
 
 5. 再点一次 **Redeploy**，登录页的「注册」入口就消失了，从此只有管理员能从后台手动加用户。
 
-#### 方法 B：直接在 Supabase SQL Editor 插入（需要本地 Node）
+#### 方法 B：直接在 Supabase SQL Editor 插入（需要本地 Bun）
 
-1. 在本地仓库目录生成 bcrypt 密码哈希（先 `pnpm install` 安装依赖）：
+1. 在本地仓库目录生成 bcrypt 密码哈希（先 `bun install` 安装依赖）：
    ```bash
    cd apps/web
    node -e "console.log(require('bcryptjs').hashSync('替换成你的明文密码', 10))"
@@ -360,8 +360,8 @@ PETRICHOR_LINUXDO_REDIRECT_URI=""
 
 ### 前置依赖
 
-- Node.js **≥ 22**
-- pnpm **10.x**（推荐 `corepack enable && corepack prepare pnpm@10.28.1 --activate`）
+- Bun **1.3.14**（包管理、本地服务与生产服务端运行时）
+- Node.js **≥ 22**（仅用于 Vitest、ESLint、TypeScript 等本地质量工具）
 - 一个可用的 Postgres 数据库（Supabase / 本地 Docker / 远程均可）
 
 ### 启动
@@ -369,14 +369,14 @@ PETRICHOR_LINUXDO_REDIRECT_URI=""
 ```bash
 git clone https://github.com/Ciao1019/Petrichor.git petrichor
 cd petrichor
-pnpm install
+bun install
 cp apps/web/.env.example apps/web/.env.local
 # 编辑 apps/web/.env.local 填入真实值
 
 # 初始化数据库（生成 SQL 后到 Supabase / psql 执行）
-pnpm --silent --filter @petrichor/web db:sql > petrichor-init.sql
+bun --silent run db:sql > petrichor-init.sql
 
-pnpm dev
+bun dev
 ```
 
 打开 <http://localhost:3000>。
@@ -384,11 +384,11 @@ pnpm dev
 ### 常用命令
 
 ```bash
-pnpm dev           # 启动开发服务器
-pnpm build         # 生产构建
-pnpm test          # 单元测试（Vitest）
-pnpm typecheck     # TypeScript 类型检查
-pnpm lint          # ESLint
+bun dev           # 启动开发服务器
+bun build         # 生产构建
+bun test          # 单元测试（Vitest）
+bun typecheck     # TypeScript 类型检查
+bun lint          # ESLint
 ```
 
 ---
@@ -428,9 +428,9 @@ pnpm lint          # ESLint
 欢迎 Issue / PR。提交前请确保：
 
 ```bash
-pnpm typecheck
-pnpm lint
-pnpm test
+bun typecheck
+bun lint
+bun test
 ```
 
 全部通过。
@@ -473,7 +473,7 @@ pnpm test
    openssl rand -hex 8       # PETRICHOR_ENCRYPT_SALT
    ```
 4. **Click the deploy button** above and fill the env form.
-5. **Initialize the database**: run `pnpm --silent --filter @petrichor/web db:sql` (or copy [`docs/petrichor-init.sql`](docs/petrichor-init.sql)) into Supabase SQL Editor.
+5. **Initialize the database**: run `bun --silent run db:sql` (or copy [`docs/petrichor-init.sql`](docs/petrichor-init.sql)) into Supabase SQL Editor.
 6. **Create the first super-admin** — the init SQL does **not** seed any user. Two options:
    - **Recommended (no SQL):** temporarily set `NEXT_PUBLIC_REGISTER_ENABLED=true` on Vercel → redeploy → register from `/login`. While no super-admin exists yet, the **first registered account automatically becomes `SUPER_ADMIN`** — no need to touch `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE`. Then revert the var and redeploy.
    - **Via SQL:** generate a bcrypt hash locally (`cd apps/web && node -e "console.log(require('bcryptjs').hashSync('YourPwd', 10))"`) and run [`docs/create-first-admin.sql`](docs/create-first-admin.sql) in Supabase with your email + hash filled in.

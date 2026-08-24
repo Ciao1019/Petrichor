@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "web",
-      "runtimeExecutable": "pnpm",
+      "runtimeExecutable": "bun",
       "runtimeArgs": ["--filter", "@petrichor/web", "dev"],
       "port": 3000
     }

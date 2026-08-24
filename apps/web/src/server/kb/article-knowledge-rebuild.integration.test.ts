@@ -14,7 +14,7 @@ vi.mock("./knowledge-build-workflow", async (importOriginal) => {
 
 const hasSqlite = (() => {
     try {
-        createRequire(import.meta.url)("better-sqlite3")
+        createRequire(import.meta.url)("bun:sqlite")
         return true
     } catch {
         return false
@@ -76,7 +76,7 @@ describe.runIf(hasSqlite)("单篇文章知识重建", () => {
             .mockResolvedValueOnce(buildWorkflowResult("新切片", "concept-new", "新概念"))
 
         const db = getDb()
-        // better-sqlite3 的 transaction 回调必须同步；本用例只验证重建持久化语义，
+        // bun:sqlite 的 transaction 回调必须同步；本用例只验证重建持久化语义，
         // 因此让回调直接使用同一个测试数据库执行。
         vi.spyOn(db, "transaction").mockImplementation(async (callback) => callback(db as never))
 

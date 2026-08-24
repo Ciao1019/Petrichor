@@ -146,7 +146,7 @@ const STACK: { group: string; items: string[] }[] = [
     { group: "编辑器", items: ["PlateJS", "Slate", "Markdown", "KaTeX", "Mind Map", "Whiteboard"] },
     { group: "数据层", items: ["PostgreSQL", "Supabase", "Drizzle ORM", "S3 兼容存储"] },
     { group: "AI", items: ["Vercel AI SDK", "OpenAI", "Gemini", "DeepSeek", "向量召回", "MCP"] },
-    { group: "工程", items: ["pnpm 10", "Vitest", "ESLint", "Vercel", "Node ≥ 22"] },
+    { group: "工程", items: ["Bun 1.3", "Vitest", "ESLint", "Vercel", "Next 16"] },
 ]
 
 const DEPLOY_STEPS: { title: string; detail: string; ink: string }[] = [
@@ -184,10 +184,10 @@ const DEPLOY_STEPS: { title: string; detail: string; ink: string }[] = [
 
 const TERMINAL_LINES: { text: string; prompt?: boolean; muted?: boolean; caret?: boolean }[] = [
     { text: "git clone https://github.com/Ciao1019/Petrichor.git petrichor", prompt: true },
-    { text: "cd petrichor && pnpm install", prompt: true },
+    { text: "cd petrichor && bun install", prompt: true },
     { text: "cp apps/web/.env.example apps/web/.env.local", prompt: true },
     { text: "# 填好 DATABASE_URL / SESSION_SECRET / S3_* 后：", muted: true },
-    { text: "pnpm dev", prompt: true, caret: true },
+    { text: "bun dev", prompt: true, caret: true },
     { text: "→ http://localhost:3000", muted: true },
 ]
 
@@ -483,7 +483,7 @@ export function PetrichorPage() {
                                 ))}
                             </div>
                             <p className="mt-3 text-[0.72rem] leading-relaxed" style={{ color: "var(--desk-sheet-muted)" }}>
-                                需要 Node ≥ 22 与 pnpm 10.x。提交前跑 pnpm typecheck / lint / test 三件套。
+                                需要 Bun ≥ 1.3.14。提交前跑 bun typecheck / lint / test 三件套。
                             </p>
                         </div>
                     </section>

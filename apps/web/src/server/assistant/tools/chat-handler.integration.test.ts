@@ -20,10 +20,10 @@ vi.mock("@/server/auth/current-user", () => ({
 }))
 
 // 原先按 Node ABI 版本号硬编码，换个 Node 版本就整组静默跳过。
-// 改成按"能不能真的加载 better-sqlite3"判断，保证该跑的时候一定会跑。
+// 改成按"能不能真的加载 bun:sqlite"判断，保证该跑的时候一定会跑。
 const runIntegration = (() => {
     try {
-        createRequire(import.meta.url)("better-sqlite3")
+        createRequire(import.meta.url)("bun:sqlite")
         return true
     } catch {
         return false

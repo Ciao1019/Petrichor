@@ -13,7 +13,7 @@ import { buildSqliteMigrationSql } from "./sqlite-migration"
 const require = createRequire(import.meta.url)
 const hasSqlite = (() => {
     try {
-        require("better-sqlite3")
+        require("bun:sqlite")
         return true
     } catch {
         return false

@@ -10,7 +10,7 @@ import type { SiteGraphStatus } from "./types"
  * 图查询层：不使用图数据库，树形结构靠邻接表（parent_id）+ PostgreSQL 递归 CTE，
  * 跨树关系的 N 跳邻域同样用递归 CTE 在关系表上展开。
  *
- * 本地 SQLite 开发模式下 drizzle 的 better-sqlite3 driver 没有 execute()，
+ * 本地 SQLite 开发模式下 drizzle 的 bun:sqlite driver 没有 execute()，
  * 因此每个查询都配了一份等价的内存遍历兜底（图规模上限 1200 节点，成本可忽略）。
  */
 

@@ -7,7 +7,7 @@ vi.mock("./wiki-agent-logic", () => ({ buildArticleKnowledge }))
 
 const hasSqlite = (() => {
     try {
-        createRequire(import.meta.url)("better-sqlite3")
+        createRequire(import.meta.url)("bun:sqlite")
         return true
     } catch {
         return false

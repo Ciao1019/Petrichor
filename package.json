@@ -1,39 +1,36 @@
 {
-    "name": "petrichor",
-    "private": true,
-    "version": "0.0.0",
-    "type": "module",
-    "packageManager": "pnpm@10.28.1",
-    "workspaces": [
-        "apps/web"
-    ],
-    "scripts": {
-        "dev": "pnpm --filter @petrichor/web dev",
-        "build": "pnpm --filter @petrichor/web build",
-        "vercel-build": "pnpm db:migrate:vercel && pnpm build",
-        "db:backfill-public-article-metadata": "pnpm --filter @petrichor/web db:backfill-public-article-metadata",
-        "db:sql": "pnpm --filter @petrichor/web db:sql",
-        "db:run-sql": "pnpm --filter @petrichor/web db:run-sql",
-        "db:migrate": "pnpm --filter @petrichor/web db:migrate",
-        "db:migrate:vercel": "pnpm --filter @petrichor/web db:migrate:vercel",
-        "lint": "pnpm --filter @petrichor/web lint",
-        "test": "pnpm --filter @petrichor/web test",
-        "typecheck": "pnpm --filter @petrichor/web typecheck"
-    },
+  "name": "petrichor",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "bun@1.3.14",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+        "dev": "bun run --cwd apps/web dev",
+        "build": "bun run --cwd apps/web build",
+        "vercel-build": "bun run db:migrate:vercel && bun run build",
+        "db:backfill-public-article-metadata": "bun run --cwd apps/web db:backfill-public-article-metadata",
+        "db:sql": "bun run --silent --cwd apps/web db:sql",
+        "db:run-sql": "bun run --cwd apps/web db:run-sql",
+        "db:migrate": "bun run --cwd apps/web db:migrate",
+        "db:migrate:vercel": "bun run --cwd apps/web db:migrate:vercel",
+        "lint": "bun run --cwd apps/web lint",
+        "test": "bun run --cwd apps/web test",
+        "typecheck": "bun run --cwd apps/web typecheck"
+  },
     "engines": {
-        "node": ">=22.0.0",
-        "npm": ">=10.0.0"
-    },
-    "pnpm": {
-        "onlyBuiltDependencies": [
-            "better-sqlite3",
-            "esbuild",
-            "msgpackr-extract",
-            "sharp",
-            "unrs-resolver"
-        ],
-        "patchedDependencies": {
-            "@lobehub/ui@5.15.17": "patches/@lobehub__ui@5.15.17.patch"
-        }
-    }
+        "bun": ">=1.3.14",
+        "node": ">=22.0.0"
+  },
+    "trustedDependencies": [
+        "esbuild",
+    "msgpackr-extract",
+    "sharp",
+    "unrs-resolver"
+  ],
+  "patchedDependencies": {
+    "@lobehub/ui@5.15.17": "patches/@lobehub__ui@5.15.17.patch"
+  }
 }

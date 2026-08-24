@@ -280,7 +280,7 @@ if (result.ok) {
 
 1. **路由级 lazy** —— 编辑器、图表页全部动态 import
 2. **重库隔离** —— KaTeX / mermaid / PlateJS 各自成 chunk
-3. **公共库去重** —— 锁 pnpm resolution，消灭双版本 lodash
+3. **公共库去重** —— 锁定 bun.lock 解析结果，消灭双版本 lodash
 
 ## 量化结果
 

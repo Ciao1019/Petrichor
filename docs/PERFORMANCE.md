@@ -114,13 +114,13 @@ if (!result.success) {
 
 ```bash
 # 运行测试
-pnpm test
+bun test
 
 # 带覆盖率报告
-pnpm test:coverage
+bun test:coverage
 
 # 交互式 UI
-pnpm test:ui
+bun test:ui
 ```
 
 - ✅ 覆盖率目标：60%+
@@ -131,13 +131,13 @@ pnpm test:ui
 
 ```bash
 # 安装浏览器
-pnpm exec playwright install
+bunx playwright install
 
 # 运行 E2E 测试
-pnpm exec playwright test
+bunx playwright test
 
 # 查看报告
-pnpm exec playwright show-report
+bunx playwright show-report
 ```
 
 - ✅ 多浏览器支持（Chrome/Firefox/Safari）
@@ -155,10 +155,10 @@ pnpm exec playwright show-report
 
 ```bash
 # 检查代码
-pnpm biome:check
+bun biome:check
 
 # 自动修复
-pnpm biome:fix
+bun biome:fix
 ```
 
 - ✅ 比 ESLint 快 50 倍
@@ -169,7 +169,7 @@ pnpm biome:fix
 
 ```bash
 # 生成 bundle 分析报告
-pnpm analyze
+bun analyze
 ```
 
 打开 `.next/analyze/client.html` 查看详细的包大小分析。
@@ -198,12 +198,12 @@ pnpm analyze
 
 1. **Vercel Analytics** (免费)
 ```bash
-pnpm add @vercel/analytics
+bun add @vercel/analytics
 ```
 
 2. **Sentry 错误追踪**
 ```bash
-pnpm add @sentry/nextjs
+bun add @sentry/nextjs
 ```
 
 3. **Web Vitals 报告**

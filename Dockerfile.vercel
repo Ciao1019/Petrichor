@@ -1,25 +1,25 @@
-# pnpm monorepo -> Next.js standalone server, packaged for Vercel Functions
+# Bun monorepo -> Next.js standalone server, packaged for Vercel Functions
 # (Vercel auto-detects Dockerfile.vercel at the project root and routes all
 # traffic to it; see https://vercel.com/docs/functions/container-images)
 #
 # Build context MUST be the repository root (Vercel Project Root Directory),
-# because the pnpm lockfile / workspace file live there, not in apps/web.
+# because the Bun lockfile and workspace package live there, not in apps/web.
 
-FROM node:22-bookworm-slim AS base
-RUN corepack enable
+FROM oven/bun:1.3.14-debian AS base
 WORKDIR /app
 
 # ---- deps: install with the lockfile only, so this layer caches across
 # source-only changes -------------------------------------------------------
 FROM base AS deps
-# native modules (better-sqlite3, sharp, msgpackr-extract, unrs-resolver) may
+# native modules (sharp, msgpackr-extract, unrs-resolver) may
 # need to compile from source if no prebuilt binary matches the base image.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json bun.lock ./
 COPY apps/web/package.json apps/web/package.json
-RUN pnpm install --frozen-lockfile
+COPY patches patches
+RUN bun install --frozen-lockfile
 
 # ---- builder: bring in the rest of the source and build ------------------
 FROM base AS builder
@@ -30,10 +30,10 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # (see apps/web/src/config/server.ts), so the build does not need them.
 # If a page ever starts reading env at build/SSG time, pass dummy values
 # here via ARG/ENV so `next build` doesn't fail on a fresh Vercel builder.
-RUN pnpm --filter @petrichor/web build
+RUN bun --filter @petrichor/web build
 
 # ---- runner: minimal runtime image ----------------------------------------
-FROM node:22-bookworm-slim AS runner
+FROM oven/bun:1.3.14-debian AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -46,6 +46,6 @@ COPY --from=builder /app/apps/web/.next/standalone ./
 COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=builder /app/apps/web/public ./apps/web/public
 
-USER node
+USER bun
 EXPOSE 80
-CMD ["node", "apps/web/server.js"]
+CMD ["bun", "apps/web/server.js"]

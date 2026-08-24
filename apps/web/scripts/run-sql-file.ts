@@ -4,7 +4,7 @@ import postgres from "postgres"
 
 const file = process.argv[2]
 if (!file) {
-    throw new Error("用法：tsx scripts/run-sql-file.ts <path-to-sql>")
+    throw new Error("用法：bun scripts/run-sql-file.ts <path-to-sql>")
 }
 const url = process.env.DATABASE_URL
 if (!url) {

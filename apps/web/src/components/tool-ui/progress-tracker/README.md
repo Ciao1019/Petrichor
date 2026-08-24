@@ -16,4 +16,4 @@ Implementation for the "progress-tracker" Tool UI surface.
 
 Run this after edits:
 
-pnpm test
+bun test
