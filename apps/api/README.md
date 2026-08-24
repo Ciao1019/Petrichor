@@ -47,6 +47,10 @@ go test ./internal/...
 1. **2FA 移除**（产品决策）：登录密码通过即发会话，不再进入两步验证；`profile.twoFactorEnabled` 恒 false。
 2. **AI provider 协议**：OpenAI 兼容（含 chat）、Anthropic Messages、Google Gemini 已实现；`azure / amazon-bedrock / google-vertex` 与 OpenAI Responses 协议返回明确错误（需要云厂商凭证的场景建议继续留在 Node 边车或后续补充）。
 3. **PDF 导入**：视觉 OCR 走 VISION 模型逐页转写已实现；本地 PDF 文本抽取（firecrawl pdf-inspector）无 Go 等价物，导入链路建议依赖 OCR 模式。
-4. **assistant/chat 运行时**：对外 UIMessage 流协议、落库结构与 409 语义一致；V2 完整工具编排简化为对话补全 + RAG。
+4. **assistant/chat 运行时**：对外 UIMessage 流协议、落库结构与 409 语义一致。已移植 V2 Runtime 核心（复杂度判定/计划/上下文组装预算/工具执行器/证据与观察/停止策略/循环检测/质量门/强制收敛/knowledge+wiki 检索工具/load_skill 元工具），aicore 新增 OpenAI 兼容协议 tool-calling（流式 tool_calls 聚合）。剩余偏差：
+   - Anthropic / Google 协议暂不支持工具调用（走无工具补全）；
+   - research / writer / memory / graph / document / admin 域工具未移植（技能目录可见，加载后仅有说明）；
+   - 子代理委派服务面已有门控但未接线并行执行器；危险操作确认票据流、LLM 注入分类器未移植；
+   - chat-handler 侧规则意图路由（router-hint）与持久摘要召回（context-pack/recall）未接线。
 5. **MCP**：JSON-RPC over HTTP 最小实现（initialize/tools/list/tools-call），13 个核心工具，无 SSE 传输（与 TS 版行为一致）。
 6. **SQLite 方言**：Go 仅支持 PostgreSQL（生产路径）；本地开发请连 Postgres。

@@ -580,6 +580,8 @@ func streamPublicQaAnswer(c *gin.Context, params streamPublicQaParams) {
 	header.Set("Cache-Control", "no-cache")
 	header.Set("Connection", "keep-alive")
 	header.Set("X-Accel-Buffering", "no")
+	// 显式 identity：Next 反代压缩中间件跳过 gzip，避免 SSE 被缓冲成一次性下发
+	header.Set("Content-Encoding", "identity")
 	header.Set("X-Vercel-Ai-Ui-Message-Stream", "v1")
 	header.Set("X-Petrichor-Qa-Remaining", strconv.FormatInt(params.quotaRemaining, 10))
 	header.Set("X-Petrichor-Qa-Limit", strconv.FormatInt(params.quotaLimit, 10))

@@ -15,10 +15,13 @@ import (
 )
 
 // ChatMessage 对话消息；Parts 非空时为多模态内容。
+// 工具对话：Role=tool 时 ToolCallID 必填；Role=assistant 可带 ToolCalls（发起调用）。
 type ChatMessage struct {
-	Role    string      `json:"role"` // system | user | assistant
-	Content string      `json:"content,omitempty"`
-	Parts   []MediaPart `json:"-"`
+	Role       string      `json:"role"` // system | user | assistant | tool
+	Content    string      `json:"content,omitempty"`
+	Parts      []MediaPart `json:"-"`
+	ToolCalls  []ToolCall  `json:"-"` // assistant 消息携带的工具调用
+	ToolCallID string      `json:"-"` // tool 消息对应的 call id
 }
 
 // MediaPart 多模态片段。
@@ -36,6 +39,8 @@ type ChatResult struct {
 	Reasoning    *string
 	InputTokens  int64
 	OutputTokens int64
+	ToolCalls    []ToolCall
+	HasToolCalls bool
 }
 
 var httpClient = &http.Client{Timeout: 300 * time.Second}
@@ -70,6 +75,8 @@ type openAIChatRequest struct {
 	Stream         bool              `json:"stream"`
 	ResponseFormat *openAIRespFormat `json:"response_format,omitempty"`
 	Thinking       *openAIThinking   `json:"thinking,omitempty"`
+	Tools          []map[string]any  `json:"tools,omitempty"`
+	ToolChoice     string            `json:"tool_choice,omitempty"`
 }
 
 type openAIThinking struct {
@@ -81,38 +88,65 @@ type openAIRespFormat struct {
 }
 
 type openAIMessage struct {
-	Role    string `json:"role"`
-	Content any    `json:"content"` // string 或 parts 数组
+	Role       string          `json:"role"`
+	Content    any             `json:"content"` // string 或 parts 数组
+	ToolCalls  []openAIToolRef `json:"tool_calls,omitempty"`
+	ToolCallID string          `json:"tool_call_id,omitempty"`
+	Name       string          `json:"name,omitempty"`
+}
+
+type openAIToolRef struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
 }
 
 func toOpenAIMessages(msgs []ChatMessage) []openAIMessage {
 	out := make([]openAIMessage, 0, len(msgs))
 	for _, m := range msgs {
-		if len(m.Parts) == 0 {
+		if len(m.Parts) == 0 && len(m.ToolCalls) == 0 && m.ToolCallID == "" {
 			out = append(out, openAIMessage{Role: m.Role, Content: m.Content})
 			continue
 		}
-		parts := make([]map[string]any, 0, len(m.Parts))
-		for _, p := range m.Parts {
-			switch p.Type {
-			case "image_url":
-				url := p.ImageURL
-				if url == "" && len(p.Data) > 0 {
-					mime := p.MIMEType
-					if mime == "" {
-						mime = "image/png"
+		entry := openAIMessage{Role: m.Role}
+		if len(m.Parts) > 0 {
+			parts := make([]map[string]any, 0, len(m.Parts))
+			for _, p := range m.Parts {
+				switch p.Type {
+				case "image_url":
+					url := p.ImageURL
+					if url == "" && len(p.Data) > 0 {
+						mime := p.MIMEType
+						if mime == "" {
+							mime = "image/png"
+						}
+						url = "data:" + mime + ";base64," + b64(p.Data)
 					}
-					url = "data:" + mime + ";base64," + b64(p.Data)
+					parts = append(parts, map[string]any{
+						"type":      "image_url",
+						"image_url": map[string]string{"url": url},
+					})
+				default:
+					parts = append(parts, map[string]any{"type": "text", "text": p.Text})
 				}
-				parts = append(parts, map[string]any{
-					"type":      "image_url",
-					"image_url": map[string]string{"url": url},
-				})
-			default:
-				parts = append(parts, map[string]any{"type": "text", "text": p.Text})
 			}
+			entry.Content = parts
+		} else {
+			entry.Content = m.Content
 		}
-		out = append(out, openAIMessage{Role: m.Role, Content: parts})
+		for _, call := range m.ToolCalls {
+			ref := openAIToolRef{ID: call.ID, Type: "function"}
+			ref.Function.Name = call.Name
+			ref.Function.Arguments = call.ArgsJSON
+			entry.ToolCalls = append(entry.ToolCalls, ref)
+		}
+		if m.ToolCallID != "" {
+			entry.ToolCallID = m.ToolCallID
+		}
+		out = append(out, entry)
 	}
 	return out
 }
@@ -146,12 +180,24 @@ func OpenAIChat(ctx context.Context, rt RuntimeConfig, modelID string, msgs []Ch
 	if resp.StatusCode >= 400 {
 		return nil, &httpx.HttpError{Status: 502, Message: fmt.Sprintf("模型调用失败(%d)：%s", resp.StatusCode, truncate(string(data), 300))}
 	}
+	return parseOpenAIPayload(data)
+}
+
+// parseOpenAIPayload 解析非流式 OpenAI 兼容响应（普通补全与带工具补全共用）。
+func parseOpenAIPayload(data []byte) (*ChatResult, error) {
 	var parsed struct {
 		Choices []struct {
 			Message struct {
 				Content          *string `json:"content"`
 				ReasoningContent *string `json:"reasoning_content"`
 				Reasoning        *string `json:"reasoning"`
+				ToolCalls        []struct {
+					ID       string `json:"id"`
+					Function struct {
+						Name      string `json:"name"`
+						Arguments string `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls"`
 			} `json:"message"`
 		} `json:"choices"`
 		Usage struct {
@@ -171,6 +217,15 @@ func OpenAIChat(ctx context.Context, rt RuntimeConfig, modelID string, msgs []Ch
 		res.Answer = *c.Message.Content
 	}
 	res.Reasoning = firstNonNil(c.Message.ReasoningContent, c.Message.Reasoning)
+	for _, call := range c.Message.ToolCalls {
+		if call.ID == "" && call.Function.Name == "" {
+			continue
+		}
+		res.ToolCalls = append(res.ToolCalls, ToolCall{ID: call.ID, Name: call.Function.Name, ArgsJSON: call.Function.Arguments})
+	}
+	if len(res.ToolCalls) > 0 {
+		res.HasToolCalls = true
+	}
 	return res, nil
 }
 
@@ -180,6 +235,47 @@ func OpenAIChatStream(ctx context.Context, rt RuntimeConfig, modelID string, msg
 	applyQuirksToOpenAI(&body, rt, modelID, opts)
 	return doSSE(ctx, rt, rt.effectiveBaseURL(Catalog[rt.ProviderKey].DefaultBaseURL)+"/chat/completions", body, onDelta)
 }
+
+// OpenAIChatWithTools 带工具的流式补全：文本增量回调，tool_calls 按 index 聚合后返回。
+func OpenAIChatWithTools(ctx context.Context, rt RuntimeConfig, modelID string, msgs []ChatMessage, opts GenerationOptions, tools []ToolDefinition, onDelta func(string) error) (*ChatResult, error) {
+	body := openAIChatRequest{Model: modelID, Messages: toOpenAIMessages(msgs), Temperature: opts.Temperature, MaxTokens: opts.MaxTokens, Stream: true}
+	if len(tools) > 0 {
+		body.Tools = openAIToolsPayload(tools)
+	}
+	applyQuirksToOpenAI(&body, rt, modelID, opts)
+	return doSSE(ctx, rt, rt.effectiveBaseURL(Catalog[rt.ProviderKey].DefaultBaseURL)+"/chat/completions", body, onDelta)
+}
+
+// OpenAIChatWithToolsOnce 非流式带工具补全。
+func OpenAIChatWithToolsOnce(ctx context.Context, rt RuntimeConfig, modelID string, msgs []ChatMessage, opts GenerationOptions, tools []ToolDefinition) (*ChatResult, error) {
+	body := openAIChatRequest{Model: modelID, Messages: toOpenAIMessages(msgs), Temperature: opts.Temperature, MaxTokens: opts.MaxTokens}
+	if len(tools) > 0 {
+		body.Tools = openAIToolsPayload(tools)
+	}
+	applyQuirksToOpenAI(&body, rt, modelID, opts)
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	url := rt.effectiveBaseURL(Catalog[rt.ProviderKey].DefaultBaseURL) + "/chat/completions"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	applyHeaders(req, rt, map[string]string{})
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return nil, &httpx.HttpError{Status: 502, Message: fmt.Sprintf("模型调用失败(%d)：%s", resp.StatusCode, truncate(string(data), 300))}
+	}
+	return parseOpenAIPayload(data)
+}
+
+// parseOpenAIPayload 已移至上方独立函数。
 
 func doSSE(ctx context.Context, rt RuntimeConfig, url string, body any, onDelta func(string) error) (*ChatResult, error) {
 	raw, err := json.Marshal(body)
@@ -201,6 +297,9 @@ func doSSE(ctx context.Context, rt RuntimeConfig, url string, body any, onDelta 
 		return nil, &httpx.HttpError{Status: 502, Message: fmt.Sprintf("模型调用失败(%d)：%s", resp.StatusCode, truncate(string(data), 300))}
 	}
 	res := &ChatResult{}
+	// 流式 tool_calls 按 index 聚合（OpenAI 规范：id/name 只在首帧出现，arguments 分帧追加）
+	callAcc := map[int]*toolCallAcc{}
+	callOrder := []int{}
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 1024*1024), 4*1024*1024)
 	for scanner.Scan() {
@@ -218,7 +317,16 @@ func doSSE(ctx context.Context, rt RuntimeConfig, url string, body any, onDelta 
 					Content          *string `json:"content"`
 					ReasoningContent *string `json:"reasoning_content"`
 					Reasoning        *string `json:"reasoning"`
+					ToolCalls        []struct {
+						Index    *int   `json:"index"`
+						ID       string `json:"id"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
 				} `json:"delta"`
+				FinishReason *string `json:"finish_reason"`
 			} `json:"choices"`
 			Usage *struct {
 				PromptTokens     int64 `json:"prompt_tokens"`
@@ -233,7 +341,7 @@ func doSSE(ctx context.Context, rt RuntimeConfig, url string, body any, onDelta 
 			res.OutputTokens = chunk.Usage.CompletionTokens
 		}
 		for _, choice := range chunk.Choices {
-			if choice.Delta.Content != nil && *choice.Delta.Content != "" {
+			if choice.Delta.Content != nil && *choice.Delta.Content != "" && onDelta != nil {
 				res.Answer += *choice.Delta.Content
 				if err := onDelta(*choice.Delta.Content); err != nil {
 					return res, err
@@ -242,7 +350,41 @@ func doSSE(ctx context.Context, rt RuntimeConfig, url string, body any, onDelta 
 			if r := firstNonNil(choice.Delta.ReasoningContent, choice.Delta.Reasoning); r != nil {
 				res.Reasoning = r
 			}
+			for _, tc := range choice.Delta.ToolCalls {
+				idx := 0
+				if tc.Index != nil {
+					idx = *tc.Index
+				} else if len(res.ToolCalls)+len(callOrder) > 0 {
+					idx = len(callOrder) - 1
+					if idx < 0 {
+						idx = 0
+					}
+				}
+				acc, ok := callAcc[idx]
+				if !ok {
+					acc = &toolCallAcc{}
+					callAcc[idx] = acc
+					callOrder = append(callOrder, idx)
+				}
+				if tc.ID != "" {
+					acc.id = tc.ID
+				}
+				if tc.Function.Name != "" {
+					acc.name += tc.Function.Name
+				}
+				acc.args += tc.Function.Arguments
+			}
 		}
+	}
+	for _, idx := range callOrder {
+		acc := callAcc[idx]
+		if acc.id == "" && acc.name == "" {
+			continue
+		}
+		res.ToolCalls = append(res.ToolCalls, ToolCall{ID: acc.id, Name: acc.name, ArgsJSON: acc.args})
+	}
+	if len(res.ToolCalls) > 0 {
+		res.HasToolCalls = true
 	}
 	return res, scanner.Err()
 }

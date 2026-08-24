@@ -36,6 +36,20 @@ func ChatStream(ctx context.Context, rt RuntimeConfig, modelID string, msgs []Ch
 	}
 }
 
+// ChatWithTools 带工具的流式补全：按 sdk 类型路由协议；文本增量回调，工具调用聚合返回。
+// Anthropic/Google 协议暂不支持工具，回落为无工具补全（与 TS 侧 provider 支持面一致）。
+func ChatWithTools(ctx context.Context, rt RuntimeConfig, modelID string, msgs []ChatMessage, opts GenerationOptions, tools []ToolDefinition, onDelta func(string) error) (*ChatResult, error) {
+	if len(tools) == 0 {
+		return ChatStream(ctx, rt, modelID, msgs, opts, onDelta)
+	}
+	switch effectiveSDK(rt.ProviderKey) {
+	case SDKAnthropic, SDKGoogle, SDKGoogleVertex, SDKAzure, SDKBedrock:
+		return nil, &unsupportedProtocolError{rt.ProviderKey + ":工具调用"}
+	default:
+		return OpenAIChatWithTools(ctx, rt, modelID, msgs, opts, tools, onDelta)
+	}
+}
+
 // Embeddings 统一向量入口（voyage 也走 /embeddings 兼容端点）。
 func Embeddings(ctx context.Context, rt RuntimeConfig, modelID string, texts []string) ([][]float32, error) {
 	base := rt.effectiveBaseURL("")

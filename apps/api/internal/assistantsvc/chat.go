@@ -1,8 +1,9 @@
 // chat.go 对照 chat-handler.ts（V2 对外契约）：
-// 接收消息 → 持久化 thread/message/run → 调用 CHAT 绑定模型流式补全 →
-// 以 assistant-ui UIMessage 流协议（SSE）把增量文本推给前端 → 结束落最终消息与 run 状态。
+// 接收消息 → 持久化 thread/message/run → PetrichorAgentRuntime 完整编排 →
+// 以 assistant-ui UIMessage 流协议（SSE）把事件推给前端 → 结束落最终消息与 run 状态。
 //
-// 内部工具编排（V2 完整 tool loop / 意图路由 / 上下文压缩）按移植约定简化为纯对话补全；
+// Runtime 移植：意图路由提示、复杂度判定、计划、上下文组装、工具循环
+// （knowledge/wiki 检索）、证据收集、质量门与强制收敛均对齐 TS V2 行为；
 // 协议、落库结构与「未配置对话模型 → 409」语义保持一致。
 package assistantsvc
 
@@ -14,15 +15,29 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
-	"petrichor/api/internal/aicore"
+	aicore "petrichor/api/internal/aicore"
+	rt "petrichor/api/internal/assistantsvc/runtime"
 	"petrichor/api/internal/auth"
 	httpx "petrichor/api/internal/httpx"
 )
+
+var toolsOnce sync.Once
+
+func ensureToolsRegistered() {
+	toolsOnce.Do(func() {
+		RegisterAssistantTools(rt.DefaultToolRegistry(), rt.DefaultSkills())
+	})
+}
+
+var stepCounter atomic.Int64
 
 // uiMessageStreamHeaders 复刻 ai 包 UI_MESSAGE_STREAM_HEADERS 与业务响应头。
 const headerThreadID = "X-Petrichor-Assistant-Thread-Id"
@@ -35,9 +50,6 @@ const streamErrorCode = "stream_error"
 
 // genericStreamErrorText 与 AI SDK 默认 onError 一致：不向客户端泄露服务端错误细节。
 const genericStreamErrorText = "An error occurred."
-
-// errStreamWriteFailed 客户端断开导致帧写入失败，按中断收敛。
-var errStreamWriteFailed = errors.New("assistant stream write failed")
 
 type chatRequest struct {
 	ThreadID     optFlexID       `json:"threadId"`
@@ -59,9 +71,13 @@ func AssistantChatHandler(c *gin.Context) {
 		httpx.ErrorJSON(c, 400, "请求参数错误")
 		return
 	}
-	if req.QaMode != nil && *req.QaMode != "normal" && *req.QaMode != "wiki" {
-		httpx.ErrorJSON(c, 400, "请求参数错误")
-		return
+	qaMode := ""
+	if req.QaMode != nil {
+		if *req.QaMode != "normal" && *req.QaMode != "wiki" {
+			httpx.ErrorJSON(c, 400, "请求参数错误")
+			return
+		}
+		qaMode = *req.QaMode
 	}
 	if req.RetryOfRunID != nil {
 		t := strings.TrimSpace(*req.RetryOfRunID)
@@ -133,6 +149,8 @@ func AssistantChatHandler(c *gin.Context) {
 		runID:    runID,
 		resolved: resolved,
 		messages: messages,
+		goal:     goal,
+		qaMode:   qaMode,
 	})
 }
 
@@ -142,6 +160,8 @@ type streamContext struct {
 	runID    int64
 	resolved *aicore.ResolvedModel
 	messages []json.RawMessage
+	goal     string
+	qaMode   string
 }
 
 // createAssistantRun 对应 createAssistantRun：status RUNNING、意图域先置空数组。
@@ -196,14 +216,20 @@ func (s *sseEmitter) errorFrame() {
 	s.chunk(map[string]any{"type": "error", "errorText": genericStreamErrorText})
 }
 
-// streamChatCompletion 执行纯对话补全并把增量文本按协议推给前端。
+// streamChatCompletion 执行 Runtime 编排并把事件按协议推给前端。
 func streamChatCompletion(c *gin.Context, sc streamContext) {
+	ensureToolsRegistered()
+
 	w := c.Writer
 	header := w.Header()
 	header.Set("Content-Type", "text/event-stream")
 	header.Set("Cache-Control", "no-cache")
 	header.Set("Connection", "keep-alive")
 	header.Set("X-Accel-Buffering", "no")
+	// 关键：显式声明 identity，Next.js 反代层的压缩中间件看到已有
+	// Content-Encoding 会跳过 gzip——否则 SSE 帧被缓冲到响应结束一次性下发，
+	// 浏览器端表现为"没有流式效果"。
+	header.Set("Content-Encoding", "identity")
 	header.Set("X-Vercel-Ai-Ui-Message-Stream", "v1")
 	header.Set(headerThreadID, idStr(sc.thread.ID))
 	header.Set(headerRunID, idStr(sc.runID))
@@ -211,88 +237,241 @@ func streamChatCompletion(c *gin.Context, sc streamContext) {
 
 	emitter := &sseEmitter{c: c}
 	ctx := c.Request.Context()
+	startedAt := time.Now()
 
-	messageID := newStreamID()
-	textPartID := newStreamID()
+	// 对齐 TS chat-bridge：最终答案只在 final_answer_completed 时写一段标准 text；
+	// 过程话绝不提前写进聊天消息（标准 text 不能撤回）。
+	agentAnswerWritten := false
+	messageID := newStreamMessageID()
+
+	// createUIMessageStream 会在流首尾自动补 start/finish 帧，这里显式对齐
 	emitter.chunk(map[string]any{"type": "start", "messageId": messageID})
-	emitter.chunk(map[string]any{"type": "start-step"})
-	emitter.chunk(map[string]any{"type": "text-start", "id": textPartID})
 
-	modelMessages := buildChatMessages(sc.messages)
-	msgs := make([]aicore.ChatMessage, 0, len(modelMessages)+1)
-	msgs = append(msgs, aicore.ChatMessage{Role: "system", Content: assistantSystemPrompt()})
-	msgs = append(msgs, modelMessages...)
+	runtime := rt.NewRuntime()
+	resolved := sc.resolved
+	modelHandle := &rt.ResolvedModelHandle{
+		Runtime: resolved.Runtime,
+		ModelID: resolved.ModelRef,
+		Options: resolved.Options,
+	}
 
-	rt := sc.resolved.Runtime
-	rt.Quirks = aicore.ResolveQuirks(rt.ProviderKey, sc.resolved.ModelRef)
-
-	var answer strings.Builder
-	chatStartedAt := time.Now()
-	result, err := aicore.ChatStream(ctx, rt, sc.resolved.ModelRef, msgs, sc.resolved.Options,
-		func(delta string) error {
-			answer.WriteString(delta)
-			if !emitter.chunk(map[string]any{"type": "text-delta", "id": textPartID, "delta": delta}) {
-				return errStreamWriteFailed
+	runRequest := &rt.RunRequest{
+		ConversationID: idStr(sc.thread.ID),
+		UserID:         sc.user.ID,
+		DBRunID:        sc.runID,
+		ThreadID:       sc.thread.ID,
+		SystemRole:     sc.user.SystemRole,
+		Goal:           sc.goal,
+		Messages:       uiMessagesToRuntime(sc.messages),
+		Model:          modelHandle,
+		ModelName:      resolved.ModelRef,
+		StartedAt:      startedAt.UnixMilli(),
+		TurnCount:      len(sc.messages),
+		QaMode:         sc.qaMode,
+		OnEvent: func(event *rt.AgentStreamEvent) {
+			var payloadMap map[string]any
+			if len(event.Payload) > 0 {
+				if err := json.Unmarshal(event.Payload, &payloadMap); err != nil {
+					payloadMap = map[string]any{}
+				}
 			}
-			return nil
-		})
-	streamSettledAt := time.Now()
+
+			switch event.Type {
+			case "final_answer_started":
+				// 服务端只把最后一段当作最终答案：这里跟着重置兜底缓冲。
+				if payloadMap == nil {
+					payloadMap = map[string]any{}
+				}
+			case "final_answer_delta":
+				_ = payloadMap
+			case "final_answer_completed":
+				text := ""
+				if t, ok := payloadMap["text"].(string); ok && strings.TrimSpace(t) != "" {
+					text = t
+				}
+				if text != "" && !agentAnswerWritten {
+					agentAnswerWritten = true
+					emitter.chunk(map[string]any{"type": "text-start", "id": agentAnswerTextID})
+					emitter.chunk(map[string]any{"type": "text-delta", "id": agentAnswerTextID, "delta": text})
+					emitter.chunk(map[string]any{"type": "text-end", "id": agentAnswerTextID})
+				}
+			case "agent_stopped":
+				// 停止原因转成面向用户的安全文案，内部策略名不外泄
+				if reason, ok := payloadMap["stopReason"].(string); ok {
+					if safe := rt.DescribeStopReasonForUser(rt.AgentStopReason(reason)); safe != "" {
+						payloadMap["message"] = safe
+					}
+				}
+			case "agent_completed", "agent_cancelled", "agent_error":
+			default:
+			}
+
+			emitter.chunk(map[string]any{
+				"type": agentEventPartType,
+				"id":   dataPartID(event),
+				"data": map[string]any{
+					"runId":     event.RunID,
+					"sequence":  event.Sequence,
+					"type":      event.Type,
+					"timestamp": event.Timestamp,
+					"payload":   payloadMap,
+				},
+			})
+		},
+		OnToolTrace: func(trace rt.AgentToolTrace) {
+			// 对齐 TS onToolTrace → assistant_step 表
+			inputJSON, _ := json.Marshal(trace.Input)
+			var outputPayload any = map[string]any{"summary": trace.Summary}
+			if trace.OK && trace.RawOutput != nil {
+				outputPayload = trace.RawOutput
+			} else if !trace.OK {
+				outputPayload = map[string]any{"error": trace.Summary, "errorCode": trace.ErrorCode}
+			}
+			outputJSON, _ := json.Marshal(outputPayload)
+			_, _ = dbPool().Exec(context.Background(),
+				`INSERT INTO petrichor_assistant_step
+				 (run_id, step_index, tool_name, input_json, output_json, status, error_code, duration_ms)
+				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+				sc.runID, int(stepCounter.Add(1))-1, trace.ToolName,
+				string(inputJSON), string(outputJSON),
+				stepStatus(trace.OK), nullableErrCode(trace.ErrorCode), trace.DurationMs)
+		},
+	}
+
+	result, runErr := runtime.Run(ctx, runRequest)
 
 	status := "COMPLETED"
 	errorCode := ""
-	if err != nil {
-		status = "FAILED"
-		if errors.Is(err, context.Canceled) || errors.Is(err, errStreamWriteFailed) {
-			errorCode = streamAbortedCode
+	switch {
+	case runErr != nil:
+		if errors.Is(runErr, context.Canceled) {
+			status, errorCode = "FAILED", streamAbortedCode
 		} else {
-			errorCode = streamErrorCode
+			status, errorCode = "FAILED", streamErrorCode
 		}
-	} else {
-		emitter.chunk(map[string]any{"type": "text-end", "id": textPartID})
-		emitter.chunk(map[string]any{"type": "finish-step"})
+	case result != nil && result.State.Status == rt.StatusCancelled:
+		status, errorCode = "FAILED", streamAbortedCode
+	default:
 		emitter.chunk(map[string]any{"type": "finish"})
 	}
 
 	_ = finishAssistantRun(context.Background(), sc.runID, status, errorCode)
 
 	// 落库不阻塞流关闭；失败只记录日志（fail-open）
-	answerText := answer.String()
-	if answerText != "" {
-		content := map[string]any{
-			"parts": []map[string]any{{"type": "text", "text": answerText}},
-		}
-		if result != nil {
-			usage := flatUsage(result)
-			if usage != nil {
-				content["usage"] = usage
-			}
-			totalStreamTime := maxInt64(0, streamSettledAt.Sub(chatStartedAt).Milliseconds())
-			if totalStreamTime > 0 {
-				content["totalStreamTime"] = totalStreamTime
-				outputTokens := usage["outputTokens"]
-				if v, ok := outputTokens.(int64); ok && v > 0 {
-					content["tokensPerSecond"] = float64(v) / (float64(totalStreamTime) / 1000)
-				}
-			}
-		}
+	if result != nil && result.Answer != "" {
+		content := buildAssistantPersistContent(result, startedAt)
 		if perr := persistAssistantMessage(context.Background(), sc.user.ID, sc.thread.ID, "assistant", content, ""); perr != nil {
 			gin.DefaultErrorWriter.Write([]byte("[assistantsvc.chat] persist assistant message: " + perr.Error() + "\n"))
 		}
 	}
 
-	if err != nil {
+	if runErr != nil || (result != nil && result.State.Status == rt.StatusFailed) {
 		emitter.errorFrame()
 	}
 	emitter.done()
 }
 
-// assistantSystemPrompt 纯对话补全运行时的精简系统提示（对照 buildAssistantSystemPrompt 的公共约束）。
-func assistantSystemPrompt() string {
-	return strings.Join([]string{
-		"你是 Petrichor 的站内助手，以对话方式帮助已登录用户查看和操作系统。",
-		"站内事实必须以检索与工具结果为准；检索不到就如实说明，不要编造数据、来源、链接或原文片段。",
-		"只使用中文回答，直接、结构清晰。",
-	}, "\n")
+func stepStatus(ok bool) string {
+	if ok {
+		return "COMPLETED"
+	}
+	return "FAILED"
+}
+
+func nullableErrCode(code rt.AgentToolErrorCode) any {
+	if code == "" {
+		return nil
+	}
+	return string(code)
+}
+
+// agentEventPartType 与 agentAnswerTextID 对照 chat-bridge.ts 的 AGENT_EVENT_PART_TYPE / AGENT_ANSWER_TEXT_ID。
+const (
+	agentEventPartType = "data-agent-event"
+	agentAnswerTextID  = "agent-answer"
+)
+
+// dataPartID 高频 delta 复用同一个 data part，其余按 sequence 唯一。
+func dataPartID(event *rt.AgentStreamEvent) string {
+	if event.Type == "final_answer_delta" {
+		return event.RunID + ":answer-delta"
+	}
+	return event.RunID + ":" + strconv.FormatInt(int64(event.Sequence), 10)
+}
+
+// newStreamMessageID 生成流首帧的 messageId（对应 AI SDK 自动生成的 id 形状）。
+func newStreamMessageID() string {
+	buf := make([]byte, 12)
+	if _, err := rand.Read(buf); err != nil {
+		return fmt.Sprintf("go-%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(buf)
+}
+
+// buildAssistantPersistContent 组装落库 content（对齐 TS 的 parts + agentRunId + usage）。
+func buildAssistantPersistContent(result *rt.RunResult, startedAt time.Time) json.RawMessage {
+	content := map[string]any{
+		"parts": []map[string]any{{"type": "text", "text": result.Answer}},
+	}
+	if result.RunID != "" {
+		content["agentRunId"] = result.RunID
+	}
+	usage := map[string]any{}
+	if tu := result.State.TokenUsage; tu.Input > 0 || tu.Output > 0 {
+		if tu.Input > 0 {
+			usage["inputTokens"] = tu.Input
+		}
+		if tu.Output > 0 {
+			usage["outputTokens"] = tu.Output
+		}
+		if tu.Total > 0 {
+			usage["totalTokens"] = tu.Total
+		}
+		content["usage"] = usage
+	}
+	totalMs := time.Since(startedAt).Milliseconds()
+	if totalMs > 0 {
+		content["totalStreamTime"] = totalMs
+		if out, ok := usage["outputTokens"].(int64); ok && out > 0 {
+			content["tokensPerSecond"] = float64(out) / (float64(totalMs) / 1000)
+		}
+	}
+	raw, err := json.Marshal(content)
+	if err != nil {
+		return json.RawMessage(`{"parts":[{"type":"text","text":""}]}`)
+	}
+	return raw
+}
+
+// uiMessagesToRuntime 把 UIMessage 数组转成 Runtime 消息（role+content 文本）。
+func uiMessagesToRuntime(messages []json.RawMessage) []map[string]any {
+	out := make([]map[string]any, 0, len(messages))
+	for _, raw := range messages {
+		var env struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+			Parts   json.RawMessage `json:"parts"`
+		}
+		if json.Unmarshal(raw, &env) != nil {
+			continue
+		}
+		text := ""
+		var str string
+		if isJSONString(env.Content) && json.Unmarshal(env.Content, &str) == nil {
+			text = str
+		} else {
+			parts := env.Parts
+			if !isJSONArray(parts) {
+				parts = env.Content
+			}
+			text = strings.Join(filterNonEmpty(collectTextParts(parts)), "\n")
+		}
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+		out = append(out, map[string]any{"role": env.Role, "content": text})
+	}
+	return out
 }
 
 // ===== 消息转换 =====
@@ -359,44 +538,6 @@ func collectTextParts(parts json.RawMessage) []string {
 	return out
 }
 
-// buildChatMessages 对照 convertToModelMessages：仅保留带文本的 user/assistant/system 消息。
-func buildChatMessages(messages []json.RawMessage) []aicore.ChatMessage {
-	out := make([]aicore.ChatMessage, 0, len(messages))
-	for _, raw := range messages {
-		var env uiMessageEnvelope
-		if json.Unmarshal(raw, &env) != nil {
-			continue
-		}
-		role := ""
-		switch env.Role {
-		case "user", "assistant", "system":
-			role = env.Role
-		default:
-			continue
-		}
-		var str string
-		if isJSONString(env.Content) && json.Unmarshal(env.Content, &str) == nil {
-			if strings.TrimSpace(str) != "" {
-				out = append(out, aicore.ChatMessage{Role: role, Content: str})
-			}
-			continue
-		}
-		parts := env.Parts
-		if !isJSONArray(parts) {
-			parts = env.Content
-		}
-		if !isJSONArray(parts) {
-			continue
-		}
-		text := strings.Join(filterNonEmpty(collectTextParts(parts)), "\n")
-		if strings.TrimSpace(text) == "" {
-			continue
-		}
-		out = append(out, aicore.ChatMessage{Role: role, Content: text})
-	}
-	return out
-}
-
 // ===== 小工具 =====
 
 func filterNonEmpty(in []string) []string {
@@ -420,38 +561,4 @@ func jsonArrayItems(raw json.RawMessage) []json.RawMessage {
 		return nil
 	}
 	return items
-}
-
-func newStreamID() string {
-	buf := make([]byte, 12)
-	if _, err := rand.Read(buf); err != nil {
-		return fmt.Sprintf("go-%d", time.Now().UnixNano())
-	}
-	return hex.EncodeToString(buf)
-}
-
-func maxInt64(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-// flatUsage 对应 flattenAssistantUsage：压成扁平 token 字段，无有效值时返回 nil。
-func flatUsage(result *aicore.ChatResult) map[string]any {
-	if result == nil || (result.InputTokens <= 0 && result.OutputTokens <= 0) {
-		return nil
-	}
-	usage := map[string]any{}
-	if result.InputTokens > 0 {
-		usage["inputTokens"] = result.InputTokens
-	}
-	if result.OutputTokens > 0 {
-		usage["outputTokens"] = result.OutputTokens
-	}
-	total := result.InputTokens + result.OutputTokens
-	if total > 0 {
-		usage["totalTokens"] = total
-	}
-	return usage
 }

@@ -554,7 +554,7 @@ func QAModelInfo(c *ginContext) {
 		user := currentUser(c)
 		q := pool()
 		rows, err := q.Query(c,
-			`SELECT m.id, m.model_id, m.display_name, m.context_window
+			`SELECT m.id, m.model_id, m.display_name, m.context_window, p.name
 			 FROM petrichor_ai_model m JOIN petrichor_ai_provider p ON p.id = m.provider_id
 			 WHERE m.user_id = $1 AND m.kind = 'LANGUAGE' AND m.enabled = true AND p.enabled = true
 			 ORDER BY p.name ASC, m.model_id ASC`, user.ID)
@@ -567,7 +567,8 @@ func QAModelInfo(c *ginContext) {
 			var modelID string
 			var displayName *string
 			var contextWindow *int32
-			if err := rows.Scan(&id, &modelID, &displayName, &contextWindow); err != nil {
+			var providerName string
+			if err := rows.Scan(&id, &modelID, &displayName, &contextWindow, &providerName); err != nil {
 				rows.Close()
 				return nil, err
 			}
@@ -575,11 +576,12 @@ func QAModelInfo(c *ginContext) {
 			if contextWindow != nil && *contextWindow > 0 {
 				window = int64(*contextWindow)
 			}
+			// 对齐 TS：displayName 为 NULL 时兜底「供应商名 · 模型ID」
 			name := ""
-			if displayName != nil && *displayName != "" {
+			if displayName != nil {
 				name = *displayName
 			} else {
-				name = modelID
+				name = providerName + " · " + modelID
 			}
 			models = append(models, &availableModel{
 				configID:      strconv.FormatInt(id, 10),
