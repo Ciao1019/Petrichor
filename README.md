@@ -116,13 +116,13 @@ openssl rand -hex 8
 
 ### 第 4 步：点击下方按钮，一键部署
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FCiao1019%2FPetrichor&project-name=petrichor&repository-name=petrichor&root-directory=apps%2Fweb&env=DATABASE_URL,SESSION_SECRET,PETRICHOR_ENCRYPT_KEY,PETRICHOR_ENCRYPT_SALT,S3_ENDPOINT,S3_REGION,S3_BUCKET,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY,NEXT_PUBLIC_APP_URL&envDescription=%E5%A1%AB%E5%85%A5%E6%95%B0%E6%8D%AE%E5%BA%93%E3%80%81%E4%BC%9A%E8%AF%9D%E5%AF%86%E9%92%A5%E3%80%81%E5%8A%A0%E5%AF%86%E5%AF%86%E9%92%A5%E5%92%8C%E5%AF%B9%E8%B1%A1%E5%AD%98%E5%82%A8%E7%AD%89%E5%BF%85%E5%A1%AB%E7%8E%AF%E5%A2%83%E5%8F%98%E9%87%8F&envLink=https%3A%2F%2Fgithub.com%2FCiao1019%2FPetrichor%23-%E7%8E%AF%E5%A2%83%E5%8F%98%E9%87%8F%E9%80%9F%E6%9F%A5%E8%A1%A8)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FCiao1019%2FPetrichor&project-name=petrichor&repository-name=petrichor&env=DATABASE_URL,SESSION_SECRET,PETRICHOR_ENCRYPT_KEY,PETRICHOR_ENCRYPT_SALT,S3_ENDPOINT,S3_REGION,S3_BUCKET,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY,NEXT_PUBLIC_APP_URL&envDescription=%E5%A1%AB%E5%85%A5%E6%95%B0%E6%8D%AE%E5%BA%93%E3%80%81%E4%BC%9A%E8%AF%9D%E5%AF%86%E9%92%A5%E3%80%81%E5%8A%A0%E5%AF%86%E5%AF%86%E9%92%A5%E5%92%8C%E5%AF%B9%E8%B1%A1%E5%AD%98%E5%82%A8%E7%AD%89%E5%BF%85%E5%A1%AB%E7%8E%AF%E5%A2%83%E5%8F%98%E9%87%8F&envLink=https%3A%2F%2Fgithub.com%2FCiao1019%2FPetrichor%23-%E7%8E%AF%E5%A2%83%E5%8F%98%E9%87%8F%E9%80%9F%E6%9F%A5%E8%A1%A8)
 
 按钮会自动：
 
 - ✅ 把当前仓库 Fork 到你自己的 GitHub
 - ✅ 在 Vercel 创建一个新项目
-- ✅ 把 **Root Directory** 自动设为 `apps/web`
+- ✅ 使用仓库根目录作为 **Root Directory**，读取根目录的 Bun workspace 与 Vercel 配置
 - ✅ 弹出表单让你填入所有**必填**环境变量
 
 按照下表把第 1–3 步收集到的值粘贴进去：
@@ -192,7 +192,7 @@ openssl rand -hex 8
 1. 在本地仓库目录生成 bcrypt 密码哈希（先 `bun install` 安装依赖）：
    ```bash
    cd apps/web
-   node -e "console.log(require('bcryptjs').hashSync('替换成你的明文密码', 10))"
+   bun -e "console.log(require('bcryptjs').hashSync('替换成你的明文密码', 10))"
    ```
    会输出形如 `$2a$10$...` 的哈希串，复制下来。
 
@@ -462,7 +462,7 @@ bun test
 
 ### Quick deploy
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FCiao1019%2FPetrichor&project-name=petrichor&repository-name=petrichor&root-directory=apps%2Fweb&env=DATABASE_URL,SESSION_SECRET,PETRICHOR_ENCRYPT_KEY,PETRICHOR_ENCRYPT_SALT,S3_ENDPOINT,S3_REGION,S3_BUCKET,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY,NEXT_PUBLIC_APP_URL)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FCiao1019%2FPetrichor&project-name=petrichor&repository-name=petrichor&env=DATABASE_URL,SESSION_SECRET,PETRICHOR_ENCRYPT_KEY,PETRICHOR_ENCRYPT_SALT,S3_ENDPOINT,S3_REGION,S3_BUCKET,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY,NEXT_PUBLIC_APP_URL)
 
 1. **Provision Postgres** — create a free Supabase project, copy the **Transaction Pooler** connection string (port 6543) as `DATABASE_URL`.
 2. **Provision object storage** — any S3-compatible service (Bitiful / AWS S3 / MinIO). Collect endpoint, region, bucket, access key, secret.
@@ -476,7 +476,7 @@ bun test
 5. **Initialize the database**: run `bun --silent run db:sql` (or copy [`docs/petrichor-init.sql`](docs/petrichor-init.sql)) into Supabase SQL Editor.
 6. **Create the first super-admin** — the init SQL does **not** seed any user. Two options:
    - **Recommended (no SQL):** temporarily set `NEXT_PUBLIC_REGISTER_ENABLED=true` on Vercel → redeploy → register from `/login`. While no super-admin exists yet, the **first registered account automatically becomes `SUPER_ADMIN`** — no need to touch `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE`. Then revert the var and redeploy.
-   - **Via SQL:** generate a bcrypt hash locally (`cd apps/web && node -e "console.log(require('bcryptjs').hashSync('YourPwd', 10))"`) and run [`docs/create-first-admin.sql`](docs/create-first-admin.sql) in Supabase with your email + hash filled in.
+   - **Via SQL:** generate a bcrypt hash locally (`cd apps/web && bun -e "console.log(require('bcryptjs').hashSync('YourPwd', 10))"`) and run [`docs/create-first-admin.sql`](docs/create-first-admin.sql) in Supabase with your email + hash filled in.
 7. **Set `NEXT_PUBLIC_APP_URL`** to your deployed Vercel domain and redeploy.
 
 ### Required env
