@@ -9,8 +9,7 @@
  */
 
 import { and, count, desc, eq, inArray } from "drizzle-orm"
-import type { NextRequest } from "next/server"
-import { NextResponse } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { aiBindings, aiCredentials, aiModels, aiProviders } from "@/server/db/schema"
 import type { AiCredentialRecord, AiProviderRecord } from "@/server/db/schema"
@@ -44,24 +43,24 @@ import { generateText } from "ai"
 
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
 
-async function withUser(request: NextRequest, handler: (user: User) => Promise<Response>) {
+async function withUser(request: AppRequest, handler: (user: User) => Promise<Response>) {
     try {
         return await handler(await requireCurrentUser(request))
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
 // ===== 供应商目录 =====
 
 /** 静态目录，供前端渲染供应商选择器（默认 BaseUrl、额外凭证字段、预置模型） */
-export async function listAiProviderCatalog(request: NextRequest) {
+export async function listAiProviderCatalog(request: AppRequest) {
     return withUser(request, async () => ok({ items: listCatalogSummaries() }))
 }
 
 // ===== 供应商实例 CRUD =====
 
-export async function listAiProviders(request: NextRequest) {
+export async function listAiProviders(request: AppRequest) {
     return withUser(request, async (user) => {
         const db = getDb()
         const rows = await db
@@ -96,7 +95,7 @@ export async function listAiProviders(request: NextRequest) {
     })
 }
 
-export async function createAiProvider(request: NextRequest) {
+export async function createAiProvider(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = validateProviderInput(await readJson(request))
         await ensureCredentialOwned(user.id, input.credentialId)
@@ -119,7 +118,7 @@ export async function createAiProvider(request: NextRequest) {
     })
 }
 
-export async function updateAiProvider(request: NextRequest) {
+export async function updateAiProvider(request: AppRequest) {
     return withUser(request, async (user) => {
         const raw = await readJson<Record<string, unknown>>(request)
         const id = requireId(raw.id, "供应商 ID")
@@ -157,7 +156,7 @@ export async function updateAiProvider(request: NextRequest) {
     })
 }
 
-export async function deleteAiProvider(request: NextRequest) {
+export async function deleteAiProvider(request: AppRequest) {
     return withUser(request, async (user) => {
         const raw = await readJson<Record<string, unknown>>(request)
         const id = requireId(raw.id, "供应商 ID")
@@ -174,7 +173,7 @@ export async function deleteAiProvider(request: NextRequest) {
         }
 
         await getDb().delete(aiProviders).where(and(eq(aiProviders.id, id), eq(aiProviders.userId, user.id)))
-        return new NextResponse(null, { status: 200 })
+        return new Response(null, { status: 200 })
     })
 }
 
@@ -185,7 +184,7 @@ export async function deleteAiProvider(request: NextRequest) {
  * 支持两种入参：已保存的供应商 id，或者「还没保存」的草稿（providerKey + baseUrl + credentialId），
  * 后者让用户在新建表单里就能点「获取模型列表」验证配置。
  */
-export async function fetchAiProviderModels(request: NextRequest) {
+export async function fetchAiProviderModels(request: AppRequest) {
     return withUser(request, async (user) => {
         const raw = await readJson<Record<string, unknown>>(request)
         const context = await resolveDraftContext(user.id, raw)
@@ -234,7 +233,7 @@ export async function fetchAiProviderModels(request: NextRequest) {
  * 把用户勾选的模型写入供应商。整体覆盖语义：
  * 传入列表之外的旧模型会被删除（被用途绑定引用的除外，避免绑定断链）。
  */
-export async function syncAiProviderModels(request: NextRequest) {
+export async function syncAiProviderModels(request: AppRequest) {
     return withUser(request, async (user) => {
         const raw = await readJson<Record<string, unknown>>(request)
         const providerId = requireId(raw.providerId, "供应商 ID")
@@ -304,7 +303,7 @@ export async function syncAiProviderModels(request: NextRequest) {
 }
 
 /** 某个供应商下已保存的模型 */
-export async function listAiModels(request: NextRequest) {
+export async function listAiModels(request: AppRequest) {
     return withUser(request, async (user) => {
         const raw = await readJson<Record<string, unknown>>(request)
         const db = getDb()
@@ -337,7 +336,7 @@ export async function listAiModels(request: NextRequest) {
  * 各家的 /models 接口都不返回维度，唯一可靠的办法是发一次最短的 embed 请求量返回长度。
  * 结果写回模型记录，供绑定界面展示。
  */
-export async function probeAiModelDimensions(request: NextRequest) {
+export async function probeAiModelDimensions(request: AppRequest) {
     return withUser(request, async (user) => {
         const raw = await readJson<Record<string, unknown>>(request)
         const id = requireId(raw.id, "模型 ID")
@@ -380,7 +379,7 @@ export async function probeAiModelDimensions(request: NextRequest) {
 }
 
 /** 单个模型的启用开关 */
-export async function toggleAiModel(request: NextRequest) {
+export async function toggleAiModel(request: AppRequest) {
     return withUser(request, async (user) => {
         const raw = await readJson<Record<string, unknown>>(request)
         const id = requireId(raw.id, "模型 ID")
@@ -404,7 +403,7 @@ export async function toggleAiModel(request: NextRequest) {
  * 用最小的一次真实调用验证配置是否可用，结果写回供应商记录。
  * 不消耗多少 token，但能一次性验出 Key、BaseUrl、模型名、鉴权方式是否都对。
  */
-export async function testAiProvider(request: NextRequest) {
+export async function testAiProvider(request: AppRequest) {
     return withUser(request, async (user) => {
         const raw = await readJson<Record<string, unknown>>(request)
         const context = await resolveDraftContext(user.id, raw)

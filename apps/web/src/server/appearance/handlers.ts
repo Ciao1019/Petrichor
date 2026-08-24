@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm"
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { getDb } from "@/server/db/client"
 import { siteAppearance, users } from "@/server/db/schema"
@@ -15,11 +15,11 @@ import {
 
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
 
-async function withPublic(request: NextRequest, handler: () => Promise<Response>) {
+async function withPublic(request: AppRequest, handler: () => Promise<Response>) {
     try {
         return await handler()
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
@@ -39,30 +39,30 @@ async function requireSuperAdminUser(user: User) {
     return freshUser
 }
 
-async function withAdmin(request: NextRequest, handler: (user: User) => Promise<Response>) {
+async function withAdmin(request: AppRequest, handler: (user: User) => Promise<Response>) {
     try {
         const user = await requireCurrentUser(request)
         await requireSuperAdminUser(user)
         return await handler(user)
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function publicSiteAppearance(request: NextRequest) {
+export async function publicSiteAppearance(request: AppRequest) {
     return withPublic(request, async () => {
         return ok(await loadCachedPublicSiteAppearance())
     })
 }
 
-export async function adminSiteAppearanceDetail(request: NextRequest) {
+export async function adminSiteAppearanceDetail(request: AppRequest) {
     return withAdmin(request, async () => {
         const record = await loadSiteAppearanceOrNull()
         return ok(buildSiteAppearanceResponse(record))
     })
 }
 
-export async function adminSiteAppearanceUpdate(request: NextRequest) {
+export async function adminSiteAppearanceUpdate(request: AppRequest) {
     return withAdmin(request, async () => {
         const input = validateSiteAppearanceInput(await readJson(request))
         const now = new Date()

@@ -1,4 +1,4 @@
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const authMocks = vi.hoisted(() => ({
@@ -93,15 +93,17 @@ function createDbMock({
 function createJsonRequest(body: unknown, pathname = "/test") {
     return {
         json: vi.fn(async () => body),
-        nextUrl: { pathname },
-    } as unknown as NextRequest
+        url: `http://localhost${pathname}`,
+        urlObject: new URL(pathname, "http://localhost"),
+    } as unknown as AppRequest
 }
 
 function createGetRequest(url: string) {
-    const nextUrl = new URL(url)
+    const urlObject = new URL(url)
     return {
-        nextUrl,
-    } as unknown as NextRequest
+        url,
+        urlObject,
+    } as unknown as AppRequest
 }
 
 function createArticleAccessRow() {
@@ -492,7 +494,7 @@ describe("public content cache invalidation points", () => {
             contentJson: null,
             contentMd: "# 新内容",
             contentMetaJson: null,
-            tags: ["AI", "Next.js"],
+            tags: ["AI", "Bun"],
             title: "新标题",
         }))
 

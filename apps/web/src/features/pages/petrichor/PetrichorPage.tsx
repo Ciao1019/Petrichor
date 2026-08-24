@@ -142,11 +142,11 @@ const AGENT_STEPS: { title: string; detail: string; ink: string }[] = [
 ]
 
 const STACK: { group: string; items: string[] }[] = [
-    { group: "框架", items: ["Next.js 16", "React", "TypeScript 5.9", "React Router", "Tailwind CSS", "shadcn/ui"] },
+    { group: "框架", items: ["Bun 1.3", "Vite 7", "React", "TypeScript 5.9", "React Router", "Tailwind CSS", "shadcn/ui"] },
     { group: "编辑器", items: ["PlateJS", "Slate", "Markdown", "KaTeX", "Mind Map", "Whiteboard"] },
     { group: "数据层", items: ["PostgreSQL", "Supabase", "Drizzle ORM", "S3 兼容存储"] },
     { group: "AI", items: ["Vercel AI SDK", "OpenAI", "Gemini", "DeepSeek", "向量召回", "MCP"] },
-    { group: "工程", items: ["Bun 1.3", "Vitest", "ESLint", "Vercel", "Next 16"] },
+    { group: "工程", items: ["Bun 1.3", "Vite 7", "Vitest", "ESLint", "Vercel"] },
 ]
 
 const DEPLOY_STEPS: { title: string; detail: string; ink: string }[] = [

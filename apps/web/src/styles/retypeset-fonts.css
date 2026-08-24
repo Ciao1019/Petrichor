@@ -1,4 +1,15 @@
 /* Retypeset 字体声明：当前只由前台首页文章区的局部 class 使用。 */
+
+/* Caveat —— 手写马克笔体，用于"关于我"页面的桌面便签风注记气泡 / 下划线小注。
+   自托管拉丁子集可变字体（wght 400–700），中文不走此体（注记气泡均为拉丁短句）。 */
+@font-face {
+  font-family: "Caveat";
+  src: url("/fonts/Caveat-Latin-Variable.woff2") format("woff2-variations");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* Snell Roundhand Static Font */
 @font-face {
   font-family: "Snell-Bold";

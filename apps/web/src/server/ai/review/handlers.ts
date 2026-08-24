@@ -1,5 +1,5 @@
 import { and, count, desc, eq } from "drizzle-orm"
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { callChatCompletion } from "@/server/ai/generation"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { getDb } from "@/server/db/client"
@@ -49,16 +49,16 @@ import { aggregateReviewStats, type ReviewEvolution, type ReviewStats } from "./
 
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
 
-async function withUser(request: NextRequest, handler: (user: User) => Promise<Response>) {
+async function withUser(request: AppRequest, handler: (user: User) => Promise<Response>) {
     try {
         const user = await requireCurrentUser(request)
         return await handler(user)
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function getAiReview(request: NextRequest) {
+export async function getAiReview(request: AppRequest) {
     return withUser(request, async (user) => {
         const now = new Date()
         const input = validateReviewGetInput(await readJson(request), now)
@@ -94,7 +94,7 @@ export async function getAiReview(request: NextRequest) {
     })
 }
 
-export async function regenerateAiReview(request: NextRequest) {
+export async function regenerateAiReview(request: AppRequest) {
     return withUser(request, async (user) => {
         const now = new Date()
         const input = validateReviewRegenerateInput(await readJson(request), now)
@@ -117,7 +117,7 @@ export async function regenerateAiReview(request: NextRequest) {
     })
 }
 
-export async function listAiReviews(request: NextRequest) {
+export async function listAiReviews(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = validateReviewListInput(await readJson(request))
         const db = getDb()
@@ -145,7 +145,7 @@ export async function listAiReviews(request: NextRequest) {
     })
 }
 
-export async function getAiReviewPeriodOptions(request: NextRequest) {
+export async function getAiReviewPeriodOptions(request: AppRequest) {
     return withUser(request, async () => {
         const now = new Date()
         return ok({

@@ -1,5 +1,5 @@
 import { and, desc, eq, gt, ne } from "drizzle-orm"
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { z } from "zod"
 import { getDb } from "@/server/db/client"
 import { betterAuthSessions, betterAuthUsers } from "@/server/db/schema"
@@ -29,14 +29,14 @@ const revokeOthersSchema = z.object({
 })
 
 // 读取当前请求对应的 Better Auth 会话 id，用于标记“当前登录”并避免误踢自己。
-async function getCurrentSessionId(request: NextRequest): Promise<string | null> {
+async function getCurrentSessionId(request: AppRequest): Promise<string | null> {
     const session = await auth.api.getSession({ headers: request.headers }).catch(() => null)
     return session?.session?.id ?? null
 }
 
 // 校验当前登录账户的 TOTP 验证码：仅校验、不产生会话副作用。
 // 校验失败或未启用二步验证时抛出对应的业务错误。
-async function verifyTotpOrThrow(request: NextRequest, code: string) {
+async function verifyTotpOrThrow(request: AppRequest, code: string) {
     try {
         await auth.api.verifyTOTP({
             body: { code },
@@ -77,7 +77,7 @@ function requireAuthUserId(user: CurrentUser): string {
 }
 
 // 列出当前账户所有有效登录会话（含登录 IP、设备信息），并标记当前登录。
-export async function listSessions(request: NextRequest) {
+export async function listSessions(request: AppRequest) {
     try {
         const user = await requireCurrentUser(request)
         const authUserId = user.authUserId?.trim() ?? null
@@ -116,12 +116,12 @@ export async function listSessions(request: NextRequest) {
 
         return ok({ sessions, currentSessionId, twoFactorEnabled })
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
 // 下线指定会话：需校验 TOTP，且不能下线当前登录会话。
-export async function revokeSession(request: NextRequest) {
+export async function revokeSession(request: AppRequest) {
     try {
         const user = await requireCurrentUser(request)
         const authUserId = requireAuthUserId(user)
@@ -157,12 +157,12 @@ export async function revokeSession(request: NextRequest) {
 
         return ok({ success: true })
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
 // 一键下线当前账户除当前登录外的所有会话：需校验 TOTP。
-export async function revokeOtherSessions(request: NextRequest) {
+export async function revokeOtherSessions(request: AppRequest) {
     try {
         const user = await requireCurrentUser(request)
         const authUserId = requireAuthUserId(user)
@@ -185,6 +185,6 @@ export async function revokeOtherSessions(request: NextRequest) {
 
         return ok({ success: true, revokedCount: deleted.length })
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }

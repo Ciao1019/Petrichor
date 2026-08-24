@@ -1,5 +1,6 @@
 import { and, asc, eq } from "drizzle-orm"
-import { after, type NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
+import { afterResponse } from "@/server/http/lifecycle"
 import { z } from "zod"
 import { createLogger, toLogError } from "@/lib/logger"
 import { requireCurrentUser } from "@/server/auth/current-user"
@@ -38,23 +39,23 @@ type User = Awaited<ReturnType<typeof requireCurrentUser>>
 const log = createLogger("wiki-agent-handler")
 const articleKnowledgeBuildStatusInputSchema = z.object({ jobId: idSchema })
 
-async function withUser(request: NextRequest, handler: (user: User) => Promise<Response>) {
+async function withUser(request: AppRequest, handler: (user: User) => Promise<Response>) {
     try {
         const user = await requireCurrentUser(request)
         return await handler(user)
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function wikiDashboard(request: NextRequest) {
+export async function wikiDashboard(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = wikiIngestInputSchema.pick({ knowledgeBaseId: true }).parse(await readJson(request))
         return ok(await loadWikiDashboard(user.id, input.knowledgeBaseId))
     })
 }
 
-export async function wikiPageList(request: NextRequest) {
+export async function wikiPageList(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = wikiIngestInputSchema.pick({ knowledgeBaseId: true }).parse(await readJson(request))
         return ok({
@@ -64,14 +65,14 @@ export async function wikiPageList(request: NextRequest) {
     })
 }
 
-export async function wikiPageDetail(request: NextRequest) {
+export async function wikiPageDetail(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = wikiPageDetailInputSchema.parse(await readJson(request))
         return ok(await loadWikiPageDetail(user.id, input.knowledgeBaseId, input.pageKey))
     })
 }
 
-export async function wikiTree(request: NextRequest) {
+export async function wikiTree(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = wikiTreeInputSchema.parse(await readJson(request))
         return ok({
@@ -82,7 +83,7 @@ export async function wikiTree(request: NextRequest) {
     })
 }
 
-export async function wikiIngest(request: NextRequest) {
+export async function wikiIngest(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = wikiIngestInputSchema.parse(await readJson(request))
         return ok(await ingestKnowledgeBaseWiki({
@@ -95,7 +96,7 @@ export async function wikiIngest(request: NextRequest) {
     })
 }
 
-export async function articleKnowledgeBuild(request: NextRequest) {
+export async function articleKnowledgeBuild(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = articleKnowledgeBuildInputSchema.parse(await readJson(request))
         const { job } = await enqueueArticleKnowledgeBuild({
@@ -109,7 +110,7 @@ export async function articleKnowledgeBuild(request: NextRequest) {
     })
 }
 
-export async function articleKnowledgeBuildStatus(request: NextRequest) {
+export async function articleKnowledgeBuildStatus(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = articleKnowledgeBuildStatusInputSchema.parse(await readJson(request))
         return ok(await getArticleKnowledgeBuildJob({ userId: user.id, jobId: input.jobId }))
@@ -120,7 +121,7 @@ function scheduleArticleKnowledgeBuild(jobId: string) {
     const numericJobId = Number(jobId)
     const task = () => processArticleKnowledgeBuildJob(numericJobId)
     try {
-        after(task)
+        afterResponse(task)
     } catch (error) {
         // Vitest、脚本或非 Next 请求作用域没有 after 上下文时仍可执行。
         log.warn({ err: toLogError(error), jobId: numericJobId }, "Next after 不可用，降级到事件循环执行知识构建")
@@ -130,7 +131,7 @@ function scheduleArticleKnowledgeBuild(jobId: string) {
     }
 }
 
-export async function articleKnowledgeChunkList(request: NextRequest) {
+export async function articleKnowledgeChunkList(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = articleKnowledgeChunkListInputSchema.parse(await readJson(request))
         return ok(await listArticleKnowledgeChunks({
@@ -141,14 +142,14 @@ export async function articleKnowledgeChunkList(request: NextRequest) {
     })
 }
 
-export async function wikiEmbeddingRun(request: NextRequest) {
+export async function wikiEmbeddingRun(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = wikiIngestInputSchema.pick({ knowledgeBaseId: true }).parse(await readJson(request))
         return ok(await embedKnowledgeBaseArticleIndex(user.id, input.knowledgeBaseId))
     })
 }
 
-export async function wikiPatchList(request: NextRequest) {
+export async function wikiPatchList(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = wikiIngestInputSchema.pick({ knowledgeBaseId: true }).parse(await readJson(request))
         return ok({
@@ -158,34 +159,34 @@ export async function wikiPatchList(request: NextRequest) {
     })
 }
 
-export async function wikiPatchApply(request: NextRequest) {
+export async function wikiPatchApply(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = wikiPatchDecisionInputSchema.parse(await readJson(request))
         return ok(await applyWikiPatch(user.id, input.knowledgeBaseId, input.patchId))
     })
 }
 
-export async function wikiPatchReject(request: NextRequest) {
+export async function wikiPatchReject(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = wikiPatchDecisionInputSchema.parse(await readJson(request))
         return ok(await rejectWikiPatch(user.id, input.knowledgeBaseId, input.patchId))
     })
 }
 
-export async function wikiLint(request: NextRequest) {
+export async function wikiLint(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = wikiIngestInputSchema.pick({ knowledgeBaseId: true }).parse(await readJson(request))
         return ok(await runWikiLint(user.id, input.knowledgeBaseId))
     })
 }
 
-export async function qaKnowledgeBaseList(request: NextRequest) {
+export async function qaKnowledgeBaseList(request: AppRequest) {
     return withUser(request, async (user) => {
         return ok({ knowledgeBases: await listUserKnowledgeBases(user.id) })
     })
 }
 
-export async function qaModelInfo(request: NextRequest) {
+export async function qaModelInfo(request: AppRequest) {
     return withUser(request, async (user) => {
         // 可选模型 = 所有已启用的语言模型（跨供应商），当前项 = CHAT 用途的绑定
         const rows = await getDb()

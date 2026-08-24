@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils"
 import React, { useEffect, useState } from "react"
-import { useTheme } from "next-themes"
+import { useTheme } from "@/components/theme-provider"
 import { codeToHtml } from "shiki"
 import { Check, Copy } from "@/components/iconimate"
 

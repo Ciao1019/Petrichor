@@ -25,7 +25,7 @@ import type {
   Options,
 } from "./mindmap-types";
 
-// 根据 document class 解析主题（适配 next-themes 等方案）
+// 根据 document class 解析主题（适配应用主题提供器）
 function getDocumentTheme(): Theme | null {
   if (typeof document === "undefined") return null;
   if (document.documentElement.classList.contains("dark")) return "dark";
@@ -49,7 +49,7 @@ function useResolvedTheme(themeProp?: "light" | "dark"): "light" | "dark" {
   useEffect(() => {
     if (themeProp) return; // Skip detection if theme is provided via prop
 
-    // 监听 document class 变化（例如 next-themes 切换 dark class）
+    // 监听 document class 变化（例如主题提供器切换 dark class）
     const observer = new MutationObserver(() => {
       const docTheme = getDocumentTheme();
       if (docTheme) {

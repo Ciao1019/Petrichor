@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto"
 import { and, asc, desc, eq, ilike, inArray, isNull, sql } from "drizzle-orm"
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import bcrypt from "bcryptjs"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { getDb } from "@/server/db/client"
@@ -54,24 +54,24 @@ type PublicShareDetailLoadInput = {
     allowPassword: boolean
 }
 
-async function withUser(request: NextRequest, handler: (user: User) => Promise<Response>) {
+async function withUser(request: AppRequest, handler: (user: User) => Promise<Response>) {
     try {
         const user = await requireCurrentUser(request)
         return await handler(user)
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject?.pathname ?? new URL(request.url, "http://localhost").pathname)
     }
 }
 
-async function withPublic(request: NextRequest, handler: () => Promise<Response>) {
+async function withPublic(request: AppRequest, handler: () => Promise<Response>) {
     try {
         return await handler()
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject?.pathname ?? new URL(request.url, "http://localhost").pathname)
     }
 }
 
-export async function searchArticles(request: NextRequest) {
+export async function searchArticles(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = validateArticleSearchInput(await readJson(request))
         const db = getDb()
@@ -125,7 +125,7 @@ export async function searchArticles(request: NextRequest) {
     })
 }
 
-export async function createArticleShare(request: NextRequest) {
+export async function createArticleShare(request: AppRequest) {
     return withUser(request, async (user) => {
         const raw = await readJson<Record<string, unknown>>(request)
         const { articleId } = validateShareArticleIdInput(raw)
@@ -185,7 +185,7 @@ export async function createArticleShare(request: NextRequest) {
     })
 }
 
-export async function revokeArticleShare(request: NextRequest) {
+export async function revokeArticleShare(request: AppRequest) {
     return withUser(request, async (user) => {
         const { articleId } = validateShareArticleIdInput(await readJson(request))
         await requireOwner(user.id, articleId)
@@ -220,7 +220,7 @@ export async function revokeArticleShare(request: NextRequest) {
     })
 }
 
-export async function articleShareInfo(request: NextRequest) {
+export async function articleShareInfo(request: AppRequest) {
     return withUser(request, async (user) => {
         const { articleId } = validateShareArticleIdInput(await readJson(request))
         await requireOwner(user.id, articleId)
@@ -260,7 +260,7 @@ export async function articleShareInfo(request: NextRequest) {
     })
 }
 
-export async function setArticleSharePin(request: NextRequest) {
+export async function setArticleSharePin(request: AppRequest) {
     return withUser(request, async (user) => {
         const { articleId, pinOrder } = validateArticleSharePinInput(await readJson(request))
         await requireOwner(user.id, articleId)
@@ -298,7 +298,7 @@ export async function setArticleSharePin(request: NextRequest) {
     })
 }
 
-export async function publicShareDetail(request: NextRequest) {
+export async function publicShareDetail(request: AppRequest) {
     return withPublic(request, async () => {
         const input = validatePublicShareDetailInput(await readJson(request))
         return ok(await loadPublicShareDetailResponse({
@@ -313,10 +313,10 @@ export async function publicShareDetail(request: NextRequest) {
     })
 }
 
-export async function publicShareDetailGet(request: NextRequest) {
+export async function publicShareDetailGet(request: AppRequest) {
     return withPublic(request, async () => {
         const input = validatePublicShareDetailInput({
-            shareCode: request.nextUrl.searchParams.get("shareCode") ?? "",
+            shareCode: request.urlObject.searchParams.get("shareCode") ?? "",
             accessPassword: "",
         })
         const cachedLoader = cachePublicArticleDetail(input.shareCode, () => loadPublicShareDetailResponse({
@@ -333,7 +333,7 @@ export async function publicShareDetailGet(request: NextRequest) {
     })
 }
 
-export async function publicArticleList(request: NextRequest) {
+export async function publicArticleList(request: AppRequest) {
     return withPublic(request, async () => {
         return ok(await loadCachedPublicArticleList(), {
             headers: {
@@ -345,9 +345,9 @@ export async function publicArticleList(request: NextRequest) {
 
 const publicArticleSearchCacheControl = "public, max-age=15, s-maxage=15, stale-while-revalidate=60"
 
-export async function publicArticleSearch(request: NextRequest) {
+export async function publicArticleSearch(request: AppRequest) {
     return withPublic(request, async () => {
-        const params = request.nextUrl.searchParams
+        const params = request.urlObject.searchParams
         const input = validatePublicArticleSearchInput({
             keyword: params.get("q") ?? params.get("keyword"),
             limit: params.get("limit"),

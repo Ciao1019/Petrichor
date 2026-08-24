@@ -11,7 +11,7 @@ import type { ToolResilienceController } from "./tool-resilience"
 const registry = new Map<string, AssistantToolRegistration>()
 
 export function registerAssistantTools(tools: AssistantToolRegistration[]): void {
-    // 同一次调用内的真重名仍抛错；跨次调用同名覆盖（Next.js HMR 下 tools 模块重载、registry 未重载时对象引用会变）
+    // 同一次调用内的真重名仍抛错；跨次调用同名覆盖（开发 HMR 下 tools 模块重载、registry 未重载时对象引用会变）
     const batchNames = new Set<string>()
     for (const registration of tools) {
         if (batchNames.has(registration.name)) {

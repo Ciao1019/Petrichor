@@ -15,7 +15,7 @@ function normalizeUrl(value: string) {
 }
 
 export function getPublicBaseUrl(env: Record<string, string | undefined> = process.env) {
-    const configured = normalizeUrl(env.NEXT_PUBLIC_APP_URL ?? "")
+    const configured = normalizeUrl(env.APP_BASE_URL ?? "")
     if (configured) return configured
 
     const appBaseUrl = normalizeUrl(env.APP_BASE_URL ?? "")

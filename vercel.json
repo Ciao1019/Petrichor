@@ -1,7 +1,14 @@
 {
     "$schema": "https://openapi.vercel.sh/vercel.json",
+    "framework": "bun",
     "bunVersion": "1.x",
     "installCommand": "bun install --frozen-lockfile",
     "buildCommand": "bun run vercel-build",
+    "functions": {
+        "server.ts": {
+            "includeFiles": "apps/web/dist/**",
+            "maxDuration": 300
+        }
+    },
     "regions": ["sfo1"]
 }

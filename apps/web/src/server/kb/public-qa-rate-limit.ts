@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm"
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { getDb } from "@/server/db/client"
 import { publicQaRateLimits } from "@/server/db/schema"
 import { tooManyRequests } from "@/server/http/response"
@@ -12,7 +12,7 @@ export const PUBLIC_QA_IP_HOURLY_LIMIT = 60
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** 从常见反代头里取访客 IP（与 src/server/agent/handlers.ts 同款顺序）。 */
-export function resolveClientIp(request: NextRequest): string | null {
+export function resolveClientIp(request: AppRequest): string | null {
     return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
         || request.headers.get("x-real-ip")?.trim()
         || request.headers.get("cf-connecting-ip")?.trim()
@@ -20,7 +20,7 @@ export function resolveClientIp(request: NextRequest): string | null {
 }
 
 /** 读取并校验客户端 visitor-id（localStorage 里的 UUID）；非法返回 null。 */
-export function resolveVisitorId(request: NextRequest): string | null {
+export function resolveVisitorId(request: AppRequest): string | null {
     const raw = request.headers.get("x-petrichor-visitor-id")?.trim()
     return raw && UUID_PATTERN.test(raw) ? raw.toLowerCase() : null
 }

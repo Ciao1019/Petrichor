@@ -1,4 +1,4 @@
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { z } from "zod"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { forbidden, notFound, ok, readJson, toErrorResponse } from "@/server/http/response"
@@ -27,7 +27,7 @@ const conversationSchema = z.object({
     limit: z.number().int().min(1).max(100).optional(),
 })
 
-export async function agentRunDetail(request: NextRequest) {
+export async function agentRunDetail(request: AppRequest) {
     try {
         const user = await requireCurrentUser(request)
         const input = runIdSchema.parse(await readJson(request))
@@ -40,11 +40,11 @@ export async function agentRunDetail(request: NextRequest) {
             stopMessage: describeStopReasonForUser(view.stopReason as never) ?? undefined,
         })
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function agentRunList(request: NextRequest) {
+export async function agentRunList(request: AppRequest) {
     try {
         const user = await requireCurrentUser(request)
         const input = conversationSchema.parse(await readJson(request))
@@ -52,11 +52,11 @@ export async function agentRunList(request: NextRequest) {
             runs: await listAgentRunsForConversation(input.conversationId, user.id, input.limit ?? 50),
         })
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function agentRunTrace(request: NextRequest) {
+export async function agentRunTrace(request: AppRequest) {
     try {
         const user = await requireCurrentUser(request)
         const operator = isAssistantOperator({ id: user.id, systemRole: user.systemRole })
@@ -68,6 +68,6 @@ export async function agentRunTrace(request: NextRequest) {
         if (!trace) throw notFound("Agent Run 不存在")
         return ok(trace)
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }

@@ -1,239 +1,33 @@
-# 🚀 性能优化指南
+# Bun / Vite 性能与构建说明
 
-本文档记录了项目中实施的各项性能优化措施和最佳实践。
+## 构建
 
-## 📦 已实施的优化
-
-### 1. 构建优化 (next.config.ts)
-
-- ✅ **包导入优化**: 使用 `optimizePackageImports` 减少重复代码
-- ✅ **CSS 优化**: 启用 `optimizeCss` 减少客户端 JavaScript
-- ✅ **图片优化**: 支持 AVIF/WebP 格式，设置长期缓存
-- ✅ **代码分割**: 为 PlateJS、Radix UI、图标库等大型依赖单独打包
-- ✅ **安全头**: 配置 X-Frame-Options, CSP 等安全响应头
-
-### 2. 数据库优化
-
-**性能监控工具** (`src/server/db/performance.ts`):
-- `explainQuery()` - EXPLAIN ANALYZE 查询分析
-- `withQueryTiming()` - 自动记录查询耗时，超过 100ms 发出警告
-- `checkIndexUsage()` - 检查索引使用情况
-
-**使用示例**:
-```typescript
-import { withQueryTiming } from '@/server/db/performance'
-
-const articles = await withQueryTiming(
-  'getPublicArticles',
-  () => db.select().from(articles).where(eq(articles.isPublic, true))
-)
-```
-
-### 3. React 组件性能
-
-**自定义 Hooks** (`src/hooks/use-performance.ts`):
-- `useDebounce` - 防抖处理
-- `useThrottle` - 节流处理
-- `useIntersectionObserver` - 懒加载支持
-- `useVirtualList` - 虚拟滚动列表
-- `useMediaQuery` - 响应式媒体查询
-- `useDeferredRender` - 延迟渲染
-
-**使用示例**:
-```tsx
-import { useDebounce, useIntersectionObserver } from '@/hooks/use-performance'
-
-// 搜索输入防抖
-const debouncedSearch = useDebounce(searchTerm, 300)
-
-// 图片懒加载
-const ref = useRef<HTMLImageElement>(null)
-const isVisible = useIntersectionObserver(ref, { threshold: 0.1 })
-```
-
-### 4. API 速率限制
-
-**速率限制工具** (`src/lib/rate-limit.ts`):
-- 内存存储实现（生产环境建议使用 Redis）
-- 自动清理过期记录
-- 预设配置：strict / moderate / lenient
-
-**Route Handler 包装器** (`src/lib/with-rate-limit.ts`):
-```typescript
-import { withRateLimit, rateLimitPresets } from '@/lib/with-rate-limit'
-
-export const POST = withRateLimit(
-  async (req) => {
-    // 你的 API 逻辑
-    return NextResponse.json({ success: true })
-  },
-  rateLimitPresets.strict // 15 分钟 5 次
-)
-```
-
-### 5. 日志系统
-
-**结构化日志** (`src/lib/logger.ts`):
-- 使用 pino 替代 console.log
-- 开发环境：彩色格式化输出
-- 生产环境：JSON 格式便于收集
-- 性能测量工具
-
-**使用示例**:
-```typescript
-import { createLogger, measurePerformance } from '@/lib/logger'
-
-const logger = createLogger('my-module')
-logger.info({ userId: 123, action: 'login' }, 'User logged in')
-
-await measurePerformance('processArticle', async () => {
-  // 耗时操作
-})
-```
-
-### 6. 输入验证
-
-**Zod Schema 集合** (`src/lib/validation.ts`):
-- 文章、文件夹、用户认证等完整的验证 Schema
-- 类型安全的输入验证
-- 详细的错误消息
-
-**使用示例**:
-```typescript
-import { createArticleSchema } from '@/lib/validation'
-
-const result = createArticleSchema.safeParse(requestBody)
-if (!result.success) {
-  return NextResponse.json({ errors: result.error.errors }, { status: 400 })
-}
-```
-
-## 🧪 测试与质量
-
-### 单元测试增强 (vitest.config.ts)
+前端由 Vite 生成到 `apps/web/dist`，生产请求统一进入根目录 `server.ts` 的
+`Bun.serve()`。静态资源文件名带内容哈希，Bun 服务为 `/assets/` 设置长期不可变缓存；
+SPA HTML 使用 `no-cache`，便于部署后及时拿到新的资源入口。
 
 ```bash
-# 运行测试
-bun test
-
-# 带覆盖率报告
-bun test:coverage
-
-# 交互式 UI
-bun test:ui
+bun run build
+bun run start
 ```
 
-- ✅ 覆盖率目标：60%+
-- ✅ 并发运行测试
-- ✅ 多格式报告（text/json/html/lcov）
+当前应用包含编辑器、PDF、表格、图表和语法高亮等重型模块，生产构建会报告较大的
+客户端 chunk。新增重型能力时优先使用动态 `import()`，并避免把服务端模块导入浏览器入口。
 
-### E2E 测试 (Playwright)
+## 服务端缓存
+
+- 配置 `UPSTASH_REDIS_REST_URL` 与 `UPSTASH_REDIS_REST_TOKEN` 时，多实例共享缓存。
+- 未配置 Redis 时，Bun 进程使用内存 TTL 缓存；实例重启或扩缩容时缓存自然丢失。
+- 写操作必须调用对应的失效函数，同时清理本地与 Redis 缓存。
+
+## 验证
 
 ```bash
-# 安装浏览器
-bunx playwright install
-
-# 运行 E2E 测试
-bunx playwright test
-
-# 查看报告
-bunx playwright show-report
+bun run typecheck
+bun run test
+bun run lint
+bun run build
 ```
 
-- ✅ 多浏览器支持（Chrome/Firefox/Safari）
-- ✅ 移动端测试
-- ✅ 失败时自动截图
-- ✅ 示例测试：登录流程、响应式设计
-
-### TypeScript 严格模式 (tsconfig.json)
-
-- ✅ `noUncheckedIndexedAccess` - 数组/对象访问安全检查
-- ✅ `noImplicitOverride` - 显式重写标记
-- ✅ `noFallthroughCasesInSwitch` - Switch 语句完整性检查
-
-### 代码质量工具 (Biome)
-
-```bash
-# 检查代码
-bun biome:check
-
-# 自动修复
-bun biome:fix
-```
-
-- ✅ 比 ESLint 快 50 倍
-- ✅ 内置格式化器
-- ✅ 自动导入排序
-
-## 📊 Bundle 分析
-
-```bash
-# 生成 bundle 分析报告
-bun analyze
-```
-
-打开 `.next/analyze/client.html` 查看详细的包大小分析。
-
-## 🎯 待优化项
-
-### 高优先级
-- [ ] 为热门查询添加 Redis 缓存
-- [ ] 数据库索引优化（基于 EXPLAIN ANALYZE 结果）
-- [ ] 大型组件懒加载（PlateJS 编辑器、Excalidraw）
-
-### 中优先级
-- [ ] PWA 支持（离线访问）
-- [ ] 图片 CDN 加速
-- [ ] Service Worker 缓存策略
-- [ ] 骨架屏加载状态
-
-### 低优先级
-- [ ] 预渲染静态页面
-- [ ] HTTP/3 支持
-- [ ] 前端资源预加载策略
-
-## 📈 性能监控
-
-### 建议集成的工具
-
-1. **Vercel Analytics** (免费)
-```bash
-bun add @vercel/analytics
-```
-
-2. **Sentry 错误追踪**
-```bash
-bun add @sentry/nextjs
-```
-
-3. **Web Vitals 报告**
-```typescript
-// 在 _app.tsx 或 layout.tsx
-import { reportWebVitals } from '@/lib/performance'
-
-reportWebVitals((metric) => {
-  console.log(metric)
-  // 发送到分析服务
-})
-```
-
-## 🔧 生产环境清单
-
-部署前确认：
-
-- [ ] `next.config.ts` 中的优化配置已启用
-- [ ] 环境变量配置完整
-- [ ] 数据库索引已添加
-- [ ] API 速率限制已应用到关键端点
-- [ ] 安全响应头已配置
-- [ ] 日志系统正常工作
-- [ ] 错误追踪已集成
-- [ ] Bundle 大小在可接受范围（< 250KB gzipped）
-
-## 📚 参考资源
-
-- [Next.js Performance](https://nextjs.org/docs/app/building-your-application/optimizing)
-- [React Performance](https://react.dev/learn/render-and-commit#optimizing-performance)
-- [Web Vitals](https://web.dev/vitals/)
-- [Playwright Testing](https://playwright.dev/)
-- [Biome Linter](https://biomejs.dev/)
+部署前还应访问 `/healthz`，确认返回的 `runtime` 为 `bun`，并检查首页、登录页、
+公开文章页和至少一个需要登录的 API。

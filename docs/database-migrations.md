@@ -1,6 +1,6 @@
 # 数据库自动迁移
 
-Vercel production 部署会先执行数据库增量迁移，成功后才开始 Next.js 构建。
+Vercel production 部署会先执行数据库增量迁移，成功后才开始 Vite 前端构建与 Bun 服务打包。
 Preview 和 Development 部署默认跳过迁移，避免预览分支误改生产数据库。
 
 ## 工作方式

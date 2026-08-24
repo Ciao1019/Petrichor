@@ -2,6 +2,7 @@ import { createLogger, toLogError } from "@/lib/logger"
 import { getRedis } from "./redis"
 
 const log = createLogger("cache")
+const localCache = new Map<string, { expiresAt: number; value: Promise<unknown> }>()
 
 /** 全站缓存键命名空间，避免与同库其它用途的键冲突。 */
 const CACHE_NAMESPACE = "petrichor"
@@ -39,7 +40,19 @@ export async function cacheReadThrough<T>(
 ): Promise<T> {
     const redis = getRedis()
     if (!redis) {
-        return loader()
+        const now = Date.now()
+        const cached = localCache.get(key)
+        if (cached && cached.expiresAt > now) {
+            return cached.value as Promise<T>
+        }
+
+        const value = loader()
+        localCache.set(key, {
+            expiresAt: now + ttlSeconds * 1000,
+            value,
+        })
+        value.catch(() => localCache.delete(key))
+        return value
     }
 
     try {
@@ -70,6 +83,10 @@ export async function cacheDrop(...keys: string[]): Promise<void> {
     if (keys.length === 0) {
         return
     }
+    for (const key of keys) {
+        localCache.delete(key)
+    }
+
     const redis = getRedis()
     if (!redis) {
         return
@@ -86,6 +103,12 @@ export async function cacheDrop(...keys: string[]): Promise<void> {
  * 用于失效一组同前缀的键，例如某用户文档库下的全部缓存。
  */
 export async function cacheDropByPrefix(prefix: string): Promise<void> {
+    for (const key of localCache.keys()) {
+        if (key.startsWith(prefix)) {
+            localCache.delete(key)
+        }
+    }
+
     const redis = getRedis()
     if (!redis) {
         return

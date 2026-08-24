@@ -23,9 +23,7 @@ skills-lock.json
 # JavaScript 依赖与构建产物
 node_modules/
 .vercel/
-.next/
-# 历史 Cloudflare/OpenNext 本地构建残留，勿提交
-.open-next/
+# 历史构建残留，勿提交
 .wrangler/
 .vite/
 dist/
@@ -53,7 +51,6 @@ target/
 
 # Logs
 *.log
-npm-debug.log*
 
 # Environment
 .env

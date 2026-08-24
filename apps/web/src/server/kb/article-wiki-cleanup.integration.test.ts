@@ -1,6 +1,6 @@
 import { createRequire } from "node:module"
 import { eq } from "drizzle-orm"
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { beforeAll, describe, expect, it, vi } from "vitest"
 
 const authMocks = vi.hoisted(() => ({
@@ -203,7 +203,7 @@ describe.runIf(hasSqlite)("article Wiki cleanup integration", () => {
         const request = {
             json: async () => ({ articleId: String(deletedArticleId) }),
             nextUrl: { pathname: "/api/kb/article/delete" },
-        } as unknown as NextRequest
+        } as unknown as AppRequest
 
         const response = await deleteArticle(request)
         await expect(response.json()).resolves.toMatchObject({

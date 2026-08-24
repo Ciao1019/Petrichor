@@ -6,18 +6,18 @@ import * as React from "react"
  * giscus 评论区（GitHub Discussions 驱动）。
  *
  * 需要在环境变量里配置（去 https://giscus.app 按引导生成）：
- *   NEXT_PUBLIC_GISCUS_REPO=owner/repo
- *   NEXT_PUBLIC_GISCUS_REPO_ID=R_xxx
- *   NEXT_PUBLIC_GISCUS_CATEGORY=Announcements
- *   NEXT_PUBLIC_GISCUS_CATEGORY_ID=DIC_xxx
+ *   PETRICHOR_PUBLIC_GISCUS_REPO=owner/repo
+ *   PETRICHOR_PUBLIC_GISCUS_REPO_ID=R_xxx
+ *   PETRICHOR_PUBLIC_GISCUS_CATEGORY=Announcements
+ *   PETRICHOR_PUBLIC_GISCUS_CATEGORY_ID=DIC_xxx
  *
  * 未配置时组件不渲染任何内容。
  */
 const GISCUS_CONFIG = {
-    repo: process.env.NEXT_PUBLIC_GISCUS_REPO ?? "",
-    repoId: process.env.NEXT_PUBLIC_GISCUS_REPO_ID ?? "",
-    category: process.env.NEXT_PUBLIC_GISCUS_CATEGORY ?? "",
-    categoryId: process.env.NEXT_PUBLIC_GISCUS_CATEGORY_ID ?? "",
+    repo: import.meta.env.PETRICHOR_PUBLIC_GISCUS_REPO ?? "",
+    repoId: import.meta.env.PETRICHOR_PUBLIC_GISCUS_REPO_ID ?? "",
+    category: import.meta.env.PETRICHOR_PUBLIC_GISCUS_CATEGORY ?? "",
+    categoryId: import.meta.env.PETRICHOR_PUBLIC_GISCUS_CATEGORY_ID ?? "",
 }
 
 const GISCUS_ENABLED = Boolean(

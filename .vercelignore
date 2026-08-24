@@ -1,5 +1,4 @@
 # 避免把本地构建产物和依赖打进 CLI 上传
-.next
 node_modules
 .git
 .turbo

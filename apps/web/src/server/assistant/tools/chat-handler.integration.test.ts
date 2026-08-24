@@ -1,5 +1,6 @@
 import { createRequire } from "node:module"
 import { asc, eq } from "drizzle-orm"
+import { AppRequest } from "@/server/http/request"
 import { simulateReadableStream } from "ai"
 import { MockLanguageModelV4 } from "ai/test"
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
@@ -70,11 +71,12 @@ function textStream(text: string): LanguageModelStreamResult {
 }
 
 function requestWith(body: unknown) {
-    return {
-        json: async () => body,
+    return new AppRequest("http://localhost/api/assistant/chat", {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
         signal: new AbortController().signal,
-        nextUrl: { pathname: "/api/assistant/chat" },
-    } as Parameters<typeof assistantChat>[0]
+    })
 }
 
 function setMockModel(streams: LanguageModelStreamResult[]) {

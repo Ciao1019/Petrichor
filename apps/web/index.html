@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN" data-retypeset-theme="sakura">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <link rel="icon" href="/sidebar-logo.jpg" type="image/jpeg" />
+    <script>
+      ;(() => {
+        try {
+          const path = location.pathname.replace(/(.)\/$/, "$1") || "/"
+          const privatePrefixes = ["/dashboard", "/login", "/auth", "/demo"]
+          const isPublic = !privatePrefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))
+          let theme = isPublic ? "dark" : localStorage.getItem("ui-theme") || "system"
+          if (theme === "system") {
+            theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+          }
+          document.documentElement.classList.add(theme)
+        } catch {}
+      })()
+    </script>
+    <!-- PETRICHOR_METADATA -->
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

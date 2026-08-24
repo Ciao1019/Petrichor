@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm"
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { getDb } from "@/server/db/client"
 import { knowledgeBaseArticles, knowledgeBases } from "@/server/db/schema"
@@ -19,16 +19,16 @@ import {
 
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
 
-async function withUser(request: NextRequest, handler: (user: User) => Promise<Response>) {
+async function withUser(request: AppRequest, handler: (user: User) => Promise<Response>) {
     try {
         const user = await requireCurrentUser(request)
         return await handler(user)
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject?.pathname ?? new URL(request.url, "http://localhost").pathname)
     }
 }
 
-export async function generateArticleMindmap(request: NextRequest) {
+export async function generateArticleMindmap(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = validateMindmapGenerateInput(await readJson(request))
         const db = getDb()

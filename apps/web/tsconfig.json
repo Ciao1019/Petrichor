@@ -17,11 +17,6 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
     "baseUrl": ".",
     "paths": {
       "@/*": [
@@ -36,17 +31,14 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": [
-    "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    "../../server.ts"
   ],
   "exclude": [
     "node_modules",
     "e2e",
     "playwright.config.ts",
-    "next.config.bundle-analyzer.ts",
     "src/examples"
   ]
 }

@@ -118,7 +118,7 @@ bun dev
 - 路径别名 `@/*` 指向 `apps/web/src/*`
 - 服务端文件多为 4 空格缩进；前端 / shadcn 组件按生成时风格
 
-### 后端 (Next.js Route Handler)
+### 后端（Bun Route Handler）
 
 - `route.ts` 保持薄层，只导出对应 handler：
   ```ts

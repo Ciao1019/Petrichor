@@ -1,4 +1,4 @@
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { z } from "zod"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { ok, readJson, toErrorResponse } from "@/server/http/response"
@@ -33,7 +33,7 @@ const planTodoPatchSchema = z.object({
     status: z.enum(["pending", "in_progress", "completed", "cancelled"]),
 })
 
-export async function assistantThreadList(request: NextRequest) {
+export async function assistantThreadList(request: AppRequest) {
     try {
         const user = await requireCurrentUser(request)
         const input = assistantThreadListSchema.parse(await readJson(request).catch(() => ({})))
@@ -44,21 +44,21 @@ export async function assistantThreadList(request: NextRequest) {
             q: input.q,
         }))
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function assistantThreadDetail(request: NextRequest) {
+export async function assistantThreadDetail(request: AppRequest) {
     try {
         const user = await requireCurrentUser(request)
         const input = threadIdInputSchema.parse(await readJson(request))
         return ok(await getAssistantThreadDetail({ userId: user.id, threadId: input.threadId }))
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function assistantThreadCreate(request: NextRequest) {
+export async function assistantThreadCreate(request: AppRequest) {
     try {
         const user = await requireCurrentUser(request)
         const input = threadCreateInputSchema.parse(await readJson(request).catch(() => ({})))
@@ -71,31 +71,31 @@ export async function assistantThreadCreate(request: NextRequest) {
         })
         return ok({ thread: toAssistantThreadResponse(thread) })
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function assistantThreadDelete(request: NextRequest) {
+export async function assistantThreadDelete(request: AppRequest) {
     try {
         const user = await requireCurrentUser(request)
         const input = threadIdInputSchema.parse(await readJson(request))
         return ok(await softDeleteAssistantThread({ userId: user.id, threadId: input.threadId }))
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function assistantThreadDeleteMany(request: NextRequest) {
+export async function assistantThreadDeleteMany(request: AppRequest) {
     try {
         const user = await requireCurrentUser(request)
         const input = assistantThreadDeleteManySchema.parse(await readJson(request))
         return ok(await softDeleteAssistantThreads(user.id, input.threadIds))
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function assistantPlanTodoPatch(request: NextRequest) {
+export async function assistantPlanTodoPatch(request: AppRequest) {
     try {
         const user = await requireCurrentUser(request)
         const input = planTodoPatchSchema.parse(await readJson(request))
@@ -108,6 +108,6 @@ export async function assistantPlanTodoPatch(request: NextRequest) {
         })
         return ok({ plan })
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }

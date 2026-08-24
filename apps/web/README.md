@@ -1,6 +1,6 @@
 # @petrichor/web
 
-Next.js + TypeScript 全栈应用，包管理、本地服务与生产服务端运行时统一使用 **Bun 1.3.14**，目标部署环境为 **Vercel**，数据层使用 **Supabase PostgreSQL**。
+React + Vite + TypeScript 全栈应用，包管理、本地服务与生产服务端运行时统一使用 **Bun 1.3.14**，目标部署环境为 **Vercel**，数据层使用 **Supabase PostgreSQL**。
 
 > 📖 完整的简介、功能特性、Vercel 一键部署、环境变量速查表请看仓库根目录的 [`README.md`](../../README.md)。
 

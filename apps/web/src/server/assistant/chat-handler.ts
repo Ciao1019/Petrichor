@@ -1,4 +1,4 @@
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import {
     convertToModelMessages,
     createUIMessageStream,
@@ -73,7 +73,7 @@ export { buildAssistantSystemPrompt } from "./system-prompt"
 
 const runtime = new PetrichorAgentRuntime()
 
-export async function assistantChat(request: NextRequest) {
+export async function assistantChat(request: AppRequest) {
     const requestStartedAt = Date.now()
     if (!readAgentFeatureFlags().runtimeV2) {
         return await assistantChatLegacy(request)
@@ -325,7 +325,7 @@ export async function assistantChat(request: NextRequest) {
             },
         })
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 

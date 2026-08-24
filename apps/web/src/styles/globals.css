@@ -1,0 +1,519 @@
+@import "tailwindcss";
+
+@plugin "tailwind-scrollbar-hide";
+@import "tw-animate-css";
+@import "./plate-article.css";
+@import "./public-article.css";
+@import "./maple-font.css";
+@import "./retypeset-fonts.css";
+@import "./retypeset-home.css";
+@import "./about-desk.css";
+@import "./project-promo.css";
+@import "./site-graph.css";
+@import "tw-shimmer";
+@import "@astryxdesign/core/astryx.css";
+@import "@astryxdesign/theme-neutral/theme.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+
+  /* 阴影：用偏冷的深石板色调代替纯黑，与中性灰 + 蓝色品牌色和谐（仅改色相，几何/不透明度与 Tailwind 默认一致）。 */
+  --shadow-2xs: 0 1px oklch(0.21 0.02 264 / 0.05);
+  --shadow-xs: 0 1px 2px 0 oklch(0.21 0.02 264 / 0.05);
+  --shadow-sm: 0 1px 3px 0 oklch(0.21 0.02 264 / 0.1), 0 1px 2px -1px oklch(0.21 0.02 264 / 0.1);
+  --shadow-md: 0 4px 6px -1px oklch(0.21 0.02 264 / 0.1), 0 2px 4px -2px oklch(0.21 0.02 264 / 0.1);
+  --shadow-lg: 0 10px 15px -3px oklch(0.21 0.02 264 / 0.1), 0 4px 6px -4px oklch(0.21 0.02 264 / 0.1);
+  --shadow-xl: 0 20px 25px -5px oklch(0.21 0.02 264 / 0.1), 0 8px 10px -6px oklch(0.21 0.02 264 / 0.1);
+  --shadow-2xl: 0 25px 50px -12px oklch(0.21 0.02 264 / 0.25);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-viz-1: var(--viz-1);
+  --color-viz-2: var(--viz-2);
+  --color-viz-3: var(--viz-3);
+  --color-viz-4: var(--viz-4);
+  --color-viz-5: var(--viz-5);
+  --color-viz-6: var(--viz-6);
+  --color-viz-7: var(--viz-7);
+  --color-viz-8: var(--viz-8);
+  --color-viz-good: var(--viz-good);
+  --color-viz-warning: var(--viz-warning);
+  --color-viz-serious: var(--viz-serious);
+  --color-viz-critical: var(--viz-critical);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-brand: var(--brand);
+  --color-highlight: var(--highlight);
+
+  /* Maple Mono 作为全站 sans / serif / mono 字体（中文回退系统字体）。 */
+  --font-sans:
+    "Maple Mono", ui-monospace, SFMono-Regular, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-serif:
+    "Maple Mono", ui-serif, "Songti SC", "Noto Serif CJK SC", Georgia, "Times New Roman",
+    serif;
+  --font-mono:
+    "Maple Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+    monospace;
+  --button-py-sm: 0.5rem;
+  --button-px-sm: 1rem;
+  --button-text-sm: 0.875rem;
+  --button-leading-sm: 1.25rem;
+  --button-radius-sm: var(--radius-md);
+  --button-py-md: 0.75rem;
+  --button-px-md: 1.5rem;
+  --button-text-md: 0.875rem;
+  --button-leading-md: 1.25rem;
+  --button-radius-md: var(--radius-lg);
+  --button-py-lg: 1rem;
+  --button-px-lg: 2rem;
+  --button-text-lg: 1rem;
+  --button-leading-lg: 1.5rem;
+  --button-radius-lg: var(--radius-xl);
+  --rainbow-speed: var(--rainbow-speed);
+  --color-rainbow-5: var(--rainbow-5);
+  --color-rainbow-4: var(--rainbow-4);
+  --color-rainbow-3: var(--rainbow-3);
+  --color-rainbow-2: var(--rainbow-2);
+  --color-rainbow-1: var(--rainbow-1);
+  --color-primary-rgb: var(--color-primary-rgb);
+  --glow-highlight: var(--glow-highlight);
+  --god-glow: var(--god-glow);
+  --god-gradient: var(--god-gradient);
+  --shadow: var(--shadow);
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  /* 数据大屏分类色板（viz-1..8）。固定顺序即无障碍保障，禁止循环复用或临时插色。
+     已针对本项目卡片底色（浅色 #fff / 暗色 #171717）跑过校验：
+     浅色最差相邻色盲 ΔE 9.1、常规视觉 ΔE 19.6，均达标。
+     浅色下 viz-3/4/5 对底色对比度不足 3:1，凡使用这三档必须配直接数值标签或图例。
+     注意：shadcn 默认的 --chart-4/--chart-5 在浅色下常规视觉 ΔE 仅 7.4（肉眼难辨），
+     所以大屏不用 --chart-*，统一走这套。 */
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-5: #e87ba4;
+  --viz-6: #008300;
+  --viz-7: #4a3aa7;
+  --viz-8: #e34948;
+  /* 状态色：语义固定，永不当作「第 N 条序列」使用，且始终配图标或文字 */
+  --viz-good: #0ca30c;
+  --viz-warning: #fab219;
+  --viz-serious: #ec835a;
+  --viz-critical: #d03b3b;
+  /* 连续色阶（热力图用）：单一蓝色相，越深值越大；第 0 档留白表示「无」 */
+  --viz-seq-0: var(--muted);
+  --viz-seq-1: #b7d3f6;
+  --viz-seq-2: #6da7ec;
+  --viz-seq-3: #2a78d6;
+  --viz-seq-4: #184f95;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  --highlight: oklch(0.852 0.199 91.936);
+  --brand: oklch(0.623 0.214 259.815);
+  --shadow-2xs: 0 1px 2px rgb(0 0 0 / 0.02);
+  --shadow-xs: 0 1px 3px rgb(0 0 0 / 0.04);
+  --shadow-sm: 0 2px 6px rgb(0 0 0 / 0.05);
+  --shadow: 0 4px 12px rgb(0 0 0 / 0.06);
+  --shadow-md: 0 8px 20px rgb(0 0 0 / 0.08);
+  --shadow-lg: 0 16px 32px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 24px 48px rgb(0 0 0 / 0.12);
+  --shadow-2xl: 0 40px 80px rgb(0 0 0 / 0.16);
+  --god-gradient: linear-gradient(135deg, oklch(0.55 0.19 266) 0%, oklch(1 0 0) 50%, oklch(0.85 0.12 90) 100%);
+  --god-glow: 0 0 24px oklch(0.55 0.19 266 / 0.14), 0 0 80px oklch(0.85 0.12 90 / 0.06);
+  --glow-highlight: 61, 102, 223;
+  --color-primary-rgb: 61, 102, 223;
+  --rainbow-1: oklch(0.55 0.19 266);
+  --rainbow-2: oklch(0.68 0.16 305);
+  --rainbow-3: oklch(0.82 0.1 185);
+  --rainbow-4: oklch(0.78 0.12 14);
+  --rainbow-5: oklch(0.8 0.13 90);
+  --rainbow-speed: 2s;
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  /* 暗色不是浅色的自动反相，而是同样 8 个色相在暗底上单独取的一档，
+     并针对 #171717 卡片底色重新校验：最差相邻色盲 ΔE 8.4、常规视觉 ΔE 19.3，
+     且 8 档全部达到 3:1 对比度。 */
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-5: #d55181;
+  --viz-6: #008300;
+  --viz-7: #9085e9;
+  --viz-8: #e66767;
+  --viz-good: #0ca30c;
+  --viz-warning: #fab219;
+  --viz-serious: #ec835a;
+  --viz-critical: #d03b3b;
+  /* 暗底上锚点翻转：越亮值越大 */
+  --viz-seq-0: var(--muted);
+  --viz-seq-1: #184f95;
+  --viz-seq-2: #2a78d6;
+  --viz-seq-3: #6da7ec;
+  --viz-seq-4: #b7d3f6;
+  /* 让右侧内容区与左侧菜单区在暗色模式下更容易分辨（差距保持克制） */
+  --sidebar: oklch(0.13 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.205 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+  --highlight: oklch(0.852 0.199 91.936);
+  --brand: oklch(0.707 0.165 254.624);
+  --shadow-2xs: 0 1px 2px rgb(0 0 0 / 0.12);
+  --shadow-xs: 0 1px 3px rgb(0 0 0 / 0.15);
+  --shadow-sm: 0 2px 6px rgb(0 0 0 / 0.2);
+  --shadow: 0 4px 12px rgb(0 0 0 / 0.25);
+  --shadow-md: 0 8px 20px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 16px 32px rgb(0 0 0 / 0.35);
+  --shadow-xl: 0 24px 48px rgb(0 0 0 / 0.4);
+  --shadow-2xl: 0 40px 80px rgb(0 0 0 / 0.5);
+  --god-gradient: linear-gradient(135deg, oklch(0.72 0.15 266) 0%, oklch(1 0 0) 50%, oklch(0.86 0.12 90) 100%);
+  --god-glow: 0 0 24px oklch(0.72 0.15 266 / 0.28), 0 0 80px oklch(0.86 0.12 90 / 0.12);
+  --glow-highlight: 120, 160, 255;
+  --color-primary-rgb: 120, 160, 255;
+  --rainbow-1: oklch(0.72 0.15 266);
+  --rainbow-2: oklch(0.74 0.16 305);
+  --rainbow-3: oklch(0.84 0.1 185);
+  --rainbow-4: oklch(0.8 0.12 14);
+  --rainbow-5: oklch(0.84 0.13 90);
+  --rainbow-speed: 2s;
+}
+
+/* ── View Transition: 昼夜切换 crossfade ── */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  z-index: 9999;
+  animation: 420ms cubic-bezier(0.4, 0, 0.2, 1) both vt-fade-in;
+}
+
+@keyframes vt-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    /* 全局滚动条：Firefox */
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 18%, transparent) transparent;
+  }
+
+  /*
+   * Tailwind v4 起，可点击元素的默认光标从 pointer 改为 default。
+   * 这里全局恢复为小手，覆盖项目里所有按钮 / 可点击控件（禁用态除外）。
+   */
+  button:not(:disabled):not([aria-disabled="true"]),
+  [role="button"]:not(:disabled):not([aria-disabled="true"]),
+  [role="tab"]:not(:disabled):not([aria-disabled="true"]),
+  [role="menuitem"]:not([aria-disabled="true"]),
+  [role="option"]:not([aria-disabled="true"]),
+  [role="switch"]:not(:disabled):not([aria-disabled="true"]),
+  label[for],
+  summary,
+  select:not(:disabled) {
+    cursor: pointer;
+  }
+
+  /* 全局滚动条：WebKit / Blink (Chrome, Safari, Edge) */
+  *::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklab, var(--muted-foreground) 18%, transparent);
+    border-radius: 9999px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklab, var(--muted-foreground) 38%, transparent);
+  }
+
+  *::-webkit-scrollbar-thumb:active {
+    background-color: color-mix(in oklab, var(--muted-foreground) 55%, transparent);
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-maple);
+    font-feature-settings: "calt" 1;
+    font-variant-ligatures: contextual;
+  }
+
+  html.retypeset-scrollbar-hidden,
+  body.retypeset-scrollbar-hidden {
+    scrollbar-width: none;
+    scrollbar-color: transparent transparent;
+    -ms-overflow-style: none;
+  }
+
+  html.retypeset-scrollbar-hidden::-webkit-scrollbar,
+  body.retypeset-scrollbar-hidden::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
+  }
+
+  html.retypeset-scrollbar-hidden::-webkit-scrollbar-track,
+  body.retypeset-scrollbar-hidden::-webkit-scrollbar-track,
+  html.retypeset-scrollbar-hidden::-webkit-scrollbar-thumb,
+  body.retypeset-scrollbar-hidden::-webkit-scrollbar-thumb,
+  html.retypeset-scrollbar-hidden::-webkit-scrollbar-corner,
+  body.retypeset-scrollbar-hidden::-webkit-scrollbar-corner {
+    border: 0 !important;
+    background: transparent !important;
+  }
+
+  /* 覆盖浏览器自动填充样式 */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 30px var(--background) inset !important;
+    -webkit-text-fill-color: var(--foreground) !important;
+    transition: background-color 5000s ease-in-out 0s;
+  }
+  .dark input:-webkit-autofill,
+  .dark input:-webkit-autofill:hover,
+  .dark input:-webkit-autofill:focus,
+  .dark input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 30px oklch(0.205 0 0) inset !important;
+  }
+  :is(code, kbd, samp, pre) {
+    font-family: var(--font-mono);
+  }
+}
+
+@layer utilities {
+  /* app-scrollbar：保留用于需要 smooth 滚动的区域 */
+  .app-scrollbar {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* 通用轻量噪点叠层：适配当前主题背景（亮/暗都生效） */
+  .app-noise {
+    position: relative;
+    z-index: 0;
+    overflow: hidden;
+  }
+
+  .app-noise::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 120px 120px;
+    opacity: 0.035;
+    z-index: -1;
+  }
+
+  .dark .app-noise::before {
+    opacity: 0.06;
+  }
+
+  /* 代码块行号（配合 Shiki 输出的 .line 结构） */
+  .codeblock-lines code {
+    counter-reset: line;
+  }
+
+  .codeblock-lines .line {
+    display: block;
+    position: relative;
+    padding-left: 3.25rem;
+    padding-right: 0.75rem;
+  }
+
+  .codeblock-lines .line::before {
+    counter-increment: line;
+    content: counter(line);
+    position: absolute;
+    left: 0;
+    width: 2.75rem;
+    padding-right: 0.75rem;
+    text-align: right;
+    color: var(--muted-foreground);
+    opacity: 0.55;
+    user-select: none;
+  }
+
+  .codeblock-lines .line:hover {
+    background-color: color-mix(in oklab, var(--muted) 55%, transparent);
+  }
+
+  .blog-home-grid {
+    background-size: 60px 60px;
+    background-image:
+      linear-gradient(to right, rgb(255 255 255 / 8%) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(255 255 255 / 8%) 1px, transparent 1px);
+    mask-image: radial-gradient(circle at center, black 60%, transparent 100%);
+    -webkit-mask-image: radial-gradient(circle at center, black 60%, transparent 100%);
+  }
+
+  .blog-home-link {
+    position: relative;
+    padding-block: 0.25rem;
+    transition: color 180ms ease;
+  }
+
+  .blog-home-link::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    transform: scaleX(0);
+    transform-origin: left;
+    background: #fde047;
+    transition: transform 180ms ease;
+  }
+
+  .blog-home-link:hover {
+    color: #fde047;
+  }
+
+  .blog-home-link:hover::after {
+    transform: scaleX(1);
+  }
+
+  .blog-home-fade-in {
+    animation: blog-home-fade-in 700ms ease-out both;
+  }
+
+  .blog-delay-300 {
+    animation-delay: 300ms;
+  }
+
+  .blog-delay-500 {
+    animation-delay: 500ms;
+  }
+
+  @keyframes blog-home-fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 0.85;
+      transform: translateY(0);
+    }
+  }
+}

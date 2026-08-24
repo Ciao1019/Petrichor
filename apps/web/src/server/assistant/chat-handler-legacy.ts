@@ -1,4 +1,4 @@
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import {
     convertToModelMessages,
     createUIMessageStream,
@@ -85,7 +85,7 @@ type ProcessorModel = ConstructorParameters<typeof PromptInjectionDetector>[0]["
 
 export { buildAssistantSystemPrompt } from "./system-prompt"
 
-export async function assistantChatLegacy(request: NextRequest) {
+export async function assistantChatLegacy(request: AppRequest) {
     try {
         const user = await requireCurrentUser(request)
         const input = chatRequestSchema.parse(await request.json())
@@ -486,7 +486,7 @@ export async function assistantChatLegacy(request: NextRequest) {
             },
         })
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 

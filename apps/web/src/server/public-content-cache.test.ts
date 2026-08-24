@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-const nextCacheMocks = vi.hoisted(() => ({
-    revalidateTag: vi.fn(),
-    unstable_cache: vi.fn((loader: () => Promise<unknown>) => loader),
+const cacheMocks = vi.hoisted(() => ({
+    cacheDrop: vi.fn(async () => undefined),
+    cacheDropByPrefix: vi.fn(async () => undefined),
+    cacheKey: vi.fn((...parts: Array<string | number>) => ["petrichor", ...parts].join(":")),
+    cacheReadThrough: vi.fn(async (_key: string, _ttl: number, loader: () => Promise<unknown>) => loader()),
 }))
 
-vi.mock("next/cache", () => nextCacheMocks)
+vi.mock("@/server/cache", () => cacheMocks)
 
 import {
-    PUBLIC_CONTENT_CACHE_TAGS,
     PUBLIC_CONTENT_CACHE_TTL_SECONDS,
     cachePublicArticleDetail,
     cachePublicContent,
@@ -22,54 +23,45 @@ describe("public content cache", () => {
         vi.clearAllMocks()
     })
 
-    it("用 Next unstable_cache 包装公开文章列表缓存配置", async () => {
+    it("用统一读穿透缓存包装公开文章列表", async () => {
         const loader = vi.fn(async () => ({ items: [] }))
-
-        const cachedLoader = cachePublicContent("articleList", loader)
-        await expect(cachedLoader()).resolves.toEqual({ items: [] })
-
-        expect(nextCacheMocks.unstable_cache).toHaveBeenCalledWith(loader, ["public-content", "article-list"], {
-            revalidate: PUBLIC_CONTENT_CACHE_TTL_SECONDS.articleList,
-            tags: [PUBLIC_CONTENT_CACHE_TAGS.articleList],
-        })
-        expect(loader).toHaveBeenCalledTimes(1)
+        await expect(cachePublicContent("articleList", loader)()).resolves.toEqual({ items: [] })
+        expect(cacheMocks.cacheReadThrough).toHaveBeenCalledWith(
+            "petrichor:public:article-list",
+            PUBLIC_CONTENT_CACHE_TTL_SECONDS.articleList,
+            loader,
+        )
     })
 
-    it("用 Next unstable_cache 包装关于我公开资料缓存配置", async () => {
+    it("用统一读穿透缓存包装关于我公开资料", async () => {
         const loader = vi.fn(async () => ({ displayName: "CiZai" }))
-
-        const cachedLoader = cachePublicContent("aboutProfile", loader)
-        await expect(cachedLoader()).resolves.toEqual({ displayName: "CiZai" })
-
-        expect(nextCacheMocks.unstable_cache).toHaveBeenCalledWith(loader, ["public-content", "about-profile"], {
-            revalidate: PUBLIC_CONTENT_CACHE_TTL_SECONDS.aboutProfile,
-            tags: [PUBLIC_CONTENT_CACHE_TAGS.aboutProfile],
-        })
-        expect(loader).toHaveBeenCalledTimes(1)
+        await expect(cachePublicContent("aboutProfile", loader)()).resolves.toEqual({ displayName: "CiZai" })
+        expect(cacheMocks.cacheReadThrough).toHaveBeenCalledWith(
+            "petrichor:public:about-profile",
+            PUBLIC_CONTENT_CACHE_TTL_SECONDS.aboutProfile,
+            loader,
+        )
     })
 
-    it("用 shareCode 维度包装无密码公开文章详情缓存配置", async () => {
+    it("用 shareCode 维度缓存无密码公开文章详情", async () => {
         const loader = vi.fn(async () => ({ title: "公开文章" }))
-
-        const cachedLoader = cachePublicArticleDetail("shareCode123", loader)
-        await expect(cachedLoader()).resolves.toEqual({ title: "公开文章" })
-
-        expect(nextCacheMocks.unstable_cache).toHaveBeenCalledWith(loader, ["public-content", "article-detail", "shareCode123"], {
-            revalidate: PUBLIC_CONTENT_CACHE_TTL_SECONDS.articleDetail,
-            tags: [PUBLIC_CONTENT_CACHE_TAGS.articleDetail, "public:article:detail:shareCode123"],
-        })
-        expect(loader).toHaveBeenCalledTimes(1)
+        await expect(cachePublicArticleDetail("shareCode123", loader)()).resolves.toEqual({ title: "公开文章" })
+        expect(cacheMocks.cacheReadThrough).toHaveBeenCalledWith(
+            "petrichor:public:article-detail:shareCode123",
+            PUBLIC_CONTENT_CACHE_TTL_SECONDS.articleDetail,
+            loader,
+        )
     })
 
-    it("主动失效使用指定 tag 和 max profile", () => {
+    it("主动失效精确键与文章详情前缀", () => {
         invalidatePublicArticleListCache()
         invalidatePublicArticleDetailCache()
         invalidatePublicArticleDetailCache("shareCode123")
         invalidatePublicAboutProfileCache()
 
-        expect(nextCacheMocks.revalidateTag).toHaveBeenCalledWith(PUBLIC_CONTENT_CACHE_TAGS.articleList, "max")
-        expect(nextCacheMocks.revalidateTag).toHaveBeenCalledWith(PUBLIC_CONTENT_CACHE_TAGS.articleDetail, "max")
-        expect(nextCacheMocks.revalidateTag).toHaveBeenCalledWith("public:article:detail:shareCode123", "max")
-        expect(nextCacheMocks.revalidateTag).toHaveBeenCalledWith(PUBLIC_CONTENT_CACHE_TAGS.aboutProfile, "max")
+        expect(cacheMocks.cacheDrop).toHaveBeenCalledWith("petrichor:public:article-list")
+        expect(cacheMocks.cacheDropByPrefix).toHaveBeenCalledWith("petrichor:public:article-detail:")
+        expect(cacheMocks.cacheDrop).toHaveBeenCalledWith("petrichor:public:article-detail:shareCode123")
+        expect(cacheMocks.cacheDrop).toHaveBeenCalledWith("petrichor:public:about-profile")
     })
 })

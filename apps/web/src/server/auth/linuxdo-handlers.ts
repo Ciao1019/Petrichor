@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto"
 import { Buffer } from "node:buffer"
 import { eq } from "drizzle-orm"
-import type { NextRequest } from "next/server"
-import { NextResponse } from "next/server"
+import type { AppRequest } from "@/server/http/request"
+import { setResponseCookie } from "@/server/http/cookies"
 import { createLogger } from "@/lib/logger"
 import { dashboardRoutes } from "@/lib/dashboard-routes"
 import { requireCurrentUser } from "@/server/auth/current-user"
@@ -27,50 +27,50 @@ const bindStatePrefix = "bind:"
 const loginStatePrefix = "login:"
 const log = createLogger("linuxdo-auth")
 
-export async function linuxDoLoginStartGet(request: NextRequest) {
+export async function linuxDoLoginStartGet(request: AppRequest) {
     try {
         const config = getLinuxDoConfig(request)
         const state = `${loginStatePrefix}${randomBytes(24).toString("base64url")}`
-        const response = NextResponse.redirect(buildAuthorizeUrl(config, state), { status: 302 })
+        const response = Response.redirect(buildAuthorizeUrl(config, state), 302)
         setLinuxDoOauthStateCookie(response, state)
         return response
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function linuxDoBindStartGet(request: NextRequest) {
+export async function linuxDoBindStartGet(request: AppRequest) {
     try {
         await requireCurrentUser(request)
         const config = getLinuxDoConfig(request)
         const state = `${bindStatePrefix}${randomBytes(24).toString("base64url")}`
-        const response = NextResponse.redirect(buildAuthorizeUrl(config, state), { status: 302 })
+        const response = Response.redirect(buildAuthorizeUrl(config, state), 302)
         setLinuxDoOauthStateCookie(response, state)
         return response
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function linuxDoCallbackPost(request: NextRequest) {
+export async function linuxDoCallbackPost(request: AppRequest) {
     try {
         const input = validateLinuxDoCallbackInput(await readJson(request))
         const result = await handleLinuxDoCallback(request, input.code, input.state)
-        const response = NextResponse.json(result)
+        const response = Response.json(result)
         if (result.mode === "login") {
             setSessionCookie(response, result.token)
         }
         clearLinuxDoOauthStateCookie(response)
         return response
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function linuxDoCallbackGet(request: NextRequest) {
+export async function linuxDoCallbackGet(request: AppRequest) {
     try {
-        const code = request.nextUrl.searchParams.get("code") ?? ""
-        const state = request.nextUrl.searchParams.get("state") ?? null
+        const code = request.urlObject.searchParams.get("code") ?? ""
+        const state = request.urlObject.searchParams.get("state") ?? null
         const result = await handleLinuxDoCallback(request, code, state)
         const target = new URL(result.mode === "bind" ? dashboardRoutes.account : dashboardRoutes.root, getFrontendBaseUrl(request))
         if (result.mode === "login") {
@@ -78,18 +78,18 @@ export async function linuxDoCallbackGet(request: NextRequest) {
         } else {
             target.searchParams.set("linuxdoBinding", "success")
         }
-        const response = NextResponse.redirect(target, { status: 302 })
+        const response = Response.redirect(target, 302)
         if (result.mode === "login") {
             setSessionCookie(response, result.token)
         }
         clearLinuxDoOauthStateCookie(response)
         return response
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-async function handleLinuxDoCallback(request: NextRequest, code: string, state: string | null) {
+async function handleLinuxDoCallback(request: AppRequest, code: string, state: string | null) {
     if (!code.trim()) {
         throw badRequest("授权码不能为空")
     }
@@ -143,7 +143,7 @@ async function resolveLinuxDoLoginUser(userInfo: NormalizedLinuxDoUser) {
     return user
 }
 
-async function bindLinuxDoAccount(request: NextRequest, userInfo: NormalizedLinuxDoUser) {
+async function bindLinuxDoAccount(request: AppRequest, userInfo: NormalizedLinuxDoUser) {
     const currentUser = await requireCurrentUser(request)
     if (currentUser.linuxDoAccountId && currentUser.linuxDoAccountId !== userInfo.accountId) {
         throw badRequest("当前账号已绑定其他 Linux.do 账号")
@@ -184,7 +184,7 @@ function buildLinuxDoUserUpdate(user: typeof users.$inferSelect, userInfo: Norma
     }
 }
 
-function resolveLinuxDoCallbackMode(request: NextRequest, state: string | null): "bind" | "login" {
+function resolveLinuxDoCallbackMode(request: AppRequest, state: string | null): "bind" | "login" {
     const storedState = request.cookies.get(linuxDoOauthStateCookieName)?.value ?? null
     if (!state) {
         return "login"
@@ -213,8 +213,8 @@ function buildAuthorizeUrl(config: LinuxDoConfig, state: string) {
     return target
 }
 
-function setLinuxDoOauthStateCookie(response: NextResponse, state: string) {
-    response.cookies.set(linuxDoOauthStateCookieName, state, {
+function setLinuxDoOauthStateCookie(response: Response, state: string) {
+    setResponseCookie(response, linuxDoOauthStateCookieName, state, {
         httpOnly: true,
         path: "/",
         sameSite: "lax",
@@ -223,8 +223,8 @@ function setLinuxDoOauthStateCookie(response: NextResponse, state: string) {
     })
 }
 
-function clearLinuxDoOauthStateCookie(response: NextResponse) {
-    response.cookies.set(linuxDoOauthStateCookieName, "", {
+function clearLinuxDoOauthStateCookie(response: Response) {
+    setResponseCookie(response, linuxDoOauthStateCookieName, "", {
         httpOnly: true,
         path: "/",
         sameSite: "lax",
@@ -340,7 +340,7 @@ interface LinuxDoConfig {
     redirectUri: string
 }
 
-function getLinuxDoConfig(request: NextRequest): LinuxDoConfig {
+function getLinuxDoConfig(request: AppRequest): LinuxDoConfig {
     const clientId = readEnv("PETRICHOR_LINUXDO_CLIENT_ID", "LINUXDO_CLIENT_ID")
     const clientSecret = readEnv("PETRICHOR_LINUXDO_CLIENT_SECRET", "LINUXDO_CLIENT_SECRET")
     const redirectUri = readEnv("PETRICHOR_LINUXDO_REDIRECT_URI", "LINUXDO_REDIRECT_URI")
@@ -351,15 +351,15 @@ function getLinuxDoConfig(request: NextRequest): LinuxDoConfig {
     return { clientId, clientSecret, redirectUri }
 }
 
-function getFrontendBaseUrl(request: NextRequest) {
-    const configured = readEnv("NEXT_PUBLIC_APP_URL", "APP_BASE_URL")
+function getFrontendBaseUrl(request: AppRequest) {
+    const configured = readEnv("APP_BASE_URL")
     if (configured) {
         return configured.replace(/\/+$/, "")
     }
     if (process.env.VERCEL_URL?.trim()) {
         return `https://${process.env.VERCEL_URL.trim()}`
     }
-    return request.nextUrl.origin
+    return request.urlObject.origin
 }
 
 function readEnv(...names: string[]) {

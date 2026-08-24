@@ -1,6 +1,7 @@
 import { randomBytes, createHash } from "node:crypto"
-import type { NextRequest, NextResponse } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { getServerConfig } from "@/config/server"
+import { setDeferredCookie, setResponseCookie } from "@/server/http/cookies"
 
 export const SESSION_COOKIE_NAME = "petrichor_session"
 export const BETTER_AUTH_COOKIE_PREFIX = "petrichor"
@@ -32,7 +33,7 @@ export function getBearerToken(request: Request): string | null {
     return token
 }
 
-export function getSessionToken(request: NextRequest): string | null {
+export function getSessionToken(request: AppRequest): string | null {
     return request.cookies.get(SESSION_COOKIE_NAME)?.value || getBearerToken(request)
 }
 
@@ -50,25 +51,24 @@ function getSessionCookieOptions(maxAge: number) {
     }
 }
 
-export function setSessionCookie(response: NextResponse, token: string) {
-    response.cookies.set(SESSION_COOKIE_NAME, token, getSessionCookieOptions(getServerConfig().session.expiresInSeconds))
+export function setSessionCookie(response: Response, token: string) {
+    setResponseCookie(
+        response,
+        SESSION_COOKIE_NAME,
+        token,
+        getSessionCookieOptions(getServerConfig().session.expiresInSeconds),
+    )
 }
 
 async function refreshCookie(name: string, value: string) {
-    try {
-        const { cookies } = await import("next/headers")
-        const cookieStore = await cookies()
-        cookieStore.set(name, value, getSessionCookieOptions(getServerConfig().session.expiresInSeconds))
-    } catch {
-        // 非 Route Handler 上下文无法写 Cookie；数据库续期仍然保持生效。
-    }
+    setDeferredCookie(name, value, getSessionCookieOptions(getServerConfig().session.expiresInSeconds))
 }
 
 export async function refreshSessionCookie(token: string) {
     await refreshCookie(SESSION_COOKIE_NAME, token)
 }
 
-export async function refreshBetterAuthSessionCookie(request: NextRequest) {
+export async function refreshBetterAuthSessionCookie(request: AppRequest) {
     const cookieName = getBetterAuthSessionCookieName()
     const cookieValue = request.cookies.get(cookieName)?.value
         ?? request.cookies.get(`${BETTER_AUTH_COOKIE_PREFIX}.session_token`)?.value
@@ -77,6 +77,6 @@ export async function refreshBetterAuthSessionCookie(request: NextRequest) {
     }
 }
 
-export function clearSessionCookie(response: NextResponse) {
-    response.cookies.set(SESSION_COOKIE_NAME, "", getSessionCookieOptions(0))
+export function clearSessionCookie(response: Response) {
+    setResponseCookie(response, SESSION_COOKIE_NAME, "", getSessionCookieOptions(0))
 }

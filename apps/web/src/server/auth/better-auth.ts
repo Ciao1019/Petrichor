@@ -1,7 +1,6 @@
 import bcrypt from "bcryptjs"
 import { betterAuth } from "better-auth"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
-import { nextCookies } from "better-auth/next-js"
 import { twoFactor } from "better-auth/plugins/two-factor"
 import { getServerConfig } from "@/config/server"
 import { getDb } from "@/server/db/client"
@@ -18,8 +17,7 @@ import { BETTER_AUTH_COOKIE_PREFIX } from "./session"
 const serverConfig = getServerConfig()
 
 function readBaseUrl() {
-    const configured = process.env.NEXT_PUBLIC_APP_URL?.trim()
-        || process.env.BETTER_AUTH_URL?.trim()
+    const configured = process.env.BETTER_AUTH_URL?.trim()
         || process.env.APP_BASE_URL?.trim()
     return configured?.replace(/\/+$/, "") || "http://localhost:3000"
 }
@@ -101,7 +99,6 @@ export const auth = betterAuth({
                 length: 10,
             },
         }),
-        nextCookies(),
     ],
 })
 

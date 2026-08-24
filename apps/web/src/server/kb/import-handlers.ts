@@ -1,5 +1,6 @@
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm"
-import { after, type NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
+import { afterResponse } from "@/server/http/lifecycle"
 import { z } from "zod"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { getDb } from "@/server/db/client"
@@ -96,12 +97,12 @@ const listJobsSchema = z.object({
     pageSize: z.coerce.number().int().positive().optional(),
 })
 
-async function withUser(request: NextRequest, handler: (user: User) => Promise<Response>) {
+async function withUser(request: AppRequest, handler: (user: User) => Promise<Response>) {
     try {
         const user = await requireCurrentUser(request)
         return await handler(user)
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
@@ -330,7 +331,7 @@ async function loadJobDecorations(db: Db, userId: number, jobs: KnowledgeBaseImp
  * - 只有 needsOcr 的页（扫描件 / 纯图片页）留 pending，等前端把整页图传上来后走 vision 兜底。
  * - 全部页都是文字页时直接合并生成文章，一次请求就结束。
  */
-export async function createImportJob(request: NextRequest) {
+export async function createImportJob(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = createJobSchema.parse(await readJson(request))
         const db = getDb()
@@ -425,7 +426,7 @@ export async function createImportJob(request: NextRequest) {
  * 前端把 needsOcr 页栅格化上传后回传 imageKey，绑定到页记录并启动多模态识别。
  * 只接受本来就标记为 vision 的待处理页，避免覆盖本地抽取好的文字页。
  */
-export async function attachImportOcrPages(request: NextRequest) {
+export async function attachImportOcrPages(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = attachOcrPagesSchema.parse(await readJson(request))
         const db = getDb()
@@ -656,7 +657,7 @@ async function processImportJobInBackground(user: User, jobId: number, concurren
 function scheduleImportJobProcessing(user: User, jobId: number, concurrency: number) {
     const task = () => processImportJobInBackground(user, jobId, concurrency)
     try {
-        after(task)
+        afterResponse(task)
     } catch {
         setTimeout(() => {
             void task()
@@ -664,7 +665,7 @@ function scheduleImportJobProcessing(user: User, jobId: number, concurrency: num
     }
 }
 
-export async function convertImportPage(request: NextRequest) {
+export async function convertImportPage(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = convertPageSchema.parse(await readJson(request))
         const db = getDb()
@@ -677,7 +678,7 @@ export async function convertImportPage(request: NextRequest) {
     })
 }
 
-export async function retryImportPage(request: NextRequest) {
+export async function retryImportPage(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = convertPageSchema.parse(await readJson(request))
         const db = getDb()
@@ -714,7 +715,7 @@ export async function retryImportPage(request: NextRequest) {
     })
 }
 
-export async function retryImportJobFailedPages(request: NextRequest) {
+export async function retryImportJobFailedPages(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = jobIdSchema.parse(await readJson(request))
         const db = getDb()
@@ -745,7 +746,7 @@ export async function retryImportJobFailedPages(request: NextRequest) {
     })
 }
 
-export async function finalizeImportJob(request: NextRequest) {
+export async function finalizeImportJob(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = jobIdSchema.parse(await readJson(request))
         const db = getDb()
@@ -758,7 +759,7 @@ export async function finalizeImportJob(request: NextRequest) {
     })
 }
 
-export async function cancelImportJob(request: NextRequest) {
+export async function cancelImportJob(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = jobIdSchema.parse(await readJson(request))
         const db = getDb()
@@ -774,7 +775,7 @@ export async function cancelImportJob(request: NextRequest) {
     })
 }
 
-export async function deleteImportJobs(request: NextRequest) {
+export async function deleteImportJobs(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = deleteJobsSchema.parse(await readJson(request))
         const db = getDb()
@@ -794,7 +795,7 @@ export async function deleteImportJobs(request: NextRequest) {
     })
 }
 
-export async function listImportJobs(request: NextRequest) {
+export async function listImportJobs(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = listJobsSchema.parse(await readJson(request))
         const db = getDb()
@@ -817,7 +818,7 @@ export async function listImportJobs(request: NextRequest) {
     })
 }
 
-export async function detailImportJob(request: NextRequest) {
+export async function detailImportJob(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = jobIdSchema.parse(await readJson(request))
         const db = getDb()

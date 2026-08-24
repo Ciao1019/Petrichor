@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto"
 import { and, eq, gt, isNull, or } from "drizzle-orm"
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { z } from "zod"
 import { getDb } from "@/server/db/client"
 import { agentApiKeys, type AgentApiKeyRecord } from "@/server/db/schema"
@@ -89,7 +89,7 @@ export function requireAgentScope(context: AgentAuthContext, required: AgentApiK
     }
 }
 
-export async function authenticateAgentRequest(request: NextRequest): Promise<AgentAuthContext> {
+export async function authenticateAgentRequest(request: AppRequest): Promise<AgentAuthContext> {
     const apiKey = extractAgentBearerToken(request)
     if (!apiKey) {
         throw unauthorized("缺少 Agent API Key")

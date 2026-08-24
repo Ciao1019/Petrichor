@@ -136,7 +136,6 @@ export function FileThumbnail({
         }
       >
         {previewImageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element -- Preview URLs can be transient object or presigned URLs outside Next image optimization.
           <img
             ref={imageRef}
             src={previewImageUrl}

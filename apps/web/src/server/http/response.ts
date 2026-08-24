@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server"
 import { ZodError } from "zod"
 import { createLogger, toLogError } from "@/lib/logger"
 
@@ -38,7 +37,7 @@ export function tooManyRequests(message = "请求过于频繁，请稍后再试"
 }
 
 export function ok<T>(data: T, init?: ResponseInit) {
-    return NextResponse.json(data, init)
+    return Response.json(data, init)
 }
 
 export function tableData<T>(rows: T[], total: number) {
@@ -64,7 +63,7 @@ export function toErrorResponse(error: unknown, path: string) {
 }
 
 function errorJson(status: number, msg: string, path: string) {
-    return NextResponse.json(
+    return Response.json(
         {
             code: status,
             msg,

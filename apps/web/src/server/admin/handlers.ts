@@ -1,5 +1,5 @@
 import { and, count, eq, ilike, or } from "drizzle-orm"
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { createLocalUserWithBetterAuth } from "@/server/auth/better-auth-bridge"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { getDb } from "@/server/db/client"
@@ -35,17 +35,17 @@ async function requireSuperAdminUser(user: User) {
     return freshUser
 }
 
-async function withAdmin(request: NextRequest, handler: (user: User) => Promise<Response>) {
+async function withAdmin(request: AppRequest, handler: (user: User) => Promise<Response>) {
     try {
         const user = await requireCurrentUser(request)
         await requireSuperAdminUser(user)
         return await handler(user)
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function listAdminUsers(request: NextRequest) {
+export async function listAdminUsers(request: AppRequest) {
     return withAdmin(request, async () => {
         const raw = await readJson<Record<string, unknown>>(request)
         const keyword = validateAdminKeyword(raw.keyword).trim()
@@ -77,7 +77,7 @@ export async function listAdminUsers(request: NextRequest) {
     })
 }
 
-export async function createAdminUser(request: NextRequest) {
+export async function createAdminUser(request: AppRequest) {
     return withAdmin(request, async () => {
         const input = validateAdminCreateInput(await readJson(request))
         const db = getDb()
@@ -102,7 +102,7 @@ export async function createAdminUser(request: NextRequest) {
     })
 }
 
-export async function deleteAdminUser(request: NextRequest) {
+export async function deleteAdminUser(request: AppRequest) {
     return withAdmin(request, async (currentUser) => {
         const input = validateAdminDeleteInput(await readJson(request))
         if (input.userId === currentUser.id) {

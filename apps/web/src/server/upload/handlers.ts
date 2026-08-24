@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { z } from "zod"
 import { createLogger } from "@/lib/logger"
 import { getServerConfig } from "@/config/server"
@@ -34,7 +34,7 @@ function getS3ConfigOrThrow() {
     return config
 }
 
-export async function presignPutObject(request: NextRequest) {
+export async function presignPutObject(request: AppRequest) {
     try {
         const user = await requireCurrentUser(request)
         const input = presignPutSchema.parse(await readJson(request))
@@ -70,11 +70,11 @@ export async function presignPutObject(request: NextRequest) {
             presignedUrl,
         })
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function presignGetObject(request: NextRequest) {
+export async function presignGetObject(request: AppRequest) {
     try {
         await requireCurrentUser(request)
         const input = presignGetSchema.parse(await readJson(request))
@@ -93,11 +93,11 @@ export async function presignGetObject(request: NextRequest) {
 
         return ok({ url })
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function publicPresignGetObject(request: NextRequest) {
+export async function publicPresignGetObject(request: AppRequest) {
     try {
         const input = presignGetSchema.parse(await readJson(request))
 
@@ -115,6 +115,6 @@ export async function publicPresignGetObject(request: NextRequest) {
 
         return ok({ url })
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }

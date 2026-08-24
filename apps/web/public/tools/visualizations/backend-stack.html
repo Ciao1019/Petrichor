@@ -6,7 +6,7 @@
         <title>后端框架技术选型 · Petrichor 后端栈可视化</title>
         <meta
             name="description"
-            content="Petrichor 服务端的后端框架技术选型：Next 16 Route Handlers + Server Actions 无独立后端，Drizzle ORM 一份 schema 跨 PostgreSQL（pgvector/pg_trgm）与 SQLite，Better Auth 自托管鉴权，Vercel AI SDK + Mastra + MCP 的 AI 运行时，附选型原则、关键抉择与完整依赖清单。"
+            content="Petrichor 服务端的后端框架技术选型：单一 Bun.serve 服务承载 Web API 与静态资源，Drizzle ORM 一份 schema 跨 PostgreSQL（pgvector/pg_trgm）与 SQLite，Better Auth 自托管鉴权，Vercel AI SDK + Mastra + MCP 的 AI 运行时，附选型原则、关键抉择与完整依赖清单。"
         />
         <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/lxgwwenkai-regular.css" />
@@ -884,7 +884,7 @@
                         <p class="eyebrow">Petrichor 技术可视化 · Backend Stack Selection</p>
                         <h1>后端框架技术选型</h1>
                         <p class="subtitle">
-                            一张图看清 Petrichor 服务端用了什么、为什么这么选。没有独立后端——Next 16 Route Handlers +
+                            一张图看清 Petrichor 服务端用了什么、为什么这么选。没有独立后端——Bun Web API +
                             Server Actions 就是 API，Drizzle ORM 一份 schema 跨 PostgreSQL / SQLite，鉴权自托管、横切托管。
                             选型取自 <code>src/server</code> 与 <code>package.json</code>。
                         </p>
@@ -899,14 +899,14 @@
                 <div class="thesis">
                     <div class="thesis-mark" aria-hidden="true">端</div>
                     <div>
-                        <strong>一句话本质：一个 Next 进程装下整个后端，横切能免运维就免运维。</strong>
+                        <strong>一句话本质：一个 Bun 进程装下整个后端，横切能免运维就免运维。</strong>
                         <p>
                             Route Handlers + Server Actions 就是 API，Drizzle 一份 schema 跨 PostgreSQL / SQLite；
                             鉴权自托管（Better Auth）、缓存与存储走托管（Upstash / S3）。选型来源是仓库里真实的
                             <code>src/server</code>。
                         </p>
                     </div>
-                    <div class="thesis-path">Bun 1.3 → Next 16 API → Drizzle/PG → Better Auth → AI 运行时 → 领域服务</div>
+                    <div class="thesis-path">Bun 1.3 → API Router → Drizzle/PG → Better Auth → AI 运行时 → 领域服务</div>
                 </div>
             </header>
 
@@ -977,7 +977,7 @@
                                     <text class="node-sub" x="172" y="257" style="text-anchor: start">Vercel AI SDK · Mastra · MCP（mcp-handler）</text>
                                     <text class="layer-no" x="908" y="258">4</text>
                                 </g>
-                                <g class="node" id="L3" data-step="2" tabindex="0" role="button" style="--c: var(--purple)" data-tip="自托管鉴权 Better Auth（drizzle adapter + next-js + 2FA），密码 bcrypt，AI 密钥 AES-256 加密后落库。">
+                                <g class="node" id="L3" data-step="2" tabindex="0" role="button" style="--c: var(--purple)" data-tip="自托管鉴权 Better Auth（drizzle adapter + Web API + 2FA），密码 bcrypt，AI 密钥 AES-256 加密后落库。">
                                     <g filter="url(#rough)">
                                         <rect class="fill" x="145" y="288" width="780" height="72" rx="12" />
                                         <rect class="box" x="145" y="288" width="780" height="72" rx="12" />
@@ -995,13 +995,13 @@
                                     <text class="node-sub" x="172" y="425" style="text-anchor: start">PostgreSQL + pgvector · Drizzle ORM · postgres.js</text>
                                     <text class="layer-no" x="908" y="426">2</text>
                                 </g>
-                                <g class="node" id="L1" data-step="0" tabindex="0" role="button" style="--c: var(--ink-soft)" data-tip="同仓同进程的服务端：Next 16 的 Route Handlers（app/api/**）与 Server Actions 承载全部后端逻辑，Bun ≥ 1.3.14，全程 TypeScript，无独立 API 服务。">
+                                <g class="node" id="L1" data-step="0" tabindex="0" role="button" style="--c: var(--ink-soft)" data-tip="同仓同进程的服务端：Bun 的 API Router（src/server/routes/api/**） 承载全部后端逻辑，Bun ≥ 1.3.14，全程 TypeScript，无独立 API 服务。">
                                     <g filter="url(#rough)">
                                         <rect class="fill" x="145" y="456" width="780" height="72" rx="12" />
                                         <rect class="box" x="145" y="456" width="780" height="72" rx="12" />
                                     </g>
                                     <text class="node-label" x="172" y="487" style="text-anchor: start">运行时底座</text>
-                                    <text class="node-sub" x="172" y="509" style="text-anchor: start">Bun 1.3 · TypeScript 5.9 · Next 16 Route Handlers</text>
+                                    <text class="node-sub" x="172" y="509" style="text-anchor: start">Bun 1.3 · TypeScript 5.9 · Web API Routes</text>
                                     <text class="layer-no" x="908" y="510">1</text>
                                 </g>
                             </svg>
@@ -1035,7 +1035,7 @@
                     <div class="card-grid">
                         <div class="card" style="--c: var(--blue)">
                             <h3><span class="dot"></span>单体优先，无独立后端</h3>
-                            <p>Next Route Handlers + Server Actions 同仓同进程，省一层网络与部署；要对外集成再开 <code>MCP</code> / Agent API Key，不为「后端」单独起一套服务。</p>
+                            <p>Bun API Router 同仓同进程，省一层网络与部署；要对外集成再开 <code>MCP</code> / Agent API Key，不为「后端」单独起一套服务。</p>
                         </div>
                         <div class="card" style="--c: var(--teal)">
                             <h3><span class="dot"></span>类型贯通到库</h3>
@@ -1131,7 +1131,7 @@
                             <div class="tool-chips">
                                 <span class="tool-chip">Bun 1.3</span>
                                 <span class="tool-chip">TypeScript 5.9</span>
-                                <span class="tool-chip">Next 16</span>
+                                <span class="tool-chip">Bun.serve</span>
                                 <span class="tool-chip">Server Actions</span>
                                 <span class="tool-chip s">Bun TS</span>
                             </div>
@@ -1232,7 +1232,7 @@
                     <div class="boundaries">
                         <h3>选型边界（known tensions）</h3>
                         <ul>
-                            <li>全部塞进一个 Next 进程：好处是零网络、共享类型；代价是重活（长任务、批处理）只能靠 <code>maxDuration</code> 与外挂队列，量大了要拆服务。</li>
+                            <li>全部塞进一个 Bun 进程：好处是零网络、共享类型；代价是重活（长任务、批处理）只能靠 <code>maxDuration</code> 与外挂队列，量大了要拆服务。</li>
                             <li>双方言（PG / SQLite）要靠纪律：查询一律走 Drizzle、避开方言特有语法；pgvector / pg_trgm 是 Postgres 独有，SQLite 模式下相关能力降级。</li>
                             <li>迁移是手写 SQL：可审计但需人肉保证与 Drizzle schema 同步，drizzle-kit 仅辅助本地。</li>
                             <li>缓存 / 限流依赖 Upstash 可用性：Redis 只做加速与轻状态，主数据永远以 PostgreSQL 为准，Redis 挂了不影响正确性。</li>
@@ -1274,8 +1274,8 @@
 {
 "short": "运行时",
 "no": "1",
-"title": "运行时底座：一个 Next 进程装下整个后端",
-"body": "没有独立的后端服务——Next 16 的 Route Handlers（app/api 下已 30+ 个 route.ts）加 Server Actions 就是后端，与前端同仓同进程、共享 TypeScript 类型。Bun ≥ 1.3.14 运行时（serverExternalPackages 放行 sharp 等原生模块），maxDuration 给流式对话放宽时长。",
+"title": "运行时底座：一个 Bun 进程装下整个后端",
+"body": "没有独立的后端服务——Bun.serve 的 Route Handlers（app/api 下已 30+ 个 route.ts）加 Server Actions 就是后端，与前端同仓同进程、共享 TypeScript 类型。Bun ≥ 1.3.14 运行时（serverExternalPackages 放行 sharp 等原生模块），maxDuration 给流式对话放宽时长。",
 "libs": [
 {
 "n": "Bun 1.3",
@@ -1286,7 +1286,7 @@
 "k": ""
 },
 {
-"n": "Next 16 Route Handlers",
+"n": "Bun Web API",
 "k": ""
 },
 {
@@ -1339,7 +1339,7 @@
 "short": "身份",
 "no": "3",
 "title": "身份与安全：自托管鉴权，凭据不明文",
-"body": "鉴权用 Better Auth（drizzle adapter 存库、next-js 集成、two-factor 插件），不依赖外部 SaaS 也不按量计费。密码走 bcryptjs；用户配置的 AI 提供商密钥用 AES-256（spring-text-encryptor，node:crypto）加密后落库，明文不落盘。危险操作（删除、吊销）还有确认闸门——见 Agent 架构页。",
+"body": "鉴权用 Better Auth（drizzle adapter 存库、Web API 集成、two-factor 插件），不依赖外部 SaaS 也不按量计费。密码走 bcryptjs；用户配置的 AI 提供商密钥用 AES-256（spring-text-encryptor，node:crypto）加密后落库，明文不落盘。危险操作（删除、吊销）还有确认闸门——见 Agent 架构页。",
 "libs": [
 {
 "n": "better-auth",

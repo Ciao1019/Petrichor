@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto"
 import { and, asc, desc, eq, gt, isNull, or, sql } from "drizzle-orm"
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import bcrypt from "bcryptjs"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { getDb } from "@/server/db/client"
@@ -39,20 +39,20 @@ type User = Awaited<ReturnType<typeof requireCurrentUser>>
 /** 阅后即焚相关接口全程禁止任何层的缓存，否则"读"到不了服务端、焚毁也无法真正失效。 */
 const burnNoStoreHeaders = { "Cache-Control": "no-store" } as const
 
-async function withUser(request: NextRequest, handler: (user: User) => Promise<Response>) {
+async function withUser(request: AppRequest, handler: (user: User) => Promise<Response>) {
     try {
         const user = await requireCurrentUser(request)
         return await handler(user)
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-async function withPublic(request: NextRequest, handler: () => Promise<Response>) {
+async function withPublic(request: AppRequest, handler: () => Promise<Response>) {
     try {
         return await handler()
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
@@ -71,7 +71,7 @@ async function requireArticleOwner(userId: number, articleId: number): Promise<K
     return article
 }
 
-export async function createBurnLink(request: NextRequest) {
+export async function createBurnLink(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = validateBurnLinkCreateInput(await readJson(request))
         await requireArticleOwner(user.id, input.articleId)
@@ -97,7 +97,7 @@ export async function createBurnLink(request: NextRequest) {
     })
 }
 
-export async function listBurnLinks(request: NextRequest) {
+export async function listBurnLinks(request: AppRequest) {
     return withUser(request, async (user) => {
         const { articleId } = validateBurnLinkArticleInput(await readJson(request))
         await requireArticleOwner(user.id, articleId)
@@ -113,7 +113,7 @@ export async function listBurnLinks(request: NextRequest) {
     })
 }
 
-export async function revokeBurnLink(request: NextRequest) {
+export async function revokeBurnLink(request: AppRequest) {
     return withUser(request, async (user) => {
         const { id } = validateBurnLinkIdInput(await readJson(request))
         const db = getDb()
@@ -145,9 +145,9 @@ export async function revokeBurnLink(request: NextRequest) {
  * 公开端预检：只暴露状态 / 是否需要密码 / 封面图（与文章分享卡片同款的首图逻辑），
  * 绝不返回正文，且全程 no-store。
  */
-export async function publicBurnMeta(request: NextRequest) {
+export async function publicBurnMeta(request: AppRequest) {
     return withPublic(request, async () => {
-        const code = validateBurnLinkCode(request.nextUrl.searchParams.get("code") ?? "")
+        const code = validateBurnLinkCode(request.urlObject.searchParams.get("code") ?? "")
         const [link] = await getDb()
             .select({
                 status: knowledgeBaseArticleBurnLinks.status,
@@ -177,7 +177,7 @@ export async function publicBurnMeta(request: NextRequest) {
 }
 
 /** 公开端消费：先只读校验，再原子自增 + 达上限焚毁，命中才返回正文。全程 no-store。 */
-export async function publicBurnConsume(request: NextRequest) {
+export async function publicBurnConsume(request: AppRequest) {
     return withPublic(request, async () => {
         const input = validatePublicBurnConsumeInput(await readJson(request))
         const db = getDb()

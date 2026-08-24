@@ -209,7 +209,7 @@ for await (const step of runAgentLoop(messages, tools)) {
         kb: KB_ENGINEERING,
         folder: "React",
         title: "RSC 心智模型速记",
-        tags: ["React", "Next.js"],
+        tags: ["React", "Bun"],
         day: 2,
         md: `# RSC 心智模型速记
 

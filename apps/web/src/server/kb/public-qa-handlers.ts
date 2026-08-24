@@ -1,4 +1,4 @@
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import {
     convertToModelMessages,
     createUIMessageStreamResponse,
@@ -39,7 +39,7 @@ import { loadPublicSiteGraph } from "@/server/site-graph/public-graph"
 /** 前台问答模式：normal 走文章/目录树链路；wiki 参考 WeKnora 的 Wiki 检索链路。 */
 type PublicQaMode = "normal" | "wiki"
 
-function resolveQaMode(request: NextRequest): PublicQaMode {
+function resolveQaMode(request: AppRequest): PublicQaMode {
     return request.headers.get("x-petrichor-qa-mode") === "wiki" ? "wiki" : "normal"
 }
 
@@ -103,7 +103,7 @@ const dataTableToolSchema = z.object({
     ]))).default([]),
 })
 
-export async function publicQaChat(request: NextRequest) {
+export async function publicQaChat(request: AppRequest) {
     try {
         const appearance = await loadCachedPublicSiteAppearance()
         if (!appearance.publicQaEnabled) {
@@ -150,7 +150,7 @@ export async function publicQaChat(request: NextRequest) {
             },
         })
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 

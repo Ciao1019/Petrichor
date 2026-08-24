@@ -1,6 +1,6 @@
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
-import { NextRequest } from "next/server"
+import { AppRequest } from "@/server/http/request"
 import { authenticateAgentRequest } from "@/server/agent/api-key"
 import {
     agentAskDocument,
@@ -45,7 +45,7 @@ export const AGENT_MCP_SERVER_INSTRUCTIONS = [
     "所有工具都要求 API Key 具备对应 scope，权限不足会返回 403。",
 ].join("\n")
 
-type AgentRestHandler = (request: NextRequest) => Promise<Response>
+type AgentRestHandler = (request: AppRequest) => Promise<Response>
 
 // 每个 MCP 工具委托到对应的 REST handler，鉴权 / scope 校验 / 审计日志全部复用现有实现。
 const AGENT_MCP_TOOL_HANDLERS: Record<AgentMcpToolName, AgentRestHandler> = {
@@ -84,7 +84,7 @@ export async function verifyAgentMcpToken(request: Request, bearerToken?: string
 
     const origin = resolveRequestOrigin(request)
     try {
-        const context = await authenticateAgentRequest(new NextRequest(`${origin}/api/mcp`, {
+        const context = await authenticateAgentRequest(new AppRequest(`${origin}/api/mcp`, {
             headers: { authorization: `Bearer ${token}` },
         }))
         return {
@@ -133,7 +133,7 @@ export async function delegateAgentMcpToolCall(input: {
 
     const extra = (input.authInfo?.extra ?? {}) as Partial<AgentMcpAuthExtra>
     const origin = typeof extra.origin === "string" && extra.origin ? extra.origin : "http://127.0.0.1"
-    const request = new NextRequest(`${origin}${input.spec.endpointPath}`, {
+    const request = new AppRequest(`${origin}${input.spec.endpointPath}`, {
         method: "POST",
         headers: buildAgentMcpDelegateHeaders({
             token,

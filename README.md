@@ -4,12 +4,13 @@
 
 # Petrichor
 
-**一个开箱即用的全栈知识库与博客平台 · 基于 Next.js + Supabase + Vercel**
+**一个开箱即用的全栈知识库与博客平台 · 基于 Bun + React + Vite + Supabase + Vercel**
 
-*An open-source full-stack knowledge base & blog platform built with Next.js, Supabase and Vercel.*
+*An open-source full-stack knowledge base & blog platform built with Bun, React, Vite, Supabase and Vercel.*
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
+[![Bun](https://img.shields.io/badge/Bun-1.3-black?logo=bun)](https://bun.sh)
+[![Vite](https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=white)](https://vite.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com)
 [![Vercel](https://img.shields.io/badge/Deploy-Vercel-black?logo=vercel)](#-vercel-一键部署傻瓜式教程)
@@ -116,7 +117,7 @@ openssl rand -hex 8
 
 ### 第 4 步：点击下方按钮，一键部署
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FCiao1019%2FPetrichor&project-name=petrichor&repository-name=petrichor&env=DATABASE_URL,SESSION_SECRET,PETRICHOR_ENCRYPT_KEY,PETRICHOR_ENCRYPT_SALT,S3_ENDPOINT,S3_REGION,S3_BUCKET,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY,NEXT_PUBLIC_APP_URL&envDescription=%E5%A1%AB%E5%85%A5%E6%95%B0%E6%8D%AE%E5%BA%93%E3%80%81%E4%BC%9A%E8%AF%9D%E5%AF%86%E9%92%A5%E3%80%81%E5%8A%A0%E5%AF%86%E5%AF%86%E9%92%A5%E5%92%8C%E5%AF%B9%E8%B1%A1%E5%AD%98%E5%82%A8%E7%AD%89%E5%BF%85%E5%A1%AB%E7%8E%AF%E5%A2%83%E5%8F%98%E9%87%8F&envLink=https%3A%2F%2Fgithub.com%2FCiao1019%2FPetrichor%23-%E7%8E%AF%E5%A2%83%E5%8F%98%E9%87%8F%E9%80%9F%E6%9F%A5%E8%A1%A8)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FCiao1019%2FPetrichor&project-name=petrichor&repository-name=petrichor&env=DATABASE_URL,SESSION_SECRET,PETRICHOR_ENCRYPT_KEY,PETRICHOR_ENCRYPT_SALT,S3_ENDPOINT,S3_REGION,S3_BUCKET,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY,APP_BASE_URL&envDescription=%E5%A1%AB%E5%85%A5%E6%95%B0%E6%8D%AE%E5%BA%93%E3%80%81%E4%BC%9A%E8%AF%9D%E5%AF%86%E9%92%A5%E3%80%81%E5%8A%A0%E5%AF%86%E5%AF%86%E9%92%A5%E5%92%8C%E5%AF%B9%E8%B1%A1%E5%AD%98%E5%82%A8%E7%AD%89%E5%BF%85%E5%A1%AB%E7%8E%AF%E5%A2%83%E5%8F%98%E9%87%8F&envLink=https%3A%2F%2Fgithub.com%2FCiao1019%2FPetrichor%23-%E7%8E%AF%E5%A2%83%E5%8F%98%E9%87%8F%E9%80%9F%E6%9F%A5%E8%A1%A8)
 
 按钮会自动：
 
@@ -138,7 +139,7 @@ openssl rand -hex 8
 | `S3_BUCKET` | 第 2 步的桶名 |
 | `S3_ACCESS_KEY_ID` | 第 2 步的 Access Key ID |
 | `S3_SECRET_ACCESS_KEY` | 第 2 步的 Secret Access Key |
-| `NEXT_PUBLIC_APP_URL` | **先随便填 `http://localhost:3000`，部署完成后再来改成你的真实域名（如 `https://你的项目.vercel.app`）** |
+| `APP_BASE_URL` | **先随便填 `http://localhost:3000`，部署完成后再来改成你的真实域名（如 `https://你的项目.vercel.app`）** |
 
 填完点 **Deploy**，等待 2–4 分钟构建完成。
 
@@ -175,7 +176,7 @@ openssl rand -hex 8
 
    | 变量 | 临时填 |
    | --- | --- |
-   | `NEXT_PUBLIC_REGISTER_ENABLED` | `true` |
+   | `PETRICHOR_PUBLIC_REGISTER_ENABLED` | `true` |
 
 2. 进入 **Deployments → ⋯ → Redeploy** 让新环境变量生效（约 2 分钟）。
 3. 打开你的 Vercel 域名 `https://你的项目.vercel.app/login`，**点「注册」**，填邮箱和密码，提交。系统里此时还没有管理员，这个账号会自动成为超级管理员。
@@ -183,7 +184,7 @@ openssl rand -hex 8
 
    | 变量 | 改回 |
    | --- | --- |
-   | `NEXT_PUBLIC_REGISTER_ENABLED` | `false` |
+   | `PETRICHOR_PUBLIC_REGISTER_ENABLED` | `false` |
 
 5. 再点一次 **Redeploy**，登录页的「注册」入口就消失了，从此只有管理员能从后台手动加用户。
 
@@ -223,10 +224,10 @@ openssl rand -hex 8
 
 3. 用这个邮箱密码登录即可。
 
-### 第 7 步：回填 `NEXT_PUBLIC_APP_URL` 并重新部署
+### 第 7 步：回填 `APP_BASE_URL` 并重新部署
 
 1. 在 Vercel 项目首页找到自己分配到的域名，例如 `https://petrichor-abc123.vercel.app`。
-2. 进入 **Settings → Environment Variables**，把 `NEXT_PUBLIC_APP_URL` 改成上面这个域名（**不要带斜杠结尾**）。
+2. 进入 **Settings → Environment Variables**，把 `APP_BASE_URL` 改成上面这个域名（**不要带斜杠结尾**）。
 3. 进入 **Deployments**，对最新一次部署点 **⋯ → Redeploy**。
 
 **完成！** 🎉 用第 6 步创建的管理员账号登录，开始使用。
@@ -262,8 +263,8 @@ openssl rand -hex 8
 
 | 变量 | 用于什么功能 |
 | --- | --- |
-| `NEXT_PUBLIC_APP_URL` | **公开站点完整 URL**（如 `https://yourdomain.com`、`https://你的项目.vercel.app`）。用于：文章分享链接、RSS/Atom 链接生成、OAuth 回调地址 fallback、SEO `og:url`。部署完成后**务必回填**为真实域名 |
-| `NEXT_PUBLIC_REGISTER_ENABLED` | 是否在登录页显示「注册」入口，`"true"` / `"false"`，默认 `"false"`（关闭注册，仅管理员手动添加用户） |
+| `APP_BASE_URL` | **公开站点完整 URL**（如 `https://yourdomain.com`、`https://你的项目.vercel.app`）。用于：文章分享链接、RSS/Atom 链接生成、OAuth 回调地址 fallback、SEO `og:url`。部署完成后**务必回填**为真实域名 |
+| `PETRICHOR_PUBLIC_REGISTER_ENABLED` | 是否在登录页显示「注册」入口，`"true"` / `"false"`，默认 `"false"`（关闭注册，仅管理员手动添加用户） |
 | `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE` | 开放注册时新用户默认角色，只允许 `USER` 或 `SUPER_ADMIN`，默认 `USER`。**通常无需设置**：系统里还没有任何超级管理员时，第一个注册的账号会自动成为 `SUPER_ADMIN` |
 | `PETRICHOR_SESSION_EXPIRE_SECONDS` | 登录态有效期（秒），默认 `172800`（2 天） |
 
@@ -275,7 +276,7 @@ openssl rand -hex 8
 | --- | --- |
 | `PETRICHOR_LINUXDO_CLIENT_ID` | LinuxDo OAuth 应用 Client ID |
 | `PETRICHOR_LINUXDO_CLIENT_SECRET` | LinuxDo OAuth 应用 Client Secret |
-| `PETRICHOR_LINUXDO_REDIRECT_URI` | OAuth 回调地址，需与 LinuxDo 应用注册一致；留空则取 `NEXT_PUBLIC_APP_URL + /api/auth/callback` |
+| `PETRICHOR_LINUXDO_REDIRECT_URI` | OAuth 回调地址，需与 LinuxDo 应用注册一致；留空则取 `APP_BASE_URL + /api/auth/callback` |
 
 > 在 <https://connect.linux.do> 注册一个 OAuth 应用即可获得 ID 和 Secret，回调地址填 `https://你的域名/api/auth/callback`。
 
@@ -343,8 +344,8 @@ S3_DOWNLOAD_EXPIRE_SECONDS="3600"
 S3_USE_SSL="true"
 
 # 应用 URL 与注册策略
-NEXT_PUBLIC_APP_URL="https://yourdomain.com"
-NEXT_PUBLIC_REGISTER_ENABLED="false"
+APP_BASE_URL="https://yourdomain.com"
+PETRICHOR_PUBLIC_REGISTER_ENABLED="false"
 PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE="USER"
 PETRICHOR_SESSION_EXPIRE_SECONDS="172800"
 
@@ -398,7 +399,7 @@ bun lint          # ESLint
 ```
 .
 ├── apps/
-│   └── web/                     # Next.js 全栈应用
+│   └── web/                     # Bun + React + Vite 全栈应用
 │       ├── app/                 # App Router 入口、API route、RSS/sitemap
 │       │   └── api/agent/       # 外部 Agent REST 能力层（manifest / skill / skill-pack 等）
 │       ├── src/
@@ -453,7 +454,7 @@ bun test
 
 ## English
 
-**Petrichor** (repo codename *Dosphere*) is a self-hostable knowledge-base & blog platform powered by **Next.js 16 + Supabase + Vercel**, featuring a PlateJS rich-text editor, multi-level knowledge tree, AI writing assistant (continue / rewrite / translate / tone), AI weekly & monthly reviews, S3-compatible uploads, Better Auth with optional LinuxDo OAuth, and an **Agent integration layer** (REST + downloadable Skill packs compatible with Claude Code / Codex) with full call auditing.
+**Petrichor** (repo codename *Dosphere*) is a self-hostable knowledge-base & blog platform powered by **Bun 1.3 + React 19 + Vite 7 + Supabase + Vercel**, featuring a PlateJS rich-text editor, multi-level knowledge tree, AI writing assistant (continue / rewrite / translate / tone), AI weekly & monthly reviews, S3-compatible uploads, Better Auth with optional LinuxDo OAuth, and an **Agent integration layer** (REST + downloadable Skill packs compatible with Claude Code / Codex) with full call auditing.
 
 ### Links
 
@@ -462,7 +463,7 @@ bun test
 
 ### Quick deploy
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FCiao1019%2FPetrichor&project-name=petrichor&repository-name=petrichor&env=DATABASE_URL,SESSION_SECRET,PETRICHOR_ENCRYPT_KEY,PETRICHOR_ENCRYPT_SALT,S3_ENDPOINT,S3_REGION,S3_BUCKET,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY,NEXT_PUBLIC_APP_URL)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FCiao1019%2FPetrichor&project-name=petrichor&repository-name=petrichor&env=DATABASE_URL,SESSION_SECRET,PETRICHOR_ENCRYPT_KEY,PETRICHOR_ENCRYPT_SALT,S3_ENDPOINT,S3_REGION,S3_BUCKET,S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY,APP_BASE_URL)
 
 1. **Provision Postgres** — create a free Supabase project, copy the **Transaction Pooler** connection string (port 6543) as `DATABASE_URL`.
 2. **Provision object storage** — any S3-compatible service (Bitiful / AWS S3 / MinIO). Collect endpoint, region, bucket, access key, secret.
@@ -475,9 +476,9 @@ bun test
 4. **Click the deploy button** above and fill the env form.
 5. **Initialize the database**: run `bun --silent run db:sql` (or copy [`docs/petrichor-init.sql`](docs/petrichor-init.sql)) into Supabase SQL Editor.
 6. **Create the first super-admin** — the init SQL does **not** seed any user. Two options:
-   - **Recommended (no SQL):** temporarily set `NEXT_PUBLIC_REGISTER_ENABLED=true` on Vercel → redeploy → register from `/login`. While no super-admin exists yet, the **first registered account automatically becomes `SUPER_ADMIN`** — no need to touch `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE`. Then revert the var and redeploy.
+   - **Recommended (no SQL):** temporarily set `PETRICHOR_PUBLIC_REGISTER_ENABLED=true` on Vercel → redeploy → register from `/login`. While no super-admin exists yet, the **first registered account automatically becomes `SUPER_ADMIN`** — no need to touch `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE`. Then revert the var and redeploy.
    - **Via SQL:** generate a bcrypt hash locally (`cd apps/web && bun -e "console.log(require('bcryptjs').hashSync('YourPwd', 10))"`) and run [`docs/create-first-admin.sql`](docs/create-first-admin.sql) in Supabase with your email + hash filled in.
-7. **Set `NEXT_PUBLIC_APP_URL`** to your deployed Vercel domain and redeploy.
+7. **Set `APP_BASE_URL`** to your deployed Vercel domain and redeploy.
 
 ### Required env
 
@@ -487,13 +488,13 @@ bun test
 | `SESSION_SECRET` | Better Auth cookie signing key (≥ 32 chars) |
 | `PETRICHOR_ENCRYPT_KEY` / `PETRICHOR_ENCRYPT_SALT` | AES-style encryption for stored AI provider API keys |
 | `S3_ENDPOINT` / `S3_REGION` / `S3_BUCKET` / `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | Object storage for uploads (article covers, attachments, avatars) |
-| `NEXT_PUBLIC_APP_URL` | Public site URL — used by RSS, share links, OAuth callbacks, SEO metadata |
+| `APP_BASE_URL` | Public site URL — used by RSS, share links, OAuth callbacks, SEO metadata |
 
 ### Optional env
 
 | Variable | Purpose |
 | --- | --- |
-| `NEXT_PUBLIC_REGISTER_ENABLED` | Show the "Sign up" entry on the login page (`true` / `false`) |
+| `PETRICHOR_PUBLIC_REGISTER_ENABLED` | Show the "Sign up" entry on the login page (`true` / `false`) |
 | `PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE` | Default role for self-registered users — `USER` or `SUPER_ADMIN` (default `USER`). Usually unnecessary: the first account registered while no super-admin exists is auto-promoted to `SUPER_ADMIN` |
 | `PETRICHOR_SESSION_EXPIRE_SECONDS` | Session lifetime in seconds (default `172800`) |
 | `PETRICHOR_LINUXDO_CLIENT_ID` / `PETRICHOR_LINUXDO_CLIENT_SECRET` / `PETRICHOR_LINUXDO_REDIRECT_URI` | LinuxDo OAuth (optional third-party login) |

@@ -6,8 +6,7 @@
  */
 
 import { and, eq } from "drizzle-orm"
-import type { NextRequest } from "next/server"
-import { NextResponse } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { createLogger, toLogError } from "@/lib/logger"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { aiBindings, aiCredentials, aiModels, aiProviders } from "@/server/db/schema"
@@ -27,16 +26,16 @@ import {
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
 const log = createLogger("ai-binding-handler")
 
-async function withUser(request: NextRequest, handler: (user: User) => Promise<Response>) {
+async function withUser(request: AppRequest, handler: (user: User) => Promise<Response>) {
     try {
         return await handler(await requireCurrentUser(request))
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
 /** 四个用途的当前绑定，未绑定的用途返回 null 占位，前端好画完整的四行 */
-export async function listAiBindings(request: NextRequest) {
+export async function listAiBindings(request: AppRequest) {
     return withUser(request, async (user) => {
         const rows = await getDb()
             .select({ binding: aiBindings, model: aiModels, provider: aiProviders })
@@ -61,7 +60,7 @@ export async function listAiBindings(request: NextRequest) {
 }
 
 /** 绑定或改绑某个用途（upsert 语义） */
-export async function setAiBinding(request: NextRequest) {
+export async function setAiBinding(request: AppRequest) {
     return withUser(request, async (user) => {
         const raw = await readJson<Record<string, unknown>>(request)
         const purpose = requirePurpose(raw.purpose)
@@ -135,13 +134,13 @@ export async function setAiBinding(request: NextRequest) {
 }
 
 /** 解绑某个用途 */
-export async function clearAiBinding(request: NextRequest) {
+export async function clearAiBinding(request: AppRequest) {
     return withUser(request, async (user) => {
         const raw = await readJson<Record<string, unknown>>(request)
         const purpose = requirePurpose(raw.purpose)
         await getDb()
             .delete(aiBindings)
             .where(and(eq(aiBindings.userId, user.id), eq(aiBindings.purpose, purpose)))
-        return new NextResponse(null, { status: 200 })
+        return new Response(null, { status: 200 })
     })
 }

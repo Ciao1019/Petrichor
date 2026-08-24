@@ -14,11 +14,11 @@
 
 - 仓库根目录是 Bun workspace，目前工作区应用为 `apps/web`。
 - 根包名为 `petrichor`，当前仓库目录名为 `dosphere`。
-- `apps/web` 是 Next.js + React + TypeScript 全栈应用，目标部署环境为 Vercel。
-- 前端主体是客户端 SPA：`apps/web/app/spa-entry.tsx` 动态加载
+- `apps/web` 是 Bun + React + Vite + TypeScript 全栈应用，目标部署环境为 Vercel。
+- 前端主体是客户端 SPA：`apps/web/src/main.tsx` 加载
   `apps/web/src/client-app.tsx`，页面路由由 `react-router-dom` 管理。
-- API 使用 Next.js App Router route handlers，`apps/web/app/api/**/route.ts` 通常只转发
-  到 `apps/web/src/server/**/handlers.ts`。
+- API 使用 Bun 路由清单，`apps/web/src/server/routes/api/**/route.ts` 通常只转发
+  到 `apps/web/src/server/**/handlers.ts`；`server.ts` 是生产服务入口。
 - 数据层使用 Supabase PostgreSQL，Drizzle schema 位于
   `apps/web/src/server/db/schema.ts`。
 - 认证使用 Better Auth + 服务端 httpOnly Cookie，业务用户与 Better Auth 用户通过
@@ -55,7 +55,8 @@ bun --silent run db:sql
 
 ## 目录约定
 
-- `apps/web/app/`：Next.js App Router 入口、API route、RSS/Atom、SEO 元数据。
+- `apps/web/src/server/bun/`：Bun 服务、API 路由、静态资源、RSS/Atom 与 SEO 元数据入口。
+- `apps/web/src/server/routes/api/`：框架无关的 API route 注册文件。
 - `apps/web/src/client-app.tsx`：客户端路由总入口。
 - `apps/web/src/features/pages/`：业务页面组件。
 - `apps/web/src/components/`：通用组件、编辑器组件、shadcn/ui、第三方 UI 迁移组件。

@@ -8,24 +8,25 @@
     "apps/*"
   ],
   "scripts": {
-        "dev": "bun run --cwd apps/web dev",
-        "build": "bun run --cwd apps/web build",
-        "vercel-build": "bun run db:migrate:vercel && bun run build",
-        "db:backfill-public-article-metadata": "bun run --cwd apps/web db:backfill-public-article-metadata",
-        "db:sql": "bun run --silent --cwd apps/web db:sql",
-        "db:run-sql": "bun run --cwd apps/web db:run-sql",
-        "db:migrate": "bun run --cwd apps/web db:migrate",
-        "db:migrate:vercel": "bun run --cwd apps/web db:migrate:vercel",
-        "lint": "bun run --cwd apps/web lint",
-        "test": "bun run --cwd apps/web test",
-        "typecheck": "bun run --cwd apps/web typecheck"
+    "postinstall": "bun scripts/prune-unused-framework-peers.ts",
+    "dev": "bun run --cwd apps/web dev",
+    "build": "bun run --cwd apps/web build",
+    "start": "bun run --cwd apps/web start",
+    "vercel-build": "bun run db:migrate:vercel && bun run build",
+    "db:backfill-public-article-metadata": "bun run --cwd apps/web db:backfill-public-article-metadata",
+    "db:sql": "bun run --silent --cwd apps/web db:sql",
+    "db:run-sql": "bun run --cwd apps/web db:run-sql",
+    "db:migrate": "bun run --cwd apps/web db:migrate",
+    "db:migrate:vercel": "bun run --cwd apps/web db:migrate:vercel",
+    "lint": "bun run --cwd apps/web lint",
+    "test": "bun run --cwd apps/web test",
+    "typecheck": "bun run --cwd apps/web typecheck"
   },
-    "engines": {
-        "bun": ">=1.3.14",
-        "node": ">=22.0.0"
+  "engines": {
+    "bun": ">=1.3.14"
   },
-    "trustedDependencies": [
-        "esbuild",
+  "trustedDependencies": [
+    "esbuild",
     "msgpackr-extract",
     "sharp",
     "unrs-resolver"

@@ -772,7 +772,7 @@ create table if not exists petrichor_site_about_profile (
 
 我喜欢 Minecraft。$about_intro$,
     expertise_json text not null default '["Frontend Architecture","AI 应用开发","Knowledge Systems","Creative Coding"]',
-    toolkit_json text not null default '["TypeScript","React","Next.js","AI","PostgreSQL","Minecraft"]',
+    toolkit_json text not null default '["TypeScript","React","Bun","Vite","AI","PostgreSQL","Minecraft"]',
     quote text not null default 'Code is just another medium for painting dreams.',
     accents_json text not null default $about_accents$[{"phrase":"CiZai","style":"red","note":"yep, that's me"},{"phrase":"程序员","style":"green","note":"just a dev"},{"phrase":"金山办公","style":"blue","note":"where I work"},{"phrase":"Coding / AI","style":"green","note":"my playground"},{"phrase":"Minecraft","style":"blue","note":"★ my comfort game"}]$about_accents$,
     contact_text text not null default '想聊点什么？随时',
@@ -812,7 +812,7 @@ insert into petrichor_site_about_profile (
 
 我喜欢 Minecraft。$about_intro$,
     '["Frontend Architecture","AI 应用开发","Knowledge Systems","Creative Coding"]',
-    '["TypeScript","React","Next.js","AI","PostgreSQL","Minecraft"]',
+    '["TypeScript","React","Bun","Vite","AI","PostgreSQL","Minecraft"]',
     'Code is just another medium for painting dreams.'
 ) on conflict (id) do nothing;
 

@@ -1,4 +1,3 @@
-import type { NextResponse } from "next/server"
 import { badRequest, forbidden, unauthorized } from "@/server/http/response"
 
 function splitCombinedSetCookie(value: string) {
@@ -8,7 +7,7 @@ function splitCombinedSetCookie(value: string) {
         .filter(Boolean)
 }
 
-export function appendBetterAuthCookies(response: NextResponse, headers: Headers | null | undefined) {
+export function appendBetterAuthCookies(response: Response, headers: Headers | null | undefined) {
     if (!headers) {
         return response
     }

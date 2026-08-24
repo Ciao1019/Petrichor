@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm"
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { callChatCompletion } from "@/server/ai/generation"
 import { getDb } from "@/server/db/client"
@@ -17,16 +17,16 @@ import {
 
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
 
-async function withUser(request: NextRequest, handler: (user: User) => Promise<Response>) {
+async function withUser(request: AppRequest, handler: (user: User) => Promise<Response>) {
     try {
         const user = await requireCurrentUser(request)
         return await handler(user)
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function generateArticleSummary(request: NextRequest) {
+export async function generateArticleSummary(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = validateArticleSummaryGenerateInput(await readJson(request))
         const db = getDb()

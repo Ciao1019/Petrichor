@@ -1,6 +1,6 @@
 import fs from "node:fs/promises"
 import path from "node:path"
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { getServerConfig } from "@/config/server"
 import { HttpError } from "@/server/http/response"
 import { stripS4KeyPrefix } from "@/server/upload/s3-presign"
@@ -27,8 +27,8 @@ export function isLocalObjectStorageEnabled() {
     return Boolean(getLocalStorageDirOrNull())
 }
 
-export function buildLocalObjectUrl(request: NextRequest, objectKey: string) {
-    return buildLocalObjectUrlFromBase(request.nextUrl.origin, objectKey)
+export function buildLocalObjectUrl(request: AppRequest, objectKey: string) {
+    return buildLocalObjectUrlFromBase(request.urlObject.origin, objectKey)
 }
 
 export function buildLocalObjectUrlFromBase(baseUrl: string, objectKey: string) {

@@ -46,7 +46,7 @@ describe("public site feed utilities", () => {
     })
 
     it("解析公开站基础 URL 并生成绝对地址", () => {
-        expect(getPublicBaseUrl({ NEXT_PUBLIC_APP_URL: "https://petrichor.example/path" })).toBe("https://petrichor.example")
+        expect(getPublicBaseUrl({ APP_BASE_URL: "https://petrichor.example/path" })).toBe("https://petrichor.example")
         expect(getPublicBaseUrl({ VERCEL_URL: "petrichor.vercel.app" })).toBe("https://petrichor.vercel.app")
         expect(toAbsolutePublicUrl("/tags", "https://petrichor.example")).toBe("https://petrichor.example/tags")
     })

@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm"
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { getDb } from "@/server/db/client"
 import { siteAboutProfiles, users } from "@/server/db/schema"
@@ -18,11 +18,11 @@ type User = Awaited<ReturnType<typeof requireCurrentUser>>
 
 const loadCachedPublicAboutProfile = cachePublicContent("aboutProfile", loadPublicAboutProfileResponse)
 
-async function withPublic(request: NextRequest, handler: () => Promise<Response>) {
+async function withPublic(request: AppRequest, handler: () => Promise<Response>) {
     try {
         return await handler()
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
@@ -42,30 +42,30 @@ async function requireSuperAdminUser(user: User) {
     return freshUser
 }
 
-async function withAdmin(request: NextRequest, handler: (user: User) => Promise<Response>) {
+async function withAdmin(request: AppRequest, handler: (user: User) => Promise<Response>) {
     try {
         const user = await requireCurrentUser(request)
         await requireSuperAdminUser(user)
         return await handler(user)
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function publicAboutProfile(request: NextRequest) {
+export async function publicAboutProfile(request: AppRequest) {
     return withPublic(request, async () => {
         return ok(await loadCachedPublicAboutProfile())
     })
 }
 
-export async function adminAboutProfileDetail(request: NextRequest) {
+export async function adminAboutProfileDetail(request: AppRequest) {
     return withAdmin(request, async () => {
         const profile = await loadAboutProfileOrNull()
         return ok(buildAboutProfileResponse(profile))
     })
 }
 
-export async function adminAboutProfileUpdate(request: NextRequest) {
+export async function adminAboutProfileUpdate(request: AppRequest) {
     return withAdmin(request, async () => {
         const input = validateAboutProfileInput(await readJson(request))
         const now = new Date()

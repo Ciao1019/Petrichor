@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm"
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { getDb } from "@/server/db/client"
 import { siteProjectShowcase, users } from "@/server/db/schema"
@@ -17,11 +17,11 @@ type User = Awaited<ReturnType<typeof requireCurrentUser>>
 
 const loadCachedPublicProjectShowcase = cachePublicContent("projectShowcase", loadPublicProjectShowcaseResponse)
 
-async function withPublic(request: NextRequest, handler: () => Promise<Response>) {
+async function withPublic(request: AppRequest, handler: () => Promise<Response>) {
     try {
         return await handler()
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
@@ -41,30 +41,30 @@ async function requireSuperAdminUser(user: User) {
     return freshUser
 }
 
-async function withAdmin(request: NextRequest, handler: (user: User) => Promise<Response>) {
+async function withAdmin(request: AppRequest, handler: (user: User) => Promise<Response>) {
     try {
         const user = await requireCurrentUser(request)
         await requireSuperAdminUser(user)
         return await handler(user)
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function publicProjectShowcase(request: NextRequest) {
+export async function publicProjectShowcase(request: AppRequest) {
     return withPublic(request, async () => {
         return ok(await loadCachedPublicProjectShowcase())
     })
 }
 
-export async function adminProjectShowcaseDetail(request: NextRequest) {
+export async function adminProjectShowcaseDetail(request: AppRequest) {
     return withAdmin(request, async () => {
         const record = await loadProjectShowcaseOrNull()
         return ok(buildProjectShowcaseResponse(record))
     })
 }
 
-export async function adminProjectShowcaseUpdate(request: NextRequest) {
+export async function adminProjectShowcaseUpdate(request: AppRequest) {
     return withAdmin(request, async () => {
         const input = validateProjectShowcaseInput(await readJson(request))
         const now = new Date()

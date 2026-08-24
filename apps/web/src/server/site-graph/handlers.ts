@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm"
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { z } from "zod"
 
 import { isSuperAdmin } from "@/server/admin/logic"
@@ -101,11 +101,11 @@ const mergeConfirmSchema = z.object({
     targetNodeId: idSchema,
 })
 
-async function withPublic(request: NextRequest, handler: () => Promise<Response>) {
+async function withPublic(request: AppRequest, handler: () => Promise<Response>) {
     try {
         return await handler()
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
@@ -121,29 +121,29 @@ async function requireSuperAdminUser(user: User) {
     return freshUser
 }
 
-async function withAdmin(request: NextRequest, handler: (user: User) => Promise<Response>) {
+async function withAdmin(request: AppRequest, handler: (user: User) => Promise<Response>) {
     try {
         const user = await requireCurrentUser(request)
         await requireSuperAdminUser(user)
         return await handler(user)
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
 // ===== 前台 =====
 
-export async function publicSiteGraph(request: NextRequest) {
+export async function publicSiteGraph(request: AppRequest) {
     return withPublic(request, async () => ok(await loadPublicSiteGraph()))
 }
 
 // ===== 后台 =====
 
-export async function adminSiteGraphOverview(request: NextRequest) {
+export async function adminSiteGraphOverview(request: AppRequest) {
     return withAdmin(request, async (user) => ok(await loadSiteGraphOverview(user.id)))
 }
 
-export async function adminSiteGraphGenerate(request: NextRequest) {
+export async function adminSiteGraphGenerate(request: AppRequest) {
     return withAdmin(request, async (user) => {
         const input = generateSchema.parse(await readJson(request))
         return ok(await generateSiteGraph({
@@ -154,23 +154,23 @@ export async function adminSiteGraphGenerate(request: NextRequest) {
     })
 }
 
-export async function adminSiteGraphValidate(request: NextRequest) {
+export async function adminSiteGraphValidate(request: AppRequest) {
     return withAdmin(request, async (user) => ok(await revalidateSiteGraph(user.id)))
 }
 
-export async function adminSiteGraphPublish(request: NextRequest) {
+export async function adminSiteGraphPublish(request: AppRequest) {
     return withAdmin(request, async (user) => ok(await publishSiteGraph(user.id)))
 }
 
-export async function adminSiteGraphUnpublish(request: NextRequest) {
+export async function adminSiteGraphUnpublish(request: AppRequest) {
     return withAdmin(request, async (user) => ok(await unpublishSiteGraph(user.id)))
 }
 
-export async function adminSiteGraphClear(request: NextRequest) {
+export async function adminSiteGraphClear(request: AppRequest) {
     return withAdmin(request, async (user) => ok(await clearSiteGraph(user.id)))
 }
 
-export async function adminSiteGraphNodeSave(request: NextRequest) {
+export async function adminSiteGraphNodeSave(request: AppRequest) {
     return withAdmin(request, async (user) => {
         const input = nodeSaveSchema.parse(await readJson(request))
         const node = await saveNode({
@@ -195,14 +195,14 @@ export async function adminSiteGraphNodeSave(request: NextRequest) {
     })
 }
 
-export async function adminSiteGraphNodeDelete(request: NextRequest) {
+export async function adminSiteGraphNodeDelete(request: AppRequest) {
     return withAdmin(request, async (user) => {
         const input = deleteSchema.parse(await readJson(request))
         return ok(await deleteNode(user.id, input.id))
     })
 }
 
-export async function adminSiteGraphEdgeSave(request: NextRequest) {
+export async function adminSiteGraphEdgeSave(request: AppRequest) {
     return withAdmin(request, async (user) => {
         const input = edgeSaveSchema.parse(await readJson(request))
         const edge = await saveEdge({
@@ -223,14 +223,14 @@ export async function adminSiteGraphEdgeSave(request: NextRequest) {
     })
 }
 
-export async function adminSiteGraphEdgeDelete(request: NextRequest) {
+export async function adminSiteGraphEdgeDelete(request: AppRequest) {
     return withAdmin(request, async (user) => {
         const input = deleteSchema.parse(await readJson(request))
         return ok(await deleteEdge(user.id, input.id))
     })
 }
 
-export async function adminSiteGraphMergeConfirm(request: NextRequest) {
+export async function adminSiteGraphMergeConfirm(request: AppRequest) {
     return withAdmin(request, async (user) => {
         const input = mergeConfirmSchema.parse(await readJson(request))
         return ok(await confirmMergeCandidate({
@@ -241,21 +241,21 @@ export async function adminSiteGraphMergeConfirm(request: NextRequest) {
     })
 }
 
-export async function adminSiteGraphMergeIgnore(request: NextRequest) {
+export async function adminSiteGraphMergeIgnore(request: AppRequest) {
     return withAdmin(request, async (user) => {
         const input = deleteSchema.parse(await readJson(request))
         return ok(await dismissMergeCandidate(user.id, input.id))
     })
 }
 
-export async function adminSiteGraphSubtree(request: NextRequest) {
+export async function adminSiteGraphSubtree(request: AppRequest) {
     return withAdmin(request, async (user) => {
         const input = subtreeSchema.parse(await readJson(request))
         return ok(await loadSiteGraphSubtree({ userId: user.id, nodeId: input.nodeId, depth: input.depth }))
     })
 }
 
-export async function adminSiteGraphNeighborhood(request: NextRequest) {
+export async function adminSiteGraphNeighborhood(request: AppRequest) {
     return withAdmin(request, async (user) => {
         const input = neighborhoodSchema.parse(await readJson(request))
         return ok(await loadSiteGraphNeighborhood({ userId: user.id, nodeId: input.nodeId, hops: input.hops }))

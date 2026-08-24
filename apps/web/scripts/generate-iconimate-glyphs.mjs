@@ -5,7 +5,7 @@ const args = process.argv.slice(2)
 const sourceFlag = args.indexOf("--phosphor-source")
 
 if (sourceFlag === -1 || !args[sourceFlag + 1]) {
-  throw new Error("用法：node scripts/generate-iconimate-glyphs.mjs --phosphor-source <@phosphor-icons/core/package>")
+  throw new Error("用法：bun scripts/generate-iconimate-glyphs.mjs --phosphor-source <@phosphor-icons/core/package>")
 }
 
 const appRoot = resolve(import.meta.dirname, "..")
@@ -47,7 +47,7 @@ if (missing.length > 0) {
 const output = `/**
  * 自动生成文件，请勿手改。
  * 字形来源：Phosphor Icons 2.1.1（MIT），与 Iconimate 使用的 256 网格一致。
- * 生成命令：node scripts/generate-iconimate-glyphs.mjs --phosphor-source <package-dir>
+ * 生成命令：bun scripts/generate-iconimate-glyphs.mjs --phosphor-source <package-dir>
  */
 export const GLYPHS = ${JSON.stringify(glyphs, null, 2)} as const
 `

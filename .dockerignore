@@ -8,11 +8,8 @@
 
 node_modules
 **/node_modules
-.next
-**/.next
 .vercel
 .turbo
-.open-next
 .wrangler
 .vite
 dist

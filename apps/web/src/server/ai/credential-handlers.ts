@@ -6,8 +6,7 @@
  */
 
 import { and, count, desc, eq, sql } from "drizzle-orm"
-import type { NextRequest } from "next/server"
-import { NextResponse } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { aiCredentials, aiProviders } from "@/server/db/schema"
 import { getDb } from "@/server/db/client"
@@ -23,15 +22,15 @@ import {
 
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
 
-async function withUser(request: NextRequest, handler: (user: User) => Promise<Response>) {
+async function withUser(request: AppRequest, handler: (user: User) => Promise<Response>) {
     try {
         return await handler(await requireCurrentUser(request))
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function listAiCredentials(request: NextRequest) {
+export async function listAiCredentials(request: AppRequest) {
     return withUser(request, async (user) => {
         const db = getDb()
         const rows = await db
@@ -52,7 +51,7 @@ export async function listAiCredentials(request: NextRequest) {
     })
 }
 
-export async function createAiCredential(request: NextRequest) {
+export async function createAiCredential(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = validateCredentialInput(await readJson(request), { requireApiKey: true })
         await ensureUniqueName(user.id, input.name)
@@ -71,7 +70,7 @@ export async function createAiCredential(request: NextRequest) {
     })
 }
 
-export async function updateAiCredential(request: NextRequest) {
+export async function updateAiCredential(request: AppRequest) {
     return withUser(request, async (user) => {
         const raw = await readJson<Record<string, unknown>>(request)
         const id = requireId(raw.id, "凭证 ID")
@@ -104,7 +103,7 @@ export async function updateAiCredential(request: NextRequest) {
     })
 }
 
-export async function deleteAiCredential(request: NextRequest) {
+export async function deleteAiCredential(request: AppRequest) {
     return withUser(request, async (user) => {
         const raw = await readJson<Record<string, unknown>>(request)
         const id = requireId(raw.id, "凭证 ID")
@@ -119,7 +118,7 @@ export async function deleteAiCredential(request: NextRequest) {
         }
 
         await getDb().delete(aiCredentials).where(and(eq(aiCredentials.id, id), eq(aiCredentials.userId, user.id)))
-        return new NextResponse(null, { status: 200 })
+        return new Response(null, { status: 200 })
     })
 }
 

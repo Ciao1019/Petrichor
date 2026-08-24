@@ -1,51 +1,30 @@
-# Bun monorepo -> Next.js standalone server, packaged for Vercel Functions
-# (Vercel auto-detects Dockerfile.vercel at the project root and routes all
-# traffic to it; see https://vercel.com/docs/functions/container-images)
-#
-# Build context MUST be the repository root (Vercel Project Root Directory),
-# because the Bun lockfile and workspace package live there, not in apps/web.
-
-FROM oven/bun:1.3.14-debian AS base
+# Bun monorepo production image. The build context must be the repository root.
+FROM oven/bun:1.3.14-debian AS dependencies
 WORKDIR /app
 
-# ---- deps: install with the lockfile only, so this layer caches across
-# source-only changes -------------------------------------------------------
-FROM base AS deps
-# native modules (sharp, msgpackr-extract, unrs-resolver) may
-# need to compile from source if no prebuilt binary matches the base image.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 make g++ \
-    && rm -rf /var/lib/apt/lists/*
 COPY package.json bun.lock ./
 COPY apps/web/package.json apps/web/package.json
 COPY patches patches
 RUN bun install --frozen-lockfile
 
-# ---- builder: bring in the rest of the source and build ------------------
-FROM base AS builder
-COPY --from=deps /app /app
+FROM dependencies AS builder
 COPY . .
-ENV NEXT_TELEMETRY_DISABLED=1
-# DATABASE_URL / SESSION_SECRET are only read lazily at request time
-# (see apps/web/src/config/server.ts), so the build does not need them.
-# If a page ever starts reading env at build/SSG time, pass dummy values
-# here via ARG/ENV so `next build` doesn't fail on a fresh Vercel builder.
-RUN bun --filter @petrichor/web build
+RUN bun run build
 
-# ---- runner: minimal runtime image ----------------------------------------
 FROM oven/bun:1.3.14-debian AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-# Vercel Functions route to port 80 by default; keep in sync with any
-# PORT override you set in the Vercel project's Environment Variables.
-ENV PORT=80
-ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
+ENV HOST=0.0.0.0
 
-COPY --from=builder /app/apps/web/.next/standalone ./
-COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=builder /app/apps/web/public ./apps/web/public
+COPY --from=builder /app/package.json /app/bun.lock ./
+COPY --from=builder /app/server.ts ./server.ts
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/web/package.json ./apps/web/package.json
+COPY --from=builder /app/apps/web/tsconfig.json ./apps/web/tsconfig.json
+COPY --from=builder /app/apps/web/src ./apps/web/src
+COPY --from=builder /app/apps/web/dist ./apps/web/dist
 
 USER bun
-EXPOSE 80
-CMD ["bun", "apps/web/server.js"]
+EXPOSE 3000
+CMD ["bun", "server.ts"]

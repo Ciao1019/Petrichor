@@ -119,8 +119,7 @@ export function TiltCard({
         ) : null}
         <CardContent className={cn("space-y-6", contentClassName)}>
           {imageSrc ? (
-            // 封面图来自任意外部 URL，不走 next/image 优化管线
-            // eslint-disable-next-line @next/next/no-img-element
+            // 封面图来自任意外部 URL，直接使用浏览器图片加载管线。
             <img
               src={imageSrc}
               alt={imageAlt}

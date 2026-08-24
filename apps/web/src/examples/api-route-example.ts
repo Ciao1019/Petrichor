@@ -2,14 +2,14 @@
  * 🎯 API Route 示例：使用速率限制和输入验证
  */
 
-import { NextRequest, NextResponse } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { withRateLimit, rateLimitPresets } from "@/lib/with-rate-limit"
 import { createArticleSchema } from "@/lib/validation"
 import { createLogger } from "@/lib/logger"
 
 const logger = createLogger("api-article")
 
-async function handler(req: NextRequest) {
+async function handler(req: AppRequest) {
     try {
         // 1. 解析请求体
         const body = await req.json()
@@ -23,7 +23,7 @@ async function handler(req: NextRequest) {
                 message: "Validation failed",
             })
 
-            return NextResponse.json(
+            return Response.json(
                 {
                     error: "Validation Error",
                     details: validationResult.error.issues,
@@ -40,7 +40,7 @@ async function handler(req: NextRequest) {
         // const article = await createArticle(data)
 
         // 4. 返回成功响应
-        return NextResponse.json(
+        return Response.json(
             {
                 success: true,
                 message: "文章创建成功",
@@ -54,7 +54,7 @@ async function handler(req: NextRequest) {
             message: "Failed to create article",
         })
 
-        return NextResponse.json(
+        return Response.json(
             {
                 error: "Internal Server Error",
                 message: "创建文章失败，请稍后重试",

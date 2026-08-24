@@ -1,4 +1,4 @@
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const authMocks = vi.hoisted(() => ({
@@ -22,21 +22,15 @@ const s3Mocks = vi.hoisted(() => ({
     deleteS3Objects: vi.fn(),
 }))
 
-const nextServerMocks = vi.hoisted(() => ({
-    after: vi.fn(),
+const lifecycleMocks = vi.hoisted(() => ({
+    afterResponse: vi.fn(),
 }))
 
 vi.mock("@/server/auth/current-user", () => authMocks)
 vi.mock("@/server/db/client", () => dbMocks)
 vi.mock("@/config/server", () => configMocks)
 vi.mock("@/server/public-content-cache", () => cacheMocks)
-vi.mock("next/server", async (importOriginal) => {
-    const actual = await importOriginal<typeof import("next/server")>()
-    return {
-        ...actual,
-        after: nextServerMocks.after,
-    }
-})
+vi.mock("@/server/http/lifecycle", () => lifecycleMocks)
 vi.mock("@/server/upload/s3-delete", async (importOriginal) => {
     const actual = await importOriginal<typeof import("@/server/upload/s3-delete")>()
     return {
@@ -95,8 +89,8 @@ function createDbMock({
 function createJsonRequest(body: unknown) {
     return {
         json: vi.fn(async () => body),
-        nextUrl: { pathname: "/test" },
-    } as unknown as NextRequest
+        urlObject: new URL("http://localhost/test"),
+    } as unknown as AppRequest
 }
 
 type ScheduledTask = () => unknown | Promise<unknown>
@@ -126,7 +120,7 @@ describe("article S4 image cleanup handlers", () => {
     beforeEach(() => {
         vi.clearAllMocks()
         scheduledTasks = []
-        nextServerMocks.after.mockImplementation((task: ScheduledTask) => {
+        lifecycleMocks.afterResponse.mockImplementation((task: ScheduledTask) => {
             scheduledTasks.push(task)
         })
         authMocks.requireCurrentUser.mockResolvedValue({ id: 1 })
@@ -165,7 +159,7 @@ describe("article S4 image cleanup handlers", () => {
             title: "新标题",
         }))
 
-        expect(nextServerMocks.after).toHaveBeenCalledTimes(1)
+        expect(lifecycleMocks.afterResponse).toHaveBeenCalledTimes(1)
         expect(s3Mocks.deleteS3Objects).not.toHaveBeenCalled()
         await runScheduledAfterTasks(scheduledTasks)
         expect(s3Mocks.deleteS3Objects).toHaveBeenCalledWith(
@@ -192,7 +186,7 @@ describe("article S4 image cleanup handlers", () => {
             title: "新标题",
         }))
 
-        expect(nextServerMocks.after).toHaveBeenCalledTimes(1)
+        expect(lifecycleMocks.afterResponse).toHaveBeenCalledTimes(1)
         await runScheduledAfterTasks(scheduledTasks)
         expect(s3Mocks.deleteS3Objects).not.toHaveBeenCalled()
     })
@@ -259,7 +253,7 @@ describe("article S4 image cleanup handlers", () => {
 
         await deleteArticle(createJsonRequest({ articleId: "9" }))
 
-        expect(nextServerMocks.after).toHaveBeenCalledTimes(1)
+        expect(lifecycleMocks.afterResponse).toHaveBeenCalledTimes(1)
         expect(s3Mocks.deleteS3Objects).not.toHaveBeenCalled()
         await runScheduledAfterTasks(scheduledTasks)
         expect(s3Mocks.deleteS3Objects).toHaveBeenCalledWith(

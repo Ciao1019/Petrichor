@@ -1,5 +1,6 @@
 import { and, asc, count, desc, eq, inArray, isNull } from "drizzle-orm"
-import { after, type NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
+import { afterResponse } from "@/server/http/lifecycle"
 import { z } from "zod"
 import { createLogger, toLogError } from "@/lib/logger"
 import { getServerConfig } from "@/config/server"
@@ -512,7 +513,7 @@ function scheduleUnreferencedS4Cleanup(
     const task = () => cleanupUnreferencedS4Objects(userId, uniqueCandidateKeys, context)
 
     try {
-        after(task)
+        afterResponse(task)
     } catch (error) {
         // 单元测试或非 Next 请求作用域没有 after 上下文，降级到事件循环后执行。
         log.warn({
@@ -527,16 +528,16 @@ function scheduleUnreferencedS4Cleanup(
     }
 }
 
-async function withUser(request: NextRequest, handler: (user: User) => Promise<Response>) {
+async function withUser(request: AppRequest, handler: (user: User) => Promise<Response>) {
     try {
         const user = await requireCurrentUser(request)
         return await handler(user)
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-export async function listKnowledgeBases(request: NextRequest) {
+export async function listKnowledgeBases(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = knowledgeBaseListSchema.parse(await readJson(request))
         const db = getDb()
@@ -560,7 +561,7 @@ export async function listKnowledgeBases(request: NextRequest) {
     })
 }
 
-export async function createKnowledgeBase(request: NextRequest) {
+export async function createKnowledgeBase(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = knowledgeBaseCreateSchema.parse(await readJson(request))
         const [record] = await getDb()
@@ -576,7 +577,7 @@ export async function createKnowledgeBase(request: NextRequest) {
     })
 }
 
-export async function detailKnowledgeBase(request: NextRequest) {
+export async function detailKnowledgeBase(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = knowledgeBaseIdSchema.parse(await readJson(request))
         const record = await assertKnowledgeBaseOwner(getDb(), user.id, input.knowledgeBaseId)
@@ -584,7 +585,7 @@ export async function detailKnowledgeBase(request: NextRequest) {
     })
 }
 
-export async function updateKnowledgeBase(request: NextRequest) {
+export async function updateKnowledgeBase(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = knowledgeBaseUpdateSchema.parse(await readJson(request))
         await assertKnowledgeBaseOwner(getDb(), user.id, input.knowledgeBaseId)
@@ -602,7 +603,7 @@ export async function updateKnowledgeBase(request: NextRequest) {
     })
 }
 
-export async function deleteKnowledgeBase(request: NextRequest) {
+export async function deleteKnowledgeBase(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = knowledgeBaseIdSchema.parse(await readJson(request))
         const db = getDb()
@@ -625,7 +626,7 @@ export async function deleteKnowledgeBase(request: NextRequest) {
     })
 }
 
-export async function treeNodes(request: NextRequest) {
+export async function treeNodes(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = nodeTreeSchema.parse(await readJson(request))
         await assertKnowledgeBaseOwner(getDb(), user.id, input.knowledgeBaseId)
@@ -646,7 +647,7 @@ export async function treeNodes(request: NextRequest) {
     })
 }
 
-export async function rootNodes(request: NextRequest) {
+export async function rootNodes(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = nodeTreeSchema.parse(await readJson(request))
         await assertKnowledgeBaseOwner(getDb(), user.id, input.knowledgeBaseId)
@@ -669,7 +670,7 @@ export async function rootNodes(request: NextRequest) {
     })
 }
 
-export async function childNodes(request: NextRequest) {
+export async function childNodes(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = nodeChildrenSchema.parse(await readJson(request))
         await assertKnowledgeBaseOwner(getDb(), user.id, input.knowledgeBaseId)
@@ -692,7 +693,7 @@ export async function childNodes(request: NextRequest) {
     })
 }
 
-export async function detailNode(request: NextRequest) {
+export async function detailNode(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = nodeDetailSchema.parse(await readJson(request))
         await assertKnowledgeBaseOwner(getDb(), user.id, input.knowledgeBaseId)
@@ -716,7 +717,7 @@ export async function detailNode(request: NextRequest) {
     })
 }
 
-export async function moveNode(request: NextRequest) {
+export async function moveNode(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = moveNodeSchema.parse(await readJson(request))
         const db = getDb()
@@ -794,7 +795,7 @@ export async function moveNode(request: NextRequest) {
     })
 }
 
-export async function createFolder(request: NextRequest) {
+export async function createFolder(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = createFolderSchema.parse(await readJson(request))
         const db = getDb()
@@ -817,7 +818,7 @@ export async function createFolder(request: NextRequest) {
     })
 }
 
-export async function updateFolder(request: NextRequest) {
+export async function updateFolder(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = updateFolderSchema.parse(await readJson(request))
         const node = await assertNodeOwner(getDb(), user.id, input.nodeId)
@@ -834,7 +835,7 @@ export async function updateFolder(request: NextRequest) {
     })
 }
 
-export async function deleteFolder(request: NextRequest) {
+export async function deleteFolder(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = deleteFolderSchema.parse(await readJson(request))
         const db = getDb()
@@ -883,7 +884,7 @@ export async function deleteFolder(request: NextRequest) {
     })
 }
 
-export async function createArticle(request: NextRequest) {
+export async function createArticle(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = createArticleSchema.parse(await readJson(request))
         const db = getDb()
@@ -926,7 +927,7 @@ export async function createArticle(request: NextRequest) {
     })
 }
 
-export async function detailArticle(request: NextRequest) {
+export async function detailArticle(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = articleIdSchema.parse(await readJson(request))
         const db = getDb()
@@ -979,7 +980,7 @@ function formatDateOrNull(value: Date | string | null | undefined): string | nul
     return value instanceof Date ? value.toISOString() : new Date(value).toISOString()
 }
 
-export async function updateArticle(request: NextRequest) {
+export async function updateArticle(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = updateArticleSchema.parse(await readJson(request))
         const db = getDb()
@@ -1027,7 +1028,7 @@ export async function updateArticle(request: NextRequest) {
     })
 }
 
-export async function refreshArticlePublicCache(request: NextRequest) {
+export async function refreshArticlePublicCache(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = articleIdSchema.parse(await readJson(request))
         const [article] = await getDb()
@@ -1049,7 +1050,7 @@ export async function refreshArticlePublicCache(request: NextRequest) {
     })
 }
 
-export async function deleteArticle(request: NextRequest) {
+export async function deleteArticle(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = articleIdSchema.parse(await readJson(request))
         const db = getDb()

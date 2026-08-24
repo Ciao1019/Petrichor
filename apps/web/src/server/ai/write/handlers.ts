@@ -1,12 +1,12 @@
 import { createTextStreamResponse, streamText, toTextStream } from "ai"
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { createChatLanguageModel } from "@/server/ai/generation"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { toErrorResponse } from "@/server/http/response"
 import { validateWriteRequest } from "./actions"
 import { buildWriteSystemPrompt, buildWriteUserMessage } from "./prompt"
 
-export async function streamAiWrite(request: NextRequest) {
+export async function streamAiWrite(request: AppRequest) {
     try {
         const user = await requireCurrentUser(request)
         const payload = validateWriteRequest(await request.json())
@@ -27,6 +27,6 @@ export async function streamAiWrite(request: NextRequest) {
             },
         })
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }

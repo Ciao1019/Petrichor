@@ -6,7 +6,7 @@
         <title>前端 UI 技术选型 · Petrichor 前端栈可视化</title>
         <meta
             name="description"
-            content="Petrichor 前台的前端 UI 框架技术选型：Next.js 16 + React 19 基座，Tailwind v4 + 无头原语（Radix / Base UI / Ariakit）自建 152 个组件，PlateJS 富文本与 assistant-ui 对话等领域能力分层，附选型原则、关键抉择与完整依赖清单。"
+            content="Petrichor 前台的前端 UI 框架技术选型：Vite 7 + React 19 基座，Tailwind v4 + 无头原语（Radix / Base UI / Ariakit）自建 152 个组件，PlateJS 富文本与 assistant-ui 对话等领域能力分层，附选型原则、关键抉择与完整依赖清单。"
         />
         <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/lxgwwenkai-regular.css" />
@@ -884,7 +884,7 @@
                         <p class="eyebrow">Petrichor 技术可视化 · Frontend Stack Selection</p>
                         <h1>前端 UI 技术选型</h1>
                         <p class="subtitle">
-                            一张图看清 Petrichor 前台用了什么、为什么这么选。基座是 Next.js 16 + React 19，
+                            一张图看清 Petrichor 前台用了什么、为什么这么选。基座是 Vite 7 + React 19，
                             样式走 Tailwind v4 + 无头原语自建（<code>src/components/ui</code> 已 152 个组件），
                             成品组件库只在垂直场景按需空降。
                         </p>
@@ -905,7 +905,7 @@
                             每个重依赖都留退路——拆掉不伤主干。选型来源是仓库里真实的 <code>package.json</code>。
                         </p>
                     </div>
-                    <div class="thesis-path">TS → Next 16 → Tailwind v4 → 无头原语 → 自建 UI → 领域能力</div>
+                    <div class="thesis-path">TS → Vite 7 → Tailwind v4 → 无头原语 → 自建 UI → 领域能力</div>
                 </div>
             </header>
 
@@ -985,16 +985,16 @@
                                     <text class="node-sub" x="172" y="341" style="text-anchor: start">Tailwind v4 · cva · cn()（clsx + tailwind-merge）</text>
                                     <text class="layer-no" x="908" y="342">3</text>
                                 </g>
-                                <g class="node" id="L2" data-step="1" tabindex="0" role="button" style="--c: var(--blue)" data-tip="Next.js 16 App Router + React 19；深浅色由 next-themes 一处切换（和右上角「切换黑板」同一套心智）。">
+                                <g class="node" id="L2" data-step="1" tabindex="0" role="button" style="--c: var(--blue)" data-tip="Vite 7 SPA + React 19；深浅色由 应用 ThemeProvider 一处切换（和右上角「切换黑板」同一套心智）。">
                                     <g filter="url(#rough)">
                                         <rect class="fill" x="145" y="372" width="780" height="72" rx="12" />
                                         <rect class="box" x="145" y="372" width="780" height="72" rx="12" />
                                     </g>
                                     <text class="node-label" x="172" y="403" style="text-anchor: start">运行时框架</text>
-                                    <text class="node-sub" x="172" y="425" style="text-anchor: start">Next.js 16 App Router · React 19 · next-themes</text>
+                                    <text class="node-sub" x="172" y="425" style="text-anchor: start">Vite 7 SPA · React 19 · App ThemeProvider</text>
                                     <text class="layer-no" x="908" y="426">2</text>
                                 </g>
-                                <g class="node" id="L1" data-step="0" tabindex="0" role="button" style="--c: var(--blue)" data-tip="全部 TypeScript 5.9；开发用 Next 内置 Turbopack，测试用 Vitest 4（Vite 7 驱动）；lint 走 ESLint 9 + typescript-eslint，另配 biome check 脚本。">
+                                <g class="node" id="L1" data-step="0" tabindex="0" role="button" style="--c: var(--blue)" data-tip="全部 TypeScript 5.9；开发用 Vite 开发服务器，测试用 Vitest 4（Vite 7 驱动）；lint 走 ESLint 9 + typescript-eslint，另配 biome check 脚本。">
                                     <g filter="url(#rough)">
                                         <rect class="fill" x="145" y="456" width="780" height="72" rx="12" />
                                         <rect class="box" x="145" y="456" width="780" height="72" rx="12" />
@@ -1038,7 +1038,7 @@
                         </div>
                         <div class="card" style="--c: var(--blue)">
                             <h3><span class="dot"></span>单向依赖</h3>
-                            <p>底层零业务、上层不反向依赖下层的实现细节。<code>cn()</code> 收口所有 class 合并，主题走 <code>next-themes</code> 一处切换，杜绝散落的样式判断。</p>
+                            <p>底层零业务、上层不反向依赖下层的实现细节。<code>cn()</code> 收口所有 class 合并，主题走 <code>应用 ThemeProvider</code> 一处切换，杜绝散落的样式判断。</p>
                         </div>
                         <div class="card" style="--c: var(--teal)">
                             <h3><span class="dot"></span>一处一职、允许并存</h3>
@@ -1128,7 +1128,7 @@
                         <div class="tool-domain">
                             <div class="dn">框架 & 底座<small>framework</small></div>
                             <div class="tool-chips">
-                                <span class="tool-chip">Next.js 16</span>
+                                <span class="tool-chip">Vite 7</span>
                                 <span class="tool-chip">React 19</span>
                                 <span class="tool-chip">TypeScript 5.9</span>
                                 <span class="tool-chip">Turbopack</span>
@@ -1145,7 +1145,7 @@
                                 <span class="tool-chip s">cva</span>
                                 <span class="tool-chip s">clsx</span>
                                 <span class="tool-chip s">tailwind-merge</span>
-                                <span class="tool-chip s">next-themes</span>
+                                <span class="tool-chip s">应用 ThemeProvider</span>
                                 <span class="tool-chip s">tw-animate-css</span>
                                 <span class="tool-chip s">scrollbar-hide</span>
                                 <span class="tool-chip w">sonner</span>
@@ -1321,7 +1321,7 @@
 "short": "底座",
 "no": "1",
 "title": "语言与构建底座：类型优先，Turbopack 快跑",
-"body": "整个前端只有一种语言——TypeScript 5.9。开发态用 Next 内置的 Turbopack，测试态用 Vitest 4（复用 Vite 7 与 @vitejs/plugin-react）。next.config 里刻意 ignoreBuildErrors，把类型检查交给本地/CI 的 tsc，换构建稳定。",
+"body": "整个前端只有一种语言——TypeScript 5.9。开发态用 Vite 开发服务器，测试态用 Vitest 4（复用 Vite 7 与 @vitejs/plugin-react）。生产构建使用 Vite，把类型检查交给本地/CI 的 tsc，换构建稳定。",
 "libs": [
 {
 "n": "TypeScript 5.9",
@@ -1356,11 +1356,11 @@
 {
 "short": "框架",
 "no": "2",
-"title": "运行时框架：Next 16 App Router + React 19",
-"body": "App Router 下服务端组件直取数据，客户端只保留必要的交互岛；React 19 的并发与 use() 已在用。主题由 next-themes 统一托管——和这张图右上角的「切换黑板」是同一套心智。少数内嵌 SPA 视图仍挂 react-router 存量。",
+"title": "运行时框架：Vite 7 SPA + React 19",
+"body": "Vite 构建客户端 SPA，Bun 服务负责 API、静态资源与动态元数据；React 19 的并发与 use() 已在用。主题由 应用 ThemeProvider 统一托管——和这张图右上角的「切换黑板」是同一套心智。页面路由统一由 React Router 管理。",
 "libs": [
 {
-"n": "Next.js 16",
+"n": "Vite 7",
 "k": ""
 },
 {
@@ -1372,7 +1372,7 @@
 "k": ""
 },
 {
-"n": "next-themes",
+"n": "应用 ThemeProvider",
 "k": "s"
 },
 {
@@ -1412,7 +1412,7 @@
 "k": "w"
 },
 {
-"n": "next-themes",
+"n": "应用 ThemeProvider",
 "k": "s"
 }
 ]

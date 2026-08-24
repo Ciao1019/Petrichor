@@ -18,7 +18,7 @@ interface LoginFormProps extends React.ComponentProps<"div"> {
   onLoginSuccess?: (token?: string) => void
 }
 
-const registerEnabled = process.env.NEXT_PUBLIC_REGISTER_ENABLED === "true"
+const registerEnabled = import.meta.env.PETRICHOR_PUBLIC_REGISTER_ENABLED === "true"
 
 type LoginStage = "credentials" | "totp" | "backup"
 

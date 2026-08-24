@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto"
-import { after, type NextRequest, NextResponse } from "next/server"
+import type { AppRequest } from "@/server/http/request"
+import { afterResponse } from "@/server/http/lifecycle"
 import bcrypt from "bcryptjs"
 import { and, asc, desc, eq, gt, ilike, inArray, isNull, or, type SQL } from "drizzle-orm"
 import { z } from "zod"
@@ -241,16 +242,16 @@ type AgentTreeNode = {
     children: AgentTreeNode[]
 }
 
-async function withUser(request: NextRequest, handler: (user: User) => Promise<Response>) {
+async function withUser(request: AppRequest, handler: (user: User) => Promise<Response>) {
     try {
         const user = await requireCurrentUser(request)
         return await handler(user)
     } catch (error) {
-        return toErrorResponse(error, request.nextUrl.pathname)
+        return toErrorResponse(error, request.urlObject.pathname)
     }
 }
 
-async function withAgent(request: NextRequest, handler: (context: AgentAuthContext) => Promise<Response>) {
+async function withAgent(request: AppRequest, handler: (context: AgentAuthContext) => Promise<Response>) {
     const startedAt = Date.now()
     const requestText = await readRequestTextForLog(request)
     let context: AgentAuthContext | null = null
@@ -267,7 +268,7 @@ async function withAgent(request: NextRequest, handler: (context: AgentAuthConte
         })
         return response
     } catch (error) {
-        const response = toErrorResponse(error, request.nextUrl.pathname)
+        const response = toErrorResponse(error, request.urlObject.pathname)
         if (context) {
             await recordAgentCallLog({
                 context,
@@ -282,7 +283,7 @@ async function withAgent(request: NextRequest, handler: (context: AgentAuthConte
     }
 }
 
-export async function listAgentApiKeys(request: NextRequest) {
+export async function listAgentApiKeys(request: AppRequest) {
     return withUser(request, async (user) => {
         const now = new Date()
         const rows = await getDb()
@@ -299,7 +300,7 @@ export async function listAgentApiKeys(request: NextRequest) {
     })
 }
 
-export async function createAgentApiKey(request: NextRequest) {
+export async function createAgentApiKey(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = agentApiKeyCreateSchema.parse(await readJson(request))
         const apiKey = generateAgentApiKey()
@@ -322,7 +323,7 @@ export async function createAgentApiKey(request: NextRequest) {
     })
 }
 
-export async function revokeAgentApiKey(request: NextRequest) {
+export async function revokeAgentApiKey(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = agentApiKeyRevokeSchema.parse(await readJson(request))
         const now = new Date()
@@ -341,7 +342,7 @@ export async function revokeAgentApiKey(request: NextRequest) {
     })
 }
 
-export async function listAgentCallLogs(request: NextRequest) {
+export async function listAgentCallLogs(request: AppRequest) {
     return withUser(request, async (user) => {
         const input = agentCallLogListSchema.parse(await readJson(request))
 
@@ -356,7 +357,7 @@ export async function listAgentCallLogs(request: NextRequest) {
     })
 }
 
-export async function agentCapabilities(request: NextRequest) {
+export async function agentCapabilities(request: AppRequest) {
     return withAgent(request, async (context) => {
         const baseUrl = getRequestBaseUrl(request)
         return ok({
@@ -397,7 +398,7 @@ export async function agentCapabilities(request: NextRequest) {
     })
 }
 
-async function readRequestTextForLog(request: NextRequest) {
+async function readRequestTextForLog(request: AppRequest) {
     try {
         return clipLogText(await request.clone().text())
     } catch {
@@ -417,7 +418,7 @@ async function recordAgentCallLog(input: {
     context: AgentAuthContext
     durationMs: number
     error?: unknown
-    request: NextRequest
+    request: AppRequest
     requestText: string | null
     response: Response
 }) {
@@ -429,7 +430,7 @@ async function recordAgentCallLog(input: {
                 apiKeyId: input.context.apiKey.id,
                 apiKeyPrefix: input.context.apiKey.keyPrefix,
                 method: input.request.method,
-                path: input.request.nextUrl.pathname,
+                path: input.request.urlObject.pathname,
                 ip: resolveClientIp(input.request),
                 userAgent: clipLogText(input.request.headers.get("user-agent"), 1000),
                 requestJson: input.requestText,
@@ -443,7 +444,7 @@ async function recordAgentCallLog(input: {
     }
 }
 
-function resolveClientIp(request: NextRequest) {
+function resolveClientIp(request: AppRequest) {
     return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
         || request.headers.get("x-real-ip")?.trim()
         || request.headers.get("cf-connecting-ip")?.trim()
@@ -489,7 +490,7 @@ function parseLogPayload(raw: string | null | undefined) {
     }
 }
 
-export async function agentManifest(request: NextRequest) {
+export async function agentManifest(request: AppRequest) {
     return ok(buildAgentManifest(getRequestBaseUrl(request)), {
         headers: {
             "Cache-Control": "public, max-age=300",
@@ -497,14 +498,14 @@ export async function agentManifest(request: NextRequest) {
     })
 }
 
-export async function agentListKnowledgeBases(request: NextRequest) {
+export async function agentListKnowledgeBases(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "doc:read")
         return ok({ items: await listUserKnowledgeBases(context.userId) })
     })
 }
 
-export async function agentKnowledgeBaseTree(request: NextRequest) {
+export async function agentKnowledgeBaseTree(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "doc:read")
         const input = agentKnowledgeBaseTreeSchema.parse(await readJson(request))
@@ -540,7 +541,7 @@ export async function agentKnowledgeBaseTree(request: NextRequest) {
     })
 }
 
-export async function agentCreateFolder(request: NextRequest) {
+export async function agentCreateFolder(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "article:write")
         const input = agentFolderCreateSchema.parse(await readJson(request))
@@ -570,7 +571,7 @@ export async function agentCreateFolder(request: NextRequest) {
     })
 }
 
-export async function agentCreateArticle(request: NextRequest) {
+export async function agentCreateArticle(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "article:write")
         const input = agentArticleCreateSchema.parse(await readJson(request))
@@ -619,7 +620,7 @@ export async function agentCreateArticle(request: NextRequest) {
     })
 }
 
-export async function agentUpdateArticle(request: NextRequest) {
+export async function agentUpdateArticle(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "article:write")
         const input = agentArticleUpdateSchema.parse(await readJson(request))
@@ -670,7 +671,7 @@ export async function agentUpdateArticle(request: NextRequest) {
     })
 }
 
-export async function agentDeleteArticle(request: NextRequest) {
+export async function agentDeleteArticle(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "article:delete")
         const input = agentArticleDeleteSchema.parse(await readJson(request))
@@ -702,7 +703,7 @@ export async function agentDeleteArticle(request: NextRequest) {
     })
 }
 
-export async function agentSearchDocuments(request: NextRequest) {
+export async function agentSearchDocuments(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "doc:read")
         const input = agentDocumentSearchSchema.parse(await readJson(request))
@@ -716,7 +717,7 @@ export async function agentSearchDocuments(request: NextRequest) {
     })
 }
 
-export async function agentRetrieveDocumentTree(request: NextRequest) {
+export async function agentRetrieveDocumentTree(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "doc:read")
         const input = agentDocumentTreeSchema.parse(await readJson(request))
@@ -731,7 +732,7 @@ export async function agentRetrieveDocumentTree(request: NextRequest) {
     })
 }
 
-export async function agentSemanticSearchDocumentTree(request: NextRequest) {
+export async function agentSemanticSearchDocumentTree(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "doc:read")
         const input = agentDocumentSemanticSearchSchema.parse(await readJson(request))
@@ -746,7 +747,7 @@ export async function agentSemanticSearchDocumentTree(request: NextRequest) {
     })
 }
 
-export async function agentViewDocument(request: NextRequest) {
+export async function agentViewDocument(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "doc:read")
         const input = agentDocumentViewSchema.parse(await readJson(request))
@@ -775,7 +776,7 @@ export async function agentViewDocument(request: NextRequest) {
     })
 }
 
-export async function agentAskDocument(request: NextRequest) {
+export async function agentAskDocument(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "qa:read")
         const input = agentDocumentQaSchema.parse(await readJson(request))
@@ -817,7 +818,7 @@ export async function agentAskDocument(request: NextRequest) {
     })
 }
 
-export async function agentShareCreate(request: NextRequest) {
+export async function agentShareCreate(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "share:write")
         const input = agentShareCreateSchema.parse(await readJson(request))
@@ -869,7 +870,7 @@ export async function agentShareCreate(request: NextRequest) {
     })
 }
 
-export async function agentShareRevoke(request: NextRequest) {
+export async function agentShareRevoke(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "share:write")
         const input = agentShareArticleIdSchema.parse(await readJson(request))
@@ -913,7 +914,7 @@ export async function agentShareRevoke(request: NextRequest) {
     })
 }
 
-export async function agentShareInfo(request: NextRequest) {
+export async function agentShareInfo(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "share:write")
         const input = agentShareArticleIdSchema.parse(await readJson(request))
@@ -945,7 +946,7 @@ export async function agentShareInfo(request: NextRequest) {
     })
 }
 
-export async function agentGenerateArticleSummary(request: NextRequest) {
+export async function agentGenerateArticleSummary(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "ai:write")
         const input = agentArticleSummaryGenerateSchema.parse(await readJson(request))
@@ -1001,7 +1002,7 @@ export async function agentGenerateArticleSummary(request: NextRequest) {
     })
 }
 
-export async function agentGenerateArticleMindmap(request: NextRequest) {
+export async function agentGenerateArticleMindmap(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "ai:write")
         const input = agentArticleMindmapGenerateSchema.parse(await readJson(request))
@@ -1088,7 +1089,7 @@ export async function agentGenerateArticleMindmap(request: NextRequest) {
     })
 }
 
-export async function agentListArticles(request: NextRequest) {
+export async function agentListArticles(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "doc:read")
         const input = agentArticleListSchema.parse(await readJson(request))
@@ -1162,7 +1163,7 @@ export async function agentListArticles(request: NextRequest) {
     })
 }
 
-export async function agentMoveArticle(request: NextRequest) {
+export async function agentMoveArticle(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "article:write")
         const input = agentArticleMoveSchema.parse(await readJson(request))
@@ -1329,7 +1330,7 @@ function toAgentShareResponse(share: KnowledgeBaseArticleShareRecord) {
     }
 }
 
-export async function agentWikiPageList(request: NextRequest) {
+export async function agentWikiPageList(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "wiki:read")
         const input = agentWikiKbSchema.parse(await readJson(request))
@@ -1340,7 +1341,7 @@ export async function agentWikiPageList(request: NextRequest) {
     })
 }
 
-export async function agentWikiPageDetail(request: NextRequest) {
+export async function agentWikiPageDetail(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "wiki:read")
         const input = agentWikiPageDetailSchema.parse(await readJson(request))
@@ -1348,7 +1349,7 @@ export async function agentWikiPageDetail(request: NextRequest) {
     })
 }
 
-export async function agentWikiLint(request: NextRequest) {
+export async function agentWikiLint(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "wiki:read")
         const input = agentWikiKbSchema.parse(await readJson(request))
@@ -1356,7 +1357,7 @@ export async function agentWikiLint(request: NextRequest) {
     })
 }
 
-export async function agentWikiIngest(request: NextRequest) {
+export async function agentWikiIngest(request: AppRequest) {
     return withAgent(request, async (context) => {
         requireAgentScope(context, "wiki:write")
         const input = agentWikiIngestSchema.parse(await readJson(request))
@@ -1370,9 +1371,9 @@ export async function agentWikiIngest(request: NextRequest) {
     })
 }
 
-export async function agentSkill(request: NextRequest) {
+export async function agentSkill(request: AppRequest) {
     const baseUrl = getRequestBaseUrl(request)
-    return new NextResponse(buildAgentSkillMarkdown(baseUrl), {
+    return new Response(buildAgentSkillMarkdown(baseUrl), {
         headers: {
             "Cache-Control": "public, max-age=300",
             "Content-Disposition": "attachment; filename=\"SKILL.md\"",
@@ -1381,9 +1382,9 @@ export async function agentSkill(request: NextRequest) {
     })
 }
 
-export async function agentSkillPack(request: NextRequest) {
+export async function agentSkillPack(request: AppRequest) {
     const baseUrl = getRequestBaseUrl(request)
-    return new NextResponse(buildAgentSkillPackageZip(baseUrl), {
+    return new Response(buildAgentSkillPackageZip(baseUrl), {
         headers: {
             "Cache-Control": "public, max-age=300",
             "Content-Disposition": "attachment; filename=\"petrichor-agent-skills.zip\"",
@@ -1392,8 +1393,8 @@ export async function agentSkillPack(request: NextRequest) {
     })
 }
 
-function getRequestBaseUrl(request: NextRequest) {
-    const requestOrigin = request.nextUrl.origin
+function getRequestBaseUrl(request: AppRequest) {
+    const requestOrigin = request.urlObject.origin
     return requestOrigin && requestOrigin !== "null" ? requestOrigin : getPublicBaseUrl()
 }
 
@@ -1610,7 +1611,7 @@ function scheduleUnreferencedS4Cleanup(
     const task = () => cleanupUnreferencedS4Objects(userId, uniqueCandidateKeys, context)
 
     try {
-        after(task)
+        afterResponse(task)
     } catch {
         setTimeout(() => {
             void task()
