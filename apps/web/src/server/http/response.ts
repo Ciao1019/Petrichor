@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server"
 import { ZodError } from "zod"
+import { createLogger, toLogError } from "@/lib/logger"
+
+const log = createLogger("http-response")
 
 export class HttpError extends Error {
     constructor(
@@ -49,12 +52,14 @@ export function tableData<T>(rows: T[], total: number) {
 
 export function toErrorResponse(error: unknown, path: string) {
     if (error instanceof ZodError) {
+        log.warn({ path, issues: error.issues }, "API 请求参数校验失败")
         return errorJson(400, "请求参数错误", path)
     }
     if (error instanceof HttpError) {
+        log.warn({ path, status: error.status, err: error }, "API 请求失败")
         return errorJson(error.status, error.message, path)
     }
-    console.error(error)
+    log.error({ path, err: toLogError(error) }, "API 未处理异常")
     return errorJson(500, "系统异常，请稍后重试", path)
 }
 

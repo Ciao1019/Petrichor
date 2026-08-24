@@ -7,6 +7,7 @@
 
 import { generateText } from "ai"
 import type { LanguageModel } from "ai"
+import { createLogger, toLogError } from "@/lib/logger"
 import {
     resolveLanguageModel,
     resolveModelForPurpose,
@@ -14,6 +15,8 @@ import {
 } from "@/server/ai/resolution"
 import { guessContextWindow } from "@/server/ai/provider-catalog"
 import type { AiPurpose } from "@/server/ai/config-logic"
+
+const log = createLogger("ai-generation")
 
 export interface ChatCompletionMessage {
     role: "system" | "user" | "assistant"
@@ -45,32 +48,54 @@ export async function callChatCompletion(input: {
     signal?: AbortSignal
 }): Promise<ChatCompletionResult> {
     const purpose = input.purpose ?? "CHAT"
-    const { resolved, model } = await resolveLanguageModel({
-        userId: input.userId,
-        purpose,
-        modelRefId: input.modelRefId ?? null,
-    })
+    const startedAt = performance.now()
+    let modelName: string | undefined
+    try {
+        const { resolved, model } = await resolveLanguageModel({
+            userId: input.userId,
+            purpose,
+            modelRefId: input.modelRefId ?? null,
+        })
+        modelName = resolved.model.modelId
 
-    const { system, messages } = buildPrompt(input)
-    const result = await generateText({
-        model,
-        ...(system ? { system } : {}),
-        messages,
-        ...(resolved.options.maxTokens == null ? {} : { maxOutputTokens: resolved.options.maxTokens }),
-        ...(resolved.options.temperature == null ? {} : { temperature: resolved.options.temperature }),
-        ...(input.signal ? { abortSignal: input.signal } : {}),
-    })
-
-    return {
-        resolved,
-        answer: result.text.trim(),
-        modelName: resolved.model.modelId,
-        reasoning: extractReasoningText(result.reasoning),
-        usage: {
+        const { system, messages } = buildPrompt(input)
+        const result = await generateText({
+            model,
+            ...(system ? { system } : {}),
+            messages,
+            ...(resolved.options.maxTokens == null ? {} : { maxOutputTokens: resolved.options.maxTokens }),
+            ...(resolved.options.temperature == null ? {} : { temperature: resolved.options.temperature }),
+            ...(input.signal ? { abortSignal: input.signal } : {}),
+        })
+        const usage = {
             inputTokens: result.usage.inputTokens ?? 0,
             outputTokens: result.usage.outputTokens ?? 0,
             totalTokens: result.usage.totalTokens ?? 0,
-        },
+        }
+        log.info({
+            userId: input.userId,
+            purpose,
+            modelName,
+            durationMs: Math.round(performance.now() - startedAt),
+            ...usage,
+        }, "语言模型调用完成")
+
+        return {
+            resolved,
+            answer: result.text.trim(),
+            modelName,
+            reasoning: extractReasoningText(result.reasoning),
+            usage,
+        }
+    } catch (error) {
+        log.error({
+            err: toLogError(error),
+            userId: input.userId,
+            purpose,
+            modelName,
+            durationMs: Math.round(performance.now() - startedAt),
+        }, "语言模型调用失败")
+        throw error
     }
 }
 

@@ -91,10 +91,10 @@ import {
   FolderPlusIcon,
 } from "@/components/animated-icons"
 import {
+  buildArticleKnowledgeAndWait,
   knowledgeBaseApi,
   knowledgeBaseArticleApi,
   knowledgeBaseNodeApi,
-  knowledgeBaseWikiAgentApi,
   type ArticleTreeStatus,
   type KnowledgeBaseResponse,
   type KnowledgeBaseTreeNode,
@@ -1122,11 +1122,10 @@ export function KnowledgeBaseTreePage() {
     if (!knowledgeBaseId || buildingArticleIds.has(articleId)) return
     setBuildingArticleIds((current) => new Set(current).add(articleId))
     try {
-      const response = await knowledgeBaseWikiAgentApi.buildArticleKnowledge({
+      const result = await buildArticleKnowledgeAndWait({
         knowledgeBaseId,
         articleId,
       })
-      const result = response.data
       toast.success(
         `知识构建完成：${result.chunkCount} 个切片、${result.entityCount} 个实体、${result.conceptCount} 个概念${result.fromCache ? "（已复用）" : ""}`
       )

@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto"
-import { and, asc, count, desc, eq, inArray, isNull, like, or } from "drizzle-orm"
+import { and, asc, count, desc, eq, inArray, isNull, like, or, sql } from "drizzle-orm"
 import { z } from "zod"
+import { createLogger, toLogError } from "@/lib/logger"
 import { callChatCompletion } from "@/server/ai/generation"
-import { getDb } from "@/server/db/client"
+import { getDb, isSqliteDatabase } from "@/server/db/client"
 import { knowledgeBaseArticlePath } from "@/lib/dashboard-routes"
 import { normalizeS4ObjectKey, normalizeS4ObjectUrl } from "@/lib/s4-url"
 import {
@@ -50,6 +51,7 @@ import {
 
 type Db = ReturnType<typeof getDb>
 type DbExecutor = Pick<Db, "delete" | "insert" | "select" | "update">
+const log = createLogger("wiki-agent-logic")
 
 export type ArticleWikiDeletionTarget = {
     id: number
@@ -508,6 +510,14 @@ export async function buildArticleKnowledge(input: {
     articleId: number
     forceRebuild?: boolean
 }) {
+    const startedAt = performance.now()
+    const buildLog = log.child({
+        operation: "article-knowledge-build",
+        userId: input.userId,
+        knowledgeBaseId: input.knowledgeBaseId,
+        articleId: input.articleId,
+    })
+    buildLog.info("开始构建文章知识")
     const db = getDb()
     const kb = await assertKnowledgeBaseOwner(db, input.userId, input.knowledgeBaseId)
     const [article] = await db
@@ -556,9 +566,20 @@ export async function buildArticleKnowledge(input: {
         }),
     })
     if (workflowResult.chunks.length === 0) throw badRequest("文章没有可构建的 Markdown 切片")
+    buildLog.info({
+        chunkCount: workflowResult.chunks.length,
+        itemCount: workflowResult.items.length,
+        warningCount: workflowResult.warnings.length,
+    }, "知识构建工作流完成，准备持久化")
 
     let sourcePage: KnowledgeBaseWikiPageRecord | null = null
     await db.transaction(async (tx) => {
+        // 多篇文章的 LLM 阶段可以并发，但同一知识库的聚合 Wiki 页面和链接必须串行写入，
+        // 否则两个事务可能基于旧贡献集互相覆盖。SQLite 测试本身已串行，无需 advisory lock。
+        if (!isSqliteDatabase()) {
+            const lockKey = `article-knowledge-build:${input.userId}:${input.knowledgeBaseId}`
+            await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`)
+        }
         await tx
             .delete(knowledgeBaseArticleChunks)
             .where(and(
@@ -629,7 +650,10 @@ export async function buildArticleKnowledge(input: {
                 sourceUpdatedAt: formatDate(article.updatedAt),
                 sourceHash,
                 chunkCount: workflowResult.chunks.length,
-                recommendedQuestionCount: workflowResult.chunks.length * 3,
+                recommendedQuestionCount: workflowResult.chunks.reduce(
+                    (count, chunk) => count + chunk.recommendedQuestions.length,
+                    0,
+                ),
                 entityCount: workflowResult.items.filter((item) => item.kind === "entity").length,
                 conceptCount: workflowResult.items.filter((item) => item.kind === "concept").length,
             },
@@ -649,6 +673,7 @@ export async function buildArticleKnowledge(input: {
 
         await rebuildWikiIndex(tx, input.userId, input.knowledgeBaseId, kb.name)
     })
+    buildLog.info({ sourcePageId: sourcePage!.id }, "知识构建数据持久化完成")
 
     await logWikiEvent(db, input.userId, input.knowledgeBaseId, "ARTICLE_KNOWLEDGE_BUILD", sourcePage!.id, null, {
         articleId: article.id,
@@ -661,20 +686,33 @@ export async function buildArticleKnowledge(input: {
     // 外部向量调用不能占用数据库事务。提交后严格按“全部分片 → 全部问题”的顺序
     // best-effort 建索引；失败时 Wiki 与 BM25 仍可用，不回滚已经生成的知识。
     await embedKnowledgeBaseArticleIndexBestEffort(input.userId, input.knowledgeBaseId).catch((error: unknown) => {
+        buildLog.warn({ err: toLogError(error) }, "知识构建后的检索向量生成失败，保留 BM25 结果")
         workflowResult.warnings.push(error instanceof Error
             ? `分片检索向量生成失败：${error.message}`
             : "分片检索向量生成失败")
     })
 
-    return buildArticleKnowledgeResponse({
+    const response = buildArticleKnowledgeResponse({
         article,
         sourcePage: sourcePage!,
         fromCache: false,
         chunkCount: workflowResult.chunks.length,
+        recommendedQuestionCount: workflowResult.chunks.reduce(
+            (count, chunk) => count + chunk.recommendedQuestions.length,
+            0,
+        ),
         entityCount: workflowResult.items.filter((item) => item.kind === "entity").length,
         conceptCount: workflowResult.items.filter((item) => item.kind === "concept").length,
         warnings: workflowResult.warnings,
     })
+    buildLog.info({
+        durationMs: Math.round(performance.now() - startedAt),
+        chunkCount: response.chunkCount,
+        entityCount: response.entityCount,
+        conceptCount: response.conceptCount,
+        warningCount: response.warnings.length,
+    }, "文章知识构建完成")
+    return response
 }
 
 export async function ingestKnowledgeBaseWiki(input: {
@@ -1798,6 +1836,7 @@ export async function readWikiPageForAgent(userId: number, knowledgeBaseId: numb
         href: sourceArticleHref(knowledgeBaseId, extractArticleIdFromPageKey(detail.pageKey)),
         title: detail.title,
         kind: detail.kind,
+        aliases: detail.aliases,
         contentMd: detail.contentMd,
         media,
         sourceRefs: detail.sourceRefs,
@@ -2430,6 +2469,7 @@ function buildArticleKnowledgeResponse(input: {
     sourcePage: KnowledgeBaseWikiPageRecord
     fromCache: boolean
     chunkCount: number
+    recommendedQuestionCount: number
     entityCount: number
     conceptCount: number
     warnings: string[]
@@ -2439,7 +2479,7 @@ function buildArticleKnowledgeResponse(input: {
         knowledgeBaseId: String(input.article.knowledgeBaseId),
         fromCache: input.fromCache,
         chunkCount: input.chunkCount,
-        recommendedQuestionCount: input.chunkCount * 3,
+        recommendedQuestionCount: input.recommendedQuestionCount,
         entityCount: input.entityCount,
         conceptCount: input.conceptCount,
         sourcePage: toWikiPageResponse(input.sourcePage),

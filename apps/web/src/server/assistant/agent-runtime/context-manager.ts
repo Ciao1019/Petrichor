@@ -157,12 +157,11 @@ export class ContextManager {
                 renderEvidence(evidence, input.evidence.citationIndex(evidence.id)))
             const evidenceHeader = input.qaMode === "wiki"
                 ? `## 已获取证据\n引用 Wiki 页面证据时，在正文中内联写成 [[pageKey|页面标题]]（每条证据的「Wiki 引用」提示里有现成格式）；不要输出 [n] 角标。\n${lines.join("\n\n")}`
-                // 普通模式同样鼓励 Wiki 内联引用：前端会把手绘波浪线链接渲染出来供点击查阅。
-                // 明确「每个页面各自链一次」，避免模型只链第一个词就停手。
+                // 普通模式把来源角标与 Wiki 实体标注严格分开：所有证据都用 [n]，
+                // [[..]] 只包住正文里本来就存在的实体/概念词，不能追加成句末伪角标。
                 : `## 已获取证据\n`
-                    + `引用 Wiki 页面证据（带「Wiki 引用」提示）时，必须内联引用：每条 Wiki 证据在其支撑的表述处写成 [[pageKey|页面标题]]（照抄提示里的现成格式）；`
-                    + `检索结果里带 pageKey 的其他 Wiki 页面，正文明确提及时也可按此格式链接。`
-                    + `不同页面要分别引用、不要只链其中一个；同一页面多次提及只在首次加链接。其他来源在句末标注 [n]，n 为证据编号。\n${lines.join("\n\n")}`
+                    + `普通问答的来源统一在相关表述句末标注 [n]，Wiki 页面证据也不能用页面标题代替数字角标。`
+                    + `[[pageKey|原文词语]] 仅用于给正文里已经出现的 Wiki 实体/概念加可点击波浪线：必须包住原词，严禁把页面标题单独追加到句末；同一页面只标首次提及。\n${lines.join("\n\n")}`
             sections.push(evidenceHeader)
         }
 
@@ -341,7 +340,7 @@ export function buildFinalAnswerContext(input: {
     if (input.evidence.length > 0) {
         const citationRule = input.wikiMode
             ? `回答中引用 Wiki 页面证据时，必须在正文中内联写成 [[pageKey|页面标题]]（每条证据的「Wiki 引用」提示里有现成格式，照抄即可）；不要输出 [n] 数字角标。非Wiki 来源仍可用 [n] 标注。\n\n`
-            : `回答中引用证据时使用 [n] 标注，n 为下面的编号。来自 Wiki 页面的证据（带「Wiki 引用」提示）改为内联引用：每条 Wiki 证据在其支撑的表述处写成 [[pageKey|页面标题]]，不同页面分别引用、不要只链其中一个；这类来源不必再标 [n]。\n\n`
+            : `回答中引用任何证据时都使用 [n] 标注，n 为下面的编号，Wiki 页面证据也不例外。Wiki 链接不是来源角标：[[pageKey|原文词语]] 只能包住正文里已经出现的实体/概念词，严禁把页面标题单独追加到句末；同一页面只标首次提及。\n\n`
         sections.push(
             `## 可引用证据\n`
             + citationRule
@@ -358,7 +357,7 @@ export function buildFinalAnswerContext(input: {
     if (wikiTargets.length > 0) {
         sections.push(
             `## 其他可引用的 Wiki 页面\n`
-            + `以下是本轮检索命中、但没有深入阅读的 Wiki 页面。答案正文明确提到这些主题时，用 [[pageKey|标题]] 内联链接（格式已给全，严禁使用列表之外的 pageKey）：\n`
+            + `以下是本轮检索命中、但没有深入阅读的 Wiki 页面。答案正文明确提到这些实体/概念时，可以用 [[pageKey|原文中的词]] 包住已有词语（严禁把标题追加到句末，也严禁使用列表之外的 pageKey）：\n`
             + wikiTargets.map((target) => `- [[${target.pageKey}|${target.title}]]`).join("\n"),
         )
     }

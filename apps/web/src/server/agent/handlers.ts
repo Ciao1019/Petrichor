@@ -3,6 +3,7 @@ import { after, type NextRequest, NextResponse } from "next/server"
 import bcrypt from "bcryptjs"
 import { and, asc, desc, eq, gt, ilike, inArray, isNull, or, type SQL } from "drizzle-orm"
 import { z } from "zod"
+import { createLogger, toLogError } from "@/lib/logger"
 import { callChatCompletion } from "@/server/ai/generation"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { getDb } from "@/server/db/client"
@@ -73,6 +74,7 @@ type Db = ReturnType<typeof getDb>
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
 
 const MAX_AGENT_LOG_TEXT_LENGTH = 100_000
+const log = createLogger("agent-handler")
 
 const idSchema = z.union([z.string(), z.number()]).transform((value, ctx) => {
     const raw = String(value).trim()
@@ -437,7 +439,7 @@ async function recordAgentCallLog(input: {
                 errorMessage: input.error ? describeAgentError(input.error) : null,
             })
     } catch (error) {
-        console.warn("[Agent API] 调用日志写入失败", error)
+        log.warn({ err: toLogError(error), userId: input.context.userId }, "Agent API 调用日志写入失败")
     }
 }
 
@@ -1632,18 +1634,18 @@ async function cleanupUnreferencedS4Objects(
 
         const summary = await deleteS3Objects(config, deletableKeys)
         if (summary.failedObjectKeys.length > 0) {
-            console.warn("[Agent API] 部分文章图片对象清理失败", {
+            log.warn({
                 action: context.action,
                 failedObjectKeys: summary.failedObjectKeys,
                 userId,
-            })
+            }, "Agent API 部分文章图片对象清理失败")
         }
     } catch (error) {
-        console.warn("[Agent API] 文章图片清理流程失败，已保留删除结果", {
+        log.warn({
             action: context.action,
-            error: error instanceof Error ? error.message : String(error),
+            err: toLogError(error),
             userId,
-        })
+        }, "Agent API 文章图片清理流程失败，已保留删除结果")
     }
 }
 

@@ -36,6 +36,9 @@ export type KnowledgeCandidate = {
     /** RRF / 去重使用的全局候选键；新索引不再把 chunk/page 冒充旧 Tree nodeKey。 */
     candidateKey?: string
     candidateKind?: "chunk" | "wiki" | "tree"
+    /** candidateKind=wiki 时的页面类型与别名，供回答正文做实体/概念标注。 */
+    pageKind?: string
+    aliases?: string[]
     chunkId?: string
     pageKey?: string
     articleId: string
@@ -175,6 +178,8 @@ function candidateFromWiki(hit: WikiKnowledgeSearchHit): IndexedCandidate {
             candidateKey: hit.candidateKey,
             candidateKind: "wiki",
             pageKey: hit.pageKey,
+            pageKind: hit.kind,
+            aliases: hit.aliases,
             articleId: hit.articleId,
             knowledgeBaseId: hit.knowledgeBaseId,
             title: hit.title,

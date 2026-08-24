@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest"
 
 import {
     batchChunksByBudget,
+    KNOWLEDGE_TOP_LEVEL_CATEGORIES,
     normalizeKnowledgeCategoryPath,
     normalizeKnowledgeRelations,
     normalizeRecommendedQuestions,
+    normalizeUnifiedKnowledgeCategoryPath,
     parseMarkdownSections,
     splitMarkdownForKnowledgeBuild,
 } from "./knowledge-build-workflow"
@@ -167,18 +169,66 @@ describe("article knowledge build workflow helpers", () => {
         expect(batches.map((b) => b.length)).toEqual([1, 1])
     })
 
-    it("每个切片始终规范化为三个推荐问题", () => {
-        expect(normalizeRecommendedQuestions(["问题 A", "问题 B", "问题 C", "问题 D"], "缓存")).toEqual([
+    it("保留模型实际返回的零至三个有效推荐问题", () => {
+        expect(normalizeRecommendedQuestions(["问题 A", "问题 B", "问题 C", "问题 D"])).toEqual([
             "问题 A",
             "问题 B",
             "问题 C",
         ])
-        expect(normalizeRecommendedQuestions([], "缓存")).toHaveLength(3)
+        expect(normalizeRecommendedQuestions(["问题 A", "问题 A", "问题 B"])).toEqual(["问题 A", "问题 B"])
+        expect(normalizeRecommendedQuestions([])).toEqual([])
     })
 
     it("分类路径最多两级并移除实体/概念类型目录", () => {
         expect(normalizeKnowledgeCategoryPath("实体 / 技术 / 数据库 / PostgreSQL")).toEqual(["技术", "数据库"])
         expect(normalizeKnowledgeCategoryPath(["概念", "工程实践"])).toEqual(["工程实践"])
+    })
+
+    it("把产品根目录和旧目录名统一成固定主题", () => {
+        expect(normalizeUnifiedKnowledgeCategoryPath(["Mole", "核心功能"], {
+            kind: "concept",
+            name: "智能卸载",
+            summary: "卸载应用并清理残留文件。",
+        })).toEqual(["核心功能"])
+        expect(normalizeUnifiedKnowledgeCategoryPath(["配置指南", "格式"], {
+            kind: "concept",
+            name: "格式字符串",
+            summary: "配置输出格式。",
+        })).toEqual(["配置与定制", "格式"])
+        expect(normalizeUnifiedKnowledgeCategoryPath(["Mole", "同类工具"], {
+            kind: "entity",
+            name: "AppCleaner",
+            summary: "macOS 应用卸载工具。",
+        })).toEqual(["工具介绍"])
+    })
+
+    it("目录缺失或无法识别时也稳定落入统一主题", () => {
+        const cases = [
+            normalizeUnifiedKnowledgeCategoryPath([], {
+                kind: "entity" as const,
+                name: "Homebrew",
+                summary: "macOS 包管理器，用于安装工具。",
+            }),
+            normalizeUnifiedKnowledgeCategoryPath(["Fastfetch"], {
+                kind: "entity" as const,
+                name: "Fastfetch",
+                summary: "系统信息展示工具。",
+            }),
+            normalizeUnifiedKnowledgeCategoryPath(["其他"], {
+                kind: "concept" as const,
+                name: "白名单",
+                summary: "保护路径不被清理。",
+            }),
+        ]
+
+        expect(cases).toEqual([
+            ["安装与环境"],
+            ["工具介绍"],
+            ["安全与兼容"],
+        ])
+        expect(cases.every(([topLevel]) => KNOWLEDGE_TOP_LEVEL_CATEGORIES.includes(
+            topLevel as typeof KNOWLEDGE_TOP_LEVEL_CATEGORIES[number],
+        ))).toBe(true)
     })
 
     it("只保留候选页面之间有方向的知识关系", () => {

@@ -13,6 +13,7 @@ import type {
     EvidenceViewModel,
     SubAgentViewModel,
 } from "./types"
+import { annotateNormalQaWikiMentions, type WikiMentionTarget } from "@/lib/wiki-mentions"
 
 /**
  * Agent Run reducer（§162.5）。
@@ -166,6 +167,14 @@ function applyEvent(state: AgentRunViewModel, event: AgentStreamEvent): AgentRun
                 }),
             }
 
+        case "wiki_mention_targets":
+            return {
+                ...state,
+                wikiMentionTargets: Array.isArray(payload.targets)
+                    ? payload.targets as WikiMentionTarget[]
+                    : [],
+            }
+
         // 换段：工具调用打断了上一段话。不清空已流出的内容——那会让用户
         // 看见字凭空消失；把上一段归档、另起一段继续（工具卡片按顺序穿插）。
         // 只有 replace=true 的整段重答才丢弃前文。
@@ -190,6 +199,13 @@ function applyEvent(state: AgentRunViewModel, event: AgentStreamEvent): AgentRun
             if (typeof payload.text !== "string") return state
             const streamed = state.answer.slice(state.answerSegmentStart)
             if (isSameAnswerBody(streamed, payload.text)) return state
+            // 普通问答的波浪线由词典在 Markdown 渲染前原位补上；若最终文本只比
+            // 流式原文多这些 [[..]] 标记，不覆盖 answer，避免整段清空重画。
+            const renderedStreamed = annotateNormalQaWikiMentions(
+                streamed,
+                state.wikiMentionTargets ?? [],
+            )
+            if (isSameAnswerBody(renderedStreamed, payload.text)) return state
             return {
                 ...state,
                 answer: state.answer.slice(0, state.answerSegmentStart) + payload.text,

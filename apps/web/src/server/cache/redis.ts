@@ -1,4 +1,7 @@
 import { Redis } from "@upstash/redis"
+import { createLogger } from "@/lib/logger"
+
+const log = createLogger("cache-redis")
 
 /**
  * 缓存客户端单例。
@@ -32,7 +35,7 @@ export function getRedis(): Redis | null {
     }
 
     client = new Redis({ url, token })
-    console.info("[cache] Upstash Redis 缓存已启用")
+    log.info("Upstash Redis 缓存已启用")
     return client
 }
 

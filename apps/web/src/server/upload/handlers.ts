@@ -1,10 +1,13 @@
 import { NextRequest } from "next/server"
 import { z } from "zod"
+import { createLogger } from "@/lib/logger"
 import { getServerConfig } from "@/config/server"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { HttpError, ok, readJson, toErrorResponse } from "@/server/http/response"
 import { buildLocalObjectUrl, isLocalObjectStorageEnabled } from "./local-storage"
 import { buildS3ObjectKey, createS3PresignedUrl, stripS4KeyPrefix } from "./s3-presign"
+
+const log = createLogger("upload-handler")
 
 const presignPutSchema = z.object({
     filename: z.string().trim().min(1),
@@ -54,13 +57,13 @@ export async function presignPutObject(request: NextRequest) {
             method: "PUT",
             objectKey,
         })
-        console.info("[S4 upload] 生成上传预签名成功", {
+        log.info({
             bucket: config.bucket,
             expiresSeconds: config.uploadExpireSeconds,
             objectKey,
             target: describeSignedUrlTarget(presignedUrl),
             userId: user.id,
-        })
+        }, "生成上传预签名成功")
 
         return ok({
             objectKey,

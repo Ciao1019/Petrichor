@@ -22,6 +22,12 @@ import { SubAgentRuntime, type NestedAgentRunner } from "./subagent-runtime"
 import { agentToolRegistry, type AgentToolRegistry } from "./tool-registry"
 import { ToolExecutor, type ToolRunOutcome } from "./tool-executor"
 import { TraceCollector } from "./trace"
+import {
+    annotateNormalQaWikiMentions,
+    collectWikiMentionTargets,
+    mergeWikiMentionTargets,
+    type WikiMentionTarget,
+} from "./wiki-mentions"
 import type {
     AgentRuntimeServices,
     AgentState,
@@ -59,6 +65,8 @@ export type AgentRunRequest = {
     focus?: unknown
     /** 问答模式：wiki 时优先走 Wiki 检索工具，并以 [[pageKey|标题]] 内联引用 */
     qaMode?: "normal" | "wiki"
+    /** 普通问答流式输出前加载真实 Wiki 实体/概念词典；由 HTTP 入口按用户与 focus 注入。 */
+    loadWikiMentionTargets?: () => Promise<WikiMentionTarget[]>
     goal: string
     /** 已裁剪的模型消息 */
     messages?: unknown[]
@@ -127,7 +135,7 @@ const WIKI_QA_MODE_GUIDANCE = [
     "1. 回答内容型问题前，先用 wiki_overview 掌握全貌（主题与知识页 / 源文档页两组目录）。",
     "2. 定位页面用 search_wiki_pages：queries 一次传多个关键词（同义概念、别名词一起搜），从 pageKey、摘要与命中片段判断相关性；不要只用单个宽泛词。",
     "3. 对最相关页面调用 read_wiki_page_detail 读全文；返回里的 links/inLinks 是关联页面（带摘要），相关就继续读，形成多跳推理。若 Wiki 页面信息不足需要读源文档补充，回答时仍要引用对应的 Wiki 页面。",
-    "4. 【引用格式（最重要）】答案正文中凡是来自某个 Wiki 页面的信息，必须紧跟内联引用 [[pageKey|页面标题]]，例如：Mole 是一款开源清理工具 [[concept-mole|Mole]]。pageKey 必须来自检索结果，严禁编造；证据列表里每条 Wiki 证据都附有「Wiki 引用」提示，照抄即可。",
+    "4. 【引用格式（最重要）】答案正文中凡是来自某个 Wiki 页面的信息，必须用 [[pageKey|原文中的词语]] 包住正文里的首次提及，例如：[[concept-mole|Mole]] 是一款开源清理工具。严禁写成“Mole 是一款工具 [[concept-mole|Mole]]”这种句末重复标题；pageKey 必须来自检索结果，严禁编造。",
     "5. 不要输出 [1]、[2] 这类数字角标来标注 Wiki 来源——本模式一律用 [[..]] 内联引用，前端会渲染成可点击的波浪线链接；同一页面多次提及时首次引用即可。",
     "6. 严禁编造或使用 Wiki 之外的知识；检索不到就如实说明，不要杜撰。",
 ].join("\n")
@@ -234,6 +242,21 @@ export class PetrichorAgentRuntime {
         const loopDetector = new LoopDetector({ noProgressThreshold: stopConfig.maxNoProgressIterations + 1 })
         const stopPolicy = new StopPolicy(stopConfig, budget, loopDetector)
         const contextManager = new ContextManager(resolveContextBudget(request.contextTokenLimit))
+
+        // 普通问答在开始流式输出前先把真实 Wiki 实体/概念词典交给前端。
+        // 前端据此在 Markdown 渲染阶段原位补波浪线，不需要等回答结束后清空重画。
+        let catalogWikiMentionTargets: WikiMentionTarget[] = []
+        if (request.qaMode !== "wiki" && request.loadWikiMentionTargets) {
+            try {
+                catalogWikiMentionTargets = await request.loadWikiMentionTargets()
+                events.emit("wiki_mention_targets", { targets: catalogWikiMentionTargets })
+            } catch (error) {
+                trace.event("observation", {
+                    strategy: "wiki_mention_catalog",
+                    degraded: error instanceof Error ? error.message : String(error),
+                })
+            }
+        }
 
         const executor = new ToolExecutor({
             registry: this.tools,
@@ -567,6 +590,26 @@ export class PetrichorAgentRuntime {
         }
 
         if (answer) answer = dedupeRepeatedAnswer(answer)
+
+        // 普通问答的 [n] 来源角标与 Wiki 实体波浪线是两套语义：前者证明结论，
+        // 后者只是可点击的知识导航。最终完成前用本轮真实检索结果做一次确定性补标，
+        // 同时修复旧提示词曾生成的句末“[[pageKey|标题]]”伪角标。
+        if (answer && request.qaMode !== "wiki" && stopReason !== "cancelled") {
+            const retrievedTargets = collectWikiMentionTargets(
+                evidence.all,
+                observations.all,
+                (item) => evidence.citationIndex(item.id),
+            )
+            const wikiTargets = mergeWikiMentionTargets(catalogWikiMentionTargets, retrievedTargets)
+            const catalogAnnotated = annotateNormalQaWikiMentions(answer, catalogWikiMentionTargets)
+            const annotated = annotateNormalQaWikiMentions(answer, wikiTargets)
+            // 只有本轮检索结果真的改变渲染文本时才更新词典，例如补上 citationIndex
+            // 将旧式句末 Wiki 伪角标恢复成 [n]；常规回答结束时不做无效的二次渲染。
+            if (annotated !== catalogAnnotated) {
+                events.emit("wiki_mention_targets", { targets: wikiTargets })
+            }
+            if (annotated !== answer) answer = annotated
+        }
 
         // ------------------------------------------------------------- 收尾
         const metrics = {

@@ -130,6 +130,27 @@ describe("agentRunReducer", () => {
         expect(run.answer).toBe("这是完整答案。\n")
     })
 
+    it("最终文本只增加 Wiki 波浪线标记时保留流式原文，不整段重刷", () => {
+        const targets = [{
+            pageKey: "entity-mole",
+            title: "小鼹鼠",
+            aliases: ["Mole"],
+            kind: "entity",
+            citationIndex: null,
+        }]
+        const run = reduce([
+            event("wiki_mention_targets", { targets }),
+            event("final_answer_started"),
+            event("final_answer_delta", { delta: "小鼹鼠（Mole）是一款 macOS 清理工具 [1]。" }),
+            event("final_answer_completed", {
+                text: "[[entity-mole|小鼹鼠]]（Mole）是一款 macOS 清理工具 [1]。",
+            }),
+        ])
+
+        expect(run.answer).toBe("小鼹鼠（Mole）是一款 macOS 清理工具 [1]。")
+        expect(run.wikiMentionTargets).toEqual(targets)
+    })
+
     it("停止时给出用户可读文案，不暴露内部策略名", () => {
         const run = reduce([
             event("agent_started", { goal: "g" }),

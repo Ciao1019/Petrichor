@@ -24,7 +24,7 @@ const nextConfig: NextConfig = {
     // 原生 / 非 ESM 可打包模块交给运行时 require，不要打进 server bundle。
     // @ast-grep/napi：Mastra 依赖，Turbopack/webpack 都无法正确打包其原生绑定。
     // @firecrawl/pdf-inspector：napi-rs 原生绑定，按平台走 optionalDependencies 解析。
-    serverExternalPackages: ["better-sqlite3", "sharp", "@ast-grep/napi", "@firecrawl/pdf-inspector"],
+    serverExternalPackages: ["better-sqlite3", "sharp", "pino", "@ast-grep/napi", "@firecrawl/pdf-inspector"],
     typedRoutes: false,
     // Vercel 上偶发卡在 "Running TypeScript ..." 直到 45min 超时；类型检查交给 CI/本地 typecheck。
     typescript: {

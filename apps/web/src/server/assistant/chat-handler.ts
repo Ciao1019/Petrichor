@@ -7,6 +7,7 @@ import {
     type UIMessageChunk,
 } from "ai"
 import { z } from "zod"
+import { createLogger, toLogError } from "@/lib/logger"
 import { createChatLanguageModel } from "@/server/ai/generation"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { HttpError, toErrorResponse } from "@/server/http/response"
@@ -29,6 +30,7 @@ import {
 import { buildContextPack } from "./context-pack"
 import { buildInstructionsWithContextExtras } from "./context-recall"
 import { assertAssistantFocusOwnership } from "./focus-guard"
+import { listUserWikiMentionTargets } from "@/server/kb/wiki-qa-user"
 import { isAssistantOperator } from "./operator-gate"
 import {
     assistantFocusSchema,
@@ -42,6 +44,8 @@ import {
     recordAssistantStep,
     truncateAssistantThreadMessages,
 } from "./thread-logic"
+
+const log = createLogger("assistant-chat-handler")
 
 /**
  * Assistant Chat 入口（§3）。
@@ -221,6 +225,18 @@ export async function assistantChat(request: NextRequest) {
                             systemRole: user.systemRole,
                             focus,
                             ...(input.qaMode === "wiki" ? { qaMode: "wiki" as const } : {}),
+                            ...(input.qaMode !== "wiki"
+                                ? {
+                                    loadWikiMentionTargets: async () => (
+                                        await listUserWikiMentionTargets({
+                                            userId: user.id,
+                                            knowledgeBaseId: focus?.knowledgeBaseId
+                                                ? Number(focus.knowledgeBaseId)
+                                                : null,
+                                        })
+                                    ).map((target) => ({ ...target, citationIndex: null })),
+                                }
+                                : {}),
                             goal,
                             messages: modelMessages as unknown[],
                             ...(conversationBackground ? { conversationBackground } : {}),
@@ -250,11 +266,11 @@ export async function assistantChat(request: NextRequest) {
                                     errorCode: toolTrace.errorCode ?? null,
                                     durationMs: toolTrace.durationMs,
                                 }).catch((error: unknown) => {
-                                    console.error(JSON.stringify({
-                                        level: "error",
-                                        scope: "assistant.chat.recordStep",
-                                        message: error instanceof Error ? error.message : String(error),
-                                    }))
+                                    log.error({
+                                        err: toLogError(error),
+                                        runId: dbRun.id,
+                                        toolName: toolTrace.toolName,
+                                    }, "Assistant tool step 落库失败")
                                 })
                             },
                             onEvent: (event) => {

@@ -1,8 +1,11 @@
 import { sql } from "drizzle-orm"
+import { createLogger, toLogError } from "@/lib/logger"
 import { embedQuery, hasEmbeddingConfig } from "@/server/ai/embedding"
 import { getDb, isSqliteDatabase } from "@/server/db/client"
 import { cosineDistance, cosineSimilarity, whereSameDimension } from "@/server/retrieval/vector-space"
 import { CONTEXT_RECALL_MIN_SCORE, sanitizeRecallExcerpt } from "./context-recall"
+
+const log = createLogger("assistant-operator-episodic")
 
 export type OperatorHistoryHit = {
     threadId: string
@@ -55,7 +58,7 @@ export async function searchOperatorHistoryFts(input: {
             `)
         return mapHits(rows, "keyword")
     } catch (error) {
-        console.error("[assistant] operator FTS skipped", error)
+        log.warn({ err: toLogError(error), userId: input.userId }, "操作员历史全文检索失败，回退到 ILIKE")
         return searchOperatorHistoryIlikeFallback(input)
     }
 }
@@ -134,7 +137,7 @@ export async function searchOperatorHistorySemantic(input: {
             `)
         return mapHits(rows, "semantic").filter((hit) => hit.score >= CONTEXT_RECALL_MIN_SCORE)
     } catch (error) {
-        console.error("[assistant] operator semantic recall skipped", error)
+        log.warn({ err: toLogError(error), userId: input.userId }, "操作员历史语义召回失败，跳过本路召回")
         return []
     }
 }

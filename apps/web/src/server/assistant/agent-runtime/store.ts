@@ -1,4 +1,5 @@
 import { and, asc, desc, eq } from "drizzle-orm"
+import { createLogger, toLogError } from "@/lib/logger"
 import { getDb } from "@/server/db/client"
 import {
     agentEvidence,
@@ -17,6 +18,8 @@ import type {
     RoutingHint,
     TaskComplexity,
 } from "./types"
+
+const log = createLogger("agent-runtime-store")
 
 /**
  * Agent Run 持久化（§66/§142~§146）。
@@ -52,16 +55,15 @@ function logStoreError(scope: string, error: unknown, context: Record<string, un
     const code = typeof causeRecord?.code === "string" ? causeRecord.code : undefined
     const detail = causeRecord?.message ?? causeRecord?.detail
 
-    console.error(JSON.stringify({
-        level: "error",
-        scope: `agent-runtime.store.${scope}`,
-        message: error instanceof Error ? error.message : String(error),
+    log.error({
+        err: toLogError(error),
+        scope,
         ...(code ? { code } : {}),
         ...(detail ? { cause: String(detail) } : {}),
         // 42P01 = undefined_table，明确指向未执行的迁移
         ...(code === "42P01" ? { hint: MISSING_TABLE_HINT } : {}),
         ...context,
-    }))
+    }, "Agent Runtime 持久化失败，继续当前对话")
 }
 
 export async function createAgentRunRecord(input: PersistRunInput): Promise<void> {

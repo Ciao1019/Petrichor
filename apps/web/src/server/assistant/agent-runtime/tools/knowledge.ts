@@ -114,6 +114,7 @@ function renderMediaManifest(media: NodeMediaReference[]): string {
 function normalizeKnowledgeRead(output: unknown, input: unknown): ToolNormalizerResult {
     const record = output as {
         kind?: string
+        pageKind?: string
         title?: string
         articleTitle?: string
         nodeKey?: string
@@ -128,6 +129,12 @@ function normalizeKnowledgeRead(output: unknown, input: unknown): ToolNormalizer
         contentFrom?: "node" | "subtree" | "empty"
         breadcrumb?: string[]
         media?: NodeMediaReference[]
+        aliases?: string[]
+        links?: Array<{
+            toPageKey?: string
+            toPageTitle?: string
+            toPageKind?: string | null
+        }>
     }
     const title = record.title ?? record.articleTitle ?? "知识节点"
     const content = (record.contentMd ?? record.content ?? "").trim()
@@ -145,6 +152,23 @@ function normalizeKnowledgeRead(output: unknown, input: unknown): ToolNormalizer
     const body = `${contextPrefix}${mediaPrefix}[${isWikiPage ? "Wiki 页面正文" : "目标章节正文"}]\n${content}`
     const evidenceContent = isWikiPage ? body : body.slice(0, 4_000)
     const fromSubtree = record.contentFrom === "subtree"
+    const wikiTargets = isWikiPage
+        ? [
+            ...(record.pageKey
+                ? [{
+                    pageKey: record.pageKey,
+                    title,
+                    pageKind: record.pageKind,
+                    aliases: record.aliases ?? [],
+                }]
+                : []),
+            ...(record.links ?? []).filter((link) => Boolean(link.toPageKind)).map((link) => ({
+                pageKey: link.toPageKey,
+                title: link.toPageTitle,
+                pageKind: link.toPageKind,
+            })),
+        ]
+        : []
 
     return {
         summary: content
@@ -158,6 +182,7 @@ function normalizeKnowledgeRead(output: unknown, input: unknown): ToolNormalizer
             articleId: record.articleId,
             contentFrom: record.contentFrom,
             ...(media.length > 0 ? { media } : {}),
+            ...(wikiTargets.length > 0 ? { wikiTargets } : {}),
             // 正文进证据，不重复进 observation data
             excerpt: content.slice(0, 400),
         },
@@ -178,9 +203,12 @@ function normalizeKnowledgeRead(output: unknown, input: unknown): ToolNormalizer
                     ...(record.chunkId ? { chunkId: record.chunkId } : {}),
                     ...(record.articleId ? { articleId: String(record.articleId) } : {}),
                     ...(record.knowledgeBaseId ? { knowledgeBaseId: String(record.knowledgeBaseId) } : {}),
-                    // pageKey 进 metadata 后，证据渲染会附带「Wiki 引用」提示，
-                    // 普通问答的回答才能内联 [[pageKey|标题]] 供前端高亮
+                    // pageKey / 类型 / 别名交给最终答案归一化层：普通问答保留 [n]
+                    // 来源角标，同时把正文里的实体/概念首次提及补成 Wiki 波浪线。
                     ...(record.pageKey ? { pageKey: record.pageKey } : {}),
+                    ...(record.pageKind ? { pageKind: record.pageKind } : {}),
+                    ...(record.aliases?.length ? { aliases: record.aliases } : {}),
+                    ...(wikiTargets.length > 0 ? { wikiTargets } : {}),
                     ...(path ? { path } : {}),
                     ...(record.contentFrom ? { contentFrom: record.contentFrom } : {}),
                     requestedBy: input,
@@ -353,11 +381,14 @@ export const knowledgeTools: AgentToolDefinition[] = [
                         mode: "cross_kb" as const,
                         retrievalMode: "hybrid" as const,
                         hits: result.candidates.map((candidate) => ({
+                            candidateKind: candidate.candidateKind,
                             ...(candidate.candidateKind === "tree" || (!candidate.chunkId && !candidate.pageKey)
                                 ? { nodeKey: candidate.nodeKey }
                                 : {}),
                             ...(candidate.chunkId ? { chunkId: candidate.chunkId } : {}),
                             ...(candidate.pageKey ? { pageKey: candidate.pageKey } : {}),
+                            ...(candidate.pageKind ? { pageKind: candidate.pageKind } : {}),
+                            ...(candidate.aliases?.length ? { aliases: candidate.aliases } : {}),
                             articleId: candidate.articleId,
                             knowledgeBaseId: candidate.knowledgeBaseId,
                             knowledgeBaseName: knowledgeBaseNames.get(candidate.knowledgeBaseId) ?? null,
@@ -384,9 +415,11 @@ export const knowledgeTools: AgentToolDefinition[] = [
                     mode: "cross_kb" as const,
                     retrievalMode: "legacy" as const,
                     hits: hits.map((hit) => ({
+                        candidateKind: "wiki" as const,
                         knowledgeBaseId: hit.knowledgeBaseId,
                         knowledgeBaseName: hit.knowledgeBaseName,
                         pageKey: hit.pageKey,
+                        pageKind: hit.kind,
                         articleId: hit.articleId,
                         href: hit.href ?? knowledgeBasePath(hit.knowledgeBaseId),
                         title: hit.title,
@@ -419,11 +452,14 @@ export const knowledgeTools: AgentToolDefinition[] = [
                 knowledgeBaseId: String(knowledgeBaseId),
                 knowledgeBaseName,
                 hits: result.candidates.map((candidate) => ({
+                    candidateKind: candidate.candidateKind,
                     ...(candidate.candidateKind === "tree" || (!candidate.chunkId && !candidate.pageKey)
                         ? { nodeKey: candidate.nodeKey }
                         : {}),
                     ...(candidate.chunkId ? { chunkId: candidate.chunkId } : {}),
                     ...(candidate.pageKey ? { pageKey: candidate.pageKey } : {}),
+                    ...(candidate.pageKind ? { pageKind: candidate.pageKind } : {}),
+                    ...(candidate.aliases?.length ? { aliases: candidate.aliases } : {}),
                     articleId: candidate.articleId,
                     knowledgeBaseId: candidate.knowledgeBaseId,
                     title: candidate.title,
@@ -469,9 +505,12 @@ export const knowledgeTools: AgentToolDefinition[] = [
                 data: {
                     mode: record.mode,
                     hits: hits.map((hit) => ({
+                        candidateKind: hit.candidateKind,
                         nodeKey: hit.nodeKey,
                         chunkId: hit.chunkId,
                         pageKey: hit.pageKey,
+                        pageKind: hit.pageKind,
+                        aliases: hit.aliases,
                         articleId: hit.articleId,
                         knowledgeBaseId: hit.knowledgeBaseId,
                         title: hit.title,
@@ -558,9 +597,12 @@ export const knowledgeTools: AgentToolDefinition[] = [
                 data: {
                     mode: record.mode,
                     hits: hits.map((hit) => ({
+                        candidateKind: hit.candidateKind,
                         nodeKey: hit.nodeKey,
                         chunkId: hit.chunkId,
                         pageKey: hit.pageKey,
+                        pageKind: hit.pageKind,
+                        aliases: hit.aliases,
                         articleId: hit.articleId,
                         knowledgeBaseId: hit.knowledgeBaseId,
                         title: hit.title,
@@ -786,6 +828,7 @@ export const wikiQaTools: AgentToolDefinition[] = [
                 pageKey?: string
                 title?: string
                 kind?: string
+                aliases?: string[]
                 contentMd?: string
                 links?: Array<Record<string, unknown>>
                 inLinks?: Array<Record<string, unknown>>
@@ -800,6 +843,21 @@ export const wikiQaTools: AgentToolDefinition[] = [
                 }
             }
             const neighborCount = (record.links?.length ?? 0) + (record.inLinks?.length ?? 0)
+            const wikiTargets = [
+                ...(record.pageKey
+                    ? [{ pageKey: record.pageKey, title, kind: record.kind, aliases: record.aliases ?? [] }]
+                    : []),
+                ...(record.links ?? []).map((link) => ({
+                    pageKey: link.pageKey,
+                    title: link.title,
+                    kind: link.kind,
+                })),
+                ...(record.inLinks ?? []).map((link) => ({
+                    pageKey: link.pageKey,
+                    title: link.title,
+                    kind: link.kind,
+                })),
+            ]
             // 全文读取：正文完整进证据，不在这里裁。工具说明和提示词都写着"读全文"，
             // 截一刀会让模型看到 summary 的字数与正文对不上，判定页面被截断并绕去读源文档。
             // 体积由 mastra-bridge（段内回传）与 context-manager（evidence budget）统一兜底。
@@ -811,6 +869,8 @@ export const wikiQaTools: AgentToolDefinition[] = [
                     pageKey: record.pageKey,
                     title,
                     kind: record.kind,
+                    aliases: record.aliases ?? [],
+                    wikiTargets,
                     excerpt: content.slice(0, 400),
                     links: (record.links ?? []).slice(0, 12).map((link) => ({
                         pageKey: link.pageKey,
@@ -834,7 +894,9 @@ export const wikiQaTools: AgentToolDefinition[] = [
                     confidence: 0.85,
                     metadata: {
                         ...(record.pageKey ? { pageKey: record.pageKey } : {}),
-                        kind: record.kind,
+                        pageKind: record.kind,
+                        ...(record.aliases?.length ? { aliases: record.aliases } : {}),
+                        wikiTargets,
                     },
                 }],
                 suggestedActions: ["knowledge.read_wiki_page_detail"],

@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest"
 
 const getDb = vi.fn()
+const logMocks = vi.hoisted(() => ({ error: vi.fn() }))
 vi.mock("@/server/db/client", () => ({ getDb: () => getDb() }))
+vi.mock("@/lib/logger", () => ({
+    createLogger: () => logMocks,
+    toLogError: (error: unknown) => error instanceof Error ? error : new Error(String(error)),
+}))
 
 import { __testing, listAgentRunsForConversation, loadAgentRunTrace, loadAgentRunView } from "./store"
 
@@ -11,11 +16,9 @@ import { __testing, listAgentRunsForConversation, loadAgentRunTrace, loadAgentRu
  */
 describe("logStoreError", () => {
     function capture(error: unknown): Record<string, unknown> {
-        const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+        logMocks.error.mockClear()
         __testing.logStoreError("createRun", error, { runKey: "run_x" })
-        const payload = JSON.parse(String(spy.mock.calls[0][0]))
-        spy.mockRestore()
-        return payload
+        return logMocks.error.mock.calls[0][0] as Record<string, unknown>
     }
 
     it("把 cause 上的 Postgres 错误码与详情带出来", () => {
@@ -43,12 +46,12 @@ describe("logStoreError", () => {
 
     it("没有 cause 时不崩，仍保留上下文", () => {
         const payload = capture(new Error("boom"))
-        expect(payload.message).toBe("boom")
+        expect((payload.err as Error).message).toBe("boom")
         expect(payload.runKey).toBe("run_x")
     })
 
     it("非 Error 值也能记录", () => {
-        expect(capture("plain string").message).toBe("plain string")
+        expect((capture("plain string").err as Error).message).toBe("plain string")
     })
 })
 
@@ -67,23 +70,18 @@ describe("读路径容错", () => {
 
     it("表不存在时 loadAgentRunView 返回 null 而不是抛错", async () => {
         throwUndefinedTable()
-        const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+        logMocks.error.mockClear()
         await expect(loadAgentRunView("run_x", 1)).resolves.toBeNull()
-        expect(String(spy.mock.calls[0][0])).toContain("2026-08-18-agent-runtime-v2.sql")
-        spy.mockRestore()
+        expect(String(logMocks.error.mock.calls[0][0].hint)).toContain("2026-08-18-agent-runtime-v2.sql")
     })
 
     it("表不存在时 loadAgentRunTrace 返回 null", async () => {
         throwUndefinedTable()
-        const spy = vi.spyOn(console, "error").mockImplementation(() => {})
         await expect(loadAgentRunTrace("run_x", 1)).resolves.toBeNull()
-        spy.mockRestore()
     })
 
     it("表不存在时 listAgentRunsForConversation 返回空数组", async () => {
         throwUndefinedTable()
-        const spy = vi.spyOn(console, "error").mockImplementation(() => {})
         await expect(listAgentRunsForConversation("1", 1)).resolves.toEqual([])
-        spy.mockRestore()
     })
 })

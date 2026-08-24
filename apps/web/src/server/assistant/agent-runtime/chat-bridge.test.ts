@@ -38,4 +38,24 @@ describe("Agent chat stream bridge", () => {
         expect(textChunks.find((chunk) => chunk.type === "text-delta")?.delta).toBe("最终答案")
         expect(JSON.stringify(textChunks)).not.toContain("我先查一下")
     })
+
+    it("Wiki 标注词典只参与当前流式渲染，不写入持久消息", () => {
+        const chunks: Array<Record<string, unknown>> = []
+        const bridge = createAgentEventWriter({ write: (chunk) => chunks.push(chunk as never) })
+
+        bridge.onEvent(event(1, "wiki_mention_targets", {
+            targets: [{
+                pageKey: "entity-mole",
+                title: "小鼹鼠",
+                aliases: ["Mole"],
+                kind: "entity",
+                citationIndex: null,
+            }],
+        }))
+
+        expect(chunks).toContainEqual(expect.objectContaining({
+            type: "data-agent-event",
+            transient: true,
+        }))
+    })
 })

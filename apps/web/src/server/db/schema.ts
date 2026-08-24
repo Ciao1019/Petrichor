@@ -324,6 +324,27 @@ export const knowledgeBaseArticleChunkIndexes = pgTable("petrichor_kb_article_ch
         .on(table.chunkId, table.sourceType, table.sourcePosition),
 ])
 
+// “构建知识”的异步任务。active_key 仅在任务活动期间有值，唯一索引保证同一文章
+// 不会被两个后台任务同时重建；任务结束后清空，保留完整历史用于排障。
+export const knowledgeBaseArticleBuildJobs = pgTable("petrichor_kb_article_build_job", {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint("user_id", { mode: "number" }).notNull(),
+    knowledgeBaseId: bigint("knowledge_base_id", { mode: "number" }).notNull(),
+    articleId: bigint("article_id", { mode: "number" }).notNull(),
+    activeKey: text("active_key"),
+    status: text("status").notNull().default("pending"),
+    forceRebuild: boolean("force_rebuild").notNull().default(false),
+    resultJson: text("result_json"),
+    error: text("error"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    ...timestamps,
+}, (table) => [
+    uniqueIndex("ux_petrichor_kb_article_build_job_active").on(table.activeKey),
+    index("idx_petrichor_kb_article_build_job_user").on(table.userId, table.createdAt),
+    index("idx_petrichor_kb_article_build_job_article").on(table.userId, table.articleId, table.createdAt),
+])
+
 export const knowledgeBaseArticleTags = pgTable("petrichor_kb_article_tag", {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     articleId: bigint("article_id", { mode: "number" }).notNull(),
@@ -1312,6 +1333,7 @@ export type KnowledgeBaseNodeRecord = typeof knowledgeBaseNodes.$inferSelect
 export type KnowledgeBaseArticleRecord = typeof knowledgeBaseArticles.$inferSelect
 export type KnowledgeBaseArticleChunkRecord = typeof knowledgeBaseArticleChunks.$inferSelect
 export type KnowledgeBaseArticleChunkIndexRecord = typeof knowledgeBaseArticleChunkIndexes.$inferSelect
+export type KnowledgeBaseArticleBuildJobRecord = typeof knowledgeBaseArticleBuildJobs.$inferSelect
 export type KnowledgeBaseWikiPageRecord = typeof knowledgeBaseWikiPages.$inferSelect
 export type KnowledgeBaseWikiTreeNodeRecord = typeof knowledgeBaseWikiTreeNodes.$inferSelect
 export type KnowledgeBaseWikiPatchRecord = typeof knowledgeBaseWikiPatches.$inferSelect

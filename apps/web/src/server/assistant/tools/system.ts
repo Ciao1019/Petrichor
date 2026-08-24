@@ -1,5 +1,6 @@
 import { and, count, eq, isNull } from "drizzle-orm"
 import { z } from "zod"
+import { createLogger, toLogError } from "@/lib/logger"
 import { SerializableCitationSchema } from "@/components/tool-ui/citation/schema"
 import { SerializableDataTableSchema } from "@/components/tool-ui/data-table/schema"
 import { SerializablePlanSchema } from "@/components/tool-ui/plan/schema"
@@ -16,6 +17,8 @@ import {
 import { hasUsableBinding } from "@/server/ai/resolution"
 import type { AssistantToolContext, AssistantToolRegistration } from "../domain-types"
 import { upsertAssistantPlan } from "../plan-store"
+
+const log = createLogger("assistant-system-tool")
 
 const citationListSchema = z.object({
     id: z.string().min(1),
@@ -157,7 +160,11 @@ export const systemAssistantTools: AssistantToolRegistration[] = [
                     plan,
                 })
             } catch (error) {
-                console.error("[assistant] upsert_plan 落库失败（fail-open）", error)
+                log.error({
+                    err: toLogError(error),
+                    userId: ctx.userId,
+                    threadId: ctx.threadId,
+                }, "upsert_plan 落库失败，继续返回本次计划")
             }
             return plan
         },

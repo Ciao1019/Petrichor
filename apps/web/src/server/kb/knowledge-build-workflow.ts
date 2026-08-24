@@ -1,7 +1,10 @@
 import { createStep, createWorkflow } from "@mastra/core/workflows"
 import { z } from "zod"
 
+import { createLogger, toLogError } from "@/lib/logger"
 import { callChatCompletion } from "@/server/ai/generation"
+
+const log = createLogger("knowledge-build-workflow")
 
 const KNOWLEDGE_CHUNK_MAX_CHARS = 3_200
 /** 贪心合并的目标尺寸；对齐 RAGFlow 512 token / LlamaIndex 1024 的主流区间 */
@@ -17,7 +20,7 @@ const KNOWLEDGE_CHUNK_LIMIT = 120
 /**
  * 问题生成的分批预算。按字符数而非固定条数分批：分片放大后，固定 8 条会让单次
  * 请求塞进近万字并要求一次输出 24 个问题，模型的 JSON 会被截断，多数分片只能
- * 回落到模板问题。条数上限只作兜底。
+ * 生成不完整。条数上限只作兜底。
  */
 const QUESTION_BATCH_MAX_CHARS = 4_000
 const QUESTION_BATCH_MAX_ITEMS = 4
@@ -27,7 +30,37 @@ const WIKI_ITEM_LIMIT = 24
 const WIKI_PAGE_BATCH_SIZE = 4
 const WIKI_PAGE_BATCH_CONCURRENCY = 3
 
-export const ARTICLE_KNOWLEDGE_BUILD_VERSION = 4
+/**
+ * v5 统一 Wiki 一级目录：文章名/产品名不再作为目录根节点，旧路径会在文章重建时重新规划。
+ */
+export const ARTICLE_KNOWLEDGE_BUILD_VERSION = 5
+
+export const KNOWLEDGE_TOP_LEVEL_CATEGORIES = [
+    "工具介绍",
+    "安装与环境",
+    "核心功能",
+    "配置与定制",
+    "使用技巧",
+    "安全与兼容",
+] as const
+
+type KnowledgeTopLevelCategory = typeof KNOWLEDGE_TOP_LEVEL_CATEGORIES[number]
+
+const KNOWLEDGE_TOP_LEVEL_CATEGORY_SET = new Set<string>(KNOWLEDGE_TOP_LEVEL_CATEGORIES)
+
+const KNOWLEDGE_CATEGORY_ALIASES: Array<{
+    category: KnowledgeTopLevelCategory
+    pattern: RegExp
+}> = [
+    { category: "工具介绍", pattern: /^(工具|产品|软件)(介绍|概览|信息|说明)?$|^(相关|同类)工具$|^软件工具$|^平台$/i },
+    { category: "安装与环境", pattern: /安装|部署|运行环境|使用环境|操作系统|包管理/i },
+    { category: "核心功能", pattern: /核心功能|功能说明|主要功能|清理对象/i },
+    { category: "配置与定制", pattern: /配置|定制|自定义/i },
+    { category: "使用技巧", pattern: /使用技巧|进阶功能|高级技巧|命令用法|操作技巧/i },
+    { category: "安全与兼容", pattern: /安全|兼容|工具支持|生态支持|权限|隐私/i },
+]
+
+type KnowledgeCategoryFallback = Pick<KnowledgeCandidate, "kind" | "name" | "summary">
 
 /**
  * 分片算法版本。与 ARTICLE_KNOWLEDGE_BUILD_VERSION 解耦：后者只用于筛选可复用的
@@ -74,7 +107,7 @@ const preparedDocumentSchema = workflowInputSchema.extend({
 
 const chunkQuestionsSchema = z.object({
     chunkKey: z.string(),
-    questions: z.array(z.string()).length(3),
+    questions: z.array(z.string()).max(3),
 })
 
 const knowledgeCandidateSchema = z.object({
@@ -112,7 +145,7 @@ const extractionOutputSchema = z.object({
 })
 
 const wikiMaterializationInputSchema = preparedDocumentSchema.extend({
-    chunks: z.array(knowledgeChunkSchema.extend({ recommendedQuestions: z.array(z.string()).length(3) })),
+    chunks: z.array(knowledgeChunkSchema.extend({ recommendedQuestions: z.array(z.string()).max(3) })),
     documentSummary: z.string(),
     candidates: z.array(knowledgeCandidateSchema),
     relations: z.array(knowledgeRelationSchema),
@@ -120,7 +153,7 @@ const wikiMaterializationInputSchema = preparedDocumentSchema.extend({
 })
 
 const workflowOutputSchema = z.object({
-    chunks: z.array(knowledgeChunkSchema.extend({ recommendedQuestions: z.array(z.string()).length(3) })),
+    chunks: z.array(knowledgeChunkSchema.extend({ recommendedQuestions: z.array(z.string()).max(3) })),
     documentSummary: z.string(),
     items: z.array(knowledgeItemSchema),
     relations: z.array(knowledgeRelationSchema),
@@ -136,6 +169,32 @@ export type ExistingKnowledgePage = z.infer<typeof existingWikiPageSchema>
 type KnowledgeCandidate = z.infer<typeof knowledgeCandidateSchema>
 type RawChunk = z.infer<typeof knowledgeChunkSchema>
 type WorkflowInput = z.infer<typeof workflowInputSchema>
+
+async function runLoggedStage<T>(
+    input: Pick<WorkflowInput, "userId" | "knowledgeBaseId" | "articleId">,
+    stage: string,
+    task: () => Promise<T>,
+): Promise<T> {
+    const startedAt = performance.now()
+    const stageLog = log.child({
+        stage,
+        userId: input.userId,
+        knowledgeBaseId: input.knowledgeBaseId,
+        articleId: input.articleId,
+    })
+    stageLog.debug("知识构建阶段开始")
+    try {
+        const result = await task()
+        stageLog.info({ durationMs: Math.round(performance.now() - startedAt) }, "知识构建阶段完成")
+        return result
+    } catch (error) {
+        stageLog.error({
+            err: toLogError(error),
+            durationMs: Math.round(performance.now() - startedAt),
+        }, "知识构建阶段失败")
+        throw error
+    }
+}
 
 const HEADING_PATTERN = /^(#{1,6})\s+(.+?)\s*#*\s*$/
 const FENCE_PATTERN = /^\s*(```|~~~)/
@@ -395,18 +454,8 @@ export function splitMarkdownForKnowledgeBuild(
     return { chunks, truncated }
 }
 
-export function normalizeRecommendedQuestions(values: unknown, heading: string): [string, string, string] {
-    const normalized = normalizeStringList(values).slice(0, 3)
-    const fallbacks = [
-        `${heading} 主要讲了什么？`,
-        `${heading} 中有哪些关键结论？`,
-        `如何理解并应用 ${heading}？`,
-    ]
-    for (const fallback of fallbacks) {
-        if (normalized.length >= 3) break
-        if (!normalized.includes(fallback)) normalized.push(fallback)
-    }
-    return [normalized[0], normalized[1], normalized[2]]
+export function normalizeRecommendedQuestions(values: unknown): string[] {
+    return normalizeStringList(values).slice(0, 3)
 }
 
 export function normalizeKnowledgeCategoryPath(value: unknown): string[] {
@@ -419,6 +468,60 @@ export function normalizeKnowledgeCategoryPath(value: unknown): string[] {
         .map((part) => part.replace(/[/／|｜>]/g, "").trim())
         .filter((part) => !/^(实体|概念|entity|concept)$/i.test(part))
         .slice(0, 2)
+}
+
+function resolveKnowledgeTopLevelCategory(value: string): KnowledgeTopLevelCategory | null {
+    const normalized = value.trim()
+    if (KNOWLEDGE_TOP_LEVEL_CATEGORY_SET.has(normalized)) {
+        return normalized as KnowledgeTopLevelCategory
+    }
+    return KNOWLEDGE_CATEGORY_ALIASES.find(({ pattern }) => pattern.test(normalized))?.category ?? null
+}
+
+function inferKnowledgeTopLevelCategory(
+    fallback: KnowledgeCategoryFallback,
+): KnowledgeTopLevelCategory {
+    const text = `${fallback.name} ${fallback.summary}`.toLocaleLowerCase("zh-CN")
+    if (/安装|部署|包管理|运行环境|操作系统|homebrew|macports|chocolatey|scoop|winget|termux|终端|terminal/.test(text)) {
+        return "安装与环境"
+    }
+    if (/配置|定制|自定义|格式|schema|常量|logo|模块/.test(text)) return "配置与定制"
+    if (/安全|隐私|授权|白名单|兼容|支持|权限/.test(text)) return "安全与兼容"
+    if (/技巧|补全|更新|性能|命令|自动化|预览/.test(text)) return "使用技巧"
+    return fallback.kind === "entity" ? "工具介绍" : "核心功能"
+}
+
+/**
+ * 把模型目录收敛到全知识库共享的六个一级主题。
+ * - 模型按旧规则返回 `Mole / 核心功能` 时，丢弃文章根目录并提升为 `核心功能`；
+ * - 返回旧同义目录（如“配置指南”）时映射到统一名称；
+ * - 缺失或无法识别时依据候选语义给出稳定兜底，避免页面落入“未分类”。
+ */
+export function normalizeUnifiedKnowledgeCategoryPath(
+    value: unknown,
+    fallback: KnowledgeCategoryFallback,
+): string[] {
+    const rawPath = normalizeKnowledgeCategoryPath(value)
+    let matchedIndex = -1
+    let topLevel: KnowledgeTopLevelCategory | null = null
+    for (const [index, part] of rawPath.entries()) {
+        const resolved = resolveKnowledgeTopLevelCategory(part)
+        if (!resolved) continue
+        matchedIndex = index
+        topLevel = resolved
+        break
+    }
+    topLevel ??= inferKnowledgeTopLevelCategory(fallback)
+
+    // 只有模型第一段已经表达统一主题时才保留第二级；如果主题是从 `产品名 / 主题`
+    // 的第二段纠正出来的，产品名必须彻底移除，不能换个层级继续残留。
+    const rawDetail = matchedIndex === 0 ? rawPath[1] : null
+    const detail = rawDetail
+        && !resolveKnowledgeTopLevelCategory(rawDetail)
+        && rawDetail.localeCompare(fallback.name, "zh-CN", { sensitivity: "base" }) !== 0
+        ? rawDetail
+        : null
+    return detail ? [topLevel, detail] : [topLevel]
 }
 
 function localDocumentSummary(contentMd: string) {
@@ -557,46 +660,62 @@ function renderHeadingTrail(chunk: { heading: string; headingPath: string[] }) {
 }
 
 async function generateChunkQuestions(input: z.infer<typeof preparedDocumentSchema>) {
-    const warnings: string[] = []
     const batches = batchChunksByBudget(input.chunks, QUESTION_BATCH_MAX_CHARS, QUESTION_BATCH_MAX_ITEMS)
-    const outputs = await mapWithConcurrency(batches, QUESTION_BATCH_CONCURRENCY, async (batch) => {
-        const fallback = batch.map((chunk) => ({
-            chunkKey: chunk.chunkKey,
-            questions: normalizeRecommendedQuestions([], chunk.heading),
-        }))
-        try {
-            const result = await callChatCompletion({
-                userId: input.userId,
-                systemPrompt: [
-                    "你是知识库问题生成器。为每个 Markdown 切片生成恰好 3 个用户可能提出的推荐问题。",
-                    "heading 是该切片在文档中的完整标题路径（用 > 分隔），可据此判断切片所处的语境层级。",
-                    "问题必须能仅依据对应切片回答，具体、互不重复，不要输出答案。",
-                    "只输出 JSON：{\"questions\":{\"chunk-001\":[\"问题1\",\"问题2\",\"问题3\"]}}。",
-                ].join("\n"),
-                message: batch.map((chunk) => [
-                    `<chunk id="${chunk.chunkKey}" heading="${renderHeadingTrail(chunk)}">`,
-                    chunk.contentMd,
-                    "</chunk>",
-                ].join("\n")).join("\n\n"),
-            })
-            const parsed = extractJsonObject(result.answer)
-            const questions = parsed?.questions
-            if (!questions || typeof questions !== "object" || Array.isArray(questions)) return fallback
-            const byKey = questions as Record<string, unknown>
-            const missing = batch.filter((chunk) => byKey[chunk.chunkKey] == null)
-            if (missing.length > 0) {
-                warnings.push(`${missing.length} 个切片未拿到模型问题，已使用模板问题`)
-            }
-            return batch.map((chunk) => ({
-                chunkKey: chunk.chunkKey,
-                questions: normalizeRecommendedQuestions(byKey[chunk.chunkKey], chunk.heading),
-            }))
-        } catch (error) {
-            warnings.push(error instanceof Error ? `推荐问题生成失败：${error.message}` : "推荐问题生成失败，已使用本地问题")
-            return fallback
-        }
+    const questionLog = log.child({
+        stage: "generate-chunk-questions",
+        userId: input.userId,
+        knowledgeBaseId: input.knowledgeBaseId,
+        articleId: input.articleId,
     })
-    return { chunks: outputs.flat(), warnings: [...new Set(warnings)].slice(0, 5) }
+
+    const requestQuestions = async (batch: RawChunk[]) => {
+        // 调用异常直接向上抛出，由工作流把任务标记为失败；模型正常返回但没有给某个
+        // 切片生成问题时保留空数组，不能用本地模板伪装成模型结果。
+        const result = await callChatCompletion({
+            userId: input.userId,
+            systemPrompt: [
+                "你是知识库问题生成器。为每个 Markdown 切片生成最多 3 个用户可能提出的推荐问题。",
+                "尽量生成 3 个；只有切片内容确实无法形成问题时才允许少于 3 个或返回空数组。",
+                "heading 是该切片在文档中的完整标题路径（用 > 分隔），可据此判断切片所处的语境层级。",
+                "问题必须能仅依据对应切片回答，具体、互不重复，不要输出答案。",
+                "只输出 JSON：{\"questions\":{\"chunk-001\":[\"问题1\",\"问题2\",\"问题3\"]}}。",
+            ].join("\n"),
+            message: batch.map((chunk) => [
+                `<chunk id="${chunk.chunkKey}" heading="${renderHeadingTrail(chunk)}">`,
+                chunk.contentMd,
+                "</chunk>",
+            ].join("\n")).join("\n\n"),
+        })
+        const parsed = extractJsonObject(result.answer)
+        const questions = parsed?.questions
+        const byKey = questions && typeof questions === "object" && !Array.isArray(questions)
+            ? questions as Record<string, unknown>
+            : {}
+        const chunks = batch.map((chunk) => ({
+            chunkKey: chunk.chunkKey,
+            questions: normalizeRecommendedQuestions(byKey[chunk.chunkKey]),
+        }))
+        const emptyChunkKeys = chunks
+            .filter((chunk) => chunk.questions.length === 0)
+            .map((chunk) => chunk.chunkKey)
+        if (emptyChunkKeys.length > 0) {
+            questionLog.info({
+                emptyCount: emptyChunkKeys.length,
+                chunkKeys: emptyChunkKeys,
+            }, "模型未给部分切片生成推荐问题，按空问题列表继续构建")
+        }
+        return chunks
+    }
+
+    const outputs = await mapWithConcurrency(
+        batches,
+        QUESTION_BATCH_CONCURRENCY,
+        requestQuestions,
+    )
+    return {
+        chunks: outputs.flat(),
+        warnings: [] as string[],
+    }
 }
 
 async function extractDocumentCandidates(input: z.infer<typeof preparedDocumentSchema>) {
@@ -734,7 +853,11 @@ export function normalizeKnowledgeRelations(values: unknown, candidateKeys: Set<
 function renderExistingTaxonomy(pages: ExistingKnowledgePage[]) {
     const paths = pages
         .filter((page) => page.buildVersion >= ARTICLE_KNOWLEDGE_BUILD_VERSION)
-        .map((page) => normalizeKnowledgeCategoryPath(page.categoryPath))
+        .map((page) => normalizeUnifiedKnowledgeCategoryPath(page.categoryPath, {
+            kind: page.kind,
+            name: page.title,
+            summary: page.summary,
+        }))
         .filter((path) => path.length > 0)
     const uniquePaths = [...new Set(paths.map((path) => path.join(" / ")))].sort((left, right) => (
         left.localeCompare(right, "zh-CN")
@@ -761,7 +884,10 @@ function parseTaxonomyAssignments(values: unknown, candidates: KnowledgeCandidat
             ? rawPageKey
             : normalizePageKey(rawPageKey, inferPageKind(rawPageKey), rawPageKey)
         if (!candidateByKey.has(pageKey) || assignments.has(pageKey)) continue
-        assignments.set(pageKey, normalizeKnowledgeCategoryPath(value.path ?? value.categoryPath))
+        assignments.set(
+            pageKey,
+            normalizeUnifiedKnowledgeCategoryPath(value.path ?? value.categoryPath, candidateByKey.get(pageKey)!),
+        )
     }
     return assignments
 }
@@ -776,22 +902,31 @@ async function planKnowledgeTaxonomy(input: z.infer<typeof wikiMaterializationIn
     const existingCategoryByKey = new Map(input.existingPages
         .filter((page) => (
             page.buildVersion >= ARTICLE_KNOWLEDGE_BUILD_VERSION
-            && normalizeKnowledgeCategoryPath(page.categoryPath).length > 0
+            && page.categoryPath.length > 0
         ))
-        .map((page) => [page.pageKey, normalizeKnowledgeCategoryPath(page.categoryPath)]))
+        .map((page) => [
+            page.pageKey,
+            normalizeUnifiedKnowledgeCategoryPath(page.categoryPath, {
+                kind: page.kind,
+                name: page.title,
+                summary: page.summary,
+            }),
+        ]))
 
     try {
         const result = await callChatCompletion({
             userId: input.userId,
             systemPrompt: [
-                "你是 Wiki 导航目录规划器。候选实体和概念已经抽取完成，请一次性为整批候选规划一棵统一、浅层、可复用的中文目录树。",
+                "你是 Wiki 导航目录规划器。候选实体和概念已经抽取完成，请把整批候选放入全知识库统一、稳定的中文主题目录。",
                 "目录只负责语义分组；entity/concept 是页面类型元数据，绝不能建立‘实体’‘概念’两个类型根目录。两类页面必须混合出现在同一棵知识目录中，并由界面图标区分。",
-                "每项输出从宽到窄的 category path，最多 2 级，优先只用 1 级。一级目录通常不超过 6 个；只有多个同类页面确实需要细分时才建立二级目录。",
+                `一级目录必须且只能从以下六项中选择：${KNOWLEDGE_TOP_LEVEL_CATEGORIES.join("、")}。不得创造其他一级目录。`,
+                "文章标题、产品名、工具名、品牌名和来源文档名永远不能作为目录；它们本身应该是‘工具介绍’中的知识页。即使整篇文章只讲一个产品，也必须按知识主题分散归类。",
+                "每项输出从宽到窄的 category path，最多 2 级，优先只用 1 级。只有同一一级主题下确有多个稳定子群时才使用简短的二级目录。",
                 "目录数量必须显著少于页面数量。禁止一页一目录，禁止把页面标题原样再建成叶子目录，禁止同义目录、单复数目录或不同措辞的重复目录。",
-                "优先复用 existing_folders 的完整原标签。新建目录时用稳定、清晰的知识分组；不要按某个条目在一句话里的临时角色随意发明层级。",
-                "产品/工具说明文档可以用主产品或领域作一级目录，再用‘产品介绍’‘功能说明’‘关联工具’等作为二级分组：产品/工具本身与相关工具是 entity，功能、能力、配置和机制通常是 concept。",
+                "existing_folders 只用于复用已经符合上述六类的二级标签，不能据此恢复产品名根目录或创造新的一级目录。",
+                "归类参考：产品及相关工具→工具介绍；安装方式、包管理器、终端和运行平台→安装与环境；主要能力→核心功能；配置文件、格式和外观定制→配置与定制；命令、进阶操作和效率方法→使用技巧；权限、隐私、防误操作、兼容性和编辑器/终端支持→安全与兼容。",
                 "每个 requested_items 的 pageKey 必须恰好出现一次。只输出 JSON，不要 Markdown 围栏。",
-                "输出结构：{\"assignments\":[{\"pageKey\":\"entity-xxx\",\"path\":[\"一级\",\"二级\"]}]}。",
+                "输出结构：{\"assignments\":[{\"pageKey\":\"entity-xxx\",\"path\":[\"配置与定制\",\"格式\"]}]}。",
             ].join("\n"),
             message: [
                 `知识库：${input.knowledgeBaseName}`,
@@ -817,7 +952,7 @@ async function planKnowledgeTaxonomy(input: z.infer<typeof wikiMaterializationIn
                 ...candidate,
                 categoryPath: existingCategoryByKey.get(candidate.pageKey)
                     ?? assignments.get(candidate.pageKey)
-                    ?? [],
+                    ?? normalizeUnifiedKnowledgeCategoryPath([], candidate),
             })),
             warnings: parsed
                 ? input.warnings
@@ -828,7 +963,8 @@ async function planKnowledgeTaxonomy(input: z.infer<typeof wikiMaterializationIn
             ...input,
             candidates: input.candidates.map((candidate) => ({
                 ...candidate,
-                categoryPath: existingCategoryByKey.get(candidate.pageKey) ?? [],
+                categoryPath: existingCategoryByKey.get(candidate.pageKey)
+                    ?? normalizeUnifiedKnowledgeCategoryPath([], candidate),
             })),
             warnings: [...input.warnings, error instanceof Error
                 ? `知识目录规划失败：${error.message}`
@@ -1007,14 +1143,22 @@ const generateQuestionsStep = createStep({
     id: "generate-chunk-questions",
     inputSchema: preparedDocumentSchema,
     outputSchema: questionOutputSchema,
-    execute: async ({ inputData }) => generateChunkQuestions(inputData),
+    execute: async ({ inputData }) => runLoggedStage(
+        inputData,
+        "generate-chunk-questions",
+        () => generateChunkQuestions(inputData),
+    ),
 })
 
 const extractCandidatesStep = createStep({
     id: "extract-document-candidates",
     inputSchema: preparedDocumentSchema,
     outputSchema: extractionOutputSchema,
-    execute: async ({ inputData }) => extractDocumentCandidates(inputData),
+    execute: async ({ inputData }) => runLoggedStage(
+        inputData,
+        "extract-document-candidates",
+        () => extractDocumentCandidates(inputData),
+    ),
 })
 
 const combineKnowledgeStep = createStep({
@@ -1029,13 +1173,16 @@ const combineKnowledgeStep = createStep({
         const questionResult = inputData["generate-chunk-questions"]
         const extractionResult = inputData["extract-document-candidates"]
         const questionsByChunk = new Map(questionResult.chunks.map((chunk) => [chunk.chunkKey, chunk.questions]))
+        const chunks = prepared.chunks.map((chunk) => {
+            const recommendedQuestions = questionsByChunk.get(chunk.chunkKey)
+            if (!recommendedQuestions) {
+                throw new Error(`推荐问题生成结果缺少切片：${chunk.chunkKey}`)
+            }
+            return { ...chunk, recommendedQuestions }
+        })
         return {
             ...prepared,
-            chunks: prepared.chunks.map((chunk) => ({
-                ...chunk,
-                recommendedQuestions: questionsByChunk.get(chunk.chunkKey)
-                    ?? normalizeRecommendedQuestions([], chunk.heading),
-            })),
+            chunks,
             documentSummary: extractionResult.documentSummary,
             candidates: extractionResult.candidates,
             relations: extractionResult.relations,
@@ -1052,14 +1199,22 @@ const planKnowledgeTaxonomyStep = createStep({
     id: "plan-knowledge-taxonomy",
     inputSchema: wikiMaterializationInputSchema,
     outputSchema: wikiMaterializationInputSchema,
-    execute: async ({ inputData }) => planKnowledgeTaxonomy(inputData),
+    execute: async ({ inputData }) => runLoggedStage(
+        inputData,
+        "plan-knowledge-taxonomy",
+        () => planKnowledgeTaxonomy(inputData),
+    ),
 })
 
 const materializeWikiPagesStep = createStep({
     id: "materialize-wiki-pages",
     inputSchema: wikiMaterializationInputSchema,
     outputSchema: workflowOutputSchema,
-    execute: async ({ inputData }) => materializeWikiPages(inputData),
+    execute: async ({ inputData }) => runLoggedStage(
+        inputData,
+        "materialize-wiki-pages",
+        () => materializeWikiPages(inputData),
+    ),
 })
 
 export const articleKnowledgeBuildWorkflow = createWorkflow({
@@ -1075,11 +1230,33 @@ export const articleKnowledgeBuildWorkflow = createWorkflow({
     .commit()
 
 export async function runArticleKnowledgeBuildWorkflow(input: WorkflowInput): Promise<KnowledgeBuildWorkflowResult> {
-    const run = await articleKnowledgeBuildWorkflow.createRun()
-    const result = await run.start({ inputData: input })
-    if (result.status !== "success") {
-        if (result.status === "failed") throw result.error
-        throw new Error(`知识构建流程未完成：${result.status}`)
+    const startedAt = performance.now()
+    const workflowLog = log.child({
+        userId: input.userId,
+        knowledgeBaseId: input.knowledgeBaseId,
+        articleId: input.articleId,
+    })
+    workflowLog.info("Mastra 知识构建工作流开始")
+    try {
+        const run = await articleKnowledgeBuildWorkflow.createRun()
+        const result = await run.start({ inputData: input })
+        if (result.status !== "success") {
+            if (result.status === "failed") throw result.error
+            throw new Error(`知识构建流程未完成：${result.status}`)
+        }
+        workflowLog.info({
+            runId: run.runId,
+            durationMs: Math.round(performance.now() - startedAt),
+            chunkCount: result.result.chunks.length,
+            itemCount: result.result.items.length,
+            warningCount: result.result.warnings.length,
+        }, "Mastra 知识构建工作流完成")
+        return result.result
+    } catch (error) {
+        workflowLog.error({
+            err: toLogError(error),
+            durationMs: Math.round(performance.now() - startedAt),
+        }, "Mastra 知识构建工作流失败")
+        throw error
     }
-    return result.result
 }

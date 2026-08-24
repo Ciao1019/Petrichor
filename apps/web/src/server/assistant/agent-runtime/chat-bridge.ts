@@ -82,6 +82,8 @@ export function createAgentEventWriter(writer: ChatStreamWriter) {
                     ? `${event.runId}:answer-delta`
                     : `${event.runId}:${event.sequence}`,
                 data: toPublicEventPayload(event),
+                // Wiki 标注词典只服务当前流式渲染；最终标准 text 已含 [[..]]，无需持久化词典。
+                ...(event.type === "wiki_mention_targets" ? { transient: true } : {}),
             } as UIMessageChunk)
         },
         finalize(): void {

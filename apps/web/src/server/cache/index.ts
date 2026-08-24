@@ -1,4 +1,7 @@
+import { createLogger, toLogError } from "@/lib/logger"
 import { getRedis } from "./redis"
+
+const log = createLogger("cache")
 
 /** 全站缓存键命名空间，避免与同库其它用途的键冲突。 */
 const CACHE_NAMESPACE = "petrichor"
@@ -46,7 +49,7 @@ export async function cacheReadThrough<T>(
             return cached
         }
     } catch (error) {
-        console.warn("[cache] 读取缓存失败，回退直查", { key, err: error })
+        log.warn({ key, err: toLogError(error) }, "读取缓存失败，回退直查")
         return loader()
     }
 
@@ -56,7 +59,7 @@ export async function cacheReadThrough<T>(
         // Upstash SDK 会自动序列化对象/数组
         await redis.set(key, fresh as unknown, { ex: ttlSeconds })
     } catch (error) {
-        console.warn("[cache] 写入缓存失败（已返回回源结果）", { key, err: error })
+        log.warn({ key, err: toLogError(error) }, "写入缓存失败，已返回回源结果")
     }
 
     return fresh
@@ -74,7 +77,7 @@ export async function cacheDrop(...keys: string[]): Promise<void> {
     try {
         await redis.del(...keys)
     } catch (error) {
-        console.warn("[cache] 删除缓存失败", { keys, err: error })
+        log.warn({ keys, err: toLogError(error) }, "删除缓存失败")
     }
 }
 
@@ -98,6 +101,6 @@ export async function cacheDropByPrefix(prefix: string): Promise<void> {
             }
         } while (cursor !== "0")
     } catch (error) {
-        console.warn("[cache] 按前缀删除缓存失败", { prefix, err: error })
+        log.warn({ prefix, err: toLogError(error) }, "按前缀删除缓存失败")
     }
 }

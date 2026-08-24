@@ -30,6 +30,7 @@ export type AgentStreamEventType =
     | "delegation_progress"
     | "delegation_completed"
     | "delegation_failed"
+    | "wiki_mention_targets"
     | "final_answer_started"
     | "final_answer_delta"
     | "final_answer_completed"
@@ -75,6 +76,15 @@ export type AgentStreamEventPayloadMap = {
         durationMs: number
     }
     delegation_failed: { taskId: string; message: string; durationMs: number }
+    wiki_mention_targets: {
+        targets: Array<{
+            pageKey: string
+            title: string
+            aliases: string[]
+            kind: string | null
+            citationIndex: number | null
+        }>
+    }
     /**
      * 开始新的一段作答。
      * replace=true 表示整段重答（质量重写），前端应丢弃已流出的内容；

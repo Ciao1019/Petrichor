@@ -19,6 +19,7 @@ import {
 } from "@/server/db/schema"
 import { badRequest, notFound } from "@/server/http/response"
 import { scoreSearchFields } from "@/server/kb/search-terms"
+import { readFrontmatterAliases } from "@/server/kb/wiki-qa-core"
 import { bm25Search } from "@/server/retrieval/bm25"
 import { buildIndexTokenText, buildQueryTokens, buildTsQuery } from "@/server/retrieval/tokenize"
 import { cosineDistance, cosineSimilarity, whereSameDimension } from "@/server/retrieval/vector-space"
@@ -65,6 +66,7 @@ export type WikiKnowledgeSearchHit = {
     knowledgeBaseId: string
     title: string
     kind: string
+    aliases: string[]
     summary: string
     contentMd: string
     score: number
@@ -767,6 +769,7 @@ export async function searchKnowledgeWikiPages(input: {
             knowledgeBaseId: String(page.knowledgeBaseId),
             title: page.title,
             kind: page.kind,
+            aliases: readFrontmatterAliases(page.frontmatterJson),
             summary: page.summary?.trim() || page.contentMd.replace(/\s+/g, " ").trim().slice(0, 220),
             contentMd: page.contentMd,
             score,

@@ -8,8 +8,13 @@ import type { AssistantToolContext } from "../domain-types"
 const dbMocks = vi.hoisted(() => ({
     getDb: vi.fn(),
 }))
+const logMocks = vi.hoisted(() => ({ error: vi.fn() }))
 
 vi.mock("@/server/db/client", () => dbMocks)
+vi.mock("@/lib/logger", () => ({
+    createLogger: () => logMocks,
+    toLogError: (error: unknown) => error instanceof Error ? error : new Error(String(error)),
+}))
 
 import { listSystemOverview, saveAnswerArtifact, systemAssistantTools } from "./system"
 
@@ -145,16 +150,17 @@ describe("system assistant tools", () => {
         dbMocks.getDb.mockReturnValue({
             insert: vi.fn(() => ({ values })),
         })
-        const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined)
-
         const input = {
             id: "plan-1",
             title: "计划",
             todos: [{ id: "a", label: "A", status: "pending" as const }],
         }
         await expect(findTool("upsert_plan").execute(ctx, input)).resolves.toEqual(input)
-        expect(errorSpy).toHaveBeenCalled()
-        errorSpy.mockRestore()
+        expect(logMocks.error).toHaveBeenCalledWith(expect.objectContaining({
+            err: expect.any(Error),
+            userId: 7,
+            threadId: 11,
+        }), expect.any(String))
     })
 
     it("三个 UI 回显工具的输出均符合现有组件 schema", async () => {

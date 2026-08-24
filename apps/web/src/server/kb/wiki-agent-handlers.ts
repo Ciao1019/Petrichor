@@ -1,5 +1,7 @@
 import { and, asc, eq } from "drizzle-orm"
-import type { NextRequest } from "next/server"
+import { after, type NextRequest } from "next/server"
+import { z } from "zod"
+import { createLogger, toLogError } from "@/lib/logger"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { resolveModelContextWindow } from "@/server/ai/generation"
 import { getDb } from "@/server/db/client"
@@ -9,7 +11,6 @@ import {
     applyWikiPatch,
     articleKnowledgeBuildInputSchema,
     articleKnowledgeChunkListInputSchema,
-    buildArticleKnowledge,
     ingestKnowledgeBaseWiki,
     listArticleKnowledgeChunks,
     listUserKnowledgeBases,
@@ -26,8 +27,16 @@ import {
 } from "./wiki-agent-logic"
 import { loadDocumentTreeOutline } from "@/server/kb/wiki-tree"
 import { embedKnowledgeBaseArticleIndex } from "@/server/kb/article-knowledge-index"
+import {
+    enqueueArticleKnowledgeBuild,
+    getArticleKnowledgeBuildJob,
+    processArticleKnowledgeBuildJob,
+} from "@/server/kb/article-knowledge-build-jobs"
+import { idSchema } from "./wiki-agent-logic"
 
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
+const log = createLogger("wiki-agent-handler")
+const articleKnowledgeBuildStatusInputSchema = z.object({ jobId: idSchema })
 
 async function withUser(request: NextRequest, handler: (user: User) => Promise<Response>) {
     try {
@@ -89,13 +98,36 @@ export async function wikiIngest(request: NextRequest) {
 export async function articleKnowledgeBuild(request: NextRequest) {
     return withUser(request, async (user) => {
         const input = articleKnowledgeBuildInputSchema.parse(await readJson(request))
-        return ok(await buildArticleKnowledge({
+        const { job } = await enqueueArticleKnowledgeBuild({
             userId: user.id,
             knowledgeBaseId: input.knowledgeBaseId,
             articleId: input.articleId,
             forceRebuild: input.forceRebuild,
-        }))
+        })
+        scheduleArticleKnowledgeBuild(job.id)
+        return ok(job, { status: 202 })
     })
+}
+
+export async function articleKnowledgeBuildStatus(request: NextRequest) {
+    return withUser(request, async (user) => {
+        const input = articleKnowledgeBuildStatusInputSchema.parse(await readJson(request))
+        return ok(await getArticleKnowledgeBuildJob({ userId: user.id, jobId: input.jobId }))
+    })
+}
+
+function scheduleArticleKnowledgeBuild(jobId: string) {
+    const numericJobId = Number(jobId)
+    const task = () => processArticleKnowledgeBuildJob(numericJobId)
+    try {
+        after(task)
+    } catch (error) {
+        // Vitest、脚本或非 Next 请求作用域没有 after 上下文时仍可执行。
+        log.warn({ err: toLogError(error), jobId: numericJobId }, "Next after 不可用，降级到事件循环执行知识构建")
+        setTimeout(() => {
+            void task()
+        }, 0)
+    }
 }
 
 export async function articleKnowledgeChunkList(request: NextRequest) {

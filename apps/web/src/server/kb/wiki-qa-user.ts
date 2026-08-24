@@ -12,6 +12,7 @@ import { knowledgeBaseArticlePath } from "@/lib/dashboard-routes"
 import {
     groupWikiOverviewPages,
     rankWikiPagesForQueries,
+    readFrontmatterAliases,
     summarizeWikiContent,
     toWikiQaCard,
     type WikiQaNeighborPage,
@@ -42,6 +43,66 @@ export async function listUserAccessibleWikiPages(
         .from(knowledgeBaseWikiPages)
         .where(and(...filters))
     return rows.filter((page) => page.kind !== "log")
+}
+
+export type UserWikiMentionTarget = {
+    pageKey: string
+    title: string
+    aliases: string[]
+    kind: "concept" | "entity"
+}
+
+/**
+ * 普通问答正文的 Wiki 标注词典。
+ *
+ * 与 Wiki 问答使用同一张 knowledgeBaseWikiPages 表，但只取实体/概念的寻址字段，
+ * 不加载正文。未聚焦知识库时覆盖用户名下全部 Wiki；同 pageKey 与详情接口一样
+ * 以最早创建的页面为准，并把其他库里的同名标题/别名并入可匹配词。
+ */
+export async function listUserWikiMentionTargets(input: {
+    userId: number
+    knowledgeBaseId?: number | null
+}): Promise<UserWikiMentionTarget[]> {
+    const filters = [
+        eq(knowledgeBaseWikiPages.userId, input.userId),
+        isNull(knowledgeBaseWikiPages.archivedAt),
+        inArray(knowledgeBaseWikiPages.kind, ["concept", "entity"]),
+    ]
+    if (input.knowledgeBaseId != null) {
+        filters.push(eq(knowledgeBaseWikiPages.knowledgeBaseId, input.knowledgeBaseId))
+    }
+    const rows = await getDb()
+        .select({
+            id: knowledgeBaseWikiPages.id,
+            pageKey: knowledgeBaseWikiPages.pageKey,
+            title: knowledgeBaseWikiPages.title,
+            kind: knowledgeBaseWikiPages.kind,
+            frontmatterJson: knowledgeBaseWikiPages.frontmatterJson,
+        })
+        .from(knowledgeBaseWikiPages)
+        .where(and(...filters))
+        .orderBy(asc(knowledgeBaseWikiPages.id))
+
+    const byPageKey = new Map<string, UserWikiMentionTarget>()
+    for (const row of rows) {
+        const aliases = readFrontmatterAliases(row.frontmatterJson)
+        const current = byPageKey.get(row.pageKey)
+        if (current) {
+            current.aliases = [...new Set([
+                ...current.aliases,
+                ...(row.title !== current.title ? [row.title] : []),
+                ...aliases,
+            ])]
+            continue
+        }
+        byPageKey.set(row.pageKey, {
+            pageKey: row.pageKey,
+            title: row.title,
+            aliases,
+            kind: row.kind === "concept" ? "concept" : "entity",
+        })
+    }
+    return [...byPageKey.values()]
 }
 
 export async function listUserWikiOverview(input: {

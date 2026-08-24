@@ -1,9 +1,12 @@
 import { asc, eq, sql } from "drizzle-orm"
+import { createLogger, toLogError } from "@/lib/logger"
 import { embedQuery, embedTexts, hasEmbeddingConfig } from "@/server/ai/embedding"
 import { getDb, isSqliteDatabase } from "@/server/db/client"
 import { assistantMessages } from "@/server/db/schema"
 import { cosineDistance, cosineSimilarity, whereSameDimension } from "@/server/retrieval/vector-space"
 import { extractMessagePlainText } from "./message-text"
+
+const log = createLogger("assistant-context-recall")
 
 export const CONTEXT_RECALL_TOP_K = 4
 export const CONTEXT_RECALL_MIN_SCORE = 0.25
@@ -76,7 +79,11 @@ export async function recallRelevantHistory(input: {
             threadId: input.threadId,
             excludeMessageIds: input.excludeMessageIds,
         }).catch((error) => {
-            console.error("[assistant] background embedding ensure failed", error)
+            log.warn({
+                err: toLogError(error),
+                userId: input.userId,
+                threadId: input.threadId,
+            }, "后台补齐消息向量失败")
         })
 
         const vector = await embedQuery(input.userId, query.slice(0, 4_000))
@@ -127,7 +134,11 @@ export async function recallRelevantHistory(input: {
         }
         return snippets
     } catch (error) {
-        console.error("[assistant] context vector recall skipped", error)
+        log.warn({
+            err: toLogError(error),
+            userId: input.userId,
+            threadId: input.threadId,
+        }, "上下文向量召回失败，跳过本路召回")
         return []
     }
 }

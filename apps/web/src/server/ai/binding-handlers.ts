@@ -8,6 +8,7 @@
 import { and, eq } from "drizzle-orm"
 import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
+import { createLogger, toLogError } from "@/lib/logger"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { aiBindings, aiCredentials, aiModels, aiProviders } from "@/server/db/schema"
 import { getDb } from "@/server/db/client"
@@ -24,6 +25,7 @@ import {
 } from "@/server/ai/config-logic"
 
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
+const log = createLogger("ai-binding-handler")
 
 async function withUser(request: NextRequest, handler: (user: User) => Promise<Response>) {
     try {
@@ -120,7 +122,11 @@ export async function setAiBinding(request: NextRequest) {
                 await persistDimensions(row.model.id, dimensions)
                 model = { ...row.model, dimensions }
             } catch (error) {
-                console.warn("[ai] 绑定向量模型时探测维度失败，将在首次调用时重试", error)
+                log.warn({
+                    err: toLogError(error),
+                    userId: user.id,
+                    modelRefId: row.model.id,
+                }, "绑定向量模型时探测维度失败，将在首次调用时重试")
             }
         }
 

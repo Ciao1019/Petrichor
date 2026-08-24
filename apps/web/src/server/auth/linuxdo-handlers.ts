@@ -3,6 +3,7 @@ import { Buffer } from "node:buffer"
 import { eq } from "drizzle-orm"
 import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
+import { createLogger } from "@/lib/logger"
 import { dashboardRoutes } from "@/lib/dashboard-routes"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { isSuperAdmin } from "@/server/admin/logic"
@@ -24,6 +25,7 @@ const linuxDoOauthStateCookieName = "petrichor_linuxdo_oauth_state"
 const linuxDoFetchTimeoutMs = 30_000
 const bindStatePrefix = "bind:"
 const loginStatePrefix = "login:"
+const log = createLogger("linuxdo-auth")
 
 export async function linuxDoLoginStartGet(request: NextRequest) {
     try {
@@ -260,12 +262,12 @@ async function fetchAccessToken(code: string, config: LinuxDoConfig) {
 }
 
 function logLinuxDoTokenError(response: Response, config: LinuxDoConfig, body: string) {
-    console.error("LinuxDo token exchange failed", {
+    log.error({
         status: response.status,
         statusText: response.statusText,
         redirectUri: config.redirectUri,
-        body: body.slice(0, 800),
-    })
+        errorCode: parseLinuxDoErrorCode(body),
+    }, "LinuxDo token exchange failed")
 }
 
 function resolveLinuxDoTokenErrorMessage(response: Response, body: string) {

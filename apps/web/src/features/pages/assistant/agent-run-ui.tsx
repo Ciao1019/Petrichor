@@ -14,6 +14,7 @@ import { markRetry, useAgentRunsStore } from "@/features/agent-runs/store"
 import { isAgentStreamEvent, shouldShowExecutionPanel } from "@/features/agent-runs/types"
 import type { AgentRunViewModel } from "@/features/agent-runs/types"
 import { QaStreamingMarkdown } from "@/features/pages/knowledge/QaMarkdown"
+import { annotateNormalQaWikiMentions } from "@/lib/wiki-mentions"
 
 /**
  * Agent 执行 UI 接线（§162.5/§162.50）。
@@ -100,10 +101,11 @@ export function AgentStreamingAnswer() {
     const run = useCurrentAgentRun()
     if (!usesRunAnswer(run)) return null
     const running = run.status === "starting" || run.status === "running"
+    const text = annotateNormalQaWikiMentions(run.answer, run.wikiMentionTargets ?? [])
 
     return (
         <div aria-live="polite" aria-label={running ? "回答生成中" : "回答"}>
-            <QaStreamingMarkdown text={run.answer} running={running} />
+            <QaStreamingMarkdown text={text} running={running} />
         </div>
     )
 }

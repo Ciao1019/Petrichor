@@ -1,6 +1,7 @@
 import { and, asc, count, desc, eq, inArray, isNull } from "drizzle-orm"
 import { after, type NextRequest } from "next/server"
 import { z } from "zod"
+import { createLogger, toLogError } from "@/lib/logger"
 import { getServerConfig } from "@/config/server"
 import { requireCurrentUser } from "@/server/auth/current-user"
 import { getDb } from "@/server/db/client"
@@ -35,6 +36,7 @@ import { getLocalStorageDirOrNull } from "@/server/upload/local-storage"
 
 type Db = ReturnType<typeof getDb>
 type User = Awaited<ReturnType<typeof requireCurrentUser>>
+const log = createLogger("kb-handler")
 
 type TreeNodeResponse = {
     id: string
@@ -444,16 +446,6 @@ async function loadReferencedS4ObjectKeys(db: Db, userId: number, candidateKeys:
     return referenced
 }
 
-function describeCleanupError(error: unknown) {
-    if (error instanceof Error) {
-        return {
-            message: error.message,
-            name: error.name,
-        }
-    }
-    return error
-}
-
 async function cleanupUnreferencedS4Objects(
     userId: number,
     candidateKeys: string[],
@@ -474,36 +466,36 @@ async function cleanupUnreferencedS4Objects(
 
         const config = getServerConfig().s3
         if (!config && !getLocalStorageDirOrNull()) {
-            console.warn("[S4 cleanup] 跳过文章图片清理：对象存储未配置", {
+            log.warn({
                 action: context.action,
                 objectKeyCount: deletableKeys.length,
                 userId,
-            })
+            }, "跳过文章图片清理：对象存储未配置")
             return
         }
 
         const summary = await deleteS3Objects(config, deletableKeys)
         if (summary.deletedObjectKeys.length > 0) {
-            console.info("[S4 cleanup] 已清理文章图片对象", {
+            log.info({
                 action: context.action,
                 deletedObjectKeyCount: summary.deletedObjectKeys.length,
                 userId,
-            })
+            }, "已清理文章图片对象")
         }
         if (summary.failedObjectKeys.length > 0) {
-            console.warn("[S4 cleanup] 部分文章图片对象清理失败", {
+            log.warn({
                 action: context.action,
                 failedObjectKeys: summary.failedObjectKeys,
                 userId,
-            })
+            }, "部分文章图片对象清理失败")
         }
     } catch (error) {
-        console.warn("[S4 cleanup] 文章图片清理流程失败，已保留文章保存/删除结果", {
+        log.warn({
             action: context.action,
-            error: describeCleanupError(error),
+            err: toLogError(error),
             objectKeyCount: uniqueCandidateKeys.length,
             userId,
-        })
+        }, "文章图片清理流程失败，已保留文章保存/删除结果")
     }
 }
 
@@ -523,12 +515,12 @@ function scheduleUnreferencedS4Cleanup(
         after(task)
     } catch (error) {
         // 单元测试或非 Next 请求作用域没有 after 上下文，降级到事件循环后执行。
-        console.warn("[S4 cleanup] Next after 不可用，降级为事件循环异步清理", {
+        log.warn({
             action: context.action,
-            error: describeCleanupError(error),
+            err: toLogError(error),
             objectKeyCount: uniqueCandidateKeys.length,
             userId,
-        })
+        }, "Next after 不可用，降级为事件循环异步清理")
         setTimeout(() => {
             void task()
         }, 0)

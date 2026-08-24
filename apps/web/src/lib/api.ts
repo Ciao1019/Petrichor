@@ -1328,6 +1328,28 @@ export interface ArticleKnowledgeBuildResponse {
   warnings: string[]
 }
 
+export type ArticleKnowledgeBuildJobStatus = "pending" | "processing" | "completed" | "failed"
+
+export interface ArticleKnowledgeBuildJobResponse {
+  id: string
+  userId: string
+  knowledgeBaseId: string
+  articleId: string
+  status: ArticleKnowledgeBuildJobStatus
+  result: ArticleKnowledgeBuildResponse | null
+  error: string | null
+  startedAt: string | null
+  completedAt: string | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export interface ArticleKnowledgeBuildInput {
+  knowledgeBaseId: string
+  articleId: string
+  forceRebuild?: boolean
+}
+
 /** 「构建知识」持久化的单个文章切片及其推荐问题 */
 export interface ArticleKnowledgeChunkResponse {
   id: string
@@ -1377,11 +1399,10 @@ export const knowledgeBaseWikiAgentApi = {
     fullRebuild?: boolean
   }) =>
     api.post<KnowledgeBaseWikiIngestResponse>("/kb/wiki/ingest", data),
-  buildArticleKnowledge: (data: {
-    knowledgeBaseId: string
-    articleId: string
-    forceRebuild?: boolean
-  }) => api.post<ArticleKnowledgeBuildResponse>("/kb/knowledge/build", data),
+  buildArticleKnowledge: (data: ArticleKnowledgeBuildInput) =>
+    api.post<ArticleKnowledgeBuildJobResponse>("/kb/knowledge/build", data),
+  articleKnowledgeBuildStatus: (jobId: string) =>
+    api.post<ArticleKnowledgeBuildJobResponse>("/kb/knowledge/build/status", { jobId }),
   articleChunks: (data: { knowledgeBaseId: string; articleId: string }) =>
     api.post<ArticleKnowledgeChunkListResponse>("/kb/knowledge/chunk/list", data),
   embedWiki: (knowledgeBaseId: string) =>
@@ -1397,6 +1418,36 @@ export const knowledgeBaseWikiAgentApi = {
     api.post<KnowledgeBaseWikiPatchResponse>("/kb/wiki/patch/reject", { knowledgeBaseId, patchId }),
   lint: (knowledgeBaseId: string) =>
     api.post<KnowledgeBaseWikiLintResponse>("/kb/wiki/lint", { knowledgeBaseId }),
+}
+
+const ARTICLE_KNOWLEDGE_BUILD_POLL_TIMEOUT_MS = 12 * 60 * 1_000
+
+/** 创建异步构建任务并等待最终结果；页面请求不会再占用一个长连接。 */
+export async function buildArticleKnowledgeAndWait(
+  data: ArticleKnowledgeBuildInput,
+): Promise<ArticleKnowledgeBuildResponse> {
+  const started = await knowledgeBaseWikiAgentApi.buildArticleKnowledge(data)
+  const deadline = Date.now() + ARTICLE_KNOWLEDGE_BUILD_POLL_TIMEOUT_MS
+  let job = started.data
+  let pollIntervalMs = 750
+
+  while (job.status === "pending" || job.status === "processing") {
+    if (Date.now() >= deadline) {
+      throw new Error("知识构建等待超时，任务可能仍在后台执行，请稍后刷新查看")
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+    const response = await knowledgeBaseWikiAgentApi.articleKnowledgeBuildStatus(job.id)
+    job = response.data
+    pollIntervalMs = Math.min(2_500, Math.round(pollIntervalMs * 1.35))
+  }
+
+  if (job.status === "failed") {
+    throw new Error(job.error || "知识构建失败")
+  }
+  if (!job.result) {
+    throw new Error("知识构建任务已完成，但未返回构建结果")
+  }
+  return job.result
 }
 
 export interface KnowledgeBaseQaModelOption {

@@ -165,6 +165,131 @@ describe("过程话不得成为最终答案", () => {
     })
 })
 
+describe("普通问答的来源角标与 Wiki 实体标注", () => {
+    it("分片快车道未召回 Wiki 页面时，仍用真实 Wiki 词典给正文补波浪线", async () => {
+        tools.register(tool("knowledge.search", "search_knowledge", "knowledge", async () => ({ hits: [{}] }), {
+            core: true,
+            normalize: () => ({
+                summary: "命中原始分片",
+                progress: true,
+                data: { hits: [{ chunkId: "8", title: "小鼹鼠使用说明" }] },
+            }),
+        }))
+        tools.register(tool("knowledge.read", "read_knowledge_node", "knowledge", async () => ({ contentMd: "正文" }), {
+            core: true,
+            normalize: () => ({
+                summary: "已读取原始分片",
+                evidence: [{
+                    source: "knowledge",
+                    title: "小鼹鼠使用说明",
+                    content: "小鼹鼠是一款 macOS 清理工具。",
+                    sourceId: "chunk-8",
+                    metadata: { chunkId: "8" },
+                }],
+            }),
+        }))
+
+        const events: AgentStreamEvent[] = []
+        const result = await new PetrichorAgentRuntime({ tools, skills }).run({
+            ...request(scriptedModel([
+                { kind: "tool", toolName: "search_knowledge", args: { query: "小鼹鼠" } },
+                { kind: "tool", toolName: "read_knowledge_node", args: { chunkId: 8 } },
+                { kind: "text", text: "小鼹鼠（Mole）类似 CleanMyMac，是一款 macOS 清理工具 [1]。" },
+            ]), "小鼹鼠是什么", {
+                loadWikiMentionTargets: async () => [
+                    {
+                        pageKey: "entity-mole",
+                        title: "小鼹鼠",
+                        aliases: ["Mole"],
+                        kind: "entity",
+                        citationIndex: null,
+                    },
+                    {
+                        pageKey: "entity-cleanmymac",
+                        title: "CleanMyMac",
+                        aliases: [],
+                        kind: "entity",
+                        citationIndex: null,
+                    },
+                ],
+            }),
+            onEvent: (event) => events.push(event),
+        })
+
+        expect(result.answer).toBe(
+            "[[entity-mole|小鼹鼠]]（Mole）类似 [[entity-cleanmymac|CleanMyMac]]，是一款 macOS 清理工具 [1]。",
+        )
+        const catalogEventIndex = events.findIndex((event) => event.type === "wiki_mention_targets")
+        const firstAnswerEventIndex = events.findIndex((event) => event.type === "final_answer_started")
+        expect(catalogEventIndex).toBeGreaterThanOrEqual(0)
+        expect(catalogEventIndex).toBeLessThan(firstAnswerEventIndex)
+        expect(events.filter((event) => event.type === "wiki_mention_targets")).toHaveLength(1)
+        expect(events).not.toContainEqual(expect.objectContaining({
+            type: "final_answer_started",
+            payload: { replace: true },
+        }))
+    })
+
+    it("把句末页面标题伪角标恢复为 [n]，并给正文实体首次提及补 Wiki 链接", async () => {
+        tools.register(tool("knowledge.search", "search_knowledge", "knowledge", async () => ({ hits: [{}] }), {
+            core: true,
+            normalize: () => ({
+                summary: "命中小鼹鼠实体页",
+                progress: true,
+                data: {
+                    hits: [{
+                        pageKey: "entity-mole",
+                        title: "小鼹鼠",
+                        pageKind: "entity",
+                        aliases: ["Mole"],
+                    }],
+                },
+            }),
+        }))
+        tools.register(tool("knowledge.read", "read_knowledge_node", "knowledge", async () => ({ contentMd: "正文" }), {
+            core: true,
+            normalize: () => ({
+                summary: "已读取小鼹鼠",
+                evidence: [{
+                    source: "knowledge",
+                    title: "小鼹鼠",
+                    content: "小鼹鼠是一款 macOS 清理工具。",
+                    sourceId: "entity-mole",
+                    metadata: {
+                        pageKey: "entity-mole",
+                        pageKind: "entity",
+                        aliases: ["Mole"],
+                    },
+                }],
+            }),
+        }))
+
+        const events: AgentStreamEvent[] = []
+        const result = await new PetrichorAgentRuntime({ tools, skills }).run({
+            ...request(scriptedModel([
+                { kind: "tool", toolName: "search_knowledge", args: { query: "小鼹鼠" } },
+                { kind: "tool", toolName: "read_knowledge_node", args: { pageKey: "entity-mole" } },
+                { kind: "text", text: "小鼹鼠（Mole）是一款 macOS 清理工具 [[entity-mole|小鼹鼠]]。" },
+            ]), "小鼹鼠是什么"),
+            onEvent: (event) => events.push(event),
+        })
+
+        expect(result.answer).toBe("[[entity-mole|小鼹鼠]]（Mole）是一款 macOS 清理工具 [1]。")
+        expect(events).not.toContainEqual(expect.objectContaining({
+            type: "final_answer_started",
+            payload: { replace: true },
+        }))
+        expect(events).toContainEqual(expect.objectContaining({
+            type: "wiki_mention_targets",
+            payload: expect.objectContaining({
+                targets: expect.arrayContaining([
+                    expect.objectContaining({ pageKey: "entity-mole", citationIndex: 1 }),
+                ]),
+            }),
+        }))
+    })
+})
+
 describe("证据充足时不得草率作答", () => {
     it("读到长正文却只答一句时，自动进入最终回答阶段重写", async () => {
         tools.register(searchTool(2))

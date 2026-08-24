@@ -105,7 +105,7 @@ describe("ContextManager", () => {
         expect(built.instructions).toContain("[1] (knowledge) 先到但较弱")
     })
 
-    it("普通模式的证据区也给出 Wiki 内联引用规则，wiki 模式保持原有措辞", () => {
+    it("普通模式把数字来源角标与 Wiki 实体标注分开，wiki 模式保持原有措辞", () => {
         const state = new AgentStateStore({ conversationId: "c", userId: "1", goal: "目标" })
         const evidence = new EvidenceStore()
         evidence.add({
@@ -126,7 +126,8 @@ describe("ContextManager", () => {
         }
 
         const normal = new ContextManager().build(base)
-        expect(normal.instructions).toContain("不同页面要分别引用、不要只链其中一个")
+        expect(normal.instructions).toContain("Wiki 页面证据也不能用页面标题代替数字角标")
+        expect(normal.instructions).toContain("严禁把页面标题单独追加到句末")
         expect(normal.instructions).toContain("Wiki 引用：[[source-8|Fastfetch 使用说明]]")
 
         const wiki = new ContextManager().build({ ...base, qaMode: "wiki" as const })
@@ -185,7 +186,7 @@ describe("最终回答上下文", () => {
         expect(context).toContain("没有获取到可引用的证据")
     })
 
-    it("普通模式的引用规则允许 Wiki 来源改用内联引用", () => {
+    it("普通模式要求 Wiki 来源保留数字角标，内链只负责实体标注", () => {
         const state = new AgentStateStore({ conversationId: "c", userId: "1", goal: "目标" })
         const evidence = new EvidenceStore()
         const item = evidence.add({
@@ -201,7 +202,8 @@ describe("最终回答上下文", () => {
             evidence: [item],
             observations: new ObservationStore(),
         })
-        expect(normal).toContain("不同页面分别引用、不要只链其中一个")
+        expect(normal).toContain("Wiki 页面证据也不例外")
+        expect(normal).toContain("Wiki 链接不是来源角标")
         expect(normal).toContain("Wiki 引用：[[source-8|Fastfetch 使用说明]]")
 
         // wiki 模式保持强制内联、禁用角标的措辞

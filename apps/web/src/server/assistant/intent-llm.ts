@@ -1,5 +1,6 @@
 import { generateObject, type LanguageModel } from "ai"
 import { z } from "zod"
+import { createLogger, toLogError } from "@/lib/logger"
 import type { AgentDomainId, AssistantFocus, IntentRouteResult, IntentRouteSource } from "./domain-types"
 import {
     routeAssistantIntent,
@@ -9,6 +10,8 @@ import {
     withStickyAdminDomain,
     mergeAdminDomainFromRules,
 } from "./intent-router"
+
+const log = createLogger("assistant-intent-llm")
 
 export const INTENT_LLM_CONFIDENCE_THRESHOLD = 0.5
 export const INTENT_LLM_TIMEOUT_MS = 5_000
@@ -161,11 +164,10 @@ export async function routeAssistantIntentWithLlm(input: {
                 : llm.rationale,
         })
     } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        console.warn("[assistant/intent-llm] classify failed; falling back to rules", {
+        log.warn({
+            err: toLogError(error),
             rulesHadAdmin,
-            message,
-        })
+        }, "意图模型分类失败，回退到规则")
         if (rulesHadAdmin) {
             return finalize({
                 ...rulesResult,
