@@ -8,6 +8,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import { knowledgeBaseArticlePath } from "@/lib/dashboard-routes"
 import { cn } from "@/lib/utils"
 import type { EvidenceViewModel } from "@/features/agent-runs/types"
+import { groupEvidenceBySource } from "@/features/agent-runs/evidence-sources"
 
 /**
  * 来源面板与来源卡片（§162.13~§162.16/§162.18）。
@@ -24,9 +25,11 @@ export function AgentEvidencePanel({
     const [open, setOpen] = useState(false)
     if (evidence.length === 0) return null
 
-    const knowledge = evidence.filter((item) => item.source === "knowledge")
-    const internal = evidence.filter((item) => item.source !== "web" && item.source !== "knowledge")
+    const knowledge = evidence.filter((item) => item.source === "knowledge" || item.source === "wiki")
+    const internal = evidence.filter((item) =>
+        item.source !== "web" && item.source !== "knowledge" && item.source !== "wiki")
     const external = evidence.filter((item) => item.source === "web")
+    const sourceCount = groupEvidenceBySource(evidence).length
 
     return (
         <Drawer open={open} onOpenChange={setOpen}>
@@ -37,14 +40,14 @@ export function AgentEvidencePanel({
                     className={cn("h-7 gap-1.5 px-2 text-[12px] text-muted-foreground", className)}
                 >
                     <BookOpen className="size-3.5" aria-hidden />
-                    来源 {evidence.length}
+                    来源 {sourceCount}
                 </Button>
             </DrawerTrigger>
             <DrawerContent className="max-h-[80vh]">
                 <DrawerHeader className="pb-2">
                     <DrawerTitle className="text-base">回答依据</DrawerTitle>
                     <DrawerDescription>
-                        共 {evidence.length} 条可追溯证据
+                        共 {sourceCount} 个来源 · {evidence.length} 条可追溯证据
                         {knowledge.length > 0 ? ` · 知识库章节 ${knowledge.length}` : ""}
                         {internal.length > 0 ? ` · 站内其他 ${internal.length}` : ""}
                         {external.length > 0 ? ` · 外部 ${external.length}` : ""}
@@ -176,6 +179,7 @@ function EvidenceSourceIcon({ source }: { source: EvidenceViewModel["source"] })
         case "memory":
             return <Brain className={common} aria-label="长期记忆" />
         case "knowledge":
+        case "wiki":
             return <BookOpen className={common} aria-label="知识库" />
         default:
             return <Wrench className={common} aria-label="工具结果" />

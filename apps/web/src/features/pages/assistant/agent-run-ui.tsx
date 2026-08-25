@@ -11,6 +11,7 @@ import {
 import { AgentRun } from "@/components/agent/agent-run"
 import { AgentCitation } from "@/components/agent/agent-evidence"
 import { markRetry, useAgentRunsStore } from "@/features/agent-runs/store"
+import { selectCitedEvidenceSources, shouldShowCitationSources } from "@/features/agent-runs/selectors"
 import { isAgentStreamEvent, shouldShowExecutionPanel } from "@/features/agent-runs/types"
 import type { AgentRunViewModel } from "@/features/agent-runs/types"
 import { QaStreamingMarkdown } from "@/features/pages/knowledge/QaMarkdown"
@@ -139,23 +140,17 @@ export function AgentStopButton() {
 /**
  * 答案下方的引用条（§162.17/§162.18）。
  *
- * 正文中的 [n] 保持纯文本，这里给出可点击、可 hover 预览的编号入口，
- * 编号与 Evidence 建立稳定映射。
+ * 正文中的 [n] 只作为内部引用映射，不直接展示；回答进入终态后，
+ * 统一在这里给出可点击、可 hover 预览的来源入口。
  */
 export function AgentCitationBar() {
     const run = useCurrentAgentRun()
     const cited = useMemo(() => {
         if (!run) return []
-        const used = new Set(
-            (run.answer.match(/\[(\d{1,2})\]/g) ?? []).map((token) => Number(token.slice(1, -1))),
-        )
-        // 答案没有显式标注时，退化为展示全部来源编号
-        return used.size > 0
-            ? run.evidence.filter((item) => used.has(item.citationIndex))
-            : run.evidence
+        return selectCitedEvidenceSources(run)
     }, [run])
 
-    if (!run || cited.length === 0) return null
+    if (!run || !shouldShowCitationSources(run) || cited.length === 0) return null
 
     return (
         <div className="not-prose mt-2 flex flex-wrap items-center gap-1.5">

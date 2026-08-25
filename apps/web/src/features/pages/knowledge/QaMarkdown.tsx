@@ -2,7 +2,10 @@
 
 import * as React from "react"
 import { useMessagePartText } from "@assistant-ui/react"
-import { Markdown, remarkVideo, ThemeProvider, type MarkdownProps } from "@lobehub/ui"
+import Markdown from "@lobehub/ui/es/Markdown/index"
+import { remarkVideo } from "@lobehub/ui/es/Markdown/plugins/remarkVideo"
+import type { MarkdownProps } from "@lobehub/ui/es/Markdown/type"
+import ThemeProvider from "@lobehub/ui/es/ThemeProvider/index"
 import { ThinkingOrb, type OrbState } from "thinking-orbs"
 
 import { useTheme } from "@/components/theme-provider"

@@ -147,8 +147,11 @@ describe("过程话不得成为最终答案", () => {
         expect(result.answer).toBe("小鼹鼠是一部动画作品 [1]。")
         expect(result.answer).not.toContain("我来读取正文")
         expect(result.answer).not.toContain("先看看这一篇")
-        // 每次判定为过程话都会重发 started，让前端清掉已渲染的半截文本
-        expect(events.filter((event) => event.type === "final_answer_started").length).toBeGreaterThanOrEqual(2)
+        // 每次判定为过程话都必须显式作废前文，让实时 UI 清掉已渲染的旁白。
+        const resets = events.filter((event) =>
+            event.type === "final_answer_started"
+            && (event.payload as { replace?: boolean }).replace === true)
+        expect(resets).toHaveLength(2)
     })
 
     it("只有过程话、没有后续答案时不会把过程话当结论交付", async () => {

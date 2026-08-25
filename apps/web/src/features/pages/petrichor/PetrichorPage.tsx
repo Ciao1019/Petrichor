@@ -38,7 +38,7 @@ const CAPABILITIES: { title: string; tag: string; detail: string; dot: MarkerCol
         title: "AI 写作助手",
         tag: "Multi-model",
         dot: "green",
-        detail: "卡住了就让它续写、改写、翻译或换语气；总结、导图、知识图谱和周月回顾也一并包办，模型在后台配好即可。",
+        detail: "卡住了就让它续写、改写、翻译或换语气；总结、导图和知识图谱也一并包办，模型在后台配好即可。",
     },
     {
         title: "站内对话助手",

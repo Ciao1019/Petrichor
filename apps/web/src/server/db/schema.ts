@@ -1022,26 +1022,6 @@ export const docQaArtifacts = pgTable("petrichor_doc_qa_artifact", {
     index("idx_petrichor_doc_qa_artifact_thread").on(table.threadId, table.createdAt),
 ])
 
-// AI 回顾报告：按用户 + 周期类型 + 期次唯一，按需生成并缓存
-export const aiReviews = pgTable("petrichor_ai_review", {
-    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
-    userId: bigint("user_id", { mode: "number" }).notNull(),
-    period: text("period").notNull(),
-    periodKey: text("period_key").notNull(),
-    periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
-    periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
-    statsJson: text("stats_json").notNull(),
-    narrative: text("narrative").notNull(),
-    modelConfigId: bigint("model_config_id", { mode: "number" }),
-    regenerateCount: integer("regenerate_count").notNull().default(0),
-    lastRegeneratedAt: timestamp("last_regenerated_at", { withTimezone: true }),
-    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
-    ...timestamps,
-}, (table) => [
-    uniqueIndex("ux_petrichor_ai_review_user_period").on(table.userId, table.period, table.periodKey),
-    index("idx_petrichor_ai_review_user_generated").on(table.userId, table.generatedAt),
-])
-
 // 文档导入任务：PDF / Word 每页图片经多模态识别后合并为一篇文章
 export const knowledgeBaseImportJobs = pgTable("petrichor_kb_import_job", {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
@@ -1355,7 +1335,6 @@ export type AiCredentialRecord = typeof aiCredentials.$inferSelect
 export type AiProviderRecord = typeof aiProviders.$inferSelect
 export type AiModelRecord = typeof aiModels.$inferSelect
 export type AiBindingRecord = typeof aiBindings.$inferSelect
-export type AiReviewRecord = typeof aiReviews.$inferSelect
 export type KnowledgeBaseImportJobRecord = typeof knowledgeBaseImportJobs.$inferSelect
 export type KnowledgeBaseImportJobPageRecord = typeof knowledgeBaseImportJobPages.$inferSelect
 export type AgentMemoryRecord = typeof agentMemories.$inferSelect

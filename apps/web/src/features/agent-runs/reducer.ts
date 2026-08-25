@@ -14,6 +14,7 @@ import type {
     SubAgentViewModel,
 } from "./types"
 import { annotateNormalQaWikiMentions, type WikiMentionTarget } from "@/lib/wiki-mentions"
+import { assignEvidenceCitationIndices } from "./evidence-sources"
 
 /**
  * Agent Run reducer（§162.5）。
@@ -345,11 +346,10 @@ function patchSubAgent(
     return next
 }
 
-/** 证据按到达顺序分配稳定的引用编号（§162.17） */
+/** 证据按真实来源分配稳定引用编号；同一文章的多个章节共享一个编号（§162.17） */
 function appendEvidence(existing: EvidenceViewModel[], incoming: unknown): EvidenceViewModel[] {
     if (!Array.isArray(incoming)) return existing
     const known = new Set(existing.map((item) => item.id))
-    let cursor = existing.length
     const added: EvidenceViewModel[] = []
 
     for (const item of incoming) {
@@ -358,7 +358,6 @@ function appendEvidence(existing: EvidenceViewModel[], incoming: unknown): Evide
         const id = typeof record.id === "string" ? record.id : ""
         if (!id || known.has(id)) continue
         known.add(id)
-        cursor += 1
         added.push({
             id,
             source: (record.source as EvidenceViewModel["source"]) ?? "tool",
@@ -366,13 +365,14 @@ function appendEvidence(existing: EvidenceViewModel[], incoming: unknown): Evide
             ...(typeof record.snippet === "string" ? { snippet: record.snippet } : {}),
             ...(typeof record.url === "string" ? { url: record.url } : {}),
             ...(typeof record.nodeKey === "string" ? { nodeKey: record.nodeKey } : {}),
+            ...(typeof record.pageKey === "string" ? { pageKey: record.pageKey } : {}),
             ...(typeof record.articleId === "string" ? { articleId: record.articleId } : {}),
             ...(typeof record.knowledgeBaseId === "string" ? { knowledgeBaseId: record.knowledgeBaseId } : {}),
             ...(Array.isArray(record.path) ? { path: record.path as string[] } : {}),
             ...(typeof record.relevance === "number" ? { relevance: record.relevance } : {}),
-            citationIndex: cursor,
+            citationIndex: typeof record.citationIndex === "number" ? record.citationIndex : 0,
         })
     }
 
-    return added.length > 0 ? [...existing, ...added] : existing
+    return added.length > 0 ? assignEvidenceCitationIndices([...existing, ...added]) : existing
 }

@@ -1799,117 +1799,6 @@ export interface NotificationReadAllResponse {
   readAt?: string | null
 }
 
-export type AiReviewPeriod = "WEEK" | "MONTH"
-
-export interface AiReviewStatsTopArticle {
-  id: string
-  title: string
-  charCount: number
-  isNew: boolean
-  knowledgeBaseId: string | null
-  knowledgeBaseName: string | null
-  updatedAt: string
-}
-
-export interface AiReviewStatsTopTag {
-  tag: string
-  count: number
-}
-
-export interface AiReviewStatsKnowledgeBase {
-  id: string
-  name: string
-  articleCount: number
-}
-
-export interface AiReviewEvolutionEntry {
-  period: string
-  title: string
-  note: string
-}
-
-export interface AiReviewEvolution {
-  topic: string
-  synthesis: string
-  entries: AiReviewEvolutionEntry[]
-}
-
-export interface AiReviewStats {
-  newArticles: number
-  updatedArticles: number
-  totalChars: number
-  knowledgeBaseCount: number
-  topTags: AiReviewStatsTopTag[]
-  topArticles: AiReviewStatsTopArticle[]
-  knowledgeBases: AiReviewStatsKnowledgeBase[]
-  evolution?: AiReviewEvolution | null
-}
-
-export interface AiReviewResponse {
-  id: string | null
-  period: AiReviewPeriod
-  periodKey: string
-  periodStart: string
-  periodEnd: string
-  stats: AiReviewStats
-  narrative: string
-  generatedAt: string | null
-  modelConfigId: string | null
-  regenerateCount: number
-  canRegenerate: boolean
-  hasActivity: boolean
-  fromCache: boolean
-}
-
-export interface AiReviewGetRequest {
-  period: AiReviewPeriod
-  periodKey?: string
-  forceRebuild?: boolean
-}
-
-export interface AiReviewListItem {
-  id: string
-  period: AiReviewPeriod
-  periodKey: string
-  periodStart: string
-  periodEnd: string
-  generatedAt: string
-  statsSummary: {
-    newArticles: number
-    updatedArticles: number
-    totalChars: number
-  }
-  narrativeExcerpt: string
-}
-
-export interface AiReviewListRequest {
-  period?: AiReviewPeriod | ""
-  pageNum?: number
-  pageSize?: number
-}
-
-export interface AiReviewPeriodOption {
-  key: string
-  label: string
-  isCurrent: boolean
-  isDefault: boolean
-}
-
-export interface AiReviewPeriodOptionsResponse {
-  week: AiReviewPeriodOption[]
-  month: AiReviewPeriodOption[]
-}
-
-export const aiReviewApi = {
-  get: (data: AiReviewGetRequest) => api.post<AiReviewResponse>("/ai/review/get", data),
-  regenerate: (data: { period: AiReviewPeriod; periodKey?: string }) =>
-    api.post<AiReviewResponse>("/ai/review/regenerate", data),
-  list: (data: AiReviewListRequest) =>
-    api.post<TableDataInfo<AiReviewListItem>>("/ai/review/list", data),
-  periodOptions: () =>
-    api.post<AiReviewPeriodOptionsResponse>("/ai/review/period-options", {}),
-}
-
 export const notificationApi = {
   summary: () => api.get<NotificationSummaryResponse>("/notification/summary"),
   list: (data: NotificationListRequest) => api.post<TableDataInfo<NotificationItem>>("/notification/list", data),
@@ -2685,15 +2574,17 @@ export interface AgentRunActivityResponse {
 
 export interface AgentRunEvidenceResponse {
   id: string
-  source: "knowledge" | "web" | "graph" | "memory" | "subagent" | "tool"
+  source: "knowledge" | "wiki" | "web" | "graph" | "memory" | "subagent" | "tool"
   title: string
   snippet?: string
   url?: string
   nodeKey?: string
+  pageKey?: string
   articleId?: string
   knowledgeBaseId?: string
   path?: string[]
   relevance?: number
+  citationIndex?: number
 }
 
 export interface AgentRunDetailResponse {

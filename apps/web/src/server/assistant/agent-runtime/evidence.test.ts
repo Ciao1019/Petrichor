@@ -67,6 +67,31 @@ describe("EvidenceStore 去重", () => {
 
         expect(store.size).toBe(2)
         expect(store.all.map((item) => item.metadata?.nodeKey)).toEqual(["a1-install", "a1-uninstall"])
+        expect(store.all.map((item) => store.citationIndex(item.id))).toEqual([1, 1])
+    })
+
+    it("同一文章的多个章节共享来源编号，不同文章才递增", () => {
+        const store = new EvidenceStore()
+        const first = store.add({
+            source: "knowledge",
+            content: "定义",
+            sourceId: "mole-definition",
+            metadata: { knowledgeBaseId: "1", articleId: "10", nodeKey: "mole-definition" },
+        })
+        const second = store.add({
+            source: "knowledge",
+            content: "核心功能",
+            sourceId: "mole-features",
+            metadata: { knowledgeBaseId: "1", articleId: "10", nodeKey: "mole-features" },
+        })
+        const third = store.add({
+            source: "knowledge",
+            content: "另一篇文章",
+            sourceId: "other",
+            metadata: { knowledgeBaseId: "1", articleId: "11", nodeKey: "other" },
+        })
+
+        expect([first, second, third].map((item) => store.citationIndex(item.id))).toEqual([1, 1, 2])
     })
 
     it("正文相同但 URL 不同的外部来源不会丢失出处", () => {

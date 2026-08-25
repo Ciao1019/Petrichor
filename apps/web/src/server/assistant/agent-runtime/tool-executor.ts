@@ -233,7 +233,10 @@ export class ToolExecutor {
         })
         this.deps.events?.emit("observation_created", { observation: toPublicObservation(observation) })
         if (evidence.length > 0) {
-            this.deps.events?.emit("evidence_created", { evidence: evidence.map(toPublicEvidence) })
+            this.deps.events?.emit("evidence_created", {
+                evidence: evidence.map((item) =>
+                    toPublicEvidence(item, this.deps.evidence.citationIndex(item.id))),
+            })
         }
 
         return {

@@ -87,7 +87,7 @@ export type AgentStreamEventPayloadMap = {
     }
     /**
      * 开始新的一段作答。
-     * replace=true 表示整段重答（质量重写），前端应丢弃已流出的内容；
+     * replace=true 表示前文已失效（过程话或质量重写），前端应丢弃已流出的内容；
      * 缺省表示只是换段（工具调用打断），前端保留前文、另起一段。
      */
     final_answer_started: { replace?: boolean }
@@ -129,10 +129,12 @@ export type PublicEvidence = {
     snippet?: string
     url?: string
     nodeKey?: string
+    pageKey?: string
     articleId?: string
     knowledgeBaseId?: string
     path?: string[]
     relevance?: number
+    citationIndex?: number
 }
 
 export type AgentStreamEvent<T extends AgentStreamEventType = AgentStreamEventType> = {
@@ -183,7 +185,7 @@ export function toPublicObservation(observation: AgentObservation): PublicObserv
     }
 }
 
-export function toPublicEvidence(evidence: AgentEvidence): PublicEvidence {
+export function toPublicEvidence(evidence: AgentEvidence, citationIndex?: number): PublicEvidence {
     const metadata = evidence.metadata ?? {}
     return {
         id: evidence.id,
@@ -192,11 +194,13 @@ export function toPublicEvidence(evidence: AgentEvidence): PublicEvidence {
         ...(evidence.content ? { snippet: evidence.content.slice(0, 280) } : {}),
         ...(evidence.url ? { url: evidence.url } : {}),
         ...(typeof metadata.nodeKey === "string" ? { nodeKey: metadata.nodeKey } : {}),
+        ...(typeof metadata.pageKey === "string" ? { pageKey: metadata.pageKey } : {}),
         ...(typeof metadata.articleId === "string" ? { articleId: metadata.articleId } : {}),
         ...(typeof metadata.knowledgeBaseId === "string"
             ? { knowledgeBaseId: metadata.knowledgeBaseId }
             : {}),
         ...(Array.isArray(metadata.path) ? { path: metadata.path as string[] } : {}),
         ...(evidence.relevance != null ? { relevance: evidence.relevance } : {}),
+        ...(citationIndex != null && citationIndex > 0 ? { citationIndex } : {}),
     }
 }

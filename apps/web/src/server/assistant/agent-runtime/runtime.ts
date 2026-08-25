@@ -483,12 +483,11 @@ export class PetrichorAgentRuntime {
                         },
                         onAnswerReset: () => {
                             // 刚才那段是"我来读一下正文"这类过程话，后面还有工具调用。
-                            // 服务端仍然只把最后一段当作最终答案（见 mastra-bridge），
-                            // 但前端不再清空已经流出的字——那会让用户看见内容凭空消失。
-                            // 这里只标记换段，前端把上一段归档、另起一段继续。
+                            // 服务端只把最后一段当作最终答案（见 mastra-bridge），前端也必须
+                            // 丢弃已经流出的过程话；否则 Run 结束前它会被归档进可见正文。
                             if (!answerStarted) return
                             answerStarted = false
-                            events.emit("final_answer_started", {})
+                            events.emit("final_answer_started", { replace: true })
                         },
                         onToolOutcome: (outcome: ToolRunOutcome) => {
                             const decision = stopPolicy.evaluateAfterToolCall(state.current)

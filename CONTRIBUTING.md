@@ -166,11 +166,11 @@ bun dev
 示例：
 
 ```
-feat(ai-review): 新增 AI 周报 / 月报功能
+feat(knowledge): 新增文档导入功能
 
-- 新增 petrichor_ai_review 表
-- 新增 /api/ai-review handler 与前端页面
-- 单元测试覆盖 prompt 拼装与周期计算
+- 新增导入任务列表与详情页
+- 接入文档解析接口
+- 单元测试覆盖分页与状态转换
 ```
 
 ---

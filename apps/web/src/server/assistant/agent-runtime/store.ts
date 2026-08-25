@@ -8,6 +8,7 @@ import {
     agentTraceEvents,
 } from "@/server/db/schema"
 import type { AgentRunEval } from "./eval"
+import { citationIndicesForEvidence } from "./evidence"
 import { toPublicEvidence, type PublicEvidence } from "./events"
 import type { AgentRunMetrics } from "./events"
 import type {
@@ -300,6 +301,20 @@ async function loadAgentRunViewUnsafe(runKey: string, userId: number): Promise<A
         })
     }
 
+    const restoredEvidence: AgentEvidence[] = evidenceRows.map((row) => ({
+        id: row.evidenceKey,
+        source: row.source as AgentEvidence["source"],
+        ...(row.title ? { title: row.title } : {}),
+        content: row.content,
+        ...(row.sourceId ? { sourceId: row.sourceId } : {}),
+        ...(row.url ? { url: row.url } : {}),
+        ...(row.relevance != null ? { relevance: row.relevance / 100 } : {}),
+        ...(row.confidence != null ? { confidence: row.confidence / 100 } : {}),
+        metadata: parseJson<Record<string, unknown>>(row.metadataJson) ?? {},
+        createdAt: new Date(row.createdAt).getTime(),
+    }))
+    const restoredCitationIndices = citationIndicesForEvidence(restoredEvidence)
+
     return {
         id: run.runKey,
         conversationId: run.conversationId,
@@ -319,18 +334,8 @@ async function loadAgentRunViewUnsafe(runKey: string, userId: number): Promise<A
             evidenceCount: row.evidenceCount,
             ...(row.durationMs != null ? { durationMs: row.durationMs } : {}),
         })),
-        evidence: evidenceRows.map((row) => toPublicEvidence({
-            id: row.evidenceKey,
-            source: row.source as AgentEvidence["source"],
-            ...(row.title ? { title: row.title } : {}),
-            content: row.content,
-            ...(row.sourceId ? { sourceId: row.sourceId } : {}),
-            ...(row.url ? { url: row.url } : {}),
-            ...(row.relevance != null ? { relevance: row.relevance / 100 } : {}),
-            ...(row.confidence != null ? { confidence: row.confidence / 100 } : {}),
-            metadata: parseJson<Record<string, unknown>>(row.metadataJson) ?? {},
-            createdAt: new Date(row.createdAt).getTime(),
-        })),
+        evidence: restoredEvidence.map((item, index) =>
+            toPublicEvidence(item, restoredCitationIndices[index])),
         metrics: {
             durationMs: run.durationMs ?? 0,
             toolCalls: run.toolCallCount,

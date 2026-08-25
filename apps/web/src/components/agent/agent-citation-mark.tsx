@@ -2,13 +2,13 @@
 
 import type { ComponentProps } from "react"
 import { useCurrentAgentRunEvidence } from "@/features/agent-runs/use-current-run"
-import { AgentCitation } from "./agent-evidence"
 
 /**
- * 正文内的引用角标渲染器（§162.17/§162.18）。
+ * 正文内的引用标记解析器（§162.17/§162.18）。
  *
  * remarkCitations 把 [n] 转成 <citation data-citation-index="n">，
- * 这里按编号找到对应 Evidence；找不到就退回纯文本，不制造死链接。
+ * Agent Run 的真实引用统一放到答案末尾的“来源”条，因此正文不再渲染角标。
+ * 找不到对应 Evidence 时保留原文，避免误删普通内容里的数字方括号。
  */
 export function AgentCitationMark(props: ComponentProps<"span"> & { "data-citation-index"?: string }) {
     const rawIndex = props["data-citation-index"]
@@ -18,5 +18,5 @@ export function AgentCitationMark(props: ComponentProps<"span"> & { "data-citati
     if (!evidence) {
         return <span className="align-super text-[10px] text-muted-foreground">[{rawIndex}]</span>
     }
-    return <AgentCitation evidence={evidence} />
+    return null
 }

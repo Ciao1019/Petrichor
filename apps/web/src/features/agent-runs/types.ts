@@ -63,7 +63,7 @@ export type SubAgentViewModel = {
     completedAt?: number
 }
 
-export type EvidenceSource = "knowledge" | "web" | "graph" | "memory" | "subagent" | "tool"
+export type EvidenceSource = "knowledge" | "wiki" | "web" | "graph" | "memory" | "subagent" | "tool"
 
 export type EvidenceViewModel = {
     id: string
@@ -72,6 +72,7 @@ export type EvidenceViewModel = {
     snippet?: string
     url?: string
     nodeKey?: string
+    pageKey?: string
     articleId?: string
     knowledgeBaseId?: string
     path?: string[]

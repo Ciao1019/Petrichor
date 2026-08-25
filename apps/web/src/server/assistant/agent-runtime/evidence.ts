@@ -67,14 +67,15 @@ export class EvidenceStore {
     }
 
     /**
-     * 一次 Run 内稳定的引用编号（1-based）。
+     * 一次 Run 内稳定的来源编号（1-based）。
      *
-     * Evidence 的相关性排序可以变化，但回答里的 [n]、流式事件与前端来源卡必须始终
-     * 指向同一条证据，所以编号只能由首次入库顺序决定，不能在每次 Top-N 时重排。
+     * 同一篇文章可以产生多条章节 Evidence，但它们属于同一个真实来源，应共享 [n]。
+     * 来源的相关性排序可以变化，编号仍只由首次入库顺序决定，不能在 Top-N 时重排。
      */
     citationIndex(id: string): number {
-        const index = this.items.findIndex((item) => item.id === id)
-        return index < 0 ? 0 : index + 1
+        const itemIndex = this.items.findIndex((item) => item.id === id)
+        if (itemIndex < 0) return 0
+        return citationIndicesForEvidence(this.items)[itemIndex] ?? 0
     }
 
     /** 按综合分排序取前 N（§22 evidence budget 的输入） */
@@ -84,6 +85,43 @@ export class EvidenceStore {
             : this.items
         return [...pool].sort((a, b) => scoreEvidence(b) - scoreEvidence(a)).slice(0, n)
     }
+}
+
+/**
+ * 给证据按“真实来源”编号：知识库章节按所属文章归并，Wiki 页面按 pageKey 归并，
+ * 外部页面按规范化 URL 归并；缺少来源定位时才退回单条证据 id。
+ */
+export function citationSourceKey(evidence: AgentEvidence): string {
+    const metadata = evidence.metadata ?? {}
+    const knowledgeBaseId = typeof metadata.knowledgeBaseId === "string"
+        ? metadata.knowledgeBaseId.trim()
+        : ""
+    const scope = knowledgeBaseId ? `${knowledgeBaseId}:` : ""
+    const pageKey = typeof metadata.pageKey === "string" ? metadata.pageKey.trim() : ""
+    if ((evidence.source === "knowledge" || evidence.source === "wiki") && pageKey) {
+        return `wiki:${scope}${pageKey}`
+    }
+
+    const articleId = typeof metadata.articleId === "string" ? metadata.articleId.trim() : ""
+    if (evidence.source === "knowledge" && articleId) {
+        return `knowledge-article:${scope}${articleId}`
+    }
+
+    if (evidence.url?.trim()) return `url:${canonicalUrl(evidence.url)}`
+    if (evidence.sourceId?.trim()) return `source:${evidence.source}:${evidence.sourceId.trim()}`
+    return `evidence:${evidence.id}`
+}
+
+export function citationIndicesForEvidence(evidence: AgentEvidence[]): number[] {
+    const indices = new Map<string, number>()
+    return evidence.map((item) => {
+        const key = citationSourceKey(item)
+        const existing = indices.get(key)
+        if (existing != null) return existing
+        const index = indices.size + 1
+        indices.set(key, index)
+        return index
+    })
 }
 
 /**

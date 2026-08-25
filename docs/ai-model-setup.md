@@ -108,8 +108,8 @@ docs/migrations/2026-08-21-article-knowledge-retrieval-index.sql
 ```
 
 第一个会 **删除** `petrichor_ai_model_config` 且不迁移存量数据，执行后需要在「模型配置」页重新接入。
-同时会把 `petrichor_assistant_run` / `petrichor_kb_import_job` / `petrichor_ai_review` 上的
-`model_config_id` 清空——这三列语义已改为指向 `petrichor_ai_model.id`，旧值是悬空引用。
+同时会把 `petrichor_assistant_run` / `petrichor_kb_import_job` 上的
+`model_config_id` 清空——这两列语义已改为指向 `petrichor_ai_model.id`，旧值是悬空引用。
 
 第二个把三张表的向量列放宽为无约束 `vector`，拆掉钉死维度的旧 HNSW 索引并按
 新形式重建 1024 维那条，再给 `petrichor_kb_wiki_tree_node` 加上生命周期元数据列。

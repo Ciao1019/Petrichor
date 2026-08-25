@@ -47,7 +47,7 @@ body:
       options:
         - 富文本编辑器 (PlateJS)
         - 知识库 / 文章
-        - AI 助手 / AI 回顾
+        - AI 助手
         - 认证 / 账号 / OAuth
         - 上传 / 对象存储
         - 仪表盘 / 统计

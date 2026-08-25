@@ -106,19 +106,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         title: "智能应用",
         url: dashboardRoutes.assistant,
         icon: IconSparkles,
-        isActive:
-          isDashboardSectionPath(pathname, "assistant") ||
-          isDashboardSectionPath(pathname, "ai/review"),
+        isActive: isDashboardSectionPath(pathname, "assistant"),
         items: [
           {
             title: "助手",
             url: dashboardRoutes.assistant,
             icon: IconRobot,
-          },
-          {
-            title: "AI 回顾",
-            url: dashboardRoutes.aiReview,
-            icon: IconHistory,
           },
         ],
       },

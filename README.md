@@ -42,7 +42,7 @@
 
 ## 📖 简介
 
-**Petrichor**是一个个人/小团队场景下的现代化知识库与博客平台，集成了富文本编辑器、知识库管理、文章发布、AI 写作助手、AI 回顾周报/月报、对象存储上传等能力。
+**Petrichor**是一个个人/小团队场景下的现代化知识库与博客平台，集成了富文本编辑器、知识库管理、文章发布、AI 写作助手、对象存储上传等能力。
 
 整套系统支持 **Vercel + Supabase** 部署，零自建服务器即可上线，仅需配置好环境变量就能拥有一个完整可用的内容平台。
 
@@ -54,7 +54,7 @@
 | --- | --- |
 | **📝 富文本编辑器** | 基于 PlateJS，支持 Markdown、代码块、表格、数学公式、白板、思维导图、媒体嵌入等 |
 | **📚 知识库** | 多层级目录树、文章标签、文章分享、文章 RSS/Atom Feed |
-| **🤖 AI 助手** | AI 续写 / 改写 / 翻译 / 语气调整、AI 文章总结、AI 周报 & 月报回顾 |
+| **🤖 AI 助手** | AI 续写 / 改写 / 翻译 / 语气调整、AI 文章总结 |
 | **🔐 认证体系** | Better Auth + httpOnly Cookie，支持邮箱密码、LinuxDo OAuth、二步验证 |
 | **🗂️ 对象存储** | S3 兼容上传（封面、附件、头像），支持预签名 URL |
 | **📊 仪表盘** | 写作数据统计、活跃度图、知识库分布 |
@@ -454,7 +454,7 @@ bun test
 
 ## English
 
-**Petrichor** (repo codename *Dosphere*) is a self-hostable knowledge-base & blog platform powered by **Bun 1.3 + React 19 + Vite 7 + Supabase + Vercel**, featuring a PlateJS rich-text editor, multi-level knowledge tree, AI writing assistant (continue / rewrite / translate / tone), AI weekly & monthly reviews, S3-compatible uploads, Better Auth with optional LinuxDo OAuth, and an **Agent integration layer** (REST + downloadable Skill packs compatible with Claude Code / Codex) with full call auditing.
+**Petrichor** (repo codename *Dosphere*) is a self-hostable knowledge-base & blog platform powered by **Bun 1.3 + React 19 + Vite 7 + Supabase + Vercel**, featuring a PlateJS rich-text editor, multi-level knowledge tree, AI writing assistant (continue / rewrite / translate / tone), S3-compatible uploads, Better Auth with optional LinuxDo OAuth, and an **Agent integration layer** (REST + downloadable Skill packs compatible with Claude Code / Codex) with full call auditing.
 
 ### Links
 

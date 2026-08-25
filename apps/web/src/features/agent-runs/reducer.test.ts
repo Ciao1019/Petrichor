@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest"
 import { aggregateActivities, currentActivityLabel } from "./activity-mapper"
 import { agentRunReducer, createEmptyRun, replayEvents } from "./reducer"
-import { selectCompletionSummary, selectEvidenceBySource } from "./selectors"
+import {
+    selectCitedEvidenceSources,
+    selectCompletionSummary,
+    selectEvidenceBySource,
+    shouldShowCitationSources,
+} from "./selectors"
 import { shouldShowExecutionPanel, type AgentStreamEvent } from "./types"
 
 let sequence = 0
@@ -75,6 +80,42 @@ describe("agentRunReducer", () => {
         ])
         expect(run.evidence).toHaveLength(2)
         expect(run.evidence.map((item) => item.citationIndex)).toEqual([1, 2])
+    })
+
+    it("同一文章的两个章节共享一个来源编号", () => {
+        const run = reduce([
+            event("evidence_created", {
+                evidence: [
+                    {
+                        id: "e1",
+                        source: "knowledge",
+                        title: "什么是 Mole",
+                        nodeKey: "mole-definition",
+                        articleId: "10",
+                        knowledgeBaseId: "1",
+                    },
+                    {
+                        id: "e2",
+                        source: "knowledge",
+                        title: "核心功能",
+                        nodeKey: "mole-features",
+                        articleId: "10",
+                        knowledgeBaseId: "1",
+                    },
+                ],
+            }),
+        ])
+
+        expect(run.evidence).toHaveLength(2)
+        expect(run.evidence.map((item) => item.citationIndex)).toEqual([1, 1])
+        expect(selectCitedEvidenceSources(run).map((item) => item.citationIndex)).toEqual([1])
+        expect(shouldShowCitationSources(run)).toBe(false)
+
+        const completed = agentRunReducer(run, event("agent_completed", {
+            status: "completed",
+            metrics: { durationMs: 1_000, toolCalls: 1 },
+        }))
+        expect(shouldShowCitationSources(completed)).toBe(true)
     })
 
     it("子代理独立更新状态，支持并行展示", () => {

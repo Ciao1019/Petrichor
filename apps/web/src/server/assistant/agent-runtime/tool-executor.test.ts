@@ -125,6 +125,9 @@ describe("ToolExecutor 正常路径", () => {
             "evidence_created",
         ])
         expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4])
+        expect(events.at(-1)?.payload).toMatchObject({
+            evidence: [expect.objectContaining({ citationIndex: 1 })],
+        })
     })
 
     it("段内模型能看到 Evidence 正文，重复证据沿用同一引用编号", async () => {
