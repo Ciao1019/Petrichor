@@ -1,5 +1,5 @@
 import { and, eq, gt, isNull } from "drizzle-orm"
-import type { NextRequest } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { getDb } from "@/server/db/client"
 import { authSessions, betterAuthSessions, users } from "@/server/db/schema"
 import { unauthorized } from "@/server/http/response"
@@ -13,7 +13,7 @@ import {
     refreshSessionCookie,
 } from "./session"
 
-async function getBetterAuthCurrentUser(request: NextRequest) {
+async function getBetterAuthCurrentUser(request: AppRequest) {
     const session = await auth.api.getSession({
         headers: request.headers,
     }).catch(() => null)
@@ -41,7 +41,7 @@ async function getBetterAuthCurrentUser(request: NextRequest) {
     })
 }
 
-export async function getCurrentUser(request: NextRequest) {
+export async function getCurrentUser(request: AppRequest) {
     const betterAuthUser = await getBetterAuthCurrentUser(request)
     if (betterAuthUser) {
         return betterAuthUser
@@ -86,7 +86,7 @@ export async function getCurrentUser(request: NextRequest) {
     return row.user
 }
 
-export async function requireCurrentUser(request: NextRequest) {
+export async function requireCurrentUser(request: AppRequest) {
     const user = await getCurrentUser(request)
     if (!user) {
         throw unauthorized()

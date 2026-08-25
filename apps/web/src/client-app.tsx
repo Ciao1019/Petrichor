@@ -1,12 +1,11 @@
 "use client"
 
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useSearchParams, Outlet } from 'react-router-dom'
-import Link from 'next/link'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useSearchParams, Outlet, Link } from 'react-router-dom'
 import { LoginForm } from '@/components/login-form'
 import { AuthCallback } from '@/components/auth-callback'
 import { ThemeProvider } from '@/components/theme-provider'
 import { ThemeToggle } from '@/components/theme-toggle'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/sonner'
@@ -38,6 +37,7 @@ import { PetrichorPage } from '@/features/pages/petrichor/PetrichorPage'
 import { PublicQaPage } from '@/features/pages/ask/PublicQaPage'
 import { AccountPage } from '@/features/pages/account/AccountPage'
 import { DashboardMetricsPage } from '@/features/pages/dashboard/DashboardMetricsPage'
+import SegmentedPreviewPage from '@/features/pages/demo/SegmentedPreviewPage'
 import { PublicArticlePage } from '@/features/pages/public/PublicArticlePage'
 import { BurnReadPage } from '@/features/pages/public/burn/BurnReadPage'
 import { UserManagementPage } from '@/features/pages/admin/UserManagementPage'
@@ -50,18 +50,44 @@ import { DemoModeBanner } from '@/components/demo-mode-banner'
 import { isPublicSitePath } from '@/lib/public-theme-routes'
 import { SiteAppearanceConfigPage } from '@/features/pages/admin/SiteAppearanceConfigPage'
 import { SiteGraphConfigPage } from '@/features/pages/admin/SiteGraphConfigPage'
+import { authApi } from '@/lib/api'
 
 function LoginPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const [checkingSession, setCheckingSession] = useState(true)
+  const redirect = searchParams.get('redirect')
+  const target =
+    redirect && redirect.startsWith('/') && !redirect.startsWith('//')
+      ? redirect
+      : dashboardRoutes.root
+
+  useEffect(() => {
+    let active = true
+
+    void authApi.me()
+      .then(() => {
+        if (active) navigate(target, { replace: true })
+      })
+      .catch(() => {
+        if (active) setCheckingSession(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [navigate, target])
 
   const handleLoginSuccess = () => {
-    const redirect = searchParams.get('redirect')
-    const target =
-      redirect && redirect.startsWith('/') && !redirect.startsWith('//')
-        ? redirect
-        : dashboardRoutes.root
     navigate(target)
+  }
+
+  if (checkingSession) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4 text-sm text-muted-foreground">
+        正在进入工作台…
+      </div>
+    )
   }
 
   return (
@@ -73,7 +99,7 @@ function LoginPage() {
         <LoginForm className="w-full" onLoginSuccess={handleLoginSuccess} />
         <p className="mt-4 text-center text-xs text-muted-foreground">
           没有账号？
-          <Link href="/demo" className="ml-1 underline underline-offset-4 hover:text-foreground">
+          <Link to="/demo" className="ml-1 underline underline-offset-4 hover:text-foreground">
             免登录进入演示模式
           </Link>
         </p>
@@ -191,6 +217,7 @@ function AppThemeScope() {
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/petrichor" element={<PetrichorPage />} />
             <Route path="/demo" element={<DemoEntry />} />
+            <Route path="/demo/segmented-preview" element={<SegmentedPreviewPage />} />
             <Route path="/p/:shareCode" element={<PublicArticlePage />} />
             <Route path="/b/:code" element={<BurnReadPage />} />
             <Route path="/login" element={<LoginPage />} />
