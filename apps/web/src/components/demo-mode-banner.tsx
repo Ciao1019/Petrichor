@@ -1,15 +1,12 @@
 "use client"
 
-import { FlaskConical, LogOut, Rocket } from "@/components/iconimate"
+import { FlaskConical, LogOut } from "@/components/iconimate"
 
 import { Button } from "@/components/ui/button"
 import { exitDemoMode, isDemoMode } from "@/lib/demo/demo-mode"
 
-const DEPLOY_URL =
-    "https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FCiao1019%2FPetrichor&project-name=petrichor&repository-name=petrichor&root-directory=apps%2Fweb"
-
 /* 演示模式提示条：挂在仪表盘布局顶部，非演示模式时不渲染任何东西。
-   明确告知「数据只在内存里」，并给出转化出口（部署）与退出入口。 */
+   明确告知「数据只在内存里」，并提供退出入口。 */
 export function DemoModeBanner() {
     if (!isDemoMode()) return null
 
@@ -20,15 +17,9 @@ export function DemoModeBanner() {
                 演示模式
             </span>
             <span className="text-amber-800/80 dark:text-amber-200/70">
-                演示模式只会看到部分菜单，自部署之后解锁更多功能。
+                演示模式只会看到部分菜单；连接 Bun Web 与 Go API 后可使用完整功能。
             </span>
-            <span className="ml-auto flex items-center gap-2">
-                <Button asChild size="sm" variant="outline" className="h-6 gap-1 border-amber-400/60 bg-transparent px-2 text-[11px] text-amber-900 hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-900/40">
-                    <a href={DEPLOY_URL} target="_blank" rel="noopener noreferrer">
-                        <Rocket className="size-3" aria-hidden="true" />
-                        部署自己的一份
-                    </a>
-                </Button>
+            <span className="ml-auto">
                 <Button
                     size="sm"
                     variant="ghost"

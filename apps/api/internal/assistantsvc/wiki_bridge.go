@@ -448,6 +448,7 @@ func loadWikiNeighborPages(ctx context.Context, page wikiPageRecord, dir string)
 			if ok {
 				entry["title"] = resolved.Title
 				entry["kind"] = resolved.Kind
+				entry["aliases"] = bridgeFrontmatterAliases(resolved.FrontmatterJSON)
 				entry["summary"] = neighborSummary(resolved)
 			} else {
 				entry["title"] = l.toPageKey
@@ -469,6 +470,7 @@ func loadWikiNeighborPages(ctx context.Context, page wikiPageRecord, dir string)
 				entry["pageKey"] = resolved.PageKey
 				entry["title"] = resolved.Title
 				entry["kind"] = resolved.Kind
+				entry["aliases"] = bridgeFrontmatterAliases(resolved.FrontmatterJSON)
 				entry["summary"] = neighborSummary(resolved)
 			}
 			out = append(out, entry)

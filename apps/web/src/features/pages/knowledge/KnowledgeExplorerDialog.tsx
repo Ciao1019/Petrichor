@@ -283,8 +283,11 @@ function groupRelatedKnowledge(items: RelatedKnowledge[]): RelatedKnowledgeGroup
 
 export function KnowledgeExplorerPanel({
   knowledgeBaseId,
+  focusPageKey,
 }: {
   knowledgeBaseId: string
+  /** 挂载时直接定位到这个知识页（Wiki 图谱双击节点跳进来时用），之后的 props 变化不再生效 */
+  focusPageKey?: string | null
 }) {
   const navigate = useNavigate()
   const [pages, setPages] = React.useState<KnowledgeBaseWikiPageResponse[]>([])
@@ -297,6 +300,9 @@ export function KnowledgeExplorerPanel({
   const [history, setHistory] = React.useState<string[]>([])
   const requestRef = React.useRef(0)
   const selectedPageKeyRef = React.useRef<string | null>(null)
+  // 只消费挂载那一次：把它放进 loadPages 的依赖会让外部状态变化重新拉一遍页面列表，
+  // 也会把用户当前正在看的页面拽回落点
+  const pendingFocusPageKeyRef = React.useRef<string | null>(focusPageKey ?? null)
 
   const knowledgePages = React.useMemo(
     () => filterKnowledgeExplorerPages(pages, "knowledge"),
@@ -399,7 +405,12 @@ export function KnowledgeExplorerPanel({
       const nextPages = response.data.pages.filter((page) => !page.archivedAt)
       setPages(nextPages)
       setExpanded(new Set())
-      const selected = resolveDefaultKnowledgeExplorerPage(nextPages, "knowledge")
+      const focusTarget = pendingFocusPageKeyRef.current
+      pendingFocusPageKeyRef.current = null
+      const selected = (focusTarget
+        ? nextPages.find((page) => page.pageKey === focusTarget)
+        : undefined)
+        ?? resolveDefaultKnowledgeExplorerPage(nextPages, "knowledge")
       if (selected) await selectPageKey(selected.pageKey, false)
       else {
         requestRef.current += 1

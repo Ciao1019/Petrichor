@@ -196,14 +196,13 @@ pnpm analyze
 
 ### 建议集成的工具
 
-1. **Vercel Analytics** (免费)
-```bash
-pnpm add @vercel/analytics
-```
+1. **OpenTelemetry**
+
+   对接自托管 Collector 或现有可观测平台，统一采集前端 Web Vitals 与 Go API 指标。
 
 2. **Sentry 错误追踪**
 ```bash
-pnpm add @sentry/nextjs
+bun add @sentry/react
 ```
 
 3. **Web Vitals 报告**

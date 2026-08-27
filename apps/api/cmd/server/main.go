@@ -15,7 +15,10 @@ import (
 )
 
 func main() {
-	cfg := config.Get()
+	cfg, err := config.Initialize()
+	if err != nil {
+		log.Fatal(err)
+	}
 	aicore.WireInvokers()
 	bootstrap.WireLLM()
 	if !config.IsProduction() {
@@ -55,7 +58,7 @@ func main() {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 	})
 
-	addr := ":" + cfg.APIPort
+	addr := cfg.Host + ":" + cfg.APIPort
 	log.Printf("Petrichor Go API listening on %s", addr)
 	if err := r.Run(addr); err != nil {
 		log.Fatal(err)

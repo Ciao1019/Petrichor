@@ -15,7 +15,7 @@ import (
 
 // 统一的多协议调用层：OpenAI 兼容 / Anthropic Messages / Google Gemini。
 
-type sseDeltaFunc func(payload string) (delta string, done bool)
+type sseDeltaFunc func(payload string, result *ChatResult) (delta string, done bool)
 type nonStreamParser func(data []byte) (*ChatResult, error)
 
 type protocolRequest struct {
@@ -77,7 +77,7 @@ func executeProtocol(ctx context.Context, reqMeta protocolRequest, stream bool, 
 		if payload == "" || payload == "[DONE]" {
 			continue
 		}
-		delta, done := parseSSE(payload)
+		delta, done := parseSSE(payload, res)
 		if delta != "" {
 			res.Answer += delta
 			if onDelta != nil {
@@ -139,10 +139,14 @@ func anthropicChat(ctx context.Context, rt RuntimeConfig, modelID string, msgs [
 	}
 
 	raw, _ := json.Marshal(body)
+	headers := map[string]string{"x-api-key": rt.APIKey, "anthropic-version": "2023-06-01"}
+	for key, value := range rt.Headers {
+		headers[key] = value
+	}
 	return executeProtocol(ctx, protocolRequest{
 		URL:     rt.effectiveBaseURL("https://api.anthropic.com/v1") + "/messages",
 		Body:    raw,
-		Headers: map[string]string{"x-api-key": rt.APIKey, "anthropic-version": "2023-06-01"},
+		Headers: headers,
 	}, stream, onDelta, parseAnthropicResponse, anthropicSSEDelta)
 }
 
@@ -176,9 +180,19 @@ func parseAnthropicResponse(data []byte) (*ChatResult, error) {
 	return res, nil
 }
 
-func anthropicSSEDelta(payload string) (string, bool) {
+func anthropicSSEDelta(payload string, result *ChatResult) (string, bool) {
 	var evt struct {
-		Type  string `json:"type"`
+		Type    string `json:"type"`
+		Message struct {
+			Usage struct {
+				InputTokens  int64 `json:"input_tokens"`
+				OutputTokens int64 `json:"output_tokens"`
+			} `json:"usage"`
+		} `json:"message"`
+		Usage struct {
+			InputTokens  int64 `json:"input_tokens"`
+			OutputTokens int64 `json:"output_tokens"`
+		} `json:"usage"`
 		Delta struct {
 			Type string `json:"type"`
 			Text string `json:"text"`
@@ -186,6 +200,18 @@ func anthropicSSEDelta(payload string) (string, bool) {
 	}
 	if err := json.Unmarshal([]byte(payload), &evt); err != nil {
 		return "", false
+	}
+	if evt.Message.Usage.InputTokens > 0 {
+		result.InputTokens = evt.Message.Usage.InputTokens
+	}
+	if evt.Message.Usage.OutputTokens > 0 {
+		result.OutputTokens = evt.Message.Usage.OutputTokens
+	}
+	if evt.Usage.InputTokens > 0 {
+		result.InputTokens = evt.Usage.InputTokens
+	}
+	if evt.Usage.OutputTokens > 0 {
+		result.OutputTokens = evt.Usage.OutputTokens
 	}
 	switch evt.Type {
 	case "content_block_delta":
@@ -262,9 +288,8 @@ func googleChat(ctx context.Context, rt RuntimeConfig, modelID string, msgs []Ch
 	raw, _ := json.Marshal(body)
 	base := rt.effectiveBaseURL("https://generativelanguage.googleapis.com/v1beta")
 	return executeProtocol(ctx, protocolRequest{
-		URL:   base + "/models/" + modelID + action,
-		Body:  raw,
-		Query: query,
+		URL: base + "/models/" + modelID + action, Body: raw, Query: query,
+		Headers: rt.Headers,
 	}, stream, onDelta, parseGoogleResponse, googleSSEDelta)
 }
 
@@ -294,10 +319,24 @@ func parseGoogleResponse(data []byte) (*ChatResult, error) {
 	return res, nil
 }
 
-func googleSSEDelta(payload string) (string, bool) {
+func googleSSEDelta(payload string, result *ChatResult) (string, bool) {
 	res, err := parseGoogleResponse([]byte(payload))
 	if err != nil || res == nil || res.Answer == "" {
+		if res != nil {
+			if res.InputTokens > 0 {
+				result.InputTokens = res.InputTokens
+			}
+			if res.OutputTokens > 0 {
+				result.OutputTokens = res.OutputTokens
+			}
+		}
 		return "", false
+	}
+	if res.InputTokens > 0 {
+		result.InputTokens = res.InputTokens
+	}
+	if res.OutputTokens > 0 {
+		result.OutputTokens = res.OutputTokens
 	}
 	return res.Answer, false
 }

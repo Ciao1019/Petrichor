@@ -9,7 +9,7 @@ import {
   useIsMarkdownCodeBlock,
 } from "@assistant-ui/react-markdown";
 import remarkGfm from "remark-gfm";
-import { remarkVideo } from "@lobehub/ui";
+import { remarkVideo } from "@lobehub/ui/es/Markdown/plugins/remarkVideo";
 import { type ComponentProps, type FC, memo, useState } from "react";
 import { CheckIcon, CopyIcon } from "@/components/iconimate";
 

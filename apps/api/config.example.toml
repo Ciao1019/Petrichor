@@ -1,0 +1,98 @@
+[server]
+environment = "development"
+host = "0.0.0.0"
+port = 8080
+base_url = "http://localhost:3000"
+
+[database]
+url = "postgres://postgres:password@127.0.0.1:5432/postgres"
+migration_url = ""
+
+[auth]
+session_secret = "replace-with-at-least-32-characters"
+session_expire_seconds = 172800
+register_enabled = false
+default_system_role = "USER"
+
+[auth.linuxdo]
+client_id = ""
+client_secret = ""
+redirect_uri = ""
+
+[auth.local_development]
+enabled = false
+user_id = 0
+
+[encryption]
+key = "replace-with-stable-random-secret"
+salt = "replace-with-16-hex-chars"
+
+[storage]
+local_directory = ""
+
+[storage.s3]
+endpoint = ""
+region = "us-east-1"
+access_key_id = ""
+secret_access_key = ""
+bucket = ""
+upload_expire_seconds = 900
+download_expire_seconds = 3600
+use_ssl = true
+
+[cache.upstash]
+rest_url = ""
+rest_token = ""
+
+[agent]
+skills_directory = ""
+
+[agent.features]
+runtime_v2 = true
+soft_router = true
+dynamic_skills = true
+delegation = true
+debug = false
+
+[agent.budget]
+max_execution_ms = 0
+max_tokens = 0
+max_delegation_depth = 2
+max_no_progress = 3
+tool_timeout_ms = 45000
+tool_max_retries = 1
+subagent_timeout_ms = 120000
+context_tokens = 100000
+
+[agent.budget.direct]
+max_iterations = 1
+max_tool_calls = 0
+max_subagents = 0
+
+[agent.budget.simple]
+max_iterations = 4
+max_tool_calls = 4
+max_subagents = 0
+
+[agent.budget.multi_step]
+max_iterations = 12
+max_tool_calls = 14
+max_subagents = 2
+
+[agent.budget.complex]
+max_iterations = 24
+max_tool_calls = 32
+max_subagents = 5
+
+# 预留给后续模型直连；当前主要模型配置仍存数据库。
+[agent.model]
+base_url = ""
+api_key = ""
+model = ""
+
+# 可选外部搜索：tavily / serper / brave / searxng。网页抓取无需配置。
+[agent.research]
+provider = ""
+api_key = ""
+base_url = ""
+timeout_ms = 12000

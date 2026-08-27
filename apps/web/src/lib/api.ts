@@ -1328,6 +1328,28 @@ export interface ArticleKnowledgeBuildResponse {
   warnings: string[]
 }
 
+export type ArticleKnowledgeBuildJobStatus = "pending" | "processing" | "completed" | "failed"
+
+export interface ArticleKnowledgeBuildJobResponse {
+  id: string
+  userId: string
+  knowledgeBaseId: string
+  articleId: string
+  status: ArticleKnowledgeBuildJobStatus
+  result: ArticleKnowledgeBuildResponse | null
+  error: string | null
+  startedAt: string | null
+  completedAt: string | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export interface ArticleKnowledgeBuildInput {
+  knowledgeBaseId: string
+  articleId: string
+  forceRebuild?: boolean
+}
+
 /** 「构建知识」持久化的单个文章切片及其推荐问题 */
 export interface ArticleKnowledgeChunkResponse {
   id: string
@@ -1360,6 +1382,43 @@ export interface ArticleKnowledgeChunkListResponse {
   chunks: ArticleKnowledgeChunkResponse[]
 }
 
+/** Wiki 图谱节点：一个未归档的 Wiki 页面 */
+export interface KnowledgeBaseWikiGraphNode {
+  pageKey: string
+  title: string
+  kind: KnowledgeBaseWikiPageKind | string
+  summary: string | null
+  categoryPath: string[]
+  aliases: string[]
+  /** 支撑该页面的来源引用条数，用来给点群节点定权重 */
+  sourceCount: number
+  updatedAt: string
+}
+
+/** Wiki 图谱边：页面之间的出链，已剔除悬空边 */
+export interface KnowledgeBaseWikiGraphLink {
+  id: string
+  fromPageKey: string
+  toPageKey: string
+  linkType: string
+  description: string | null
+}
+
+export interface KnowledgeBaseWikiGraphResponse {
+  knowledgeBaseId: string
+  knowledgeBaseName: string
+  nodes: KnowledgeBaseWikiGraphNode[]
+  links: KnowledgeBaseWikiGraphLink[]
+  stats: {
+    pageCount: number
+    linkCount: number
+    conceptCount: number
+    entityCount: number
+    sourceCount: number
+  }
+  generatedAt: string | null
+}
+
 export const knowledgeBaseWikiAgentApi = {
   dashboard: (knowledgeBaseId: string) =>
     api.post<KnowledgeBaseWikiDashboardResponse>("/kb/wiki/dashboard", { knowledgeBaseId }),
@@ -1369,6 +1428,8 @@ export const knowledgeBaseWikiAgentApi = {
     api.post<KnowledgeBaseWikiPageDetailResponse>("/kb/wiki/page/detail", { knowledgeBaseId, pageKey }),
   tree: (knowledgeBaseId: string, articleId?: string) =>
     api.post<KnowledgeBaseWikiTreeResponse>("/kb/wiki/tree", { knowledgeBaseId, articleId }),
+  graph: (knowledgeBaseId: string) =>
+    api.post<KnowledgeBaseWikiGraphResponse>("/kb/wiki/graph", { knowledgeBaseId }),
   ingest: (data: {
     knowledgeBaseId: string
     articleIds?: string[]
@@ -1377,11 +1438,10 @@ export const knowledgeBaseWikiAgentApi = {
     fullRebuild?: boolean
   }) =>
     api.post<KnowledgeBaseWikiIngestResponse>("/kb/wiki/ingest", data),
-  buildArticleKnowledge: (data: {
-    knowledgeBaseId: string
-    articleId: string
-    forceRebuild?: boolean
-  }) => api.post<ArticleKnowledgeBuildResponse>("/kb/knowledge/build", data),
+  buildArticleKnowledge: (data: ArticleKnowledgeBuildInput) =>
+    api.post<ArticleKnowledgeBuildJobResponse>("/kb/knowledge/build", data),
+  articleKnowledgeBuildStatus: (jobId: string) =>
+    api.post<ArticleKnowledgeBuildJobResponse>("/kb/knowledge/build/status", { jobId }),
   articleChunks: (data: { knowledgeBaseId: string; articleId: string }) =>
     api.post<ArticleKnowledgeChunkListResponse>("/kb/knowledge/chunk/list", data),
   embedWiki: (knowledgeBaseId: string) =>
@@ -1397,6 +1457,36 @@ export const knowledgeBaseWikiAgentApi = {
     api.post<KnowledgeBaseWikiPatchResponse>("/kb/wiki/patch/reject", { knowledgeBaseId, patchId }),
   lint: (knowledgeBaseId: string) =>
     api.post<KnowledgeBaseWikiLintResponse>("/kb/wiki/lint", { knowledgeBaseId }),
+}
+
+const ARTICLE_KNOWLEDGE_BUILD_POLL_TIMEOUT_MS = 12 * 60 * 1_000
+
+/** 创建异步构建任务并等待最终结果；页面请求不会再占用一个长连接。 */
+export async function buildArticleKnowledgeAndWait(
+  data: ArticleKnowledgeBuildInput,
+): Promise<ArticleKnowledgeBuildResponse> {
+  const started = await knowledgeBaseWikiAgentApi.buildArticleKnowledge(data)
+  const deadline = Date.now() + ARTICLE_KNOWLEDGE_BUILD_POLL_TIMEOUT_MS
+  let job = started.data
+  let pollIntervalMs = 750
+
+  while (job.status === "pending" || job.status === "processing") {
+    if (Date.now() >= deadline) {
+      throw new Error("知识构建等待超时，任务可能仍在后台执行，请稍后刷新查看")
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+    const response = await knowledgeBaseWikiAgentApi.articleKnowledgeBuildStatus(job.id)
+    job = response.data
+    pollIntervalMs = Math.min(2_500, Math.round(pollIntervalMs * 1.35))
+  }
+
+  if (job.status === "failed") {
+    throw new Error(job.error || "知识构建失败")
+  }
+  if (!job.result) {
+    throw new Error("知识构建任务已完成，但未返回构建结果")
+  }
+  return job.result
 }
 
 export interface KnowledgeBaseQaModelOption {
@@ -1746,117 +1836,6 @@ export interface NotificationReadAllRequest {
 export interface NotificationReadAllResponse {
   updatedCount: number
   readAt?: string | null
-}
-
-export type AiReviewPeriod = "WEEK" | "MONTH"
-
-export interface AiReviewStatsTopArticle {
-  id: string
-  title: string
-  charCount: number
-  isNew: boolean
-  knowledgeBaseId: string | null
-  knowledgeBaseName: string | null
-  updatedAt: string
-}
-
-export interface AiReviewStatsTopTag {
-  tag: string
-  count: number
-}
-
-export interface AiReviewStatsKnowledgeBase {
-  id: string
-  name: string
-  articleCount: number
-}
-
-export interface AiReviewEvolutionEntry {
-  period: string
-  title: string
-  note: string
-}
-
-export interface AiReviewEvolution {
-  topic: string
-  synthesis: string
-  entries: AiReviewEvolutionEntry[]
-}
-
-export interface AiReviewStats {
-  newArticles: number
-  updatedArticles: number
-  totalChars: number
-  knowledgeBaseCount: number
-  topTags: AiReviewStatsTopTag[]
-  topArticles: AiReviewStatsTopArticle[]
-  knowledgeBases: AiReviewStatsKnowledgeBase[]
-  evolution?: AiReviewEvolution | null
-}
-
-export interface AiReviewResponse {
-  id: string | null
-  period: AiReviewPeriod
-  periodKey: string
-  periodStart: string
-  periodEnd: string
-  stats: AiReviewStats
-  narrative: string
-  generatedAt: string | null
-  modelConfigId: string | null
-  regenerateCount: number
-  canRegenerate: boolean
-  hasActivity: boolean
-  fromCache: boolean
-}
-
-export interface AiReviewGetRequest {
-  period: AiReviewPeriod
-  periodKey?: string
-  forceRebuild?: boolean
-}
-
-export interface AiReviewListItem {
-  id: string
-  period: AiReviewPeriod
-  periodKey: string
-  periodStart: string
-  periodEnd: string
-  generatedAt: string
-  statsSummary: {
-    newArticles: number
-    updatedArticles: number
-    totalChars: number
-  }
-  narrativeExcerpt: string
-}
-
-export interface AiReviewListRequest {
-  period?: AiReviewPeriod | ""
-  pageNum?: number
-  pageSize?: number
-}
-
-export interface AiReviewPeriodOption {
-  key: string
-  label: string
-  isCurrent: boolean
-  isDefault: boolean
-}
-
-export interface AiReviewPeriodOptionsResponse {
-  week: AiReviewPeriodOption[]
-  month: AiReviewPeriodOption[]
-}
-
-export const aiReviewApi = {
-  get: (data: AiReviewGetRequest) => api.post<AiReviewResponse>("/ai/review/get", data),
-  regenerate: (data: { period: AiReviewPeriod; periodKey?: string }) =>
-    api.post<AiReviewResponse>("/ai/review/regenerate", data),
-  list: (data: AiReviewListRequest) =>
-    api.post<TableDataInfo<AiReviewListItem>>("/ai/review/list", data),
-  periodOptions: () =>
-    api.post<AiReviewPeriodOptionsResponse>("/ai/review/period-options", {}),
 }
 
 export const notificationApi = {
@@ -2634,15 +2613,17 @@ export interface AgentRunActivityResponse {
 
 export interface AgentRunEvidenceResponse {
   id: string
-  source: "knowledge" | "web" | "graph" | "memory" | "subagent" | "tool"
+  source: "knowledge" | "wiki" | "web" | "graph" | "memory" | "subagent" | "tool"
   title: string
   snippet?: string
   url?: string
   nodeKey?: string
+  pageKey?: string
   articleId?: string
   knowledgeBaseId?: string
   path?: string[]
   relevance?: number
+  citationIndex?: number
 }
 
 export interface AgentRunDetailResponse {

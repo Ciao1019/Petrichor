@@ -113,7 +113,7 @@ export function buildStaticPublicPageMetadata(pathname: string): Metadata {
         return buildPublicMetadata({
             title: "Petrichor · 开箱即用的全栈知识库与博客平台",
             description:
-                "Petrichor 把富文本编辑器、多层级知识库、公开博客、AI 助手与 Agent 开放层做进同一个 Next.js 全栈应用，Vercel + Supabase 零自建服务器即可上线。",
+                "Petrichor 使用 Bun/Vite 前端与 Go API，集成富文本编辑器、多层级知识库、公开博客、AI 助手与 Agent 开放层。",
             pathname,
         })
     }

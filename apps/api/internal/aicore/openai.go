@@ -278,6 +278,12 @@ func OpenAIChatWithToolsOnce(ctx context.Context, rt RuntimeConfig, modelID stri
 // parseOpenAIPayload 已移至上方独立函数。
 
 func doSSE(ctx context.Context, rt RuntimeConfig, url string, body any, onDelta func(string) error) (*ChatResult, error) {
+	return doSSEWithHeaders(ctx, url, body, onDelta, func(req *http.Request) {
+		applyHeaders(req, rt, nil)
+	})
+}
+
+func doSSEWithHeaders(ctx context.Context, url string, body any, onDelta func(string) error, applyRequestHeaders func(*http.Request)) (*ChatResult, error) {
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -286,7 +292,9 @@ func doSSE(ctx context.Context, rt RuntimeConfig, url string, body any, onDelta 
 	if err != nil {
 		return nil, err
 	}
-	applyHeaders(req, rt, nil)
+	if applyRequestHeaders != nil {
+		applyRequestHeaders(req)
+	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -341,10 +349,12 @@ func doSSE(ctx context.Context, rt RuntimeConfig, url string, body any, onDelta 
 			res.OutputTokens = chunk.Usage.CompletionTokens
 		}
 		for _, choice := range chunk.Choices {
-			if choice.Delta.Content != nil && *choice.Delta.Content != "" && onDelta != nil {
+			if choice.Delta.Content != nil && *choice.Delta.Content != "" {
 				res.Answer += *choice.Delta.Content
-				if err := onDelta(*choice.Delta.Content); err != nil {
-					return res, err
+				if onDelta != nil {
+					if err := onDelta(*choice.Delta.Content); err != nil {
+						return res, err
+					}
 				}
 			}
 			if r := firstNonNil(choice.Delta.ReasoningContent, choice.Delta.Reasoning); r != nil {
@@ -407,7 +417,7 @@ func applyQuirksToOpenAI(body *openAIChatRequest, rt RuntimeConfig, modelID stri
 
 // OpenAIEmbeddings 批量向量。
 func OpenAIEmbeddings(ctx context.Context, rt RuntimeConfig, modelID string, texts []string) ([][]float32, error) {
-	base := rt.effectiveBaseURL(defaultEmbeddingBase(rt.ProviderKey))
+	base := effectiveEmbeddingBaseURL(rt)
 	payload := map[string]any{"model": modelID, "input": texts}
 	raw, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/embeddings", bytes.NewReader(raw))

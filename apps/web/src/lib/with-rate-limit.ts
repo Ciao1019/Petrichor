@@ -1,24 +1,24 @@
 /**
  * 🔒 API 速率限制 Route Handler 包装器
  *
- * 用于包装 Next.js API Route，自动应用速率限制
+ * 用于包装 Bun API Route，自动应用速率限制
  */
 
-import { NextRequest, NextResponse } from "next/server"
+import type { AppRequest } from "@/server/http/request"
 import { checkRateLimit, type RateLimitConfig } from "@/lib/rate-limit"
 import { createLogger } from "@/lib/logger"
 
 const logger = createLogger("api-rate-limit")
 
 type RouteHandler = (
-    req: NextRequest,
+    req: AppRequest,
     context?: { params: Record<string, string> }
-) => Promise<NextResponse> | NextResponse
+) => Promise<Response> | Response
 
 /**
  * 从请求中提取客户端标识符（IP 地址）
  */
-function getClientIdentifier(req: NextRequest): string {
+function getClientIdentifier(req: AppRequest): string {
     // 尝试从各种头部获取真实 IP
     const forwarded = req.headers.get("x-forwarded-for")
     const realIp = req.headers.get("x-real-ip")
@@ -69,7 +69,7 @@ export const rateLimitPresets = {
  * export const POST = withRateLimit(
  *   async (req) => {
  *     // 你的 API 逻辑
- *     return NextResponse.json({ success: true })
+ *     return Response.json({ success: true })
  *   },
  *   { maxRequests: 10, windowMs: 60000 }
  * )
@@ -92,12 +92,12 @@ export function withRateLimit(
         if (!allowed) {
             logger.warn({
                 ip: identifier,
-                path: req.nextUrl.pathname,
+                path: req.urlObject.pathname,
                 method: req.method,
                 message: "Rate limit exceeded",
             })
 
-            return NextResponse.json(
+            return Response.json(
                 {
                     error: "Too Many Requests",
                     message: "请求过于频繁，请稍后再试",
@@ -145,7 +145,7 @@ export function withUserRateLimit(
         headers.set("X-RateLimit-Reset", new Date(resetAt).toISOString())
 
         if (!allowed) {
-            return NextResponse.json(
+            return Response.json(
                 {
                     error: "Too Many Requests",
                     message: "操作过于频繁，请稍后再试",

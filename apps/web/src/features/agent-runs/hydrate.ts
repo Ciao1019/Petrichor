@@ -2,6 +2,7 @@ import { agentRunApi, type AgentRunDetailResponse } from "@/lib/api"
 import { toolActivityGroup, toolActivityType } from "@/lib/agent/tool-ui"
 import { useAgentRunsStore } from "./store"
 import type { AgentRunViewModel } from "./types"
+import { assignEvidenceCitationIndices } from "./evidence-sources"
 
 /**
  * 刷新恢复（§162.29/§162.30）。
@@ -39,7 +40,10 @@ export function toRunViewModel(response: AgentRunDetailResponse): AgentRunViewMo
             evidenceCount: item.evidenceCount,
             ...(item.durationMs != null ? { completedAt: item.durationMs } : {}),
         })),
-        evidence: response.evidence.map((item, index) => ({ ...item, citationIndex: index + 1 })),
+        evidence: assignEvidenceCitationIndices(response.evidence.map((item) => ({
+            ...item,
+            citationIndex: item.citationIndex ?? 0,
+        }))),
         ...(response.stopMessage ? { stopMessage: response.stopMessage } : {}),
         metrics: response.metrics,
         startedAt: response.startedAt,

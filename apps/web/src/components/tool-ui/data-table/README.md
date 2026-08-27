@@ -16,4 +16,4 @@ Implementation for the "data-table" Tool UI surface.
 
 Run this after edits:
 
-pnpm test
+bun test

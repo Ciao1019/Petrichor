@@ -79,8 +79,8 @@
 
 - 鉴权：与 REST 层同一套 API Key，请求头 `Authorization: Bearer <ptc_live_...>`；
   未带或无效 Key 一律 401（`initialize` 也不例外）。
-- 传输：仅 Streamable HTTP（POST）；未启用 SSE 传输，因此不需要 Redis，
-  可直接跑在 Vercel Serverless 上。
+- 传输：仅 Streamable HTTP（POST）；未启用 SSE 传输，因此不需要为会话状态单独配置 Redis，
+  由 Go API 直接提供服务。
 - 工具覆盖：知识库/目录树浏览、关键词/推理/语义三种检索、文档阅读、文档问答、
   文章与文件夹写操作、Wiki 编译/体检、文章分享管理。
 

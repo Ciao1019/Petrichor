@@ -38,10 +38,6 @@ function buildTrustedOrigins() {
     if (baseUrl) {
         origins.add(baseUrl)
     }
-    if (process.env.VERCEL_URL?.trim()) {
-        origins.add(`https://${process.env.VERCEL_URL.trim()}`)
-    }
-
     return Array.from(origins)
 }
 

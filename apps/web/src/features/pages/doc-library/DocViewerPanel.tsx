@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useTheme } from "next-themes"
+import { useTheme } from "@/components/theme-provider"
 import { Loader2 } from "@/components/iconimate"
 import { MarkdownPreview } from "@/components/markdown/MarkdownPreview"
 import {

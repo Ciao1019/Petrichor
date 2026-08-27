@@ -17,11 +17,6 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
     "baseUrl": ".",
     "paths": {
       "@/*": [
@@ -36,17 +31,19 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": [
-    "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
-    ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "scripts/dev.ts",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "../../server.ts"
   ],
   "exclude": [
     "node_modules",
     "e2e",
     "playwright.config.ts",
-    "next.config.bundle-analyzer.ts",
-    "src/examples"
+    "src/examples",
+    "src/server",
+    "src/lib/with-rate-limit.ts"
   ]
 }

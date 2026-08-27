@@ -225,7 +225,7 @@ export const POST = withRateLimit(handler, rateLimitPresets.moderate)
    添加离线访问能力
 
 3. **性能监控**
-   集成 Vercel Analytics 或其他监控工具
+   集成 OpenTelemetry 或其他监控工具
 
 4. **全文搜索优化**
    考虑集成 Meilisearch

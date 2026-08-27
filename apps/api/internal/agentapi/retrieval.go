@@ -12,14 +12,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"petrichor/api/internal/assistantsvc"
 	httpx "petrichor/api/internal/httpx"
 	"petrichor/api/internal/kb"
 )
 
-var (
-	cjkRunRe           = regexp.MustCompile(`[\x{3400}-\x{4DBF}\x{4E00}-\x{9FFF}\x{F900}-\x{FAFF}]+`)
-	sourceKeyExtractRe = regexp.MustCompile(`^source-(\d+)$`)
-)
+var sourceKeyExtractRe = regexp.MustCompile(`^source-(\d+)$`)
 
 // ===== 轻量打分（对照 search-terms.ts scoreSearchFields）=====
 
@@ -131,55 +129,6 @@ func utf16Len(s string) int {
 	return n
 }
 
-// buildQueryTokens 查询侧词元（对照 retrieval/tokenize.ts，去重）。
-func buildQueryTokens(query string) []string {
-	normalized := strings.ToLower(strings.TrimSpace(query))
-	if normalized == "" {
-		return nil
-	}
-	var tokens []string
-	seen := map[string]struct{}{}
-	add := func(token string) {
-		if token == "" {
-			return
-		}
-		if _, dup := seen[token]; dup {
-			return
-		}
-		seen[token] = struct{}{}
-		tokens = append(tokens, token)
-	}
-	for _, part := range splitQueryParts(normalized) {
-		runes := []rune(part)
-		runs := cjkRunRe.FindAllString(part, -1)
-		if len(runs) == 0 {
-			if len(runes) >= 2 {
-				add(part)
-			}
-			continue
-		}
-		for _, run := range runs {
-			runRunes := []rune(run)
-			if len(runRunes) == 1 {
-				add(run)
-				continue
-			}
-			for _, gram := range makeNgramList(runRunes, 2) {
-				add(gram)
-			}
-			for _, gram := range makeNgramList(runRunes, 3) {
-				add(gram)
-			}
-		}
-		for _, latin := range cjkRunRe.Split(part, -1) {
-			if latin != "" && len([]rune(latin)) >= 2 {
-				add(latin)
-			}
-		}
-	}
-	return tokens
-}
-
 // ===== 文档命中模型（对照 AgentDocumentHit）=====
 
 type documentHit struct {
@@ -191,8 +140,6 @@ type documentHit struct {
 	pageKey           *string
 	title             string
 	summary           *string
-	contentMd         string
-	sortScore         float64
 }
 
 func (h *documentHit) toCitationMap() map[string]any {
@@ -211,282 +158,34 @@ func (h *documentHit) toCitationMap() map[string]any {
 
 // ===== document/search =====
 
-// searchAgentDocuments 对照 handlers.ts searchAgentDocuments：
-// 知识召回管线的 Go 简化版——分片索引词面候选 + Wiki 页面词面打分；
-// 两路全空时按 TS 存量兼容路径回退旧 Wiki Tree 关键词召回。
-// 偏差：未移植 BM25 / RRF / Rerank 全管线与向量分片检索，排序以词面打分为准。
-func searchAgentDocuments(q *pgxpool.Pool, userID int64, knowledgeBaseID *int64, query string, limit int) ([]documentHit, error) {
-	var candidates []documentHit
-
-	chunkHits, err := lexicalChunkSearch(q, userID, knowledgeBaseID, nil, query, limit)
+// searchAgentDocuments 直接复用助手的完整混合召回：向量 + BM25 + Wiki + RRF + 本地 rerank。
+func searchAgentDocuments(ctx context.Context, userID int64, knowledgeBaseID *int64, query string, limit int) ([]documentHit, error) {
+	hits, err := assistantsvc.SearchKnowledgeForAPI(assistantsvc.KnowledgeSearchRequest{
+		Context: ctx, UserID: userID, KnowledgeBaseID: knowledgeBaseID, Query: query, Limit: limit,
+	})
 	if err != nil {
 		return nil, err
 	}
-	candidates = append(candidates, chunkHits...)
-
-	wikiHits, err := searchKnowledgeWikiPages(q, userID, knowledgeBaseID, query, limit)
-	if err != nil {
-		return nil, err
-	}
-	candidates = append(candidates, wikiHits...)
-
-	if len(candidates) == 0 {
-		if knowledgeBaseID != nil {
-			treeHits, terr := legacyTreeKeywordFallback(q, userID, *knowledgeBaseID, nil, query, limit)
-			if terr != nil {
-				return nil, terr
-			}
-			candidates = append(candidates, treeHits...)
-		} else {
-			owned, oerr := listUserKnowledgeBases(q, userID)
-			if oerr != nil {
-				return nil, oerr
-			}
-			for _, item := range owned {
-				id, perr := strconv.ParseInt(item["id"].(string), 10, 64)
-				if perr != nil {
-					continue
-				}
-				treeHits, terr := legacyTreeKeywordFallback(q, userID, id, nil, query, limit)
-				if terr != nil {
-					return nil, terr
-				}
-				name := item["name"].(string)
-				for i := range treeHits {
-					treeHits[i].knowledgeBaseName = &name
-				}
-				candidates = append(candidates, treeHits...)
-			}
+	items := make([]documentHit, 0, len(hits))
+	for _, hit := range hits {
+		var summary *string
+		if strings.TrimSpace(hit.Summary) != "" {
+			value := hit.Summary
+			summary = &value
 		}
-	}
-
-	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].sortScore > candidates[j].sortScore })
-	if len(candidates) > limit {
-		candidates = candidates[:limit]
-	}
-	attachKBNames(q, userID, candidates)
-	return candidates, nil
-}
-
-func attachKBNames(q *pgxpool.Pool, userID int64, hits []documentHit) {
-	items, err := listUserKnowledgeBases(q, userID)
-	if err != nil {
-		return
-	}
-	names := map[string]string{}
-	for _, item := range items {
-		names[item["id"].(string)] = item["name"].(string)
-	}
-	for i := range hits {
-		if name, ok := names[hits[i].knowledgeBaseID]; ok && hits[i].knowledgeBaseName == nil {
-			n := name
-			hits[i].knowledgeBaseName = &n
-		}
-	}
-}
-
-// lexicalChunkSearch 分片索引词面检索（对照 article-knowledge-index.ts loadLexicalPool +
-// rankLexicalRows；BM25 简化为 scoreSearchFields 打分，GIN/tsvector 未建时 LIKE 兜底）。
-func lexicalChunkSearch(q *pgxpool.Pool, userID int64, knowledgeBaseID, articleID *int64, query string, limit int) ([]documentHit, error) {
-	tokens := buildQueryTokens(query)
-	if len(tokens) == 0 {
-		return nil, nil
-	}
-	if len(tokens) > 16 {
-		tokens = tokens[:16]
-	}
-	args := []any{userID}
-	argIdx := 2
-	sqlText := `SELECT i.chunk_id, i.article_id, i.knowledge_base_id, i.source_type,
-		    i.content, a.title, COALESCE(c.heading, ''), c.content_md
-		FROM petrichor_kb_article_chunk_index i
-		JOIN petrichor_kb_article_chunk c ON c.id = i.chunk_id
-		JOIN petrichor_kb_article a ON a.id = i.article_id
-		WHERE i.user_id = $1`
-	if knowledgeBaseID != nil {
-		args = append(args, *knowledgeBaseID)
-		sqlText += ` AND i.knowledge_base_id = $` + strconv.Itoa(argIdx)
-		argIdx++
-	}
-	if articleID != nil {
-		args = append(args, *articleID)
-		sqlText += ` AND i.article_id = $` + strconv.Itoa(argIdx)
-		argIdx++
-	}
-	clauses := make([]string, 0, len(tokens))
-	for _, token := range tokens {
-		args = append(args, "%"+escapeLike(token)+"%")
-		clauses = append(clauses, `i.embedding_text ILIKE $`+strconv.Itoa(argIdx))
-		argIdx++
-	}
-	sqlText += ` AND (` + strings.Join(clauses, " OR ") + `) LIMIT 400`
-
-	rows, err := q.Query(context.Background(), sqlText, args...)
-	if err != nil {
-		return nil, err
-	}
-	type indexRow struct {
-		chunkID         int64
-		knowledgeBaseID int64
-		articleID       int64
-		sourceType      string
-		matchedContent  string
-		articleTitle    string
-		heading         string
-		contentMd       string
-		score           float64
-	}
-	var rankedRows []indexRow
-	for rows.Next() {
-		var row indexRow
-		if err := rows.Scan(&row.chunkID, &row.articleID, &row.knowledgeBaseID,
-			&row.sourceType, &row.matchedContent, &row.articleTitle, &row.heading, &row.contentMd); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		row.score = scoreSearchFields(row.articleTitle+" "+row.heading, nil, row.matchedContent, nil, query)
-		rankedRows = append(rankedRows, row)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	sort.SliceStable(rankedRows, func(i, j int) bool { return rankedRows[i].score > rankedRows[j].score })
-
-	seen := map[string]struct{}{}
-	hits := []documentHit{}
-	for _, row := range rankedRows {
-		key := idStr(row.knowledgeBaseID) + ":" + idStr(row.chunkID)
-		if _, dup := seen[key]; dup {
-			continue
-		}
-		seen[key] = struct{}{}
-		title := row.heading
-		if title == "" {
-			title = row.articleTitle
-		}
-		summary := collapseSpaces(row.contentMd)
-		if len([]rune(summary)) > 220 {
-			summary = string([]rune(summary)[:220])
-		}
-		chunkIDStr := idStr(row.chunkID)
-		articleIDStr := idStr(row.articleID)
-		hits = append(hits, documentHit{
-			hitType:         "chunk",
-			knowledgeBaseID: idStr(row.knowledgeBaseID),
-			articleID:       &articleIDStr,
-			chunkID:         &chunkIDStr,
-			title:           title,
-			summary:         &summary,
-			contentMd:       row.contentMd,
-			sortScore:       row.score,
-		})
-		if len(hits) >= limit {
-			break
-		}
-	}
-	return hits, nil
-}
-
-func collapseSpaces(s string) string {
-	return strings.TrimSpace(spaceCollapse.ReplaceAllString(s, " "))
-}
-
-// searchKnowledgeWikiPages 对照 article-knowledge-index.ts 同名函数。
-func searchKnowledgeWikiPages(q *pgxpool.Pool, userID int64, knowledgeBaseID *int64, query string, limit int) ([]documentHit, error) {
-	tokens := buildQueryTokens(query)
-	if len(tokens) == 0 {
-		return nil, nil
-	}
-	if len(tokens) > 16 {
-		tokens = tokens[:16]
-	}
-	args := []any{userID}
-	argIdx := 2
-	clauses := make([]string, 0, len(tokens)*4)
-	sqlText := `SELECT id, knowledge_base_id, page_key, title, kind, summary, content_md
-		FROM petrichor_kb_wiki_page
-		WHERE user_id = $1 AND archived_at IS NULL
-		  AND kind NOT IN ('source', 'index', 'log')`
-	if knowledgeBaseID != nil {
-		args = append(args, *knowledgeBaseID)
-		sqlText += ` AND knowledge_base_id = $` + strconv.Itoa(argIdx)
-		argIdx++
-	}
-	for _, token := range tokens {
-		args = append(args, "%"+escapeLike(token)+"%")
-		clauses = append(clauses,
-			`title ILIKE $`+strconv.Itoa(argIdx),
-			`page_key ILIKE $`+strconv.Itoa(argIdx),
-			`summary ILIKE $`+strconv.Itoa(argIdx),
-			`content_md ILIKE $`+strconv.Itoa(argIdx))
-		argIdx++
-	}
-	sqlText += ` AND (` + strings.Join(clauses, " OR ") + `) LIMIT 400`
-
-	rows, err := q.Query(context.Background(), sqlText, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	type pageRow struct {
-		id        int64
-		kbID      int64
-		pageKey   string
-		title     string
-		kind      string
-		summary   *string
-		contentMd string
-		score     float64
-	}
-	var pages []pageRow
-	for rows.Next() {
-		var row pageRow
-		if err := rows.Scan(&row.id, &row.kbID, &row.pageKey, &row.title, &row.kind, &row.summary, &row.contentMd); err != nil {
-			return nil, err
-		}
-		row.score = scoreSearchFields(row.title, row.summary, row.contentMd, strPtr(row.pageKey), query)
-		if row.score <= 0 {
-			continue
-		}
-		pages = append(pages, row)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	sort.SliceStable(pages, func(i, j int) bool { return pages[i].score > pages[j].score })
-	if len(pages) > limit {
-		pages = pages[:limit]
-	}
-
-	hits := []documentHit{}
-	for i := range pages {
-		row := &pages[i]
-		summary := ""
-		if row.summary != nil && strings.TrimSpace(*row.summary) != "" {
-			summary = strings.TrimSpace(*row.summary)
-		} else {
-			summary = collapseSpaces(row.contentMd)
-			if len([]rune(summary)) > 220 {
-				summary = string([]rune(summary)[:220])
-			}
-		}
-		pageKey := row.pageKey
-		hits = append(hits, documentHit{
-			hitType:         "wiki",
-			knowledgeBaseID: idStr(row.kbID),
-			pageKey:         &pageKey,
-			articleID:       extractArticleIDFromSourceKey(row.pageKey),
-			title:           row.title,
-			summary:         &summary,
-			contentMd:       row.contentMd,
-			sortScore:       row.score,
+		items = append(items, documentHit{
+			hitType:           hit.Kind,
+			knowledgeBaseID:   hit.KnowledgeBaseID,
+			knowledgeBaseName: hit.KnowledgeBaseName,
+			articleID:         hit.ArticleID,
+			chunkID:           hit.ChunkID,
+			pageKey:           hit.PageKey,
+			title:             hit.Title,
+			summary:           summary,
 		})
 	}
-	return hits, nil
+	return items, nil
 }
-
-func strPtr(s string) *string { return &s }
 
 func extractArticleIDFromSourceKey(pageKey string) *string {
 	m := sourceKeyExtractRe.FindStringSubmatch(pageKey)
@@ -814,29 +513,6 @@ func semanticSearchTreeNodesCore(q *pgxpool.Pool, userID, kbID int64, query stri
 		}).toMap())
 	}
 	return out, nil
-}
-
-// legacyTreeKeywordFallback 存量 Tree 关键词兜底（跨库搜索时逐库调用）。
-func legacyTreeKeywordFallback(q *pgxpool.Pool, userID, kbID int64, articleID *int64, query string, limit int) ([]documentHit, error) {
-	nodes, err := loadTreeNodesLite(q, userID, kbID, articleID)
-	if err != nil {
-		return nil, err
-	}
-	fallback := keywordTreeFallback(nodes, query, limit)
-	kbIDStr := idStr(kbID)
-	hits := []documentHit{}
-	for _, node := range fallback {
-		articleIDStr := idStr(node.ArticleID)
-		hits = append(hits, documentHit{
-			hitType:         "tree",
-			knowledgeBaseID: kbIDStr,
-			articleID:       &articleIDStr,
-			title:           node.Title,
-			summary:         node.Summary,
-			contentMd:       clipTreeContent(node.ContentMd),
-		})
-	}
-	return hits, nil
 }
 
 func vectorLiteralOf(vec []float32) string {

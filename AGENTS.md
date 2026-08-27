@@ -1,6 +1,6 @@
 # Codex 项目级说明（petrichor / dosphere）
 
-> 本文件适用于 `/Users/zang/dosphere` 及其子目录。它用于补充全局规则；
+> 本文件适用于当前 Petrichor 仓库及其子目录。它用于补充全局规则；
 > 若与更深层目录的 `AGENTS.md` 冲突，优先遵循更具体的规则。
 
 ## 语言与协作
@@ -12,16 +12,14 @@
 
 ## 项目概览
 
-- 仓库根目录是 `pnpm` workspace，目前工作区应用为 `apps/web`。
-- 根包名为 `petrichor`，当前仓库目录名为 `dosphere`。
-- `apps/web` 是 Next.js + React + TypeScript 全栈应用，目标部署环境为 Vercel。
-- 前端主体是客户端 SPA：`apps/web/app/spa-entry.tsx` 动态加载
-  `apps/web/src/client-app.tsx`，页面路由由 `react-router-dom` 管理。
-- API 使用 Next.js App Router route handlers，`apps/web/app/api/**/route.ts` 通常只转发
-  到 `apps/web/src/server/**/handlers.ts`。
+- 仓库根目录是 Bun workspace，工作区应用为 `apps/web` 和 `apps/api`。
+- `apps/web` 是 Bun + React + Vite + TypeScript 客户端 SPA，入口为
+  `apps/web/src/main.tsx`，页面路由由 `react-router-dom` 管理。
+- `apps/api` 是 Go + Gin API 服务，接管 `/api/*` 和 `/healthz`。
+- 根目录 `server.ts` 托管 Vite 静态资源，并把 API 同源转发到 Go 服务。
 - 数据层使用 Supabase PostgreSQL，Drizzle schema 位于
   `apps/web/src/server/db/schema.ts`。
-- 认证使用 Better Auth + 服务端 httpOnly Cookie，业务用户与 Better Auth 用户通过
+- 认证由 Go 服务兼容 Better Auth httpOnly Cookie，业务用户与 Better Auth 用户通过
   `petrichor_user.auth_user_id` 关联。
 - 上传和公开文件访问使用 S3 兼容对象存储。
 
@@ -30,58 +28,60 @@
 在仓库根目录执行：
 
 ```bash
-pnpm dev
-pnpm build
-pnpm test
-pnpm typecheck
-pnpm lint
+bun dev
+bun run dev:api
+bun run build
+bun run test
+bun run typecheck
+bun run lint
 ```
 
 只针对 Web 应用执行时使用：
 
 ```bash
-pnpm --filter "@petrichor/web" dev
-pnpm --filter "@petrichor/web" test
-pnpm --filter "@petrichor/web" typecheck
-pnpm --filter "@petrichor/web" lint
-pnpm --filter "@petrichor/web" build
+bun --filter "@petrichor/web" dev
+bun --filter "@petrichor/web" test
+bun --filter "@petrichor/web" typecheck
+bun --filter "@petrichor/web" lint
+bun --filter "@petrichor/web" build
 ```
 
-生成初始化 SQL 时必须使用 `--silent`，避免 pnpm 日志混入 SQL：
+生成初始化 SQL 时必须使用 `--silent`，避免 Bun 日志混入 SQL：
 
 ```bash
-pnpm --silent --filter "@petrichor/web" db:sql
+bun --silent run db:sql
 ```
 
 ## 目录约定
 
-- `apps/web/app/`：Next.js App Router 入口、API route、RSS/Atom、SEO 元数据。
+- `apps/api/cmd/server/`：Go API 生产入口。
+- `apps/api/internal/`：Go 鉴权、业务、数据库、存储、缓存和 Agent 实现。
+- `apps/api/config.example.toml`：Go 运行配置模板；本地真实配置为忽略提交的 `config.toml`。
+- `apps/web/src/main.tsx`：Vite 客户端入口。
 - `apps/web/src/client-app.tsx`：客户端路由总入口。
 - `apps/web/src/features/pages/`：业务页面组件。
 - `apps/web/src/components/`：通用组件、编辑器组件、shadcn/ui、第三方 UI 迁移组件。
 - `apps/web/src/lib/`：浏览器侧工具、API client、路由工具。
-- `apps/web/src/server/`：服务端 handler、业务逻辑、数据库、认证、上传等模块。
+- `apps/web/src/server/`：迁移期间保留的历史 TypeScript 服务端实现，不是当前运行入口。
 - `docs/`：初始化 SQL、增量迁移脚本和历史迁移说明。
 
 ## TypeScript 与代码风格
 
 - 使用严格 TypeScript，优先复用现有类型和工具函数，避免引入 `any`。
 - 路径别名使用 `@/*` 指向 `apps/web/src/*`。
-- 缩进和格式遵循当前文件风格；服务端文件多为 4 空格，部分 shadcn/前端组件保持生成时风格。
+- 缩进和格式遵循当前文件风格；Go 使用 `gofmt`，部分 shadcn/前端组件保持生成时风格。
 - 业务逻辑应清晰命名、保持小函数，必要时添加中文注释说明关键流程或边界。
 - 删除真正无用的旧代码；不要为了兼容已废弃实现保留平行分支。
 - 不新增占位实现、TODO 或未接线的“半成品”入口。
 
 ## API 与服务端约定
 
-- `route.ts` 尽量保持薄层，只导出对应 handler，例如：
-  `export { listKnowledgeBases as POST } from "@/server/kb/handlers"`。
-- handler 内统一使用 `readJson`、`ok`、`tableData`、`toErrorResponse` 等响应工具。
-- 请求入参使用 `zod` 校验；ID 通常允许字符串或数字输入，服务端规范化为正整数。
+- Go 路由在 `apps/api/internal/routes` 注册，业务实现按领域放在 `internal/*svc` 或对应模块。
+- ID 通常允许字符串或数字输入，服务端规范化为正整数。
 - 返回给前端的数据库 bigint ID 通常序列化为字符串。
-- 需要登录的接口使用 `requireCurrentUser(request)`；管理员接口需再次校验超级管理员权限。
+- 需要登录的接口复用 Go 鉴权中间件；管理员接口需再次校验超级管理员权限。
 - 列表接口沿用 `pageNum`、`pageSize`、`isAsc`、`orderByColumn` 等现有约定，
-  分页解析复用 `apps/web/src/server/http/pagination.ts`。
+  并复用 Go HTTP 契约工具。
 - 前端 API client 位于 `apps/web/src/lib/api.ts`，新增接口时同步补充请求/响应类型。
 - 错误响应保持 `{ code, msg, path, timestamp }` 结构，避免泄露内部错误详情。
 
@@ -90,7 +90,7 @@ pnpm --silent --filter "@petrichor/web" db:sql
 - Drizzle 表结构集中在 `apps/web/src/server/db/schema.ts`，SQL 生成逻辑在
   `apps/web/src/server/db/full-migration.ts` 和相关脚本中。
 - 增量数据库变更应放入 `docs/migrations/`，并在相关文档中说明执行顺序。
-- 需要在 Vercel 生产部署中自动执行的增量 SQL 必须登记到
+- 需要在生产部署中自动执行的增量 SQL 必须登记到
   `docs/migrations/manifest.json`；已执行的文件不可修改，应新增后续迁移。
 - Supabase transaction pooler 场景下保持 Postgres.js `prepare: false` 相关约束。
 - 涉及生产数据库删除、结构变更、批量更新前必须先说明影响范围并获得明确确认。
@@ -110,10 +110,11 @@ pnpm --silent --filter "@petrichor/web" db:sql
 - 优先运行与改动相关的定向测试；完整验证按风险选择：
 
 ```bash
-pnpm test
-pnpm typecheck
-pnpm lint
-pnpm build
+bun run test
+bun run typecheck
+bun run lint
+bun run build
+cd apps/api && go test ./... && go vet ./...
 ```
 
 - 后台执行单元测试时注意控制时长，避免超过 60 秒卡住当前任务。
@@ -121,13 +122,13 @@ pnpm build
 
 ## 环境与部署
 
-- 本地环境变量样例为 `apps/web/.env.example`，实际配置写入
-  `apps/web/.env.local`。
-- `SESSION_SECRET`、`PETRICHOR_ENCRYPT_KEY`、`PETRICHOR_ENCRYPT_SALT` 一旦用于真实数据，
+- Web 公开配置样例为 `apps/web/.env.example`，实际配置写入 `apps/web/.env.local`。
+- Go 不读取环境变量；数据库、Session、加密、S3、LinuxDo、Upstash 和 Agent 配置统一写入
+  `apps/api/config.toml`，模板为 `apps/api/config.example.toml`。
+- `config.toml` 含密钥且已忽略提交，不得输出或提交其真实内容。
+- `auth.session_secret`、`encryption.key`、`encryption.salt` 一旦用于真实数据，
   不要随意更换。
-- Vercel 生产环境建议使用 Supabase transaction pooler 连接串。
-- `apps/web/README.md` 当前引用了 `docs/startup-and-config.md`，但该文件在当前工作树中不存在；
-  若补充启动配置文档，优先沿用这个路径。
+- 生产环境建议在 `[database].url` 使用 Supabase transaction pooler 连接串。
 
 ## Git 与安全操作
 

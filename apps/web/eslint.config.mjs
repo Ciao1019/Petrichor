@@ -1,13 +1,12 @@
 import js from "@eslint/js"
-import nextVitals from "eslint-config-next/core-web-vitals"
-import nextTs from "eslint-config-next/typescript"
 import reactHooks from "eslint-plugin-react-hooks"
+import globals from "globals"
 import tseslint from "typescript-eslint"
 
 export default tseslint.config(
     {
         ignores: [
-            ".next/**",
+            "dist/**",
             "node_modules/**",
             "drizzle/**",
             "src/assets/**",
@@ -20,7 +19,22 @@ export default tseslint.config(
         ],
     },
     js.configs.recommended,
-    ...nextVitals,
-    ...nextTs,
+    ...tseslint.configs.recommended,
     reactHooks.configs.flat.recommended,
+    {
+        rules: {
+            "@typescript-eslint/no-unused-vars": ["error", {
+                argsIgnorePattern: "^_",
+                caughtErrorsIgnorePattern: "^_",
+                destructuredArrayIgnorePattern: "^_",
+                varsIgnorePattern: "^_",
+            }],
+        },
+    },
+    {
+        files: ["scripts/**/*.{js,mjs,cjs,ts}"],
+        languageOptions: {
+            globals: globals.node,
+        },
+    },
 )

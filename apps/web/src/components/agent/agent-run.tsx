@@ -11,14 +11,14 @@ import {
 } from "@/features/agent-runs/selectors"
 import { shouldShowExecutionPanel, type AgentRunViewModel } from "@/features/agent-runs/types"
 import { AgentActivityList } from "./agent-activity-list"
-import { AgentEvidencePanel } from "./agent-evidence"
 import { AgentPlan } from "./agent-plan"
 import { AgentSubAgents } from "./agent-subagents"
 
 /**
  * Agent 执行面板（§162.1/§162.7/§162.19/§162.21）。
  *
- * 渐进披露：默认只给一行状态 + 来源入口；展开后才看计划、活动与子任务。
+ * 渐进披露：默认只给一行状态；展开后才看计划、活动与子任务。
+ * 来源统一放在回答结束后的来源条，不在执行面板重复展示。
  * 简单请求（direct）完全不渲染本组件，保持原有简洁聊天体验。
  * 任何情况下都不展示模型隐藏推理。
  */
@@ -82,8 +82,6 @@ export function AgentRun({
                         重试
                     </Button>
                 ) : null}
-
-                <AgentEvidencePanel evidence={run.evidence} />
 
                 {debugHref ? (
                     <a

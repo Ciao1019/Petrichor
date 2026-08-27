@@ -316,7 +316,7 @@ pnpm test:coverage
     离线访问能力
 
 12. **性能监控**
-    Vercel Analytics 或 Sentry Performance
+    OpenTelemetry 或 Sentry Performance
 
 ---
 

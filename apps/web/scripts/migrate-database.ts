@@ -6,18 +6,9 @@ import {
     parseMigrationManifest,
     splitSqlStatements,
 } from "../src/server/db/migration-utils"
+import { readGoDatabaseUrl } from "./go-config"
 
-const productionOnly = process.argv.includes("--vercel-production-only")
-if (productionOnly && process.env.VERCEL_ENV !== "production") {
-    console.log(`[db:migrate] 跳过 ${process.env.VERCEL_ENV ?? "非 Vercel"} 环境`)
-    process.exit(0)
-}
-
-const databaseUrl = process.env.MIGRATION_DATABASE_URL?.trim()
-    || process.env.DATABASE_URL?.trim()
-if (!databaseUrl) {
-    throw new Error("MIGRATION_DATABASE_URL 和 DATABASE_URL 均未设置")
-}
+const databaseUrl = await readGoDatabaseUrl({ preferMigration: true })
 if (databaseUrl.startsWith("file:")) {
     throw new Error("自动 SQL 迁移仅支持 PostgreSQL")
 }

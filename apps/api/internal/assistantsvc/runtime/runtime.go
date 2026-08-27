@@ -2,8 +2,10 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // ===== Petrichor Agent Runtime 主循环（对照 runtime.ts）=====
@@ -15,11 +17,12 @@ const MaxSegments = 8
 const routerHintMinConfidence = 0.5
 
 var (
-	simpleKnowledgePattern     = regexp.MustCompile(`(?i)(?:是什么|什么意思|是干什么(?:的)?|有(?:哪些|什么)(?:主要|核心)?功能|怎么用|如何使用|使用方法|用途|作用|介绍|概述|说明|教程|原理|区别)`)
-	scopedKnowledgeFactPattern = regexp.MustCompile(`(?:是否|能否|能不能|支不支持|支持(?:什么|哪些)?|在哪里|哪个|多少)`)
-	nonKnowledgeActionPattern  = regexp.MustCompile(`(?:创建|新建|修改|更新|删除|移动|发布|分享|保存|导出|写一篇|生成一篇|改写|翻译|发邮件|联网|外部资料|网页搜索|历史对话|记住)`)
-	systemOverviewPattern      = regexp.MustCompile(`(?:(?:有多少|多少|几个|数量|清单|列出).{0,12}(?:知识库|文档库|文章|文档|对话)|(?:知识库|文档库|文章|文档|对话).{0,12}(?:有多少|多少|几个|数量|清单))`)
-	promptInjectionPattern     = regexp.MustCompile(`(?i)(?:忽略.{0,16}(?:以上|之前|系统|开发者)(?:指令|提示)|(?:ignore|disregard).{0,24}(?:previous|system|developer).{0,12}(?:instruction|prompt)|system\s*prompt|developer\s*message|jailbreak|越狱)`)
+	simpleKnowledgePattern      = regexp.MustCompile(`(?i)(?:是什么|什么意思|是干什么(?:的)?|有(?:哪些|什么)(?:主要|核心)?功能|怎么用|如何使用|使用方法|用途|作用|介绍|概述|说明|教程|原理|区别)`)
+	scopedKnowledgeFactPattern  = regexp.MustCompile(`(?:是否|能否|能不能|支不支持|支持(?:什么|哪些)?|在哪里|哪个|多少)`)
+	nonKnowledgeActionPattern   = regexp.MustCompile(`(?:创建|新建|修改|更新|删除|移动|发布|分享|保存|导出|写一篇|生成一篇|改写|翻译|发邮件|联网|外部资料|网页搜索|历史对话|记住)`)
+	systemOverviewPattern       = regexp.MustCompile(`(?:(?:有多少|多少|几个|数量|清单|列出).{0,12}(?:知识库|文档库|文章|文档|对话)|(?:知识库|文档库|文章|文档|对话).{0,12}(?:有多少|多少|几个|数量|清单))`)
+	promptInjectionPattern      = regexp.MustCompile(`(?i)(?:忽略.{0,16}(?:以上|之前|系统|开发者)(?:指令|提示)|(?:ignore|disregard).{0,24}(?:previous|system|developer).{0,12}(?:instruction|prompt)|system\s*prompt|developer\s*message|jailbreak|越狱)`)
+	promptInjectionStudyPattern = regexp.MustCompile(`(?i)(?:什么是|解释|分析|识别|检测|防范|防御|示例|例子|研究|讨论|how\s+to\s+(?:detect|prevent)|what\s+is|explain|analy[sz]e|example)`)
 )
 
 // WikiQaModeGuidance Wiki 问答模式（参考 Tencent/WeKnora 的 Wiki 检索策略）。
@@ -35,6 +38,7 @@ const WikiQaModeGuidance = "## Wiki 问答模式\n" +
 
 // RunRequest Run 入参。
 type RunRequest struct {
+	RunKey                 string
 	ConversationID         string
 	UserID                 int64
 	DBRunID                int64
@@ -199,7 +203,7 @@ func ShouldUseSimpleKnowledgeFastPath(goal string, complexity TaskComplexity, fo
 func MapDomainsToSkills(domains []string, availableSkillIDs []string) []string {
 	alias := map[string]string{
 		"knowledge": "knowledge", "doc_library": "documents", "document": "documents",
-		"documents": "documents", "system": "system", "content_write": "writer",
+		"documents": "documents", "system": "system", "content_write": "documents",
 		"write": "writer", "writer": "writer", "admin": "admin",
 		"research": "research", "graph": "graph", "memory": "memory",
 	}
@@ -425,6 +429,7 @@ func (l *SkillLoader) Load(skillID string) SkillLoadResult {
 	loaded := []string{}
 	alreadyLoaded := []string{}
 	toolIDs := map[string]bool{}
+	orderedToolIDs := []string{}
 	var instructions strings.Builder
 	for _, skill := range chain {
 		if !l.state.MarkSkillLoaded(skill.ID) {
@@ -440,17 +445,20 @@ func (l *SkillLoader) Load(skillID string) SkillLoadResult {
 		instructions.WriteString(skill.Instructions)
 		instructions.WriteString("\n")
 		for _, toolID := range skill.ToolIDs {
-			toolIDs[toolID] = true
+			if !toolIDs[toolID] {
+				toolIDs[toolID] = true
+				orderedToolIDs = append(orderedToolIDs, toolID)
+			}
 		}
 	}
-	for toolID := range toolIDs {
+	for _, toolID := range orderedToolIDs {
 		if !containsString(l.activeToolIDs, toolID) {
 			l.activeToolIDs = append(l.activeToolIDs, toolID)
 		}
 	}
 	return SkillLoadResult{
 		OK: true, SkillID: skillID, Loaded: loaded, AlreadyLoaded: alreadyLoaded,
-		Instructions: trimSpace(instructions.String()), ToolIDs: mapKeys(toolIDs),
+		Instructions: trimSpace(instructions.String()), ToolIDs: orderedToolIDs,
 	}
 }
 
@@ -493,24 +501,28 @@ func (r *PetrichorAgentRuntime) resolveActiveTools(loader *SkillLoader, complexi
 	if complexity == ComplexityDirect {
 		return nil
 	}
+	ids := make([]string, 0, 16)
 	idSet := map[string]bool{}
-	for _, id := range r.tools.CoreToolIDs(isOperator) {
+	add := func(id string) {
+		if id == "" || idSet[id] {
+			return
+		}
 		idSet[id] = true
+		ids = append(ids, id)
+	}
+	for _, id := range r.tools.CoreToolIDs(isOperator) {
+		add(id)
 	}
 	for _, id := range loader.ActiveToolIDs() {
-		idSet[id] = true
+		add(id)
 	}
 	if qaMode == "wiki" {
 		wikiNS := NamespaceKnowledge
 		for _, tool := range r.tools.List(&ToolFilter{Namespace: wikiNS}) {
 			if containsString(tool.Tags, "wiki") {
-				idSet[tool.ID] = true
+				add(tool.ID)
 			}
 		}
-	}
-	ids := make([]string, 0, len(idSet))
-	for id := range idSet {
-		ids = append(ids, id)
 	}
 	out := make([]*AgentToolDefinition, 0, len(ids))
 	for _, id := range ids {
@@ -539,7 +551,7 @@ type synthesizeFinalAnswerInput struct {
 }
 
 // synthesizeFinalAnswer 强制收敛：无工具的一次生成，只基于证据作答。
-func (r *PetrichorAgentRuntime) synthesizeFinalAnswer(ctx context.Context, input *synthesizeFinalAnswerInput) string {
+func (r *PetrichorAgentRuntime) synthesizeFinalAnswer(ctx context.Context, input *synthesizeFinalAnswerInput) (string, error) {
 	evidenceAll := input.Evidence.All()
 	pointers := make([]*AgentEvidence, 0, len(evidenceAll))
 	for i := range evidenceAll {
@@ -575,7 +587,7 @@ func (r *PetrichorAgentRuntime) synthesizeFinalAnswer(ctx context.Context, input
 
 	controller := NewSegmentController()
 	started := false
-	segment := RunAgentSegment(ctx, &SegmentRequest{
+	segment, err := RunAgentSegment(ctx, &SegmentRequest{
 		AgentID:      "petrichor-agent-final",
 		Model:        input.Request.Model,
 		Instructions: instructions,
@@ -592,6 +604,7 @@ func (r *PetrichorAgentRuntime) synthesizeFinalAnswer(ctx context.Context, input
 		OnTextDelta: func(delta string) {
 			if !started {
 				started = true
+				EmitWikiMentionTargets(input.Events, input.Observations, input.Evidence)
 				payload := map[string]any{}
 				if input.ReplacePrevious {
 					payload["replace"] = true
@@ -602,16 +615,25 @@ func (r *PetrichorAgentRuntime) synthesizeFinalAnswer(ctx context.Context, input
 			input.Events.Emit("final_answer_delta", map[string]any{"delta": delta})
 		},
 	}, controller)
+	if err != nil {
+		return "", err
+	}
 
 	input.State.AddTokenUsage(segment.Usage.Input, segment.Usage.Output)
 	input.Trace.AddTokenUsage(segment.Usage.Input, segment.Usage.Output)
 	input.Trace.AddLlmLatency(segment.LlmMs)
-	return trimSpace(segment.Text)
+	return trimSpace(segment.Text), nil
 }
 
 // Run 执行一次完整的 Agentic Run。
 func (r *PetrichorAgentRuntime) Run(ctx context.Context, request *RunRequest) (*RunResult, error) {
-	runID := NewRunID()
+	if request == nil || request.Model == nil {
+		return nil, errors.New("缺少 Agent 运行参数或模型")
+	}
+	runID := trimSpace(request.RunKey)
+	if runID == "" {
+		runID = NewRunID()
+	}
 	flags := ReadAgentFeatureFlags()
 	startedAt := request.StartedAt
 	if startedAt <= 0 {
@@ -673,12 +695,36 @@ func (r *PetrichorAgentRuntime) Run(ctx context.Context, request *RunRequest) (*
 		Budget: budget, StopPolicy: stopPolicy,
 		RequestRestart: func(reason string) { segmentRestartReason.set(reason) },
 	}
+	if !flags.Delegation {
+		services.DelegationDisabled = "委派能力已关闭"
+	} else if !AllowsDelegation(complexity) {
+		services.DelegationDisabled = "当前任务复杂度不需要委派"
+	} else {
+		services.DelegateFn = func(inputs []DelegateTaskInput) []DelegationResult {
+			return r.delegateMany(
+				ctx,
+				request,
+				inputs,
+				state,
+				evidenceStore,
+				trace,
+				events,
+				budget,
+				stopPolicy,
+				0,
+			)
+		}
+	}
 
 	buildCtx := func() *ToolExecutionContext {
 		return &ToolExecutionContext{
-			RunID: runID, UserID: request.UserID, ConversationID: request.ConversationID,
+			RunID: runID, DBRunID: request.DBRunID, ThreadID: request.ThreadID, UserID: request.UserID, ConversationID: request.ConversationID,
 			Focus: request.Focus, QaMode: request.QaMode, SystemRole: request.SystemRole,
 			DelegationDepth: 0, State: state.Current(), Services: services,
+			RecordTokenUsage: func(input, output int64) {
+				state.AddTokenUsage(input, output)
+				trace.AddTokenUsage(input, output)
+			},
 		}
 	}
 
@@ -710,8 +756,13 @@ func (r *PetrichorAgentRuntime) Run(ctx context.Context, request *RunRequest) (*
 	var fatalErr *AgentError
 	stopReason := AgentStopReason("")
 	stopDetail := ""
+	if !simpleFastPath && request.InjectionGuard != nil && IsPromptInjectionAttempt(request.Goal) {
+		fatalErr = PermissionDenied("检测到试图覆盖系统指令的输入，已阻止工具执行")
+		stopReason = StopPermissionDenied
+		trace.Event("prompt_injection_blocked", map[string]any{"lastMessageOnly": true})
+	}
 
-	for segments < MaxSegments {
+	for fatalErr == nil && segments < MaxSegments {
 		if ctx.Err() != nil {
 			stopReason = StopCancelled
 			break
@@ -768,7 +819,7 @@ func (r *PetrichorAgentRuntime) Run(ctx context.Context, request *RunRequest) (*
 			maxSteps = 1
 		}
 
-		segment := RunAgentSegment(ctx, &SegmentRequest{
+		segment, segmentErr := RunAgentSegment(ctx, &SegmentRequest{
 			AgentID: "petrichor-agent", Model: request.Model,
 			Instructions: built.Instructions,
 			Messages:     trimmedMessages, Prompt: request.Goal,
@@ -777,6 +828,7 @@ func (r *PetrichorAgentRuntime) Run(ctx context.Context, request *RunRequest) (*
 			OnTextDelta: func(delta string) {
 				if !answerStarted {
 					answerStarted = true
+					EmitWikiMentionTargets(events, observations, evidenceStore)
 					events.Emit("final_answer_started", map[string]any{})
 					trace.MarkFirstToken()
 				}
@@ -798,6 +850,12 @@ func (r *PetrichorAgentRuntime) Run(ctx context.Context, request *RunRequest) (*
 				}
 			},
 		}, segmentController)
+		if segmentErr != nil {
+			fatalErr = NormalizeAgentError(segmentErr)
+			stopReason = StopFatalError
+			trace.Event("error", map[string]any{"code": fatalErr.Code, "message": fatalErr.Message})
+			break
+		}
 
 		state.AddTokenUsage(segment.Usage.Input, segment.Usage.Output)
 		trace.AddTokenUsage(segment.Usage.Input, segment.Usage.Output)
@@ -851,10 +909,18 @@ func (r *PetrichorAgentRuntime) Run(ctx context.Context, request *RunRequest) (*
 		})
 		if !quality.Adequate {
 			original := answer
-			answer = trimSpace(r.synthesizeFinalAnswer(ctx, &synthesizeFinalAnswerInput{
+			rewritten, synthErr := r.synthesizeFinalAnswer(ctx, &synthesizeFinalAnswerInput{
 				Request: request, State: state, Evidence: evidenceStore, Observations: observations,
 				StopReason: stopReason, Events: events, Trace: trace, ReplacePrevious: true,
-			}))
+			})
+			if synthErr != nil {
+				fatalErr = NormalizeAgentError(synthErr)
+				stopReason = StopFatalError
+				trace.Event("error", map[string]any{"code": fatalErr.Code, "message": fatalErr.Message})
+				answer = original
+			} else {
+				answer = trimSpace(rewritten)
+			}
 			if answer == "" {
 				answer = original
 			}
@@ -863,14 +929,22 @@ func (r *PetrichorAgentRuntime) Run(ctx context.Context, request *RunRequest) (*
 
 	// 强制收敛作答
 	if answer == "" && fatalErr == nil && stopReason != StopCancelled {
-		answer = trimSpace(r.synthesizeFinalAnswer(ctx, &synthesizeFinalAnswerInput{
+		synthesized, synthErr := r.synthesizeFinalAnswer(ctx, &synthesizeFinalAnswerInput{
 			Request: request, State: state, Evidence: evidenceStore, Observations: observations,
 			StopReason: stopReason, Events: events, Trace: trace, ReplacePrevious: false,
-		}))
+		})
+		if synthErr != nil {
+			fatalErr = NormalizeAgentError(synthErr)
+			stopReason = StopFatalError
+			trace.Event("error", map[string]any{"code": fatalErr.Code, "message": fatalErr.Message})
+		} else {
+			answer = trimSpace(synthesized)
+		}
 	}
 
 	if answer != "" {
 		answer = DedupeRepeatedAnswer(answer)
+		answer = AnnotateNormalQaWikiMentions(answer, CollectWikiMentionTargets(observations, evidenceStore))
 	}
 
 	metrics := AgentRunMetrics{
@@ -926,8 +1000,33 @@ func (r *PetrichorAgentRuntime) Run(ctx context.Context, request *RunRequest) (*
 	}, nil
 }
 
-type atomicValue struct{ v string }
+// IsPromptInjectionAttempt 是模型防护前的高精度本地门。
+// 教学/分析类提问允许通过；明确要求覆盖系统/开发者指令时阻止任何工具能力。
+func IsPromptInjectionAttempt(text string) bool {
+	text = trimSpace(text)
+	if text == "" || promptInjectionStudyPattern.MatchString(text) {
+		return false
+	}
+	return promptInjectionPattern.MatchString(text)
+}
 
-func (a *atomicValue) set(v string) { a.v = v }
-func (a *atomicValue) get() string  { return a.v }
-func (a *atomicValue) reset()       { a.v = "" }
+type atomicValue struct {
+	mu sync.RWMutex
+	v  string
+}
+
+func (a *atomicValue) set(v string) {
+	a.mu.Lock()
+	a.v = v
+	a.mu.Unlock()
+}
+func (a *atomicValue) get() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.v
+}
+func (a *atomicValue) reset() {
+	a.mu.Lock()
+	a.v = ""
+	a.mu.Unlock()
+}

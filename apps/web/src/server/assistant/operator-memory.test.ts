@@ -117,7 +117,6 @@ describe("load / mutate persistence", () => {
         }])
         const whereSelect = vi.fn(() => ({ limit }))
         const fromSelect = vi.fn(() => ({ where: whereSelect }))
-        const select = vi.fn(() => ({ from: fromSelect }))
 
         const profileLimit = vi.fn(async () => [{
             userId: 1,

@@ -3,12 +3,9 @@ import { drizzle } from "drizzle-orm/postgres-js"
 import postgres from "postgres"
 import { knowledgeBaseArticles } from "../src/server/db/schema"
 import { buildPublicArticleMetadata, parsePublicArticleTocJson } from "../src/server/kb/share-logic"
+import { readGoDatabaseUrl } from "./go-config"
 
-const databaseUrl = process.env.DATABASE_URL?.trim()
-
-if (!databaseUrl) {
-    throw new Error("DATABASE_URL 不能为空")
-}
+const databaseUrl = await readGoDatabaseUrl()
 
 const sql = postgres(databaseUrl, {
     max: 1,

@@ -4,17 +4,199 @@ package kb
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"log/slog"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	httpx "petrichor/api/internal/httpx"
 )
 
 // ===== knowledge/build =====
 
-// ArticleKnowledgeBuild 单篇「构建知识」：切片 → 问题 → 候选抽取 → 目录 → 页面物化 → 落库。
+const (
+	knowledgeBuildJobTTL      = 24 * time.Hour
+	knowledgeBuildJobTimeout  = 15 * time.Minute
+	knowledgeBuildConcurrency = 2
+)
+
+type articleKnowledgeBuildJob struct {
+	ID              string
+	UserID          int64
+	KnowledgeBaseID int64
+	ArticleID       int64
+	Status          string
+	Result          map[string]any
+	Error           *string
+	StartedAt       *time.Time
+	CompletedAt     *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+var articleKnowledgeBuildJobs = struct {
+	sync.Mutex
+	items  map[string]*articleKnowledgeBuildJob
+	active map[string]string
+}{
+	items:  map[string]*articleKnowledgeBuildJob{},
+	active: map[string]string{},
+}
+
+// 同时只允许少量文章构建占用模型与数据库；等待槽位期间任务保持 pending。
+var articleKnowledgeBuildSlots = make(chan struct{}, knowledgeBuildConcurrency)
+
+func articleKnowledgeBuildKey(userID, knowledgeBaseID, articleID int64) string {
+	return strconv.FormatInt(userID, 10) + ":" + strconv.FormatInt(knowledgeBaseID, 10) + ":" + strconv.FormatInt(articleID, 10)
+}
+
+func articleKnowledgeBuildJobResponse(job *articleKnowledgeBuildJob) map[string]any {
+	return map[string]any{
+		"id":              job.ID,
+		"userId":          strconv.FormatInt(job.UserID, 10),
+		"knowledgeBaseId": strconv.FormatInt(job.KnowledgeBaseID, 10),
+		"articleId":       strconv.FormatInt(job.ArticleID, 10),
+		"status":          job.Status,
+		"result":          job.Result,
+		"error":           job.Error,
+		"startedAt":       isoPtr(job.StartedAt),
+		"completedAt":     isoPtr(job.CompletedAt),
+		"createdAt":       iso(job.CreatedAt),
+		"updatedAt":       iso(job.UpdatedAt),
+	}
+}
+
+func cleanupArticleKnowledgeBuildJobsLocked(now time.Time) {
+	for id, job := range articleKnowledgeBuildJobs.items {
+		if (job.Status == "completed" || job.Status == "failed") && now.Sub(job.UpdatedAt) > knowledgeBuildJobTTL {
+			delete(articleKnowledgeBuildJobs.items, id)
+		}
+	}
+}
+
+func createArticleKnowledgeBuildJob(userID, knowledgeBaseID, articleID int64) (map[string]any, string, bool, error) {
+	articleKnowledgeBuildJobs.Lock()
+	defer articleKnowledgeBuildJobs.Unlock()
+
+	now := time.Now()
+	cleanupArticleKnowledgeBuildJobsLocked(now)
+	key := articleKnowledgeBuildKey(userID, knowledgeBaseID, articleID)
+	if activeID := articleKnowledgeBuildJobs.active[key]; activeID != "" {
+		if active := articleKnowledgeBuildJobs.items[activeID]; active != nil && (active.Status == "pending" || active.Status == "processing") {
+			return articleKnowledgeBuildJobResponse(active), active.ID, false, nil
+		}
+		delete(articleKnowledgeBuildJobs.active, key)
+	}
+
+	var id string
+	for attempts := 0; attempts < 3; attempts++ {
+		candidate, err := generateCode()
+		if err != nil {
+			return nil, "", false, err
+		}
+		if articleKnowledgeBuildJobs.items[candidate] == nil {
+			id = candidate
+			break
+		}
+	}
+	if id == "" {
+		return nil, "", false, errors.New("生成知识构建任务 ID 失败")
+	}
+	job := &articleKnowledgeBuildJob{
+		ID: id, UserID: userID, KnowledgeBaseID: knowledgeBaseID, ArticleID: articleID,
+		Status: "pending", CreatedAt: now, UpdatedAt: now,
+	}
+	articleKnowledgeBuildJobs.items[id] = job
+	articleKnowledgeBuildJobs.active[key] = id
+	return articleKnowledgeBuildJobResponse(job), id, true, nil
+}
+
+func setArticleKnowledgeBuildProcessing(id string) *articleKnowledgeBuildJob {
+	articleKnowledgeBuildJobs.Lock()
+	defer articleKnowledgeBuildJobs.Unlock()
+	job := articleKnowledgeBuildJobs.items[id]
+	if job == nil {
+		return nil
+	}
+	now := time.Now()
+	job.Status = "processing"
+	job.StartedAt = &now
+	job.UpdatedAt = now
+	copy := *job
+	return &copy
+}
+
+func finishArticleKnowledgeBuildJob(id string, result map[string]any, err error) {
+	articleKnowledgeBuildJobs.Lock()
+	defer articleKnowledgeBuildJobs.Unlock()
+	job := articleKnowledgeBuildJobs.items[id]
+	if job == nil {
+		return
+	}
+	now := time.Now()
+	job.UpdatedAt = now
+	job.CompletedAt = &now
+	if err == nil {
+		job.Status = "completed"
+		job.Result = result
+		job.Error = nil
+	} else {
+		message := "知识构建失败，请稍后重试"
+		var httpErr *httpx.HttpError
+		if errors.As(err, &httpErr) {
+			message = httpErr.Message
+		}
+		job.Status = "failed"
+		job.Result = nil
+		job.Error = &message
+	}
+	key := articleKnowledgeBuildKey(job.UserID, job.KnowledgeBaseID, job.ArticleID)
+	if articleKnowledgeBuildJobs.active[key] == id {
+		delete(articleKnowledgeBuildJobs.active, key)
+	}
+}
+
+func executeArticleKnowledgeBuildJob(id string) {
+	ctx, cancel := context.WithTimeout(context.Background(), knowledgeBuildJobTimeout)
+	defer cancel()
+
+	acquired := false
+	defer func() {
+		if acquired {
+			<-articleKnowledgeBuildSlots
+		}
+		if recovered := recover(); recovered != nil {
+			err := fmt.Errorf("知识构建发生 panic: %v", recovered)
+			slog.Error("后台知识构建异常", "jobId", id, "err", err)
+			finishArticleKnowledgeBuildJob(id, nil, err)
+		}
+	}()
+
+	select {
+	case articleKnowledgeBuildSlots <- struct{}{}:
+		acquired = true
+	case <-ctx.Done():
+		finishArticleKnowledgeBuildJob(id, nil, ctx.Err())
+		return
+	}
+	job := setArticleKnowledgeBuildProcessing(id)
+	if job == nil {
+		return
+	}
+	result, err := buildArticleKnowledgeCore(ctx, pool(), job.UserID, job.KnowledgeBaseID, job.ArticleID)
+	if err != nil {
+		slog.Error("后台知识构建失败", "jobId", id, "userId", job.UserID, "knowledgeBaseId", job.KnowledgeBaseID, "articleId", job.ArticleID, "err", err)
+	}
+	finishArticleKnowledgeBuildJob(id, result, err)
+}
+
+// ArticleKnowledgeBuild 创建单篇「构建知识」后台任务；重复点击会复用同一运行中任务。
 func ArticleKnowledgeBuild(c *ginContext) {
 	run(c, func(c *ginContext) (any, error) {
 		user := currentUser(c)
@@ -30,15 +212,13 @@ func ArticleKnowledgeBuild(c *ginContext) {
 		if err != nil {
 			return nil, err
 		}
-		forceRebuild := rawBool(raw, "forceRebuild")
-		_ = forceRebuild // TS 版同样未消费该参数：构建恒为全量重建
+		_ = rawBool(raw, "forceRebuild") // 当前构建恒为全量重建，保留兼容参数。
 		if err := requireChat(); err != nil {
 			return nil, err
 		}
 
 		q := pool()
-		kb, err := assertKnowledgeBaseOwner(q, user.ID, kbID)
-		if err != nil {
+		if _, err := assertKnowledgeBaseOwner(q, user.ID, kbID); err != nil {
 			return nil, err
 		}
 		article, err := queryArticle(q,
@@ -55,93 +235,175 @@ func ArticleKnowledgeBuild(c *ginContext) {
 			return nil, badReq("文章没有可构建的 Markdown 内容")
 		}
 
-		existingRows, err := queryWikiPagesWhere(q,
-			`user_id = $1 AND knowledge_base_id = $2 AND kind IN ('entity','concept') AND archived_at IS NULL`,
-			user.ID, kbID)
+		response, jobID, created, err := createArticleKnowledgeBuildJob(user.ID, kbID, articleID)
 		if err != nil {
 			return nil, err
 		}
-		existingPages := make([]existingKnowledgePage, 0, len(existingRows))
-		for i := range existingRows {
-			page := &existingRows[i]
-			metadata := readKnowledgePageMetadata(page.FrontmatterJson)
-			kind := "entity"
-			if page.Kind == "concept" {
-				kind = "concept"
-			}
-			buildVersion := int64(0)
-			if v, ok := metadata["buildVersion"].(float64); ok {
-				buildVersion = int64(v)
-			}
-			existingPages = append(existingPages, existingKnowledgePage{
-				pageKey:      page.PageKey,
-				title:        page.Title,
-				kind:         kind,
-				aliases:      toStrSlice(metadata["aliases"]),
-				summary:      derefStr(page.Summary),
-				categoryPath: toStrSlice(metadata["categoryPath"]),
-				buildVersion: buildVersion,
-			})
+		if created {
+			go executeArticleKnowledgeBuildJob(jobID)
 		}
-
-		ctx := context.Background()
-		chunks, truncated := splitMarkdownForKnowledgeBuild(article.ContentMd, article.Title, 0)
-		warnings := []string{}
-		if truncated {
-			warnings = append(warnings, "文档过长，仅前 "+jsonNumber(knowledgeChunkLimit)+" 个切片参与了知识构建，后续内容未生成推荐问题")
-		}
-		if len(chunks) == 0 {
-			return nil, badReq("文章没有可构建的 Markdown 切片")
-		}
-
-		chunksWithQuestions, questionWarnings := generateChunkQuestions(ctx, user.ID, kb.Name, article.Title, chunks)
-		warnings = append(warnings, questionWarnings...)
-		documentSummary, candidates, relations, extractionWarnings := extractDocumentCandidates(
-			ctx, user.ID, kb.Name, article.Title, article.ContentMd, existingPages)
-		warnings = append(warnings, extractionWarnings...)
-
-		questionsByKey := map[string][]string{}
-		for _, cqw := range chunksWithQuestions {
-			questionsByKey[cqw.chunk.chunkKey] = cqw.recommendedQuestions
-		}
-		for index := range chunks {
-			if questions := questionsByKey[chunks[index].chunkKey]; questions != nil {
-				chunks[index].recommendedQuestions = questions
-			} else {
-				chunks[index].recommendedQuestions = normalizeRecommendedQuestions(nil, chunks[index].heading)
-			}
-		}
-		candidates, warnings = planKnowledgeTaxonomy(ctx, user.ID, kb.Name, article.Title, candidates, existingPages, warnings)
-		items, warnings := materializeWikiPages(ctx, user.ID, kb.Name, article.Title, article.ContentMd, candidates, relations, warnings)
-
-		sourcePage, entityCount, conceptCount, werr := persistKnowledgeBuild(
-			c, q, user.ID, kbID, kb.Name, article, chunksWithQuestions, documentSummary, items, relations, warnings)
-		if werr != nil {
-			return nil, werr
-		}
-
-		// 提交后 best-effort 补向量；EmbedInvoker 未注入时静默跳过。
-		if EmbedInvoker != nil {
-			if profile, perr := loadEmbeddingProfileOrNull(q, user.ID); perr == nil && profile != nil {
-				rows, _, lerr := loadPendingIndexRows(q, user.ID, kbID, "chunk", profile)
-				if lerr == nil {
-					_, _ = writeIndexEmbeddings(q, user.ID, rows, profile)
-				}
-			}
-		}
-
-		return map[string]any{
-			"articleId":                strconv.FormatInt(article.ID, 10),
-			"knowledgeBaseId":          strconv.FormatInt(article.KnowledgeBaseID, 10),
-			"fromCache":                false,
-			"chunkCount":               len(chunksWithQuestions),
-			"recommendedQuestionCount": len(chunksWithQuestions) * 3,
-			"entityCount":              entityCount,
-			"conceptCount":             conceptCount,
-			"sourcePage":               toWikiPageResponse(sourcePage),
-			"warnings":                 warningsOrEmpty(warnings),
-		}, nil
+		return response, nil
 	})
+}
+
+// ArticleKnowledgeBuildStatus 查询当前用户创建的知识构建任务。
+func ArticleKnowledgeBuildStatus(c *ginContext) {
+	run(c, func(c *ginContext) (any, error) {
+		user := currentUser(c)
+		raw, err := readBody(c)
+		if err != nil {
+			return nil, err
+		}
+		jobID := trimmedString(raw, "jobId")
+		if jobID == "" || len(jobID) > 200 {
+			return nil, badReq("jobId 必须是合法任务 ID")
+		}
+		articleKnowledgeBuildJobs.Lock()
+		defer articleKnowledgeBuildJobs.Unlock()
+		cleanupArticleKnowledgeBuildJobsLocked(time.Now())
+		job := articleKnowledgeBuildJobs.items[jobID]
+		if job == nil || job.UserID != user.ID {
+			return nil, notFoundErr("知识构建任务不存在或已过期")
+		}
+		return articleKnowledgeBuildJobResponse(job), nil
+	})
+}
+
+// buildArticleKnowledgeCore 切片 → 问题/候选并行抽取 → 目录 → 页面物化 → 落库。
+func buildArticleKnowledgeCore(ctx context.Context, q txBeginner, userID, kbID, articleID int64) (map[string]any, error) {
+	kb, err := assertKnowledgeBaseOwner(q, userID, kbID)
+	if err != nil {
+		return nil, err
+	}
+	article, err := queryArticle(q,
+		`SELECT `+articleColumns+` FROM petrichor_kb_article
+			 WHERE id = $1 AND user_id = $2 AND knowledge_base_id = $3 LIMIT 1`,
+		articleID, userID, kbID)
+	if err != nil {
+		return nil, err
+	}
+	if article == nil {
+		return nil, notFoundErr("文章不存在")
+	}
+	if trimSpace(article.ContentMd) == "" {
+		return nil, badReq("文章没有可构建的 Markdown 内容")
+	}
+
+	existingRows, err := queryWikiPagesWhere(q,
+		`user_id = $1 AND knowledge_base_id = $2 AND kind IN ('entity','concept') AND archived_at IS NULL`,
+		userID, kbID)
+	if err != nil {
+		return nil, err
+	}
+	existingPages := make([]existingKnowledgePage, 0, len(existingRows))
+	for i := range existingRows {
+		page := &existingRows[i]
+		metadata := readKnowledgePageMetadata(page.FrontmatterJson)
+		kind := "entity"
+		if page.Kind == "concept" {
+			kind = "concept"
+		}
+		buildVersion := int64(0)
+		if v, ok := metadata["buildVersion"].(float64); ok {
+			buildVersion = int64(v)
+		}
+		existingPages = append(existingPages, existingKnowledgePage{
+			pageKey:      page.PageKey,
+			title:        page.Title,
+			kind:         kind,
+			aliases:      toStrSlice(metadata["aliases"]),
+			summary:      derefStr(page.Summary),
+			categoryPath: toStrSlice(metadata["categoryPath"]),
+			buildVersion: buildVersion,
+		})
+	}
+
+	chunks, truncated := splitMarkdownForKnowledgeBuild(article.ContentMd, article.Title, 0)
+	warnings := []string{}
+	if truncated {
+		warnings = append(warnings, "文档过长，仅前 "+jsonNumber(knowledgeChunkLimit)+" 个切片参与了知识构建，后续内容未生成推荐问题")
+	}
+	if len(chunks) == 0 {
+		return nil, badReq("文章没有可构建的 Markdown 切片")
+	}
+
+	var chunksWithQuestions []chunkWithQuestions
+	var questionWarnings []string
+	var documentSummary string
+	var candidates []knowledgeCandidate
+	var relations []knowledgeRelation
+	var extractionWarnings []string
+	var parallel sync.WaitGroup
+	parallelErrors := make(chan error, 2)
+	parallel.Add(2)
+	go func() {
+		defer parallel.Done()
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				parallelErrors <- fmt.Errorf("推荐问题生成异常: %v", recovered)
+			}
+		}()
+		chunksWithQuestions, questionWarnings = generateChunkQuestions(ctx, userID, kb.Name, article.Title, chunks)
+	}()
+	go func() {
+		defer parallel.Done()
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				parallelErrors <- fmt.Errorf("知识候选抽取异常: %v", recovered)
+			}
+		}()
+		documentSummary, candidates, relations, extractionWarnings = extractDocumentCandidates(
+			ctx, userID, kb.Name, article.Title, article.ContentMd, existingPages)
+	}()
+	parallel.Wait()
+	close(parallelErrors)
+	for parallelErr := range parallelErrors {
+		return nil, parallelErr
+	}
+	warnings = append(warnings, questionWarnings...)
+	warnings = append(warnings, extractionWarnings...)
+
+	questionsByKey := map[string][]string{}
+	for _, cqw := range chunksWithQuestions {
+		questionsByKey[cqw.chunk.chunkKey] = cqw.recommendedQuestions
+	}
+	for index := range chunks {
+		if questions := questionsByKey[chunks[index].chunkKey]; questions != nil {
+			chunks[index].recommendedQuestions = questions
+		} else {
+			chunks[index].recommendedQuestions = normalizeRecommendedQuestions(nil, chunks[index].heading)
+		}
+	}
+	candidates, warnings = planKnowledgeTaxonomy(ctx, userID, kb.Name, article.Title, candidates, existingPages, warnings)
+	items, warnings := materializeWikiPages(ctx, userID, kb.Name, article.Title, article.ContentMd, candidates, relations, warnings)
+
+	sourcePage, entityCount, conceptCount, werr := persistKnowledgeBuild(
+		ctx, q, userID, kbID, kb.Name, article, chunksWithQuestions, documentSummary, items, relations, warnings)
+	if werr != nil {
+		return nil, werr
+	}
+
+	// 提交后 best-effort 补向量；EmbedInvoker 未注入时静默跳过。
+	if EmbedInvoker != nil {
+		if profile, perr := loadEmbeddingProfileOrNull(q, userID); perr == nil && profile != nil {
+			rows, _, lerr := loadPendingIndexRows(q, userID, kbID, "chunk", profile)
+			if lerr == nil {
+				_, _ = writeIndexEmbeddings(q, userID, rows, profile)
+			}
+		}
+	}
+
+	return map[string]any{
+		"articleId":                strconv.FormatInt(article.ID, 10),
+		"knowledgeBaseId":          strconv.FormatInt(article.KnowledgeBaseID, 10),
+		"fromCache":                false,
+		"chunkCount":               len(chunksWithQuestions),
+		"recommendedQuestionCount": len(chunksWithQuestions) * 3,
+		"entityCount":              entityCount,
+		"conceptCount":             conceptCount,
+		"sourcePage":               toWikiPageResponse(sourcePage),
+		"warnings":                 warningsOrEmpty(warnings),
+	}, nil
 }
 
 func warningsOrEmpty(in []string) []string {
@@ -166,11 +428,10 @@ type txBeginner interface {
 }
 
 // persistKnowledgeBuild 对应 buildArticleKnowledge 的落库事务。
-func persistKnowledgeBuild(c *ginContext, q txBeginner, userID, kbID int64, kbName string,
+func persistKnowledgeBuild(ctx context.Context, q txBeginner, userID, kbID int64, kbName string,
 	article *ArticleRow, chunks []chunkWithQuestions, documentSummary string,
 	items []extractedItem, relations []knowledgeRelation, warnings []string,
 ) (*WikiPageRow, int, int, error) {
-	ctx := context.Background()
 	tx, err := q.Begin(ctx)
 	if err != nil {
 		return nil, 0, 0, err
@@ -321,7 +582,7 @@ func persistKnowledgeBuild(c *ginContext, q txBeginner, userID, kbID int64, kbNa
 	}); err != nil {
 		return nil, 0, 0, err
 	}
-	if err := tx.Commit(context.Background()); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return nil, 0, 0, err
 	}
 	return sourcePage, entityCount, conceptCount, nil

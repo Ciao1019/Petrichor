@@ -6,6 +6,7 @@ export default defineConfig({
         environment: "node",
         globals: true,
         include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+        exclude: ["src/server/**"],
         coverage: {
             provider: "v8",
             reporter: ["text", "json", "html", "lcov"],

@@ -62,9 +62,8 @@ body:
     attributes:
       label: 部署环境
       options:
-        - Vercel
-        - 本地开发 (pnpm dev)
-        - 自托管 (其他)
+        - 本地开发 (bun dev + bun run dev:api)
+        - 自托管
     validations:
       required: true
 
@@ -88,7 +87,7 @@ body:
     id: logs
     attributes:
       label: 相关日志
-      description: Vercel Functions 日志 / 浏览器控制台 / Network 异常请求
+      description: Go API 日志 / Bun Web 日志 / 浏览器控制台 / Network 异常请求
       render: shell
 
   - type: textarea

@@ -3,6 +3,7 @@ import { toast } from "sonner"
 
 import { resolveAxiosErrorMessage } from "@/components/knowledge/article-share-utils"
 import {
+  buildArticleKnowledgeAndWait,
   knowledgeBaseWikiAgentApi,
   type ArticleKnowledgeChunkListResponse,
   type ArticleKnowledgeChunkResponse,
@@ -60,13 +61,13 @@ export function useArticleChunkDialogState({
     if (!knowledgeBaseId || !articleId || building) return
     setBuilding(true)
     try {
-      const res = await knowledgeBaseWikiAgentApi.buildArticleKnowledge({
+      const result = await buildArticleKnowledgeAndWait({
         knowledgeBaseId,
         articleId,
         forceRebuild: true,
       })
-      for (const warning of res.data.warnings) toast.warning(warning)
-      toast.success(`已生成 ${res.data.chunkCount} 个分片、${res.data.recommendedQuestionCount} 个推荐问题`)
+      for (const warning of result.warnings) toast.warning(warning)
+      toast.success(`已生成 ${result.chunkCount} 个分片、${result.recommendedQuestionCount} 个推荐问题`)
       await load()
     } catch (e: unknown) {
       const message = resolveAxiosErrorMessage(e, "构建知识失败")

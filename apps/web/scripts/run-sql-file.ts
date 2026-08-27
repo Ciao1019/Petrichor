@@ -1,15 +1,13 @@
 import fs from "node:fs"
 import path from "node:path"
 import postgres from "postgres"
+import { readGoDatabaseUrl } from "./go-config"
 
 const file = process.argv[2]
 if (!file) {
     throw new Error("用法：tsx scripts/run-sql-file.ts <path-to-sql>")
 }
-const url = process.env.DATABASE_URL
-if (!url) {
-    throw new Error("DATABASE_URL 未设置")
-}
+const url = await readGoDatabaseUrl({ preferMigration: true })
 
 const raw = fs.readFileSync(path.resolve(file), "utf8")
 // 去掉整行注释后按分号切分，逐条执行（Supabase 连的是事务池，多语句一次发容易出问题）

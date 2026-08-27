@@ -11,6 +11,7 @@ import {
   FolderPlus,
   GripVertical,
   Loader2,
+  Network,
   Plus,
   Trash2,
   X,
@@ -91,10 +92,10 @@ import {
   FolderPlusIcon,
 } from "@/components/animated-icons"
 import {
+  buildArticleKnowledgeAndWait,
   knowledgeBaseApi,
   knowledgeBaseArticleApi,
   knowledgeBaseNodeApi,
-  knowledgeBaseWikiAgentApi,
   type ArticleTreeStatus,
   type KnowledgeBaseResponse,
   type KnowledgeBaseTreeNode,
@@ -111,6 +112,7 @@ import { cn } from "@/lib/utils"
 import { gsap } from "@/lib/gsap"
 import { rememberKnowledgeBase } from "@/features/pages/knowledge/kb-recent"
 import { KnowledgeExplorerPanel } from "@/features/pages/knowledge/KnowledgeExplorerDialog"
+import { KnowledgeWikiGraphPanel } from "@/features/pages/knowledge/KnowledgeWikiGraphPanel"
 
 /**
  * 文章节点状态：用 StatusDot 降噪，悬停看含义，避免彩色胶囊墙抢标题注意力。
@@ -429,6 +431,12 @@ function KnowledgeBaseHeaderAction({
 }
 
 /** 文章行内的「构建知识」按钮：悬停/聚焦时翻动书页，构建中切换为 Loader */
+type KnowledgeBaseView = "documents" | "knowledge" | "graph"
+
+function toKnowledgeBaseView(value: string): KnowledgeBaseView {
+  return value === "knowledge" || value === "graph" ? value : "documents"
+}
+
 /**
  * 标签栏里的纯图标标签：文案交给 Tooltip 与按钮的 aria-label。
  * 图标统一塞进 18×18 的方盒子——两个图标各自的实现（内联 svg / 带 div 包裹的动画图标）
@@ -851,7 +859,13 @@ export function KnowledgeBaseTreePage() {
   const [createArticleBatchParsing, setCreateArticleBatchParsing] = React.useState(false)
   const [createArticleBatchRunning, setCreateArticleBatchRunning] = React.useState(false)
   const [importDialogOpen, setImportDialogOpen] = React.useState(false)
-  const [activeView, setActiveView] = React.useState<"documents" | "knowledge">("documents")
+  const [activeView, setActiveView] = React.useState<KnowledgeBaseView>("documents")
+  // 从 Wiki 图谱双击节点跳到知识空间时带过去的落点；知识空间挂载后消费一次
+  const [wikiFocusPageKey, setWikiFocusPageKey] = React.useState<string | null>(null)
+  const openWikiPageFromGraph = React.useCallback((pageKey: string) => {
+    setWikiFocusPageKey(pageKey)
+    setActiveView("knowledge")
+  }, [])
   const prefersReducedMotion = useReducedMotion()
   const [buildingArticleIds, setBuildingArticleIds] = React.useState<Set<string>>(new Set())
   const [deleteOpen, setDeleteOpen] = React.useState(false)
@@ -1122,11 +1136,10 @@ export function KnowledgeBaseTreePage() {
     if (!knowledgeBaseId || buildingArticleIds.has(articleId)) return
     setBuildingArticleIds((current) => new Set(current).add(articleId))
     try {
-      const response = await knowledgeBaseWikiAgentApi.buildArticleKnowledge({
+      const result = await buildArticleKnowledgeAndWait({
         knowledgeBaseId,
         articleId,
       })
-      const result = response.data
       toast.success(
         `知识构建完成：${result.chunkCount} 个切片、${result.entityCount} 个实体、${result.conceptCount} 个概念${result.fromCache ? "（已复用）" : ""}`
       )
@@ -2094,12 +2107,26 @@ export function KnowledgeBaseTreePage() {
                   ),
                   value: "knowledge",
                 },
+                {
+                  ariaLabel: "Wiki 图谱",
+                  label: (
+                    <KnowledgeBaseViewLabel
+                      icon={<Network className="size-[18px] shrink-0" />}
+                      label="Wiki 图谱"
+                    />
+                  ),
+                  value: "graph",
+                },
               ]}
               ariaLabel="知识库视图"
               // 用位移而不是负 margin 做左对齐：负 margin 会把父级的 max-content 也减掉 12px，
               // 标签栏自身的 max-w-full 就按这个夹窄的宽度收，最后一个触发区和指示条会被裁掉一截。
               className="-translate-x-3"
-              onValueChange={(value) => setActiveView(value === "knowledge" ? "knowledge" : "documents")}
+              onValueChange={(value) => {
+                // 手动切标签就丢掉图谱交接的落点，避免下次回到知识空间又被拽回旧页面
+                setWikiFocusPageKey(null)
+                setActiveView(toKnowledgeBaseView(value))
+              }}
             />
             {knowledgeBase?.description ? (
               <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
@@ -2364,9 +2391,17 @@ export function KnowledgeBaseTreePage() {
           />
         </div>
         </>
-      ) : knowledgeBaseId ? (
-        <KnowledgeExplorerPanel knowledgeBaseId={knowledgeBaseId} />
-      ) : null}
+      ) : !knowledgeBaseId ? null : activeView === "graph" ? (
+        <KnowledgeWikiGraphPanel
+          knowledgeBaseId={knowledgeBaseId}
+          onOpenPage={openWikiPageFromGraph}
+        />
+      ) : (
+        <KnowledgeExplorerPanel
+          knowledgeBaseId={knowledgeBaseId}
+          focusPageKey={wikiFocusPageKey}
+        />
+      )}
       </motion.div>
       </AnimatePresence>
 

@@ -2,31 +2,15 @@
 package aicore
 
 import (
-	"os"
 	"strings"
 
+	"petrichor/api/internal/config"
 	"petrichor/api/internal/crypto"
 )
 
-// 默认加密参数与 TS config-logic.ts 保持一致（仅用于未配置环境变量时的回退）。
-const (
-	defaultEncryptKey  = "Ek4EhsOIVMQZ2gMAuJXJzUPjCZOjyKIt"
-	defaultEncryptSalt = "57da7a247bba15d0"
-)
-
 func encryptSettings() (string, string) {
-	key := firstEnv("PETRICHOR_ENCRYPT_KEY", "AI_CONFIG_ENCRYPT_KEY", defaultEncryptKey)
-	salt := firstEnv("PETRICHOR_ENCRYPT_SALT", "AI_CONFIG_ENCRYPT_SALT", defaultEncryptSalt)
-	return key, salt
-}
-
-func firstEnv(names ...string) string {
-	for _, n := range names {
-		if v := strings.TrimSpace(os.Getenv(n)); v != "" {
-			return v
-		}
-	}
-	return names[len(names)-1]
+	encryption := config.Get().Encryption
+	return encryption.Key, encryption.Salt
 }
 
 // EncodeApiKey 加密 API Key。

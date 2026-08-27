@@ -9,10 +9,11 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"petrichor/api/internal/config"
 )
 
 const namespace = "petrichor"
@@ -39,12 +40,11 @@ var (
 
 func getClient() *redisClient {
 	once.Do(func() {
-		u := strings.TrimSpace(os.Getenv("UPSTASH_REDIS_REST_URL"))
-		t := strings.TrimSpace(os.Getenv("UPSTASH_REDIS_REST_TOKEN"))
-		if u == "" || t == "" {
+		upstash := config.Get().Upstash
+		if upstash == nil {
 			return
 		}
-		client = &redisClient{baseURL: strings.TrimRight(u, "/"), token: t, http: &http.Client{Timeout: 5 * time.Second}}
+		client = &redisClient{baseURL: upstash.RESTURL, token: upstash.RESTToken, http: &http.Client{Timeout: 5 * time.Second}}
 		slog.Info("[cache] Upstash Redis 缓存已启用")
 	})
 	return client

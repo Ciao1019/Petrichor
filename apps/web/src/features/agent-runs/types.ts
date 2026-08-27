@@ -1,4 +1,5 @@
 import type { AgentActivityType } from "@/lib/agent/tool-ui"
+import type { WikiMentionTarget } from "@/lib/wiki-mentions"
 
 /**
  * Agent Run 前端视图模型（§162.3/§162.4/§162.11/§162.14）。
@@ -62,7 +63,7 @@ export type SubAgentViewModel = {
     completedAt?: number
 }
 
-export type EvidenceSource = "knowledge" | "web" | "graph" | "memory" | "subagent" | "tool"
+export type EvidenceSource = "knowledge" | "wiki" | "web" | "graph" | "memory" | "subagent" | "tool"
 
 export type EvidenceViewModel = {
     id: string
@@ -71,6 +72,7 @@ export type EvidenceViewModel = {
     snippet?: string
     url?: string
     nodeKey?: string
+    pageKey?: string
     articleId?: string
     knowledgeBaseId?: string
     path?: string[]
@@ -99,6 +101,8 @@ export type AgentRunViewModel = {
     loadedSkills: string[]
     /** 实时答案全文：换段时旧段落保留，新内容接在其后 */
     answer: string
+    /** 流式回答开始前下发的 Wiki 词典；只影响原位渲染，不改写 answer。 */
+    wikiMentionTargets?: WikiMentionTarget[]
     /**
      * 当前作答段在 answer 中的起始下标。
      * final_answer_completed 只覆盖这一段，前面已归档的段落原样保留，
@@ -136,6 +140,7 @@ export type AgentStreamEventType =
     | "delegation_progress"
     | "delegation_completed"
     | "delegation_failed"
+    | "wiki_mention_targets"
     | "final_answer_started"
     | "final_answer_delta"
     | "final_answer_completed"

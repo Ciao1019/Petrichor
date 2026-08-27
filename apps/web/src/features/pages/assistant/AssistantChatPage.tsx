@@ -917,7 +917,7 @@ function QaChatPanel({
       focus: focusBody,
     },
     credentials: "include",
-      fetch: async (input, init) => {
+      fetch: (async (input, init) => {
         const currentConfigId = selectedConfigId
         let nextInit = init
         if (init && typeof init.body === "string") {
@@ -963,7 +963,7 @@ function QaChatPanel({
         onThreadKnown(remoteThreadId)
       }
       return response
-    },
+    }) as typeof fetch,
   }), [focusBody, onThreadKnown, selectedConfigId, threadId])
 
   const suggestions = React.useMemo(() => {

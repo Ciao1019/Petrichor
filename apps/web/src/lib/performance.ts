@@ -74,7 +74,7 @@ export function measurePageLoadPerformance() {
 
 /**
  * 报告 Web Vitals
- * 注意：需要安装 web-vitals 包: pnpm add web-vitals
+ * 注意：需要安装 web-vitals 包: bun add web-vitals
  */
 export async function reportWebVitals(onPerfEntry?: (metric: any) => void) {
     if (onPerfEntry && typeof window !== "undefined") {

@@ -1,47 +1,37 @@
 # @petrichor/web
 
-Next.js + TypeScript 全栈应用，目标运行环境为 **Vercel**，数据层使用 **Supabase PostgreSQL**。
-
-> 📖 完整的简介、功能特性、Vercel 一键部署、环境变量速查表请看仓库根目录的 [`README.md`](../../README.md)。
+React + Vite + TypeScript 前端，包管理与 Web 运行时统一使用 **Bun 1.3.14**。业务 API 由 `apps/api` 的 Go 服务提供。
 
 ## 本地开发
 
-```bash
-pnpm install
-pnpm dev
-```
-
-只运行当前应用：
+在仓库根目录安装依赖并启动：
 
 ```bash
-pnpm --filter "@petrichor/web" dev
+bun install
+bun dev
 ```
 
-## 环境变量
+Go API 单独启动：
 
-复制 `.env.example` 并填入数据库、Session、加密密钥和对象存储配置：
+```bash
+bun run dev:api
+```
+
+## 前端环境变量
+
+复制模板：
 
 ```bash
 cp apps/web/.env.example apps/web/.env.local
 ```
 
-每一项的作用见根 README 的[环境变量速查表](../../README.md#-环境变量速查表)。
-
-## 初始化数据库
-
-```bash
-pnpm --silent --filter "@petrichor/web" db:sql > petrichor-init.sql
-```
-
-将输出 SQL 放到 Supabase SQL Editor 执行。SQL 会创建 Better Auth 认证表和业务表。
-
-认证使用 Better Auth + Drizzle，浏览器端通过 httpOnly Cookie 保持登录状态，不再依赖 `localStorage` token。
+Web 环境文件只保存 `NEXT_PUBLIC_*`、`PETRICHOR_PUBLIC_*`、`VITE_*` 和 `PETRICHOR_GO_API_URL`。数据库、Session、加密密钥、对象存储等后端配置统一写入 `apps/api/config.toml`。
 
 ## 质量检查
 
 ```bash
-pnpm test
-pnpm typecheck
-pnpm lint
-pnpm build
+bun run test
+bun run typecheck
+bun run lint
+bun run build
 ```

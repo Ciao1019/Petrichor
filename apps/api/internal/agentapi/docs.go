@@ -36,7 +36,7 @@ func AgentSearchDocuments(c *gin.Context, actx *authContext) (any, error) {
 	if hasKB {
 		kbFilter = &kbID
 	}
-	items, err := searchAgentDocuments(dbPool(), actx.UserID, kbFilter, query, limit)
+	items, err := searchAgentDocuments(c.Request.Context(), actx.UserID, kbFilter, query, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -490,7 +490,7 @@ func AgentAskDocument(c *gin.Context, actx *authContext) (any, error) {
 	if hasKB {
 		kbFilter = &kbID
 	}
-	hits, err := searchAgentDocuments(dbPool(), actx.UserID, kbFilter, question, limit)
+	hits, err := searchAgentDocuments(c.Request.Context(), actx.UserID, kbFilter, question, limit)
 	if err != nil {
 		return nil, err
 	}

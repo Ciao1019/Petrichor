@@ -12,7 +12,7 @@ const fallbackProfile: AboutProfileResponse = {
     roleTitle: "Creative Dev & Visual Artist",
     intro: "我是 CiZai，是一个普普通通的程序员。\n\n目前就职于金山办公\n\n我的兴趣主要在 Coding / AI 方向。\n\n我喜欢 Minecraft。",
     expertise: ["Frontend Architecture", "AI 应用开发", "Knowledge Systems", "Creative Coding"],
-    toolkit: ["TypeScript", "React", "Next.js", "AI", "PostgreSQL", "Minecraft"],
+    toolkit: ["TypeScript", "React", "Bun", "Vite", "AI", "PostgreSQL", "Minecraft"],
     quote: "Code is just another medium for painting dreams.",
     accents: [
         { phrase: "CiZai", style: "red", note: "yep, that's me" },

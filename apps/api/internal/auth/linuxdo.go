@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -43,20 +42,12 @@ type linuxDoConfig struct {
 	redirectURI  string
 }
 
-func readEnvFallback(names ...string) string {
-	for _, name := range names {
-		if v := strings.TrimSpace(os.Getenv(name)); v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
-// getLinuxDoConfig 环境变量缺失时返回禁用错误（文案与 TS 一致）。
+// getLinuxDoConfig 配置缺失时返回禁用错误（文案与 TS 一致）。
 func getLinuxDoConfig() (*linuxDoConfig, error) {
-	clientID := readEnvFallback("PETRICHOR_LINUXDO_CLIENT_ID", "LINUXDO_CLIENT_ID")
-	clientSecret := readEnvFallback("PETRICHOR_LINUXDO_CLIENT_SECRET", "LINUXDO_CLIENT_SECRET")
-	redirectURI := readEnvFallback("PETRICHOR_LINUXDO_REDIRECT_URI", "LINUXDO_REDIRECT_URI")
+	linuxDo := config.Get().LinuxDo
+	clientID := linuxDo.ClientID
+	clientSecret := linuxDo.ClientSecret
+	redirectURI := linuxDo.RedirectURI
 	if redirectURI == "" {
 		redirectURI = config.Get().BaseURL + "/api/auth/callback"
 	}

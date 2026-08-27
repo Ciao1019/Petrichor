@@ -22,6 +22,52 @@ type IngestWikiInput struct {
 	FullRebuild     bool
 }
 
+// WikiIngest POST /api/kb/wiki/ingest：以当前登录用户身份编译知识库 Wiki。
+func WikiIngest(c *ginContext) {
+	run(c, func(c *ginContext) (any, error) {
+		user := currentUser(c)
+		raw, err := readBody(c)
+		if err != nil {
+			return nil, err
+		}
+		kbID, err := reqID(raw["knowledgeBaseId"], "ID 必须是正整数")
+		if err != nil {
+			return nil, err
+		}
+
+		articleIDs := []int64{}
+		if value, exists := raw["articleIds"]; exists && value != nil {
+			list, ok := value.([]any)
+			if !ok {
+				return nil, badReq("articleIds 必须是数组")
+			}
+			if len(list) > 500 {
+				return nil, badReq("articleIds 数量不能超过 500")
+			}
+			seen := make(map[int64]struct{}, len(list))
+			for _, item := range list {
+				id, parseErr := reqID(item, "ID 必须是正整数")
+				if parseErr != nil {
+					return nil, parseErr
+				}
+				if _, duplicate := seen[id]; duplicate {
+					continue
+				}
+				seen[id] = struct{}{}
+				articleIDs = append(articleIDs, id)
+			}
+		}
+
+		return IngestWikiCore(pool(), IngestWikiInput{
+			UserID:          user.ID,
+			KnowledgeBaseID: kbID,
+			ArticleIDs:      articleIDs,
+			ForceRebuild:    rawBool(raw, "forceRebuild"),
+			FullRebuild:     rawBool(raw, "fullRebuild"),
+		})
+	})
+}
+
 // IngestWikiCore 对应 ingestKnowledgeBaseWiki：编译/增量更新知识库 Wiki。
 func IngestWikiCore(q execQuerier, in IngestWikiInput) (map[string]any, error) {
 	kbRow, err := assertKnowledgeBaseOwner(q, in.UserID, in.KnowledgeBaseID)

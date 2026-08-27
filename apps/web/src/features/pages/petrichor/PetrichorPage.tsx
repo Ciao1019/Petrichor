@@ -14,8 +14,6 @@ import { BlueNote, DateTag, HandStamp, HandUnderline, LinkDoodle, MarkerHighligh
 const LINKS = {
     repo: "https://github.com/Ciao1019/Petrichor",
     demo: "https://wl.do",
-    deploy:
-        "https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FCiao1019%2FPetrichor&project-name=petrichor&repository-name=petrichor&root-directory=apps%2Fweb",
     license: "https://github.com/Ciao1019/Petrichor/blob/master/LICENSE",
 } as const
 
@@ -38,7 +36,7 @@ const CAPABILITIES: { title: string; tag: string; detail: string; dot: MarkerCol
         title: "AI 写作助手",
         tag: "Multi-model",
         dot: "green",
-        detail: "卡住了就让它续写、改写、翻译或换语气；总结、导图、知识图谱和周月回顾也一并包办，模型在后台配好即可。",
+        detail: "卡住了就让它续写、改写、翻译或换语气；总结、导图和知识图谱也一并包办，模型在后台配好即可。",
     },
     {
         title: "站内对话助手",
@@ -142,18 +140,18 @@ const AGENT_STEPS: { title: string; detail: string; ink: string }[] = [
 ]
 
 const STACK: { group: string; items: string[] }[] = [
-    { group: "框架", items: ["Next.js 16", "React", "TypeScript 5.9", "React Router", "Tailwind CSS", "shadcn/ui"] },
+    { group: "框架", items: ["Bun 1.3", "Vite 8", "React", "TypeScript 5.9", "React Router", "Go", "Gin"] },
     { group: "编辑器", items: ["PlateJS", "Slate", "Markdown", "KaTeX", "Mind Map", "Whiteboard"] },
-    { group: "数据层", items: ["PostgreSQL", "Supabase", "Drizzle ORM", "S3 兼容存储"] },
+    { group: "数据层", items: ["PostgreSQL", "Supabase", "pgx", "S3 兼容存储"] },
     { group: "AI", items: ["Vercel AI SDK", "OpenAI", "Gemini", "DeepSeek", "向量召回", "MCP"] },
-    { group: "工程", items: ["pnpm 10", "Vitest", "ESLint", "Vercel", "Node ≥ 22"] },
+    { group: "工程", items: ["Bun", "gofmt", "go vet", "Vitest", "ESLint"] },
 ]
 
-const DEPLOY_STEPS: { title: string; detail: string; ink: string }[] = [
+const SELF_HOST_STEPS: { title: string; detail: string; ink: string }[] = [
     {
         title: "开一个 Supabase 项目",
         ink: "green",
-        detail: "取 Transaction Pooler（6543 端口）连接串作为 DATABASE_URL；免费额度足够起步。",
+        detail: "取 Transaction Pooler（6543 端口）连接串，写入 apps/api/config.toml 的 database.url。",
     },
     {
         title: "准备 S3 兼容存储",
@@ -161,14 +159,14 @@ const DEPLOY_STEPS: { title: string; detail: string; ink: string }[] = [
         detail: "Bitiful / AWS S3 / MinIO 任选，建一个公开读的 Bucket，记下 endpoint、region、bucket 与密钥对。",
     },
     {
-        title: "生成三串密钥",
+        title: "准备后端配置",
         ink: "orange",
-        detail: "SESSION_SECRET 与 PETRICHOR_ENCRYPT_KEY 各取 32 字节 base64，PETRICHOR_ENCRYPT_SALT 取 8 字节 hex。上线后不要再换。",
+        detail: "从 config.example.toml 复制配置，填写 Session、加密、S3、LinuxDo、缓存和 Agent 选项。真实 TOML 不提交。",
     },
     {
-        title: "一键部署到 Vercel",
+        title: "准备前端配置",
         ink: "pink",
-        detail: "部署按钮会自动 fork 仓库、创建项目、把 Root Directory 设为 apps/web，并弹出环境变量表单。",
+        detail: "从 apps/web/.env.example 复制 .env.local，只填写公开前端配置和 PETRICHOR_GO_API_URL。",
     },
     {
         title: "初始化表结构",
@@ -176,18 +174,19 @@ const DEPLOY_STEPS: { title: string; detail: string; ink: string }[] = [
         detail: "把 docs/petrichor-init.sql 粘进 Supabase SQL Editor 执行一次；该文件与代码里的 Drizzle schema 保持同步。",
     },
     {
-        title: "造出第一个管理员",
+        title: "启动并创建管理员",
         ink: "purple",
-        detail: "临时开放注册并重新部署，注册的首个账号自动成为 SUPER_ADMIN，然后再把注册关掉。",
+        detail: "分别启动 Go API 与 Bun Web。需要首个管理员时临时开启 TOML 和前端注册开关，注册完成后关闭并重启。",
     },
 ]
 
 const TERMINAL_LINES: { text: string; prompt?: boolean; muted?: boolean; caret?: boolean }[] = [
     { text: "git clone https://github.com/Ciao1019/Petrichor.git petrichor", prompt: true },
-    { text: "cd petrichor && pnpm install", prompt: true },
+    { text: "cd petrichor && bun install", prompt: true },
     { text: "cp apps/web/.env.example apps/web/.env.local", prompt: true },
-    { text: "# 填好 DATABASE_URL / SESSION_SECRET / S3_* 后：", muted: true },
-    { text: "pnpm dev", prompt: true, caret: true },
+    { text: "cp apps/api/config.example.toml apps/api/config.toml", prompt: true },
+    { text: "# 终端 1：bun run dev:api", muted: true },
+    { text: "bun dev", prompt: true, caret: true },
     { text: "→ http://localhost:3000", muted: true },
 ]
 
@@ -297,9 +296,9 @@ export function PetrichorPage() {
                             <MarkerHighlight note="这是最好玩的部分">你写得越多，它越懂你</MarkerHighlight>。
                         </p>
                         <p>
-                            部署刻意做轻：Vercel + Supabase + 任意 S3 兼容存储，
-                            <HandUnderline color="purple" note="免费额度就够">零自建服务器</HandUnderline>
-                            ，填好环境变量就能上线，数据始终在你自己手里。
+                            运行边界很清楚：Bun/Vite 负责前端，Go 负责 API，PostgreSQL 与任意 S3 兼容存储负责数据。
+                            <HandUnderline color="purple" note="配置也分开">前后端配置互不混放</HandUnderline>
+                            ，数据始终在你自己手里。
                         </p>
                     </div>
 
@@ -309,9 +308,6 @@ export function PetrichorPage() {
                         </a>
                         <a href={LINKS.repo} target="_blank" rel="noopener noreferrer" className="promo-cta promo-cta--paper">
                             GitHub 仓库
-                        </a>
-                        <a href={LINKS.deploy} target="_blank" rel="noopener noreferrer" className="promo-cta promo-cta--paper">
-                            一键部署
                         </a>
                     </div>
                     <p className="mt-3 text-[0.72rem]" style={{ color: "var(--desk-sheet-muted)" }}>
@@ -441,14 +437,14 @@ export function PetrichorPage() {
                         </div>
                     </section>
 
-                    {/* ——— 05 部署 ——— */}
+                    {/* ——— 05 自托管 ——— */}
                     <section aria-labelledby="promo-deploy" className="blog-home-fade-in">
-                        <SectionHeading index="05" label="Deploy" title="5–10 分钟，从零到上线" />
+                        <SectionHeading index="05" label="Self-host" title="前后端分离，配置清清楚楚" />
                         <h3 id="promo-deploy" className="sr-only">
-                            部署流程
+                            自托管流程
                         </h3>
                         <ol className="promo-steps space-y-6">
-                            {DEPLOY_STEPS.map((step) => (
+                            {SELF_HOST_STEPS.map((step) => (
                                 <li key={step.title} className="promo-step" data-ink={step.ink}>
                                     <h4 className="text-[0.88rem] font-bold" style={{ color: "var(--desk-sheet-ink)" }}>
                                         {step.title}
@@ -462,7 +458,7 @@ export function PetrichorPage() {
 
                         <div className="mt-10">
                             <p className="mb-3 text-xl" style={{ ...handwritingStyle, color: "var(--desk-sheet-soft)" }}>
-                                或者本地跑一份 ↓
+                                本地启动 ↓
                             </p>
                             <div className="promo-terminal p-4 font-mono text-[0.72rem] leading-[1.95] md:p-5">
                                 <div className="promo-terminal-dots mb-3" aria-hidden="true">
@@ -483,7 +479,7 @@ export function PetrichorPage() {
                                 ))}
                             </div>
                             <p className="mt-3 text-[0.72rem] leading-relaxed" style={{ color: "var(--desk-sheet-muted)" }}>
-                                需要 Node ≥ 22 与 pnpm 10.x。提交前跑 pnpm typecheck / lint / test 三件套。
+                                需要 Bun ≥ 1.3.14 与 Go。后端配置只从 apps/api/config.toml 读取。
                             </p>
                         </div>
                     </section>
@@ -534,7 +530,7 @@ export function PetrichorPage() {
                                     "知识不该是一堆散落的文件，而是能被检索、复述、再生长的结构。"
                                 </span>
                                 <span className="mt-2.5 block not-italic">
-                                    Apache-2.0 开源，允许自托管与商用改造。Fork 一份，填几个环境变量，它就是
+                                    Apache-2.0 开源，允许自托管与商用改造。Fork 一份，填好 Web 配置和 Go TOML，它就是
                                     <a href={LINKS.repo} target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2">
                                         你自己的知识底座
                                     </a>
@@ -543,11 +539,8 @@ export function PetrichorPage() {
                             </BlueNote>
                         </div>
                         <div className="mt-8 flex flex-wrap items-center gap-3">
-                            <a href={LINKS.deploy} target="_blank" rel="noopener noreferrer" className="promo-cta promo-cta--ink">
-                                一键部署到 Vercel
-                            </a>
                             <a href={LINKS.repo} target="_blank" rel="noopener noreferrer" className="promo-cta promo-cta--paper">
-                                阅读源码
+                                阅读源码与自托管说明
                             </a>
                             <a href={LINKS.license} target="_blank" rel="noopener noreferrer" className="promo-cta promo-cta--paper">
                                 License

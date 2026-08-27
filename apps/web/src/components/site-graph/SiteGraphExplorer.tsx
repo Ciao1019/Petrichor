@@ -8,7 +8,9 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { gsap } from "@/lib/gsap"
 import type { SiteGraphPayload, SiteGraphPayloadNode } from "@/lib/api"
 
-const KIND_LABEL: Record<SiteGraphPayloadNode["kind"], string> = {
+type SiteGraphKind = SiteGraphPayloadNode["kind"]
+
+const KIND_LABEL: Record<SiteGraphKind, string> = {
     root: "站点",
     section: "分类",
     article: "文章",
@@ -17,7 +19,7 @@ const KIND_LABEL: Record<SiteGraphPayloadNode["kind"], string> = {
     tag: "标签",
 }
 
-const KIND_COLOR_VAR: Record<SiteGraphPayloadNode["kind"], string> = {
+const KIND_COLOR_VAR: Record<SiteGraphKind, string> = {
     root: "--site-graph-root",
     section: "--site-graph-section",
     article: "--site-graph-article",
@@ -27,22 +29,74 @@ const KIND_COLOR_VAR: Record<SiteGraphPayloadNode["kind"], string> = {
 }
 
 /** 图例里出现的类型顺序 */
-const LEGEND_KINDS: SiteGraphPayloadNode["kind"][] = ["section", "article", "concept", "entity", "tag"]
+const LEGEND_KINDS: SiteGraphKind[] = ["section", "article", "concept", "entity", "tag"]
 
 /** 目录栏展开宽度（rem）。GSAP 补间与内层固定宽度都读它，避免两处写死不一致 */
 const TREE_PANEL_WIDTH_REM = 14
+
+/**
+ * 文案层：交互逻辑与配色对所有图谱一致，只有称呼随场景变。
+ * 知识库的 Wiki 图谱复用同一套点群运行时，但节点叫「概念/实体/文章摘要」而非「站点/文章/标签」。
+ */
+export interface SiteGraphPresentation {
+    kindLabels: Record<SiteGraphKind, string>
+    /** 图例里出现的类型与顺序 */
+    legendKinds: SiteGraphKind[]
+    searchPlaceholder: string
+    /** 侧栏底部的统计行 */
+    stats: { label: string; value: React.ReactNode }[]
+    /** 画布左下角的操作提示 */
+    hint: string
+    /** 详情卡跳转按钮文案 */
+    openLabel: string
+    loadingText: string
+    errorText: string
+}
+
+function resolvePresentation(
+    payload: SiteGraphPayload,
+    override?: Partial<SiteGraphPresentation>,
+): SiteGraphPresentation {
+    return {
+        kindLabels: KIND_LABEL,
+        legendKinds: LEGEND_KINDS,
+        searchPlaceholder: "搜索节点 / 属性",
+        stats: [
+            { label: "节点", value: payload.stats.nodeCount },
+            { label: "关系", value: payload.stats.linkCount },
+            { label: "文章", value: payload.stats.articleCount },
+            { label: "概念", value: payload.stats.conceptCount },
+        ],
+        hint: "滚轮缩放 · 拖拽平移 · 拖动节点 · 单击查看详情 · 双击进入页面",
+        openLabel: "打开页面",
+        loadingText: "正在加载星图…",
+        errorText: "星图加载失败，请刷新页面重试",
+        ...override,
+    }
+}
 
 export interface SiteGraphExplorerProps {
     payload: SiteGraphPayload
     onNavigate: (route: string) => void
     className?: string
+    /** 只覆盖文案，交互与配色不变 */
+    presentation?: Partial<SiteGraphPresentation>
 }
 
 /**
  * 点群图谱交互外壳：左侧层级树 + 右侧 Canvas 点群 + 悬停/选中详情。
  * 力导与绘制全部在 graph-runtime 里，本组件只负责 React 侧状态与 DOM 容器。
  */
-export function SiteGraphExplorer({ payload, onNavigate, className }: SiteGraphExplorerProps) {
+export function SiteGraphExplorer({
+    payload,
+    onNavigate,
+    className,
+    presentation: presentationOverride,
+}: SiteGraphExplorerProps) {
+    const presentation = React.useMemo(
+        () => resolvePresentation(payload, presentationOverride),
+        [payload, presentationOverride],
+    )
     const stageRef = React.useRef<HTMLDivElement | null>(null)
     const mountRef = React.useRef<HTMLDivElement | null>(null)
     const runtimeRef = React.useRef<SiteGraphRuntime | null>(null)
@@ -236,7 +290,7 @@ export function SiteGraphExplorer({ payload, onNavigate, className }: SiteGraphE
                     <input
                         value={keyword}
                         onChange={(event) => setKeyword(event.target.value)}
-                        placeholder="搜索节点 / 属性"
+                        placeholder={presentation.searchPlaceholder}
                         className="min-w-0 flex-1 rounded-md border border-foreground/10 bg-background/40 px-2.5 py-1.5 text-sm outline-none backdrop-blur-sm focus-visible:ring-[3px] focus-visible:ring-ring/50"
                     />
                     <button
@@ -279,14 +333,12 @@ export function SiteGraphExplorer({ payload, onNavigate, className }: SiteGraphE
                     )}
                 </div>
                 <dl className="grid grid-cols-2 gap-x-2 gap-y-1 border-t border-foreground/10 pt-2 text-[11px] text-muted-foreground">
-                    <dt>节点</dt>
-                    <dd className="text-right text-foreground">{payload.stats.nodeCount}</dd>
-                    <dt>关系</dt>
-                    <dd className="text-right text-foreground">{payload.stats.linkCount}</dd>
-                    <dt>文章</dt>
-                    <dd className="text-right text-foreground">{payload.stats.articleCount}</dd>
-                    <dt>概念</dt>
-                    <dd className="text-right text-foreground">{payload.stats.conceptCount}</dd>
+                    {presentation.stats.map((item) => (
+                        <React.Fragment key={item.label}>
+                            <dt>{item.label}</dt>
+                            <dd className="text-right text-foreground">{item.value}</dd>
+                        </React.Fragment>
+                    ))}
                 </dl>
             </div>
             </aside>
@@ -298,14 +350,14 @@ export function SiteGraphExplorer({ payload, onNavigate, className }: SiteGraphE
 
                 {status !== "ready" ? (
                     <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
-                        {status === "loading" ? "正在加载星图…" : "星图加载失败，请刷新页面重试"}
+                        {status === "loading" ? presentation.loadingText : presentation.errorText}
                     </div>
                 ) : null}
 
                 {/* 展开由「点击图谱以外的区域」触发，不再放浮动按钮 */}
 
                 <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap gap-2 text-[11px]">
-                    {LEGEND_KINDS.map((kind) => (
+                    {presentation.legendKinds.map((kind) => (
                         <span
                             key={kind}
                             className="site-graph-chip inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-muted-foreground"
@@ -315,18 +367,20 @@ export function SiteGraphExplorer({ payload, onNavigate, className }: SiteGraphE
                                 style={{ background: `var(${KIND_COLOR_VAR[kind]})` }}
                                 aria-hidden="true"
                             />
-                            {KIND_LABEL[kind]}
+                            {presentation.kindLabels[kind]}
                         </span>
                     ))}
                 </div>
 
                 <p className="site-graph-chip pointer-events-none absolute bottom-3 left-3 rounded-full px-2.5 py-1 text-[11px] text-muted-foreground">
-                    滚轮缩放 · 拖拽平移 · 拖动节点 · 单击查看详情 · 双击进入页面
+                    {presentation.hint}
                 </p>
 
                 {detailNode ? (
                     <NodeDetailCard
                         node={detailNode}
+                        kindLabel={presentation.kindLabels[detailNode.kind]}
+                        openLabel={presentation.openLabel}
                         onNavigate={onNavigate}
                     />
                 ) : null}
@@ -459,9 +513,13 @@ function GraphTreeButton({
 
 function NodeDetailCard({
     node,
+    kindLabel,
+    openLabel,
     onNavigate,
 }: {
     node: SiteGraphPayloadNode
+    kindLabel: string
+    openLabel: string
     onNavigate: (route: string) => void
 }) {
     return (
@@ -472,7 +530,7 @@ function NodeDetailCard({
                     style={{ background: `var(${KIND_COLOR_VAR[node.kind]})` }}
                     aria-hidden="true"
                 />
-                <span className="text-[11px] text-muted-foreground">{KIND_LABEL[node.kind]}</span>
+                <span className="text-[11px] text-muted-foreground">{kindLabel}</span>
             </div>
             <p className="mt-1 text-sm font-semibold leading-snug">{node.label}</p>
             {node.summary ? (
@@ -494,7 +552,7 @@ function NodeDetailCard({
                     onClick={() => onNavigate(node.route as string)}
                     className="mt-2 w-full rounded-md border px-2 py-1 text-xs transition-colors hover:bg-accent"
                 >
-                    打开页面
+                    {openLabel}
                 </button>
             ) : null}
         </div>

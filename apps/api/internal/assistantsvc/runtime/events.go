@@ -44,6 +44,7 @@ type PublicEvidence struct {
 	Snippet         string   `json:"snippet,omitempty"`
 	URL             string   `json:"url,omitempty"`
 	NodeKey         string   `json:"nodeKey,omitempty"`
+	PageKey         string   `json:"pageKey,omitempty"`
 	ArticleID       string   `json:"articleId,omitempty"`
 	KnowledgeBaseID string   `json:"knowledgeBaseId,omitempty"`
 	Path            []string `json:"path,omitempty"`
@@ -96,6 +97,9 @@ func ToPublicEvidence(e AgentEvidence) PublicEvidence {
 	}
 	if v := meta("nodeKey"); v != "" {
 		out.NodeKey = v
+	}
+	if v := meta("pageKey"); v != "" {
+		out.PageKey = v
 	}
 	if v := meta("articleId"); v != "" {
 		out.ArticleID = v

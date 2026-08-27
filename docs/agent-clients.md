@@ -74,8 +74,8 @@ MCP 配置文件，格式相同：
 - `403`：Key 缺少对应 scope，重新生成时勾选所需权限。
 - 每次工具调用都会写入「调用日志」，User-Agent 以 `petrichor-mcp/<工具名>` 开头，
   后台会以 MCP 徽标区分展示，可查看完整入参/出参排障。
-- `ask_documents`、`wiki_ingest` 会调用模型，耗时较长；Vercel Hobby 计划有函数时长上限，
-  这两个工具可能超时，其余工具不受影响。
+- `ask_documents`、`wiki_ingest` 会调用模型，耗时较长；自托管时应确保反向代理和负载均衡器
+  的请求超时足够长。
 
 ### MCP 工具清单
 

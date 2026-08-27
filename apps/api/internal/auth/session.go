@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -219,8 +220,28 @@ func userJoinColumns() string {
 	u.created_at, u.updated_at`
 }
 
-// GetCurrentUser 复刻 getCurrentUser：先 Better Auth 通道，再自建会话通道。
+func getCurrentUserViaLocalDevelopment() (*User, bool) {
+	localAuth := config.Get().LocalDevelopmentAuth
+	if !localAuth.Enabled {
+		return nil, false
+	}
+	u, err := ScanUser(db.Pool().QueryRow(
+		context.Background(),
+		`SELECT `+UserColumns+` FROM petrichor_user WHERE id = $1 LIMIT 1`,
+		localAuth.UserID,
+	))
+	if err != nil {
+		slog.Error("本地免登录账号读取失败", "userId", localAuth.UserID, "err", err)
+		return nil, false
+	}
+	return u, true
+}
+
+// GetCurrentUser 复刻 getCurrentUser：本地开发账号、Better Auth、自建会话依次尝试。
 func GetCurrentUser(c *gin.Context) (*User, bool) {
+	if u, ok := getCurrentUserViaLocalDevelopment(); ok {
+		return u, true
+	}
 	if u, ok := getCurrentUserViaBetterAuth(c); ok {
 		return u, true
 	}

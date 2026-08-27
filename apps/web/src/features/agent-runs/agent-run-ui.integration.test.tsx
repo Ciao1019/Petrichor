@@ -72,13 +72,13 @@ afterEach(() => {
 })
 
 describe("复杂 Agent Run 渲染", () => {
-    it("运行中展示当前活动，并可停止", () => {
+    it("运行中展示当前活动并可停止，但不提前展示来源", () => {
         const run = drive(complexRunEvents())
         render(<AgentRun run={run} onStop={() => {}} />)
 
         expect(screen.getByRole("region", { name: "Agent 执行状态" })).toBeTruthy()
         expect(screen.getByRole("button", { name: "停止" })).toBeTruthy()
-        expect(screen.getByText(/来源/)).toBeTruthy()
+        expect(screen.queryByText(/来源/)).toBeNull()
     })
 
     it("展开后同时展示计划、聚合活动与并行子代理", async () => {

@@ -393,10 +393,12 @@ func toWikiQaCard(page *wikiPageRow) map[string]any {
 func toWikiNeighbor(pageKey, linkType string, resolved *wikiPageRow) map[string]any {
 	title := pageKey
 	kindAny := any(nil)
+	aliasesAny := any([]string{})
 	summaryAny := any(nil)
 	if resolved != nil {
 		title = resolved.Title
 		kindAny = resolved.Kind
+		aliasesAny = readFrontmatterAliases(resolved.FrontmatterJSON)
 		trimmed := ""
 		if resolved.Summary != nil {
 			trimmed = strings.TrimSpace(*resolved.Summary)
@@ -410,6 +412,7 @@ func toWikiNeighbor(pageKey, linkType string, resolved *wikiPageRow) map[string]
 		"pageKey":  pageKey,
 		"title":    title,
 		"kind":     kindAny,
+		"aliases":  aliasesAny,
 		"summary":  summaryAny,
 		"linkType": linkType,
 	}

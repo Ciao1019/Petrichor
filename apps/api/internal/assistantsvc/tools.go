@@ -9,10 +9,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
-	"petrichor/api/internal/aicore"
 	rt "petrichor/api/internal/assistantsvc/runtime"
 )
 
@@ -46,7 +46,44 @@ func truncateRunes(s string, max int) string {
 
 func floatPtr(v float64) *float64 { return &v }
 
+func stringValue(value any) string {
+	text, _ := value.(string)
+	return text
+}
+
+func stringSliceValue(value any) []string {
+	raw, _ := value.([]any)
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if text, ok := item.(string); ok && text != "" {
+			out = append(out, text)
+		}
+	}
+	return out
+}
+
+func intValue(value any) int {
+	switch number := value.(type) {
+	case float64:
+		return int(number)
+	case json.Number:
+		parsed, _ := strconv.Atoi(number.String())
+		return parsed
+	case int:
+		return number
+	default:
+		return 0
+	}
+}
+
 func schemaJSON(schema string) json.RawMessage { return json.RawMessage(schema) }
+
+func toolContext(ctx *rt.ToolExecutionContext) context.Context {
+	if ctx != nil && ctx.Context != nil {
+		return ctx.Context
+	}
+	return context.Background()
+}
 
 // RegisterAssistantTools 注册助手域全部工具与技能（进程内一次）。
 func RegisterAssistantTools(registry interface {
@@ -54,22 +91,30 @@ func RegisterAssistantTools(registry interface {
 }, skills interface {
 	Register(skill rt.AgentSkill)
 }) {
+	registerSystemTools(registry)
 	registerKnowledgeTools(registry)
+	registerDocumentTools(registry)
+	registerGraphTools(registry)
+	registerMemoryTools(registry)
+	registerResearchTools(registry)
+	registerWriterTools(registry)
+	registerAdminTools(registry)
 	registerAgentMetaTools(registry)
+	registerConfirmationTools(registry)
 	registerBuiltinSkills(skills)
 }
 
 // ===== knowledge 域 =====
 
-const kbListSchema = `{"type":"object","properties":{"knowledgeBaseId":{"type":"string","description":"可选，限定知识库"},"articleId":{"type":"string","description":"可选，限定文章"}},"required":["query"]}`
+const kbListSchema = `{"type":"object","properties":{"knowledgeBaseId":{"type":"string","description":"可选，限定知识库"},"articleId":{"type":"string","description":"可选，限定文章"}}}`
 
-const searchSchema = `{"type":"object","properties":{"query":{"type":"string","description":"检索词"},"knowledgeBaseId":{"type":"string","description":"可选，限定知识库"},"topK":{"type":"integer","description":"返回条数，缺省 8"}},"required":["query"]}`
+const searchSchema = `{"type":"object","properties":{"query":{"type":"string","description":"检索问题"},"knowledgeBaseId":{"type":"string","description":"可选，限定知识库"},"limit":{"type":"integer","minimum":1,"maximum":20,"description":"返回条数，缺省 10"},"subQueries":{"type":"array","maxItems":4,"items":{"type":"string"},"description":"复杂问题的补充检索词"}},"required":["query"]}`
 
 const lookupSchema = `{"type":"object","properties":{"query":{"type":"string","description":"检索词"},"knowledgeBaseId":{"type":"string","description":"可选，限定知识库"}},"required":["query"]}`
 
-const readManySchema = `{"type":"object","properties":{"targets":{"type":"array","items":{"type":"object","properties":{"articleId":{"type":"string"},"nodeKey":{"type":"string"},"knowledgeBaseId":{"type":"string"}},"required":["articleId"]}},"reason":{"type":"string"}},"required":["targets"]}`
+const readManySchema = `{"type":"object","properties":{"nodes":{"type":"array","minItems":1,"maxItems":4,"items":{"type":"object","properties":{"knowledgeBaseId":{"type":"string"},"chunkId":{"type":"string"},"pageKey":{"type":"string"},"nodeKey":{"type":"string"},"articleId":{"type":"string"}}}}},"required":["nodes"]}`
 
-const readOneSchema = `{"type":"object","properties":{"target":{"type":"object","properties":{"articleId":{"type":"string"},"nodeKey":{"type":"string"},"knowledgeBaseId":{"type":"string"}},"required":["articleId"]}},"required":["target"]}`
+const readOneSchema = `{"type":"object","properties":{"knowledgeBaseId":{"type":"string"},"chunkId":{"type":"string"},"pageKey":{"type":"string"},"nodeKey":{"type":"string"},"articleId":{"type":"string"}}}`
 
 const listBasesSchema = `{"type":"object","properties":{}}`
 
@@ -89,7 +134,7 @@ func registerKnowledgeTools(registry interface {
 
 	registry.Register(&rt.AgentToolDefinition{
 		ID: "knowledge.search", Name: "search_knowledge", Namespace: rt.NamespaceKnowledge,
-		Description: "在用户知识库中做语义检索，返回候选章节（标题/路径/摘要），不返回正文。需要正文时用 read/read_many。",
+		Description: "检索站内知识库，联合原始分片、推荐问题、Wiki 页面和存量目录，经过 BM25/向量融合、重排与去重后返回候选；不返回正文，需要证据时继续 read/read_many。",
 		InputSchema: schemaJSON(searchSchema),
 		RiskLevel:   rt.RiskLow, Core: true, Tags: []string{"retrieval"},
 		Execute:   executeKnowledgeSearch,
@@ -98,7 +143,7 @@ func registerKnowledgeTools(registry interface {
 
 	registry.Register(&rt.AgentToolDefinition{
 		ID: "knowledge.lookup", Name: "lookup_knowledge", Namespace: rt.NamespaceKnowledge,
-		Description: "一站式复合检索：语义检索并直接深读最相关章节，返回带证据的答案素材。简单问题优先用它。",
+		Description: "一站式复合检索：混合召回并直接深读最相关的 1~2 个章节，返回独立可追溯证据。简单的定义、功能、用途、用法问题优先使用。",
 		InputSchema: schemaJSON(lookupSchema),
 		RiskLevel:   rt.RiskLow, Core: true, Tags: []string{"retrieval"},
 		Execute:   executeKnowledgeLookup,
@@ -107,7 +152,7 @@ func registerKnowledgeTools(registry interface {
 	})
 
 	registry.Register(&rt.AgentToolDefinition{
-		ID: "knowledge.read_many", Name: "read_knowledge_many", Namespace: rt.NamespaceKnowledge,
+		ID: "knowledge.read_many", Name: "read_knowledge_nodes", Namespace: rt.NamespaceKnowledge,
 		Description: "并行深读多个章节/文章，返回每个目标的正文片段（含层级上下文）。",
 		InputSchema: schemaJSON(readManySchema),
 		RiskLevel:   rt.RiskLow, Core: true, Tags: []string{"retrieval"},
@@ -116,10 +161,10 @@ func registerKnowledgeTools(registry interface {
 	})
 
 	registry.Register(&rt.AgentToolDefinition{
-		ID: "knowledge.read", Name: "read_knowledge", Namespace: rt.NamespaceKnowledge,
+		ID: "knowledge.read", Name: "read_knowledge_node", Namespace: rt.NamespaceKnowledge,
 		Description: "深读单个文章或章节，返回正文片段（含层级上下文）。只读一个明确章节时使用。",
 		InputSchema: schemaJSON(readOneSchema),
-		RiskLevel:   rt.RiskLow, Tags: []string{"retrieval"},
+		RiskLevel:   rt.RiskLow, Core: true, Tags: []string{"retrieval"},
 		Execute:   executeKnowledgeReadOne,
 		Normalize: normalizeReadOutput,
 	})
@@ -130,26 +175,26 @@ func registerKnowledgeTools(registry interface {
 // ===== 工具实现 =====
 
 type chunkHit struct {
-	ArticleID       int64   `json:"articleId"`
-	KnowledgeBaseID int64   `json:"knowledgeBaseId"`
-	Title           string  `json:"title"`
-	NodeKey         string  `json:"nodeKey"`
-	Path            string  `json:"path"`
-	Snippet         string  `json:"snippet"`
-	Score           float64 `json:"score"`
+	ArticleID       int64    `json:"articleId"`
+	KnowledgeBaseID int64    `json:"knowledgeBaseId"`
+	ChunkID         int64    `json:"chunkId,omitempty"`
+	PageKey         string   `json:"pageKey,omitempty"`
+	CandidateKind   string   `json:"candidateKind,omitempty"`
+	Title           string   `json:"title"`
+	NodeKey         string   `json:"nodeKey"`
+	Path            string   `json:"path"`
+	Snippet         string   `json:"snippet"`
+	Score           float64  `json:"score"`
+	RerankScore     *float64 `json:"rerankScore,omitempty"`
+	RecallSources   []string `json:"recallSources,omitempty"`
+	// Content 与 MatchedContent 只用于进程内重排，禁止直接进入工具输出。
+	Content        string `json:"-"`
+	MatchedContent string `json:"-"`
 }
 
-// embedQuery 生成查询向量；未配置向量模型时返回 nil（回落关键词检索）。
-func embedQuery(ctx context.Context, userID int64, query string) []float32 {
-	resolved, err := aicore.ResolveModelForPurpose(ctx, userID, aicore.PurposeEmbedding, nil)
-	if err != nil {
-		return nil
-	}
-	vectors, err := aicore.Embeddings(ctx, resolved.Runtime, resolved.ModelRef, []string{query})
-	if err != nil || len(vectors) == 0 {
-		return nil
-	}
-	return vectors[0]
+type queryEmbedding struct {
+	Vector []float32
+	Model  string
 }
 
 func vectorLiteral(vec []float32) string {
@@ -160,92 +205,15 @@ func vectorLiteral(vec []float32) string {
 	return "[" + strings.Join(parts, ",") + "]"
 }
 
-// semanticChunkSearch pgvector 余弦相似度检索。
-func semanticChunkSearch(ctx context.Context, userID int64, query string, kbID int64, hasKB bool, topK int) []chunkHit {
-	vec := embedQuery(ctx, userID, query)
-	if vec == nil || len(vec) == 0 {
-		return nil
+func maxInt(a, b int) int {
+	if a > b {
+		return a
 	}
-	sql := `SELECT c.article_id, c.knowledge_base_id, a.title, c.source_key,
-			       substring(c.content from 1 for 400) AS snippet,
-			       1 - (c.embedding <=> $2::vector) AS score
-			FROM petrichor_kb_article_chunk_index c
-			JOIN petrichor_kb_article a ON a.id = c.article_id
-			WHERE c.user_id = $1 AND c.embedding_status = 'ready'`
-	args := []any{userID, vectorLiteral(vec)}
-	if hasKB && kbID > 0 {
-		sql += ` AND c.knowledge_base_id = $3`
-		args = append(args, kbID)
-	}
-	sql += fmt.Sprintf(` ORDER BY c.embedding <=> $%d::vector LIMIT $%d`, len(args)+1, len(args)+2)
-	args = append(args, vecLiteralForOrder(vec), topK)
-
-	rows, err := dbPool().Query(ctx, sql, args...)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-	return scanChunkHits(rows)
-}
-
-func vecLiteralForOrder(vec []float32) string { return vectorLiteral(vec) }
-
-type chunkRows interface {
-	Next() bool
-	Scan(dest ...any) error
-	Err() error
-}
-
-func scanChunkHits(rows chunkRows) []chunkHit {
-	hits := []chunkHit{}
-	for rows.Next() {
-		var h chunkHit
-		var nodeKey *string
-		if err := rows.Scan(&h.ArticleID, &h.KnowledgeBaseID, &h.Title, &h.NodeKey, &h.Snippet, &h.Score); err != nil {
-			continue
-		}
-		_ = nodeKey
-		h.NodeKey = h.Path
-		hits = append(hits, h)
-	}
-	return hits
-}
-
-// keywordChunkSearch 词法兜底检索：查询词元化（中文 bigram + 英文词）后
-// 对 search_tokens / 标题做 OR 匹配（对照 TS BM25 池的 GIN 预筛口径）。
-func keywordChunkSearch(ctx context.Context, userID int64, query string, kbID int64, hasKB bool, topK int) []chunkHit {
-	patterns := likePatterns(buildQueryTokens(query))
-	if len(patterns) == 0 {
-		return nil
-	}
-	sql := `SELECT c.article_id, c.knowledge_base_id, a.title, c.source_key,
-			       substring(c.content from 1 for 400) AS snippet,
-			       0.5::float8 AS score
-			FROM petrichor_kb_article_chunk_index c
-			JOIN petrichor_kb_article a ON a.id = c.article_id
-			WHERE c.user_id = $1 AND c.search_tokens ILIKE ANY($2)`
-	args := []any{userID, patterns}
-	if hasKB && kbID > 0 {
-		sql += ` AND c.knowledge_base_id = $3`
-		args = append(args, kbID)
-	}
-	sql += fmt.Sprintf(` LIMIT $%d`, len(args)+1)
-	args = append(args, topK)
-
-	rows, err := dbPool().Query(ctx, sql, args...)
-	if err != nil {
-		return articleTitleFallback(ctx, userID, query, kbID, hasKB, topK)
-	}
-	defer rows.Close()
-	hits := scanChunkHits(rows)
-	if len(hits) > 0 {
-		return hits
-	}
-	return articleTitleFallback(ctx, userID, query, kbID, hasKB, topK)
+	return b
 }
 
 // articleTitleFallback 分片未命中时按文章标题词元匹配，保证标题级召回。
-func articleTitleFallback(ctx context.Context, userID int64, query string, kbID int64, hasKB bool, topK int) []chunkHit {
+func articleTitleFallback(ctx context.Context, userID int64, query string, kbID int64, hasKB bool, articleID int64, hasArticle bool, topK int) []chunkHit {
 	tokens := buildQueryTokens(query)
 	if len(tokens) == 0 {
 		return nil
@@ -258,8 +226,12 @@ func articleTitleFallback(ctx context.Context, userID int64, query string, kbID 
 			WHERE a.user_id = $1 AND a.title ILIKE ANY($2)`
 	args := []any{userID, patterns}
 	if hasKB && kbID > 0 {
-		sql += ` AND a.knowledge_base_id = $3`
+		sql += fmt.Sprintf(` AND a.knowledge_base_id = $%d`, len(args)+1)
 		args = append(args, kbID)
+	}
+	if hasArticle && articleID > 0 {
+		sql += fmt.Sprintf(` AND a.id = $%d`, len(args)+1)
+		args = append(args, articleID)
 	}
 	sql += fmt.Sprintf(` LIMIT $%d`, len(args)+1)
 	args = append(args, topK)
@@ -274,6 +246,8 @@ func articleTitleFallback(ctx context.Context, userID int64, query string, kbID 
 		if err := rows.Scan(&h.ArticleID, &h.KnowledgeBaseID, &h.Title, &h.Snippet, &h.Score); err != nil {
 			continue
 		}
+		h.CandidateKind = "article"
+		h.RecallSources = []string{"article_title"}
 		hits = append(hits, h)
 	}
 	return hits
@@ -283,24 +257,6 @@ func sanitizeLike(q string) string {
 	q = strings.ReplaceAll(q, "%", "\\%")
 	q = strings.ReplaceAll(q, "_", "\\_")
 	return q
-}
-
-// dedupeHits 同文章同 nodeKey 去重，保留高分。
-func dedupeHits(hits []chunkHit, limit int) []chunkHit {
-	seen := map[string]bool{}
-	out := make([]chunkHit, 0, len(hits))
-	for _, h := range hits {
-		key := fmt.Sprintf("%d:%s", h.ArticleID, h.Path)
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		out = append(out, h)
-		if len(out) >= limit {
-			break
-		}
-	}
-	return out
 }
 
 func focusInt(focus map[string]any, key string) (int64, bool) {
@@ -336,7 +292,7 @@ func parseID(v any) int64 {
 
 // executeKnowledgeListBases 列出知识库。
 func executeKnowledgeListBases(ctx *rt.ToolExecutionContext, _ any) (any, error) {
-	rows, err := dbPool().Query(context.Background(),
+	rows, err := dbPool().Query(toolContext(ctx),
 		`SELECT id, name, COALESCE(description,'') FROM petrichor_kb_knowledge_base
 		 WHERE user_id = $1 ORDER BY name ASC`, ctx.UserID)
 	if err != nil {
@@ -359,51 +315,130 @@ func executeKnowledgeListBases(ctx *rt.ToolExecutionContext, _ any) (any, error)
 	return map[string]any{"bases": bases}, rows.Err()
 }
 
-// executeKnowledgeSearch 语义检索候选。
+type knowledgeScope struct {
+	KnowledgeBaseID  int64
+	HasKnowledgeBase bool
+	ArticleID        int64
+	HasArticle       bool
+}
+
+func resolveKnowledgeScope(ctx *rt.ToolExecutionContext, params map[string]any) knowledgeScope {
+	if value, exists := params["knowledgeBaseId"]; exists {
+		if id := parseID(value); id > 0 {
+			return knowledgeScope{KnowledgeBaseID: id, HasKnowledgeBase: true}
+		}
+	}
+	scope := knowledgeScope{}
+	if id, ok := focusInt(ctx.Focus, "knowledgeBaseId"); ok {
+		scope.KnowledgeBaseID, scope.HasKnowledgeBase = id, true
+	}
+	if id, ok := focusInt(ctx.Focus, "articleId"); ok {
+		scope.ArticleID, scope.HasArticle = id, true
+	}
+	return scope
+}
+
+func hitKey(hit chunkHit) string {
+	switch {
+	case hit.ChunkID > 0:
+		return fmt.Sprintf("chunk:%d:%d", hit.KnowledgeBaseID, hit.ChunkID)
+	case hit.PageKey != "":
+		return fmt.Sprintf("wiki:%d:%s", hit.KnowledgeBaseID, hit.PageKey)
+	case hit.NodeKey != "":
+		return fmt.Sprintf("tree:%d:%s", hit.KnowledgeBaseID, hit.NodeKey)
+	default:
+		return fmt.Sprintf("article:%d:%d", hit.KnowledgeBaseID, hit.ArticleID)
+	}
+}
+
+// fuseKnowledgeHits 用 RRF 融合分片语义、问题语义、词面与 Wiki 页面候选。
+// 单路故障不会清空其它来源；相同 chunk 的推荐问题命中会回读同一原始分片。
+func fuseKnowledgeHits(groups [][]chunkHit, limit int) []chunkHit {
+	type fused struct {
+		hit   chunkHit
+		score float64
+	}
+	byKey := map[string]*fused{}
+	order := []string{}
+	for _, group := range groups {
+		for rank, hit := range group {
+			key := hitKey(hit)
+			entry := byKey[key]
+			if entry == nil {
+				copyHit := hit
+				entry = &fused{hit: copyHit}
+				byKey[key] = entry
+				order = append(order, key)
+			} else if shouldPreferKnowledgeHit(hit, entry.hit) {
+				// 同一 chunk 同时被推荐问题与原文命中时，排名贡献全部保留，
+				// 但候选展示/重排必须使用原文分片，不能让问题别名冒充正文摘要。
+				existingSources := entry.hit.RecallSources
+				entry.hit = hit
+				entry.hit.RecallSources = existingSources
+			}
+			entry.score += 1 / float64(60+rank+1)
+			entry.hit.RecallSources = appendUniqueStrings(entry.hit.RecallSources, hit.RecallSources...)
+			if hit.Score > entry.hit.Score {
+				entry.hit.Score = hit.Score
+			}
+		}
+	}
+	out := make([]chunkHit, 0, len(byKey))
+	for _, key := range order {
+		entry := byKey[key]
+		entry.hit.Score = entry.score
+		out = append(out, entry.hit)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Score != out[j].Score {
+			return out[i].Score > out[j].Score
+		}
+		// RRF 同分时，多路同时命中的候选更可靠。
+		return len(out[i].RecallSources) > len(out[j].RecallSources)
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+func shouldPreferKnowledgeHit(candidate, current chunkHit) bool {
+	if candidate.ChunkID == 0 || current.ChunkID == 0 {
+		return false
+	}
+	return hasRecallSourcePrefix(candidate.RecallSources, "chunk_") &&
+		!hasRecallSourcePrefix(current.RecallSources, "chunk_")
+}
+
+func hasRecallSourcePrefix(sources []string, prefix string) bool {
+	for _, source := range sources {
+		if strings.HasPrefix(source, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func appendUniqueStrings(existing []string, values ...string) []string {
+	seen := map[string]bool{}
+	for _, item := range existing {
+		seen[item] = true
+	}
+	for _, item := range values {
+		if item != "" && !seen[item] {
+			seen[item] = true
+			existing = append(existing, item)
+		}
+	}
+	return existing
+}
+
+// executeKnowledgeSearch 混合检索候选。
 func executeKnowledgeSearch(ctx *rt.ToolExecutionContext, input any) (any, error) {
-	params, _ := input.(map[string]any)
-	query, _ := params["query"].(string)
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return nil, rt.ValidationError("query 不能为空")
-	}
-	kbID, hasKB := parseFocusAndParams(ctx, params)
-	topK := 8
-	if v, ok := params["topK"].(float64); ok && v > 0 {
-		topK = int(v)
-	}
-
-	cctx := context.Background()
-	hits := semanticChunkSearch(cctx, ctx.UserID, query, kbID, hasKB, topK*2)
-	if len(hits) == 0 {
-		hits = keywordChunkSearch(cctx, ctx.UserID, query, kbID, hasKB, topK*2)
-	}
-	hits = dedupeHits(hits, topK)
-
-	items := make([]map[string]any, 0, len(hits))
-	for _, h := range hits {
-		items = append(items, map[string]any{
-			"articleId":       fmt.Sprintf("%d", h.ArticleID),
-			"knowledgeBaseId": fmt.Sprintf("%d", h.KnowledgeBaseID),
-			"title":           h.Title,
-			"path":            h.Path,
-			"snippet":         h.Snippet,
-			"score":           roundFloat(h.Score),
-		})
-	}
-	return map[string]any{"hits": items, "diagnostics": map[string]any{"semanticCount": len(hits)}}, nil
+	return executeKnowledgeSearchV2(ctx, input)
 }
 
 func roundFloat(v float64) float64 { return float64(int(v*10000+0.5)) / 10000 }
-
-func parseFocusAndParams(ctx *rt.ToolExecutionContext, params map[string]any) (int64, bool) {
-	if v, ok := params["knowledgeBaseId"]; ok {
-		if id := parseID(v); id > 0 {
-			return id, true
-		}
-	}
-	return focusInt(ctx.Focus, "knowledgeBaseId")
-}
 
 // executeKnowledgeLookup 复合检索：search + 深读最相关 1~2 个章节。
 func executeKnowledgeLookup(ctx *rt.ToolExecutionContext, input any) (any, error) {
@@ -413,129 +448,209 @@ func executeKnowledgeLookup(ctx *rt.ToolExecutionContext, input any) (any, error
 	if query == "" {
 		return nil, rt.ValidationError("query 不能为空")
 	}
-	kbID, hasKB := parseFocusAndParams(ctx, params)
-
-	cctx := context.Background()
-	hits := semanticChunkSearch(cctx, ctx.UserID, query, kbID, hasKB, 6)
-	if len(hits) == 0 {
-		hits = keywordChunkSearch(cctx, ctx.UserID, query, kbID, hasKB, 6)
+	searchInput := map[string]any{
+		"query": query, "knowledgeBaseId": params["knowledgeBaseId"], "limit": float64(6),
 	}
-	hits = dedupeHits(hits, 2)
-
-	reads := make([]map[string]any, 0, len(hits))
-	for _, h := range hits {
-		content, path := readArticleContent(cctx, ctx.UserID, h.ArticleID, h.Path)
-		reads = append(reads, map[string]any{
-			"articleId":       fmt.Sprintf("%d", h.ArticleID),
-			"knowledgeBaseId": fmt.Sprintf("%d", h.KnowledgeBaseID),
-			"title":           h.Title,
-			"path":            orDefaultStr(path, h.Path),
-			"content":         content,
-		})
+	if subQueries, ok := params["subQueries"]; ok {
+		searchInput["subQueries"] = subQueries
 	}
-	return map[string]any{"hits": reads}, nil
-}
-
-func orDefaultStr(v, def string) string {
-	if v != "" {
-		return v
-	}
-	return def
-}
-
-// readArticleContent 读文章正文（优先指定 nodeKey 章节，截断到预算内）。
-func readArticleContent(ctx context.Context, userID, articleID int64, nodeKey string) (string, string) {
-	const maxChars = 6000
-	var title, contentMD string
-	err := dbPool().QueryRow(ctx,
-		`SELECT title, content_md FROM petrichor_kb_article WHERE id = $1 AND user_id = $2 LIMIT 1`,
-		articleID, userID).Scan(&title, &contentMD)
+	searchOutput, err := executeKnowledgeSearch(ctx, searchInput)
 	if err != nil {
-		return "", ""
+		return nil, err
 	}
-	body := contentMD
-	if nodeKey != "" && strings.Contains(contentMD, nodeHeading(contentMD, nodeKey)) {
-		if section := extractSection(contentMD, nodeKey); section != "" {
-			body = section
+	record, _ := searchOutput.(map[string]any)
+	hits, _ := record["hits"].([]map[string]any)
+	reads := make([]map[string]any, 0, 2)
+	for _, hit := range hits {
+		read, readErr := readKnowledgeTarget(ctx, hit)
+		if readErr == nil && read != nil {
+			reads = append(reads, read)
 		}
-	}
-	runes := []rune(body)
-	if len(runes) > maxChars {
-		body = string(runes[:maxChars]) + "\n\n[内容过长，本次仅给出前 " + fmt.Sprint(maxChars) + " 字]"
-	}
-	return body, title
-}
-
-func nodeHeading(contentMD, nodeKey string) string { return nodeKey }
-
-// extractSection 按 markdown 标题提取小节（简化版：按标题行切分后取命中段）。
-func extractSection(contentMD, nodeKey string) string {
-	lines := strings.Split(contentMD, "\n")
-	start := -1
-	sectionLevel := 0
-	for i, line := range lines {
-		if strings.Contains(line, nodeKey) && strings.HasPrefix(strings.TrimSpace(line), "#") {
-			start = i
-			sectionLevel = countHash(line)
+		if len(reads) >= 2 {
 			break
 		}
 	}
-	if start < 0 {
-		return ""
-	}
-	end := len(lines)
-	for i := start + 1; i < len(lines); i++ {
-		if strings.HasPrefix(strings.TrimSpace(lines[i]), "#") && countHash(lines[i]) <= sectionLevel {
-			end = i
-			break
-		}
-	}
-	return strings.Join(lines[start:end], "\n")
+	return map[string]any{
+		"mode": record["mode"], "hits": record["hits"], "diagnostics": record["diagnostics"],
+		"reads": reads,
+	}, nil
 }
 
-func countHash(line string) int {
-	n := 0
-	for _, r := range line {
-		if r == '#' {
-			n++
-			continue
-		}
-		break
+func readKnowledgeTarget(ctx *rt.ToolExecutionContext, target map[string]any) (map[string]any, error) {
+	if target == nil {
+		return nil, rt.ValidationError("读取目标不能为空")
 	}
-	return n
+	kbID := parseID(target["knowledgeBaseId"])
+	if kbID <= 0 {
+		kbID, _ = focusInt(ctx.Focus, "knowledgeBaseId")
+	}
+	chunkID := parseID(target["chunkId"])
+	articleID := parseID(target["articleId"])
+	pageKey, _ := target["pageKey"].(string)
+	nodeKey, _ := target["nodeKey"].(string)
+	pageKey, nodeKey = strings.TrimSpace(pageKey), strings.TrimSpace(nodeKey)
+	// 检索命中会同时携带 articleId 与更精确定位符；深读时优先最细粒度目标。
+	if chunkID > 0 || pageKey != "" || nodeKey != "" {
+		articleID = 0
+	}
+	locatorCount := 0
+	for _, present := range []bool{chunkID > 0, pageKey != "", nodeKey != "", articleID > 0} {
+		if present {
+			locatorCount++
+		}
+	}
+	if locatorCount != 1 {
+		return nil, rt.ValidationError("chunkId、pageKey、nodeKey、articleId 必须且只能提供一个")
+	}
+	cctx := toolContext(ctx)
+
+	if chunkID > 0 {
+		var gotKB, gotArticle int64
+		var articleTitle, heading, pathJSON, content string
+		sql := `SELECT c.knowledge_base_id, c.article_id, a.title, c.heading,
+		               COALESCE(c.heading_path_json, '[]'), c.content_md
+		        FROM petrichor_kb_article_chunk c
+		        JOIN petrichor_kb_article a ON a.id = c.article_id AND a.user_id = c.user_id
+		        WHERE c.id = $1 AND c.user_id = $2`
+		args := []any{chunkID, ctx.UserID}
+		if kbID > 0 {
+			sql += ` AND c.knowledge_base_id = $3`
+			args = append(args, kbID)
+		}
+		err := dbPool().QueryRow(cctx, sql+` LIMIT 1`, args...).Scan(
+			&gotKB, &gotArticle, &articleTitle, &heading, &pathJSON, &content)
+		if err != nil {
+			return nil, rt.ValidationError("知识分片不存在或不属于当前用户")
+		}
+		path := []string{}
+		_ = json.Unmarshal([]byte(pathJSON), &path)
+		if len(path) == 0 && heading != "" {
+			path = []string{heading}
+		}
+		title := heading
+		if title == "" {
+			title = articleTitle
+		}
+		return map[string]any{
+			"kind": "chunk", "title": title, "articleTitle": articleTitle,
+			"chunkId": fmt.Sprintf("%d", chunkID), "articleId": fmt.Sprintf("%d", gotArticle),
+			"knowledgeBaseId": fmt.Sprintf("%d", gotKB), "path": path,
+			"content": content, "contentFrom": "chunk",
+		}, nil
+	}
+
+	if pageKey != "" {
+		detail, err := kbWikiPageDetailByPageKey(cctx, ctx.UserID, kbID, pageKey)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"kind": "wiki_page", "title": detail["title"], "pageKey": detail["pageKey"],
+			"pageKind": detail["kind"], "aliases": detail["aliases"],
+			"knowledgeBaseId": detail["knowledgeBaseId"], "content": detail["contentMd"],
+			"contentFrom": "wiki_page", "links": detail["links"], "inLinks": detail["inLinks"],
+		}, nil
+	}
+
+	if nodeKey != "" {
+		var gotKB, gotArticle int64
+		var title, content string
+		var parentKey *string
+		sql := `SELECT knowledge_base_id, article_id, title, parent_key, content_md
+		        FROM petrichor_kb_wiki_tree_node WHERE user_id = $1 AND node_key = $2`
+		args := []any{ctx.UserID, nodeKey}
+		if kbID > 0 {
+			sql += ` AND knowledge_base_id = $3`
+			args = append(args, kbID)
+		}
+		if err := dbPool().QueryRow(cctx, sql+` ORDER BY id ASC LIMIT 1`, args...).Scan(
+			&gotKB, &gotArticle, &title, &parentKey, &content); err != nil {
+			return nil, rt.ValidationError("知识节点不存在或不属于当前用户")
+		}
+		contentFrom := "node"
+		if strings.TrimSpace(content) == "" {
+			// 空父节点读取其完整子树，避免退化成整篇文章并引入无关正文。
+			_ = dbPool().QueryRow(cctx, `WITH RECURSIVE subtree AS (
+				SELECT node_key, parent_key, depth, position, content_md
+				FROM petrichor_kb_wiki_tree_node
+				WHERE user_id = $1 AND knowledge_base_id = $2 AND node_key = $3
+				UNION ALL
+				SELECT child.node_key, child.parent_key, child.depth, child.position, child.content_md
+				FROM petrichor_kb_wiki_tree_node child
+				JOIN subtree parent ON child.parent_key = parent.node_key
+				WHERE child.user_id = $1 AND child.knowledge_base_id = $2
+			)
+			SELECT COALESCE(string_agg(NULLIF(content_md, ''), E'\n\n' ORDER BY depth, position), '')
+			FROM subtree`, ctx.UserID, gotKB, nodeKey).Scan(&content)
+			contentFrom = "subtree"
+		}
+		path := []string{title}
+		if parentKey != nil && strings.TrimSpace(*parentKey) != "" {
+			path = []string{*parentKey, title}
+		}
+		return map[string]any{
+			"kind": "tree_node", "title": title, "nodeKey": nodeKey,
+			"articleId": fmt.Sprintf("%d", gotArticle), "knowledgeBaseId": fmt.Sprintf("%d", gotKB),
+			"path": path, "content": content, "contentFrom": contentFrom,
+		}, nil
+	}
+
+	var gotKB int64
+	var title, content string
+	sql := `SELECT knowledge_base_id, title, content_md FROM petrichor_kb_article
+	        WHERE id = $1 AND user_id = $2`
+	args := []any{articleID, ctx.UserID}
+	if kbID > 0 {
+		sql += ` AND knowledge_base_id = $3`
+		args = append(args, kbID)
+	}
+	if err := dbPool().QueryRow(cctx, sql+` LIMIT 1`, args...).Scan(&gotKB, &title, &content); err != nil {
+		return nil, rt.ValidationError("文章不存在或不属于当前用户")
+	}
+	return map[string]any{
+		"kind": "article", "title": title, "articleId": fmt.Sprintf("%d", articleID),
+		"knowledgeBaseId": fmt.Sprintf("%d", gotKB), "path": []string{title},
+		"content": content, "contentFrom": "article",
+	}, nil
 }
 
 // executeKnowledgeReadMany 批量深读。
 func executeKnowledgeReadMany(ctx *rt.ToolExecutionContext, input any) (any, error) {
 	params, _ := input.(map[string]any)
-	targetsRaw, _ := params["targets"].([]any)
+	targetsRaw, _ := params["nodes"].([]any)
 	if len(targetsRaw) == 0 {
-		return nil, rt.ValidationError("targets 不能为空")
+		// 兼容早期 Go 草案的 targets 字段；对外主契约使用 TS 的 nodes。
+		targetsRaw, _ = params["targets"].([]any)
 	}
-	results := make([]map[string]any, 0, len(targetsRaw))
-	for _, t := range targetsRaw {
+	if len(targetsRaw) == 0 {
+		return nil, rt.ValidationError("nodes 不能为空")
+	}
+	limit := 4
+	if ctx.State != nil && ctx.State.Complexity == rt.ComplexitySimple {
+		limit = 2
+	}
+	results := make([]map[string]any, 0, minIntLocal(len(targetsRaw), limit))
+	failures := []string{}
+	for _, t := range targetsRaw[:minIntLocal(len(targetsRaw), limit)] {
 		target, _ := t.(map[string]any)
-		articleID := parseID(target["articleId"])
-		if articleID <= 0 {
+		entry, err := readKnowledgeTarget(ctx, target)
+		if err != nil {
+			failures = append(failures, err.Error())
 			continue
-		}
-		nodeKey, _ := target["nodeKey"].(string)
-		content, title := readArticleContent(context.Background(), ctx.UserID, articleID, nodeKey)
-		kbID := parseID(target["knowledgeBaseId"])
-		entry := map[string]any{
-			"articleId": fmt.Sprintf("%d", articleID),
-			"title":     title,
-			"content":   content,
-		}
-		if kbID > 0 {
-			entry["knowledgeBaseId"] = fmt.Sprintf("%d", kbID)
-		}
-		if nodeKey != "" {
-			entry["path"] = nodeKey
 		}
 		results = append(results, entry)
 	}
-	return map[string]any{"results": results}, nil
+	return map[string]any{
+		"results": results, "requestedCount": len(targetsRaw),
+		"skippedCount": maxInt(0, len(targetsRaw)-limit), "failures": failures,
+	}, nil
+}
+
+func minIntLocal(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // executeKnowledgeReadOne 单个深读。
@@ -543,22 +658,13 @@ func executeKnowledgeReadOne(ctx *rt.ToolExecutionContext, input any) (any, erro
 	params, _ := input.(map[string]any)
 	target, _ := params["target"].(map[string]any)
 	if target == nil {
-		return nil, rt.ValidationError("target 不能为空")
+		target = params
 	}
-	articleID := parseID(target["articleId"])
-	if articleID <= 0 {
-		return nil, rt.ValidationError("articleId 无效")
+	result, err := readKnowledgeTarget(ctx, target)
+	if err != nil {
+		return nil, err
 	}
-	nodeKey, _ := target["nodeKey"].(string)
-	content, title := readArticleContent(context.Background(), ctx.UserID, articleID, nodeKey)
-	return map[string]any{
-		"results": []map[string]any{{
-			"articleId": fmt.Sprintf("%d", articleID),
-			"title":     title,
-			"path":      nodeKey,
-			"content":   content,
-		}},
-	}, nil
+	return map[string]any{"results": []map[string]any{result}, "requestedCount": 1, "skippedCount": 0}, nil
 }
 
 // ===== 归一化器 =====
@@ -597,86 +703,338 @@ func clamp01(v float64) float64 {
 }
 
 func normalizeSearchOutput(output any, _ any) rt.ToolNormalizerResult {
-	hits := extractHits(output)
-	summary := "未找到相关内容"
-	if len(hits) > 0 {
-		summary = fmt.Sprintf("找到 %d 条候选（标题/路径/摘要）；需要正文请继续 read_many", len(hits))
+	raw, _ := json.Marshal(output)
+	var parsed struct {
+		Mode        string           `json:"mode"`
+		Hits        []map[string]any `json:"hits"`
+		Diagnostics map[string]any   `json:"diagnostics"`
 	}
-	data, _ := json.Marshal(map[string]any{"hits": hits})
+	_ = json.Unmarshal(raw, &parsed)
+	if len(parsed.Hits) == 0 {
+		return rt.ToolNormalizerResult{
+			Summary: "知识库中未检索到相关内容",
+			Data: mustJSON(map[string]any{
+				"mode": parsed.Mode, "hits": []map[string]any{},
+			}),
+			SuggestedActions: []string{"rewrite_query", "load_skill:research"},
+			Progress:         boolPtr(false),
+		}
+	}
 	return rt.ToolNormalizerResult{
-		Summary: summary, Data: data,
-		SuggestedActions: []string{"knowledge_read_many"},
-		Progress:         boolPtr(len(hits) > 0),
+		Summary: fmt.Sprintf("找到 %d 个相关章节（%s）", len(parsed.Hits), knowledgeRetrievalDisplaySummary(parsed.Diagnostics)),
+		Data: mustJSON(map[string]any{
+			"mode": parsed.Mode, "hits": compactKnowledgeObservationHits(parsed.Hits),
+		}),
+		SuggestedActions: []string{"knowledge.read_many", "knowledge.read"},
+		Progress:         boolPtr(true),
+	}
+}
+
+func compactKnowledgeObservationHits(hits []map[string]any) []map[string]any {
+	keys := []string{
+		"nodeKey", "chunkId", "pageKey", "articleId", "knowledgeBaseId",
+		"title", "path", "summary", "recallSources",
+	}
+	out := make([]map[string]any, 0, len(hits))
+	for _, hit := range hits {
+		item := map[string]any{}
+		for _, key := range keys {
+			if value, exists := hit[key]; exists && value != nil {
+				item[key] = value
+			}
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func knowledgeRetrievalDisplaySummary(diagnostics map[string]any) string {
+	if diagnostics == nil {
+		return "混合检索"
+	}
+	methods := []string{}
+	if diagnosticListCount(diagnostics["chunkVectorKeys"]) > 0 {
+		methods = append(methods, "分片语义")
+	}
+	if diagnosticListCount(diagnostics["questionVectorKeys"]) > 0 {
+		methods = append(methods, "问题语义")
+	}
+	if diagnosticListCount(diagnostics["bm25Keys"]) > 0 {
+		methods = append(methods, "分片关键词")
+	}
+	if diagnosticListCount(diagnostics["wikiKeys"]) > 0 {
+		methods = append(methods, "Wiki 页面")
+	}
+	if len(methods) == 0 && diagnosticListCount(diagnostics["vectorKeys"]) > 0 {
+		methods = append(methods, "存量章节语义")
+	}
+	treeAttempted, _ := diagnostics["treeAttempted"].(bool)
+	if treeAttempted {
+		methods = append(methods, "存量目录导航")
+	}
+	if len(methods) == 0 {
+		methods = append(methods, "兼容检索")
+	}
+	parts := []string{strings.Join(methods, " + ")}
+	strategy, _ := diagnostics["rerankStrategy"].(string)
+	switch strategy {
+	case "external":
+		parts = append(parts, "模型重排")
+	case "local_fallback":
+		parts = append(parts, "本地重排（外部服务已降级）")
+	case "local":
+		parts = append(parts, "本地重排")
+	}
+	if degraded, ok := diagnostics["degraded"].(map[string]any); ok && len(degraded) > 0 {
+		parts = append(parts, "部分召回已降级")
+	} else if degraded, ok := diagnostics["degraded"].(map[string]string); ok && len(degraded) > 0 {
+		parts = append(parts, "部分召回已降级")
+	}
+	return strings.Join(parts, "；")
+}
+
+func diagnosticListCount(value any) int {
+	switch list := value.(type) {
+	case []any:
+		return len(list)
+	case []string:
+		return len(list)
+	default:
+		return 0
 	}
 }
 
 func normalizeLookupOutput(output any, _ any) rt.ToolNormalizerResult {
 	raw, _ := json.Marshal(output)
 	var parsed struct {
-		Hits []struct {
-			Title   string `json:"title"`
-			Path    string `json:"path"`
-			Content string `json:"content"`
-		} `json:"hits"`
+		Mode        string           `json:"mode"`
+		Hits        []map[string]any `json:"hits"`
+		Reads       []map[string]any `json:"reads"`
+		Diagnostics map[string]any   `json:"diagnostics"`
 	}
 	_ = json.Unmarshal(raw, &parsed)
-	totalChars := 0
-	evidence := make([]rt.EvidenceInput, 0, len(parsed.Hits))
-	for _, h := range parsed.Hits {
-		totalChars += len([]rune(h.Content))
-		evidence = append(evidence, rt.EvidenceInput{
-			Source:     rt.EvidenceKnowledge,
-			Title:      h.Title,
-			Content:    truncateRunes(trimSpace(h.Content), 2000),
-			Relevance:  floatPtr(0.75),
-			Confidence: floatPtr(0.75),
-		})
+	readNormalized := normalizeReadOutput(map[string]any{"results": parsed.Reads}, nil)
+	evidence := readNormalized.Evidence
+	var readData map[string]any
+	_ = json.Unmarshal(readNormalized.Data, &readData)
+	pages := []wikiMentionObservationPage{}
+	if readPages, ok := readData["pages"].([]any); ok {
+		rawPages, _ := json.Marshal(readPages)
+		_ = json.Unmarshal(rawPages, &pages)
 	}
 	summary := "复合检索未命中"
 	if len(parsed.Hits) > 0 {
-		summary = fmt.Sprintf("已深读 %d 个章节（合计 %d 字），可直接作答", len(parsed.Hits), totalChars)
+		retrieval := knowledgeRetrievalDisplaySummary(parsed.Diagnostics)
+		if len(evidence) > 0 {
+			summary = fmt.Sprintf("找到 %d 个相关章节并深读 %d 个（%s）", len(parsed.Hits), len(evidence), retrieval)
+		} else {
+			summary = fmt.Sprintf("找到 %d 个候选章节，但没有读到可引用正文（%s）", len(parsed.Hits), retrieval)
+		}
 	}
-	return rt.ToolNormalizerResult{Summary: summary, Evidence: evidence}
+	suggested := []string{"knowledge.read_many", "knowledge.read"}
+	if len(parsed.Hits) == 0 {
+		suggested = []string{"rewrite_query", "load_skill:research"}
+	} else if len(evidence) > 0 {
+		suggested = []string{}
+	}
+	return rt.ToolNormalizerResult{
+		Summary: summary,
+		Data: mustJSON(map[string]any{
+			"mode": parsed.Mode, "hits": compactKnowledgeObservationHits(parsed.Hits),
+			"reads": readData, "pages": pages,
+		}),
+		Evidence: evidence, Progress: boolPtr(len(parsed.Hits) > 0),
+		SuggestedActions: suggested,
+	}
+}
+
+// wikiMentionObservationPage 是工具 Observation 中供普通问答渲染使用的轻量 Wiki 词典项。
+// 这里只保留识别裸文本所需字段，正文和关联摘要仍只进入 Evidence，避免重复扩大上下文。
+type wikiMentionObservationPage struct {
+	PageKey string   `json:"pageKey"`
+	Title   string   `json:"title"`
+	Kind    string   `json:"kind,omitempty"`
+	Aliases []string `json:"aliases"`
+}
+
+func appendWikiMentionObservationPage(
+	pages []wikiMentionObservationPage,
+	byKey map[string]int,
+	page wikiMentionObservationPage,
+) []wikiMentionObservationPage {
+	page.PageKey = strings.TrimSpace(page.PageKey)
+	page.Title = strings.TrimSpace(page.Title)
+	page.Kind = strings.ToLower(strings.TrimSpace(page.Kind))
+	if page.PageKey == "" {
+		return pages
+	}
+	if page.Title == "" {
+		page.Title = page.PageKey
+	}
+	cleanAliases := make([]string, 0, len(page.Aliases))
+	aliasSeen := map[string]bool{}
+	for _, alias := range page.Aliases {
+		alias = strings.TrimSpace(alias)
+		key := strings.ToLower(alias)
+		if alias == "" || aliasSeen[key] {
+			continue
+		}
+		aliasSeen[key] = true
+		cleanAliases = append(cleanAliases, alias)
+	}
+	page.Aliases = cleanAliases
+
+	key := strings.ToLower(page.PageKey)
+	if index, exists := byKey[key]; exists {
+		current := &pages[index]
+		if current.Title == current.PageKey && page.Title != page.PageKey {
+			current.Title = page.Title
+		}
+		if current.Kind == "" && page.Kind != "" {
+			current.Kind = page.Kind
+		}
+		for _, alias := range page.Aliases {
+			aliasKey := strings.ToLower(alias)
+			found := false
+			for _, currentAlias := range current.Aliases {
+				if strings.ToLower(currentAlias) == aliasKey {
+					found = true
+					break
+				}
+			}
+			if !found {
+				current.Aliases = append(current.Aliases, alias)
+			}
+		}
+		return pages
+	}
+	byKey[key] = len(pages)
+	return append(pages, page)
 }
 
 func normalizeReadOutput(output any, _ any) rt.ToolNormalizerResult {
 	raw, _ := json.Marshal(output)
 	var parsed struct {
 		Results []struct {
-			Title     string `json:"title"`
-			Path      string `json:"path"`
-			Content   string `json:"content"`
-			KbID      string `json:"knowledgeBaseId"`
-			ArticleID string `json:"articleId"`
+			Kind        string                       `json:"kind"`
+			PageKind    string                       `json:"pageKind"`
+			Title       string                       `json:"title"`
+			Aliases     []string                     `json:"aliases"`
+			Path        json.RawMessage              `json:"path"`
+			Content     string                       `json:"content"`
+			KbID        string                       `json:"knowledgeBaseId"`
+			ArticleID   string                       `json:"articleId"`
+			ChunkID     string                       `json:"chunkId"`
+			PageKey     string                       `json:"pageKey"`
+			NodeKey     string                       `json:"nodeKey"`
+			ContentFrom string                       `json:"contentFrom"`
+			Links       []wikiMentionObservationPage `json:"links"`
+			InLinks     []wikiMentionObservationPage `json:"inLinks"`
 		} `json:"results"`
+		RequestedCount int      `json:"requestedCount"`
+		SkippedCount   int      `json:"skippedCount"`
+		Failures       []string `json:"failures"`
 	}
 	_ = json.Unmarshal(raw, &parsed)
 	totalChars := 0
 	evidence := make([]rt.EvidenceInput, 0, len(parsed.Results))
+	pages := make([]wikiMentionObservationPage, 0, 16)
+	pageIndex := map[string]int{}
 	for _, r := range parsed.Results {
+		if r.PageKey != "" {
+			kind := r.PageKind
+			if kind == "" {
+				kind = r.Kind
+			}
+			pages = appendWikiMentionObservationPage(pages, pageIndex, wikiMentionObservationPage{
+				PageKey: r.PageKey, Title: r.Title, Kind: kind, Aliases: r.Aliases,
+			})
+		}
+		for _, page := range r.Links {
+			pages = appendWikiMentionObservationPage(pages, pageIndex, page)
+		}
+		for _, page := range r.InLinks {
+			pages = appendWikiMentionObservationPage(pages, pageIndex, page)
+		}
 		totalChars += len([]rune(r.Content))
-		meta := map[string]any{}
+		if strings.TrimSpace(r.Content) == "" {
+			continue
+		}
+		mentionKind := r.PageKind
+		if mentionKind == "" {
+			mentionKind = r.Kind
+		}
+		meta := map[string]any{"kind": mentionKind}
 		if r.ArticleID != "" {
 			meta["articleId"] = r.ArticleID
 		}
 		if r.KbID != "" {
 			meta["knowledgeBaseId"] = r.KbID
 		}
-		if r.Path != "" {
-			meta["nodeKey"] = r.Path
-			meta["path"] = []string{r.Path}
+		if r.ChunkID != "" {
+			meta["chunkId"] = r.ChunkID
+		}
+		if r.PageKey != "" {
+			meta["pageKey"] = r.PageKey
+		}
+		if len(r.Aliases) > 0 {
+			meta["aliases"] = r.Aliases
+		}
+		if r.NodeKey != "" {
+			meta["nodeKey"] = r.NodeKey
+		}
+		if r.ContentFrom != "" {
+			meta["contentFrom"] = r.ContentFrom
+		}
+		var path []string
+		if len(r.Path) > 0 {
+			if json.Unmarshal(r.Path, &path) != nil {
+				var pathText string
+				if json.Unmarshal(r.Path, &pathText) == nil && pathText != "" {
+					path = strings.Split(pathText, " › ")
+				}
+			}
+		}
+		if len(path) > 0 {
+			meta["path"] = path
+		}
+		content := trimSpace(r.Content)
+		if r.Kind == "wiki_page" && r.PageKey != "" {
+			content = "[Wiki 页面 " + r.Title + "]\n\n" + content
+		} else {
+			content = truncateRunes(content, 4000)
 		}
 		evidence = append(evidence, rt.EvidenceInput{
-			Source: rt.EvidenceKnowledge, Title: r.Title,
-			Content: trimSpace(r.Content), Relevance: floatPtr(0.8), Confidence: floatPtr(0.8),
-			FullRead: len([]rune(r.Content)) < 5500, Metadata: meta,
+			Source: map[bool]rt.EvidenceSourceAlias{true: rt.EvidenceWiki, false: rt.EvidenceKnowledge}[r.Kind == "wiki_page"], Title: r.Title,
+			Content: content, Relevance: floatPtr(0.8), Confidence: floatPtr(0.8),
+			FullRead: r.Kind == "wiki_page", SourceID: firstNonEmpty(r.ChunkID, r.NodeKey, r.PageKey), Metadata: meta,
 		})
 	}
 	summary := "读取结果为空"
-	if len(parsed.Results) > 0 {
-		summary = fmt.Sprintf("已读取 %d 个目标（合计 %d 字）", len(parsed.Results), totalChars)
+	if len(evidence) > 0 {
+		summary = fmt.Sprintf("已读取 %d 个目标（合计 %d 字）", len(evidence), totalChars)
+		if len(parsed.Failures) > 0 || parsed.SkippedCount > 0 {
+			summary += fmt.Sprintf("；%d 个失败，%d 个按复杂度跳过", len(parsed.Failures), parsed.SkippedCount)
+		}
 	}
-	return rt.ToolNormalizerResult{Summary: summary, Evidence: evidence}
+	return rt.ToolNormalizerResult{
+		Summary: summary, Evidence: evidence, Progress: boolPtr(len(evidence) > 0),
+		Data: mustJSON(map[string]any{
+			"requestedCount": parsed.RequestedCount, "readCount": len(evidence),
+			"skippedCount": parsed.SkippedCount, "failureCount": len(parsed.Failures),
+			"pages": pages,
+		}),
+		SuggestedActions: map[bool][]string{true: {}, false: {"knowledge.search"}}[len(evidence) > 0],
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func extractHits(output any) []map[string]any {
@@ -774,7 +1132,7 @@ func executeWikiOverview(ctx *rt.ToolExecutionContext, input any) (any, error) {
 		}
 	}
 	// 未指定库时跨用户全部知识库（与 TS listUserWikiOverview 一致）
-	return kbListWikiOverview(context.Background(), ctx.UserID, kbID), nil
+	return kbListWikiOverview(toolContext(ctx), ctx.UserID, kbID), nil
 }
 
 func executeWikiSearchPages(ctx *rt.ToolExecutionContext, input any) (any, error) {
@@ -799,7 +1157,7 @@ func executeWikiSearchPages(ctx *rt.ToolExecutionContext, input any) (any, error
 	if v, ok := params["limit"].(float64); ok && v > 0 {
 		limit = int(v)
 	}
-	cleaned, items := kbSearchWikiPages(context.Background(), ctx.UserID, kbID, queries, limit)
+	cleaned, items := kbSearchWikiPages(toolContext(ctx), ctx.UserID, kbID, queries, limit)
 	return map[string]any{"query": cleaned, "items": items}, nil
 }
 
@@ -815,7 +1173,7 @@ func executeWikiReadPage(ctx *rt.ToolExecutionContext, input any) (any, error) {
 	if pageKey == "" {
 		return nil, rt.ValidationError("pageKey 不能为空")
 	}
-	detail, err := kbWikiPageDetailByPageKey(context.Background(), ctx.UserID, kbID, pageKey)
+	detail, err := kbWikiPageDetailByPageKey(toolContext(ctx), ctx.UserID, kbID, pageKey)
 	if err != nil {
 		return nil, err
 	}
@@ -859,6 +1217,7 @@ func normalizeWikiPageRead(output any, _ any) rt.ToolNormalizerResult {
 		PageKey   string           `json:"pageKey"`
 		Title     string           `json:"title"`
 		Kind      string           `json:"kind"`
+		Aliases   []string         `json:"aliases"`
 		ContentMd string           `json:"contentMd"`
 		Links     []map[string]any `json:"links"`
 		InLinks   []map[string]any `json:"inLinks"`
@@ -879,11 +1238,28 @@ func normalizeWikiPageRead(output any, _ any) rt.ToolNormalizerResult {
 		}
 	}
 	neighborCount := len(parsed.Links) + len(parsed.InLinks)
+	pages := make([]wikiMentionObservationPage, 0, neighborCount+1)
+	pageIndex := map[string]int{}
+	pages = appendWikiMentionObservationPage(pages, pageIndex, wikiMentionObservationPage{
+		PageKey: parsed.PageKey, Title: title, Kind: parsed.Kind, Aliases: parsed.Aliases,
+	})
+	for _, neighbors := range [][]map[string]any{parsed.Links, parsed.InLinks} {
+		for _, neighbor := range neighbors {
+			rawNeighbor, _ := json.Marshal(neighbor)
+			var page wikiMentionObservationPage
+			if json.Unmarshal(rawNeighbor, &page) == nil {
+				pages = appendWikiMentionObservationPage(pages, pageIndex, page)
+			}
+		}
+	}
 	// 全文读取：正文完整进证据，不在这里裁（与 TS 一致，体积由段内回传与证据预算统一兜底）
 	evidenceContent := "[Wiki 页面 " + title + "]\n\n" + content
 	meta := map[string]any{"kind": parsed.Kind}
 	if parsed.PageKey != "" {
 		meta["pageKey"] = parsed.PageKey
+	}
+	if len(parsed.Aliases) > 0 {
+		meta["aliases"] = parsed.Aliases
 	}
 	return rt.ToolNormalizerResult{
 		Summary: fmt.Sprintf("已读取 Wiki 页面「%s」（%d 字%s），回答时请用 [[%s|%s]] 引用",
@@ -892,7 +1268,7 @@ func normalizeWikiPageRead(output any, _ any) rt.ToolNormalizerResult {
 			parsed.PageKey, title),
 		Data: mustJSON(map[string]any{
 			"pageKey": parsed.PageKey, "title": title, "kind": parsed.Kind,
-			"excerpt": truncateRunes(content, 400),
+			"aliases": parsed.Aliases, "excerpt": truncateRunes(content, 400), "pages": pages,
 		}),
 		Evidence: []rt.EvidenceInput{{
 			Source: rt.EvidenceWiki, Title: title, Content: evidenceContent,
@@ -912,8 +1288,8 @@ func registerAgentMetaTools(registry interface {
 	registry.Register(&rt.AgentToolDefinition{
 		ID: "agent.load_skill", Name: "load_skill", Namespace: rt.NamespaceAgent,
 		Description: "加载一个能力包（技能），获得对应工具集与操作说明。",
-		InputSchema: schemaJSON(`{"type":"object","properties":{"skillId":{"type":"string","enum":["knowledge","graph","research","memory","writer","documents","admin","system"]}},"required":["skillId"]}`),
-		RiskLevel:   rt.RiskLow, Core: true,
+		InputSchema: schemaJSON(`{"type":"object","properties":{"skill":{"type":"string","minLength":1,"maxLength":64,"enum":["knowledge","graph","research","memory","writer","documents","admin","system"]},"skillId":{"type":"string","minLength":1,"maxLength":64,"description":"兼容旧调用；优先使用 skill"}},"anyOf":[{"required":["skill"]},{"required":["skillId"]}]}`),
+		RiskLevel:   rt.RiskLow, Core: true, AllowedInSubAgent: toolPtr(false),
 		Execute: executeLoadSkill,
 		Normalize: func(_ any, input any) rt.ToolNormalizerResult {
 			return rt.ToolNormalizerResult{Summary: "技能加载请求已完成", Progress: boolPtr(false)}
@@ -921,10 +1297,36 @@ func registerAgentMetaTools(registry interface {
 	})
 
 	registry.Register(&rt.AgentToolDefinition{
+		ID: "agent.delegate", Name: "delegate_task", Namespace: rt.NamespaceAgent,
+		Description: "把彼此独立的复杂子任务委派给最多 3 个并行子代理。简单问答或单次检索不要委派。",
+		InputSchema: schemaJSON(`{"type":"object","properties":{"tasks":{"type":"array","minItems":1,"maxItems":5,"items":{"type":"object","properties":{"objective":{"type":"string","minLength":1,"maxLength":2000},"context":{"type":"string","maxLength":4000},"skillIds":{"type":"array","maxItems":4,"items":{"type":"string","minLength":1}},"allowedToolIds":{"type":"array","maxItems":16,"items":{"type":"string","minLength":1}},"expectedOutput":{"type":"string","maxLength":500},"maxToolCalls":{"type":"integer","minimum":1,"maximum":12}},"required":["objective"]}}},"required":["tasks"]}`),
+		RiskLevel:   rt.RiskMedium, Core: true, AllowedInSubAgent: toolPtr(false),
+		Execute: executeDelegateTasks,
+		Normalize: func(output any, _ any) rt.ToolNormalizerResult {
+			payload, _ := output.(map[string]any)
+			results, _ := payload["results"].([]map[string]any)
+			done := 0
+			for _, result := range results {
+				if result["status"] == "completed" {
+					done++
+				}
+			}
+			normalized := rt.ToolNormalizerResult{
+				Summary: fmt.Sprintf("委派 %d 个子任务，完成 %d 个", len(results), done),
+				Data:    mustJSON(map[string]any{"results": results}),
+			}
+			if done < len(results) {
+				normalized.SuggestedActions = []string{"handle_failed_subtask_inline"}
+			}
+			return normalized
+		},
+	})
+
+	registry.Register(&rt.AgentToolDefinition{
 		ID: "agent.list_skills", Name: "list_skills", Namespace: rt.NamespaceAgent,
 		Description: "列出全部可加载的能力及加载状态。",
 		InputSchema: schemaJSON(`{"type":"object","properties":{}}`),
-		RiskLevel:   rt.RiskLow, Core: true,
+		RiskLevel:   rt.RiskLow, Core: true, AllowedInSubAgent: toolPtr(false),
 		Execute: executeListSkills,
 		Normalize: func(_ any, _ any) rt.ToolNormalizerResult {
 			return rt.ToolNormalizerResult{Summary: "已列出可用能力目录", Progress: boolPtr(false)}
@@ -935,7 +1337,7 @@ func registerAgentMetaTools(registry interface {
 		ID: "agent.get_plan", Name: "get_plan", Namespace: rt.NamespaceAgent,
 		Description: "查看当前任务计划与步骤状态。",
 		InputSchema: schemaJSON(`{"type":"object","properties":{}}`),
-		RiskLevel:   rt.RiskLow, Core: true,
+		RiskLevel:   rt.RiskLow, Core: true, AllowedInSubAgent: toolPtr(false),
 		Execute: executeGetPlan,
 		Normalize: func(_ any, _ any) rt.ToolNormalizerResult {
 			return rt.ToolNormalizerResult{Summary: "已返回当前计划", Progress: boolPtr(false)}
@@ -945,9 +1347,9 @@ func registerAgentMetaTools(registry interface {
 	registry.Register(&rt.AgentToolDefinition{
 		ID: "agent.update_plan", Name: "update_plan", Namespace: rt.NamespaceAgent,
 		Description: "增删改查当前计划步骤（op: set/add/update/remove/reorder）。",
-		InputSchema: schemaJSON(`{"type":"object","properties":{"ops":{"type":"array","items":{"type":"object","properties":{"op":{"type":"string"},"goal":{"type":"string"},"id":{"type":"string"},"status":{"type":"string"}},"required":["op"]}}},"required":["ops"]}`),
-		RiskLevel:   rt.RiskLow,
-		Execute:     executeUpdatePlan,
+		InputSchema: schemaJSON(`{"type":"object","properties":{"ops":{"type":"array","minItems":1,"maxItems":10,"items":{"oneOf":[{"type":"object","properties":{"op":{"const":"set"},"steps":{"type":"array","minItems":1,"maxItems":12,"items":{"type":"object","properties":{"goal":{"type":"string","minLength":1,"maxLength":300},"dependsOn":{"type":"array","maxItems":8,"items":{"type":"string"}}},"required":["goal"]}}},"required":["op","steps"]},{"type":"object","properties":{"op":{"const":"add"},"goal":{"type":"string","minLength":1,"maxLength":300},"afterId":{"type":"string"},"dependsOn":{"type":"array","maxItems":8,"items":{"type":"string"}}},"required":["op","goal"]},{"type":"object","properties":{"op":{"const":"update"},"id":{"type":"string","minLength":1},"goal":{"type":"string","minLength":1,"maxLength":300},"status":{"type":"string","enum":["pending","running","completed","skipped","failed"]},"resultSummary":{"type":"string","maxLength":500}},"required":["op","id"]},{"type":"object","properties":{"op":{"const":"remove"},"id":{"type":"string","minLength":1}},"required":["op","id"]},{"type":"object","properties":{"op":{"const":"reorder"},"orderedIds":{"type":"array","minItems":2,"items":{"type":"string","minLength":1}}},"required":["op","orderedIds"]}]}}},"required":["ops"]}`),
+		RiskLevel:   rt.RiskLow, Core: true, AllowedInSubAgent: toolPtr(false),
+		Execute: executeUpdatePlan,
 		Normalize: func(_ any, _ any) rt.ToolNormalizerResult {
 			return rt.ToolNormalizerResult{Summary: "计划已更新", Progress: boolPtr(false)}
 		},
@@ -956,13 +1358,53 @@ func registerAgentMetaTools(registry interface {
 
 func executeLoadSkill(ctx *rt.ToolExecutionContext, input any) (any, error) {
 	params, _ := input.(map[string]any)
-	skillID, _ := params["skillId"].(string)
+	skillID, _ := params["skill"].(string)
+	if skillID == "" {
+		skillID, _ = params["skillId"].(string)
+	}
 	if ctx.Services == nil {
 		return nil, rt.PermissionDenied("服务面不可用")
 	}
 	result := ctx.Services.LoadSkill(skillID)
 	payload, _ := json.Marshal(result)
 	return json.RawMessage(payload), nil
+}
+
+func executeDelegateTasks(ctx *rt.ToolExecutionContext, input any) (any, error) {
+	if ctx.Services == nil {
+		return nil, rt.PermissionDenied("服务面不可用")
+	}
+	params, _ := input.(map[string]any)
+	rawTasks, _ := params["tasks"].([]any)
+	tasks := make([]rt.DelegateTaskInput, 0, len(rawTasks))
+	for _, rawTask := range rawTasks {
+		taskMap, ok := rawTask.(map[string]any)
+		if !ok {
+			continue
+		}
+		task := rt.DelegateTaskInput{
+			Objective:      stringValue(taskMap["objective"]),
+			Context:        stringValue(taskMap["context"]),
+			SkillIDs:       stringSliceValue(taskMap["skillIds"]),
+			AllowedToolIDs: stringSliceValue(taskMap["allowedToolIds"]),
+			ExpectedOutput: stringValue(taskMap["expectedOutput"]),
+			MaxToolCalls:   intValue(taskMap["maxToolCalls"]),
+		}
+		tasks = append(tasks, task)
+	}
+	results := ctx.Services.Delegate(tasks)
+	publicResults := make([]map[string]any, 0, len(results))
+	ok := false
+	for _, result := range results {
+		if result.Status == "completed" {
+			ok = true
+		}
+		publicResults = append(publicResults, map[string]any{
+			"taskId": result.TaskID, "status": result.Status, "summary": result.Summary,
+			"evidenceCount": len(result.Evidence),
+		})
+	}
+	return map[string]any{"ok": ok, "results": publicResults}, nil
 }
 
 func executeListSkills(ctx *rt.ToolExecutionContext, _ any) (any, error) {
@@ -993,6 +1435,8 @@ func executeUpdatePlan(ctx *rt.ToolExecutionContext, input any) (any, error) {
 		op.Goal, _ = opMap["goal"].(string)
 		op.ID, _ = opMap["id"].(string)
 		op.Summary, _ = opMap["resultSummary"].(string)
+		op.DependsOn = stringSliceValue(opMap["dependsOn"])
+		op.OrderedID = stringSliceValue(opMap["orderedIds"])
 		if status, ok := opMap["status"].(string); ok {
 			op.Status = rt.AgentPlanStepStatus(status)
 		}
@@ -1006,7 +1450,9 @@ func executeUpdatePlan(ctx *rt.ToolExecutionContext, input any) (any, error) {
 					continue
 				}
 				goal, _ := stepMap["goal"].(string)
-				op.Steps = append(op.Steps, rt.PlanStepDraft{Goal: goal})
+				op.Steps = append(op.Steps, rt.PlanStepDraft{
+					Goal: goal, DependsOn: stringSliceValue(stepMap["dependsOn"]),
+				})
 			}
 		}
 		ops = append(ops, op)
@@ -1041,15 +1487,21 @@ func registerBuiltinSkills(skills interface{ Register(skill rt.AgentSkill) }) {
 	})
 
 	skills.Register(rt.AgentSkill{
-		ID: "documents", Name: "文档库", Description: "文档检索、阅读与导出",
+		ID: "documents", Name: "文档与内容管理", Description: "文档检索、阅读、文章创建更新、移动与分享",
 		Instructions: joinStrings([]string{
 			"## 文档操作",
 			"1. document.search / document.read 用于检索与阅读文档库内容。",
-			"2. 有副作用的文档操作必须明确用户确实要求了该操作，不要顺手创建或改动。",
-			"3. 删除类操作必须走确认流程，禁止假装已删除。",
+			"2. create_article / update_article / move_article / create_article_share 只有在用户明确要求实际落库时才能调用，不要把讨论或草稿误当成执行授权。",
+			"3. 大段修改文章正文前必须先 preview_article_update，把 diff 给用户审核；小范围、明确的改动可直接更新。",
+			"4. update_article 是部分更新：只传需要变更的 title/contentMd，不要为了改标题覆盖正文。",
+			"5. 删除、撤销必须调用 request_user_confirmation：删除文章用 action.toolName=delete_article；撤销分享用 revoke_article_share；删除文档库文档用 delete_document。禁止直接调用或假装已执行。",
 		}, "\n"),
-		ToolIDs: []string{},
-		Tags:    []string{"document"},
+		ToolIDs: []string{
+			"document.list_libraries", "document.search", "document.read", "document.export",
+			"document.create", "document.update", "document.preview_update", "document.move", "document.share",
+			"agent.request_confirmation",
+		},
+		Tags: []string{"document"},
 	})
 
 	skills.Register(rt.AgentSkill{
@@ -1061,7 +1513,7 @@ func registerBuiltinSkills(skills interface{ Register(skill rt.AgentSkill) }) {
 			"3. 涉及\"最新 / 当前 / 官方推荐\"的问题，优先官方文档与一手来源，并留意发布时间。",
 			"4. 单个来源抓取失败不要放弃整个任务，换一个来源继续。",
 		}, "\n"),
-		ToolIDs: []string{},
+		ToolIDs: []string{"research.search", "research.fetch", "research.extract"},
 		Tags:    []string{"external"},
 	})
 
@@ -1073,7 +1525,7 @@ func registerBuiltinSkills(skills interface{ Register(skill rt.AgentSkill) }) {
 			"2. 只有用户明确要求记住、或该信息长期有效且影响后续协作时才写入记忆。",
 			"3. 写入/更新/删除都是有副作用的操作，先确认再执行；不要把敏感凭据写进记忆。",
 		}, "\n"),
-		ToolIDs: []string{},
+		ToolIDs: []string{"memory.search", "memory.write", "memory.update", "memory.delete"},
 		Tags:    []string{"memory"},
 	})
 
@@ -1084,7 +1536,7 @@ func registerBuiltinSkills(skills interface{ Register(skill rt.AgentSkill) }) {
 			"1. 写作是操作能力，不是任务分类：先把资料查够，再进入写作。",
 			"2. 长篇写作前先确定结构与信息来源；正文中的事实必须来自已获取的证据。",
 		}, "\n"),
-		ToolIDs: []string{},
+		ToolIDs: []string{"writer.compose", "writer.rewrite", "writer.summarize", "writer.structure", "writer.save_artifact"},
 		Tags:    []string{"generation"},
 	})
 
@@ -1096,7 +1548,7 @@ func registerBuiltinSkills(skills interface{ Register(skill rt.AgentSkill) }) {
 			"2. 图谱不替代普通知识检索：它只覆盖已公开分享的内容，查不到私有知识库正文。",
 			"3. 典型组合：knowledge.search → 图谱扩散 → knowledge.read。",
 		}, "\n"),
-		ToolIDs: []string{},
+		ToolIDs: []string{"graph.search", "graph.expand", "graph.get_entity", "graph.get_relations"},
 		Deps:    []string{"knowledge"},
 		Tags:    []string{"retrieval"},
 	})
@@ -1106,9 +1558,10 @@ func registerBuiltinSkills(skills interface{ Register(skill rt.AgentSkill) }) {
 		Instructions: joinStrings([]string{
 			"## 管理操作",
 			"1. 管理能力仅限操作员；没有权限时如实说明，不要绕路尝试。",
-			"2. 查询类可直接执行；变更类属于高风险副作用，必须先走确认流程。",
+			"2. bind_ai_model 可在用户明确要求时直接执行；删除供应商、轮换凭证、吊销 Agent Key、修改公开问答开关必须调用 request_user_confirmation。",
+			"3. 对应 action.toolName 分别是 delete_ai_provider、update_ai_credential、revoke_agent_api_key、set_public_qa_enabled。",
 		}, "\n"),
-		ToolIDs: []string{},
+		ToolIDs: []string{"admin.list_models", "admin.bind_model", "admin.list_api_keys", "admin.get_public_qa", "agent.request_confirmation"},
 		Tags:    []string{"admin"},
 	})
 
@@ -1119,7 +1572,7 @@ func registerBuiltinSkills(skills interface{ Register(skill rt.AgentSkill) }) {
 			"1. 回答\"有多少知识库/文档库/文章\"这类计数与清单问题时，优先用概览类工具，不要对每个库分别做一次检索。",
 			"2. 概览结果只说明有什么，不说明内容；要回答内容问题仍需检索。",
 		}, "\n"),
-		ToolIDs: []string{},
+		ToolIDs: []string{"system.overview"},
 		Tags:    []string{"system"},
 	})
 }

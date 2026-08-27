@@ -21,9 +21,6 @@ export function getPublicBaseUrl(env: Record<string, string | undefined> = proce
     const appBaseUrl = normalizeUrl(env.APP_BASE_URL ?? "")
     if (appBaseUrl) return appBaseUrl
 
-    const vercelUrl = normalizeUrl(env.VERCEL_URL ?? "")
-    if (vercelUrl) return vercelUrl
-
     return LOCAL_FALLBACK_URL
 }
 

@@ -1,6 +1,7 @@
 import { aggregateActivities, currentActivityLabel } from "./activity-mapper"
 import type { AgentRunViewModel, EvidenceViewModel } from "./types"
 import { useAgentRunsStore } from "./store"
+import { groupEvidenceBySource } from "./evidence-sources"
 
 /** 选择器：组件只读派生数据，不在渲染里做聚合逻辑 */
 
@@ -58,6 +59,26 @@ export function selectEvidenceBySource(run: AgentRunViewModel): {
 
 export function selectEvidenceByCitation(run: AgentRunViewModel, index: number): EvidenceViewModel | null {
     return run.evidence.find((item) => item.citationIndex === index) ?? null
+}
+
+/** 来源条按真实文档归并；同一文章命中的多个章节只展示一个编号。 */
+export function selectCitedEvidenceSources(run: AgentRunViewModel): EvidenceViewModel[] {
+    const used = new Set(
+        (run.answer.match(/\[(\d{1,2})\]/g) ?? []).map((token) => Number(token.slice(1, -1))),
+    )
+    const groups = groupEvidenceBySource(run.evidence)
+    if (used.size === 0) return groups.map((group) => group.evidence[0])
+
+    return groups.flatMap((group) => {
+        const cited = group.evidence.find((item) => used.has(item.citationIndex))
+        return cited ? [cited] : []
+    })
+}
+
+/** 来源条只在回答进入终态后出现，运行中不提前泄露或重复占位。 */
+export function shouldShowCitationSources(run: AgentRunViewModel | null): boolean {
+    if (!run || run.status === "starting" || run.status === "running") return false
+    return selectCitedEvidenceSources(run).length > 0
 }
 
 export function selectRunningSubAgentCount(run: AgentRunViewModel): number {

@@ -212,7 +212,7 @@ pnpm test:coverage
 - [ ] 为关键 API 路由应用速率限制
 - [ ] 为热门查询添加 Redis 缓存
 - [ ] 集成错误追踪（Sentry）
-- [ ] 集成性能监控（Vercel Analytics）
+- [ ] 集成性能监控（OpenTelemetry）
 - [ ] 检查数据库索引（使用 `checkIndexUsage`）
 
 ---
@@ -262,7 +262,7 @@ pnpm analyze
 
 1. **速率限制**：当前使用内存存储，生产环境建议切换到 Redis
 2. **日志收集**：生产环境建议集成日志聚合服务（如 Datadog、LogRocket）
-3. **性能监控**：建议安装 Vercel Analytics 或 Sentry
+3. **性能监控**：建议安装 OpenTelemetry 或 Sentry
 4. **图片优化**：确保 S3 配置正确，支持 WebP/AVIF
 
 ---

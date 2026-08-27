@@ -22,11 +22,6 @@ helloagents/wiki/modules/go-launcher.md
 skills-lock.json
 # Node.js
 node_modules/
-.vercel/
-.next/
-# 历史 Cloudflare/OpenNext 本地构建残留，勿提交
-.open-next/
-.wrangler/
 .vite/
 dist/
 out/
@@ -63,3 +58,6 @@ npm-debug.log*
 .env.local
 .env.*.local
 .data/
+
+# Go 本地运行配置（含数据库、密钥与第三方凭证）
+apps/api/config.toml

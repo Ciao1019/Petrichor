@@ -6,6 +6,7 @@ package runtime
 type AgentToolRegistry struct {
 	byID   map[string]*AgentToolDefinition
 	byName map[string]string
+	order  []string
 }
 
 // NewToolRegistry 构造。
@@ -15,6 +16,12 @@ func NewToolRegistry() *AgentToolRegistry {
 
 // Register 注册单个工具。
 func (r *AgentToolRegistry) Register(definition *AgentToolDefinition) {
+	if definition == nil || definition.ID == "" {
+		return
+	}
+	if _, exists := r.byID[definition.ID]; !exists {
+		r.order = append(r.order, definition.ID)
+	}
 	r.byID[definition.ID] = definition
 	r.byName[definition.Name] = definition.ID
 }
@@ -43,9 +50,7 @@ func (r *AgentToolRegistry) Has(toolID string) bool { return r.Get(toolID) != ni
 // IDs 全部 id。
 func (r *AgentToolRegistry) IDs() []string {
 	out := make([]string, 0, len(r.byID))
-	for id := range r.byID {
-		out = append(out, id)
-	}
+	out = append(out, r.order...)
 	return out
 }
 
@@ -61,7 +66,11 @@ type ToolFilter struct {
 // List 按条件列出。
 func (r *AgentToolRegistry) List(filter *ToolFilter) []*AgentToolDefinition {
 	out := make([]*AgentToolDefinition, 0)
-	for _, tool := range r.byID {
+	for _, id := range r.order {
+		tool := r.byID[id]
+		if tool == nil {
+			continue
+		}
 		if filter == nil {
 			out = append(out, tool)
 			continue

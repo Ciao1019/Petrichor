@@ -162,6 +162,18 @@ func childrenToMaps(nodes []*treeNodeResponse) []map[string]any {
 	return out
 }
 
+// shallowTreeNodes 只移除已展开的 children 数据，保留 hasChildren 提示。
+// roots/children 接口依赖该提示让前端继续按需加载下一层。
+func shallowTreeNodes(nodes []*treeNodeResponse) []*treeNodeResponse {
+	out := make([]*treeNodeResponse, 0, len(nodes))
+	for _, node := range nodes {
+		clone := *node
+		clone.Children = nil
+		out = append(out, &clone)
+	}
+	return out
+}
+
 // buildArticleWikiSourcePageKey 对应 tree-status-logic.ts 同名函数。
 func buildArticleWikiSourcePageKey(articleID int64) string {
 	return "source-" + strconv.FormatInt(articleID, 10)
@@ -464,13 +476,7 @@ func RootNodes(c *gin.Context) {
 		}
 		idx := indexGraph(graph)
 		filtered := filterTreeByKeyword(buildTree(graph, idx, nil, true), input.Keyword)
-		roots := make([]*treeNodeResponse, 0, len(filtered))
-		for _, node := range filtered {
-			clone := *node
-			clone.Children = nil
-			clone.HasChildren = false
-			roots = append(roots, &clone)
-		}
+		roots := shallowTreeNodes(filtered)
 		p := httpx.ResolvePagination(input.PaginationInput)
 		start := p.Offset
 		if start > int64(len(roots)) {
@@ -483,7 +489,7 @@ func RootNodes(c *gin.Context) {
 		page := roots[start:end]
 
 		totalFolders := 0
-		for _, node := range page {
+		for _, node := range roots {
 			if node.Type == "FOLDER" {
 				totalFolders++
 			}
@@ -523,7 +529,7 @@ func ChildNodes(c *gin.Context) {
 			return nil, err
 		}
 		idx := indexGraph(graph)
-		flat := buildTree(graph, idx, parentID, true)
+		flat := shallowTreeNodes(buildTree(graph, idx, parentID, true))
 
 		var parentOut any
 		if parentID != nil {
@@ -531,10 +537,7 @@ func ChildNodes(c *gin.Context) {
 		}
 		nodes := make([]map[string]any, 0, len(flat))
 		for _, node := range flat {
-			clone := *node
-			clone.Children = nil
-			clone.HasChildren = false
-			nodes = append(nodes, clone.toMap())
+			nodes = append(nodes, node.toMap())
 		}
 		return map[string]any{
 			"knowledgeBaseId": strconv.FormatInt(kbID, 10),
@@ -835,6 +838,7 @@ func DeleteFolder(c *gin.Context) {
 		for i := range articleRows {
 			articleIDs = append(articleIDs, articleRows[i].ID)
 		}
+		imageObjectKeys := collectArticleS4ObjectKeys(articleRows, user.ID)
 
 		ctx := context.Background()
 		if len(articleIDs) > 0 {
@@ -854,7 +858,7 @@ func DeleteFolder(c *gin.Context) {
 			`DELETE FROM petrichor_kb_node WHERE user_id = $1 AND id = ANY($2)`, user.ID, nodeIDsList); err != nil {
 			return nil, err
 		}
-		// TS 版此处还会异步清理无引用 S4 图片对象；Go 对象存储删除设施未迁移，暂不执行。
+		ScheduleUnreferencedS4Cleanup(user.ID, imageObjectKeys, "deleteFolder")
 
 		if len(articleIDs) > 0 {
 			invalidatePublicArticleListCache()

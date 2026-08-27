@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"petrichor/api/internal/auth"
+	"petrichor/api/internal/config"
 	httpx "petrichor/api/internal/httpx"
 )
 
@@ -250,9 +251,9 @@ func agentSkillBody(c *gin.Context) {
 }
 
 // skillsSourceDir 返回 Skill 包源目录：
-// 优先取 PETRICHOR_SKILLS_DIR；否则按 apps/web/skills 相对资源路径探测。
+// 优先取 TOML 中的 agent.skills_directory；否则按 apps/web/skills 相对资源路径探测。
 func skillsSourceDir() string {
-	if dir := strings.TrimSpace(os.Getenv("PETRICHOR_SKILLS_DIR")); dir != "" {
+	if dir := config.Get().Agent.SkillsDirectory; dir != "" {
 		return dir
 	}
 	candidates := []string{

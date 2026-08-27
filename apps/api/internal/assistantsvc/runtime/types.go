@@ -6,6 +6,7 @@
 package runtime
 
 import (
+	"context"
 	"encoding/json"
 )
 
@@ -180,6 +181,7 @@ const (
 type AgentRuntimeServices interface {
 	LoadSkill(skillID string) SkillLoadResult
 	ListSkills() []SkillCatalogEntry
+	Delegate(inputs []DelegateTaskInput) []DelegationResult
 	GetPlan() []AgentPlanStep
 	UpdatePlan(ops []PlanUpdateOp) []AgentPlanStep
 	RequestSegmentRestart(reason string)
@@ -188,7 +190,12 @@ type AgentRuntimeServices interface {
 
 // ToolExecutionContext 工具执行上下文。
 type ToolExecutionContext struct {
+	// Context 是本次工具调用的超时/取消上下文。工具实现必须优先使用它，
+	// 避免 HTTP 已断开或工具超时后数据库/网络操作仍在后台继续。
+	Context         context.Context `json:"-"`
 	RunID           string
+	DBRunID         int64
+	ThreadID        int64
 	UserID          int64
 	ConversationID  string
 	Focus           map[string]any
@@ -197,6 +204,10 @@ type ToolExecutionContext struct {
 	DelegationDepth int
 	State           *AgentState
 	Services        AgentRuntimeServices
+	// RecordTokenUsage 供内部会再次调用模型的工具（如 writer）回记真实用量。
+	RecordTokenUsage func(input, output int64) `json:"-"`
+	// ConfirmedAction 只由服务端原子消费确认票据后设置，客户端无法控制。
+	ConfirmedAction bool `json:"-"`
 }
 
 // PlanUpdateOp 计划变更操作。

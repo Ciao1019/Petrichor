@@ -74,6 +74,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, toolID string, rawInput any,
 		"callId":    callID,
 		"toolId":    tool.ID,
 		"namespace": tool.Namespace,
+		"title":     toolActivityTitle(tool.ID, rawInput),
 	})
 
 	// 1) 权限：拒绝即不执行、不重试、Trace permission_denied
@@ -92,10 +93,13 @@ func (e *ToolExecutor) Execute(ctx context.Context, toolID string, rawInput any,
 	}
 
 	input := rawInput
+	if err := validateToolInput(tool.InputSchema, input); err != nil {
+		return e.fail(ctx, callID, tool, ValidationError(err.Error()), rawInput, startedAt, 0, "allowed")
+	}
 
 	// 2) 副作用确认：返回 false 拒绝执行
-	if tool.RequiresConfirmation && e.deps.ConfirmSideEffect != nil {
-		if !e.deps.ConfirmSideEffect(tool, input) {
+	if tool.RequiresConfirmation {
+		if e.deps.ConfirmSideEffect == nil || !e.deps.ConfirmSideEffect(tool, input) {
 			return e.fail(ctx, callID, tool,
 				PermissionDenied("操作 "+tool.ID+" 需要用户确认，尚未获得确认"), input, startedAt, 0, "denied")
 		}
@@ -330,13 +334,15 @@ func runToolWithTimeout(ctx context.Context, tool *AgentToolDefinition, execCtx 
 	}
 	runCtx, cancel := context.WithTimeout(ctx, msDuration(timeoutMs))
 	defer cancel()
+	runExecCtx := *execCtx
+	runExecCtx.Context = runCtx
 	type result struct {
 		out any
 		err error
 	}
 	ch := make(chan result, 1)
 	go func() {
-		out, err := tool.Execute(execCtx, input)
+		out, err := tool.Execute(&runExecCtx, input)
 		ch <- result{out, err}
 	}()
 	select {

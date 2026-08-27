@@ -354,9 +354,6 @@ function getFrontendBaseUrl(request: NextRequest) {
     if (configured) {
         return configured.replace(/\/+$/, "")
     }
-    if (process.env.VERCEL_URL?.trim()) {
-        return `https://${process.env.VERCEL_URL.trim()}`
-    }
     return request.nextUrl.origin
 }
 

@@ -169,8 +169,7 @@ func UpdateKnowledgeBase(c *gin.Context) {
 	})
 }
 
-// DeleteKnowledgeBase 级联删除由数据库外键承接；公开缓存全量失效。
-// TS 版还会异步清理正文里已无引用的 S4 图片对象，Go 侧对象存储清理设施未迁移，暂不执行（见交付说明）。
+// DeleteKnowledgeBase 级联删除由数据库外键承接；公开缓存全量失效，并异步清理孤儿图片。
 func DeleteKnowledgeBase(c *gin.Context) {
 	run(c, func(c *gin.Context) (any, error) {
 		user := currentUser(c)
@@ -186,10 +185,18 @@ func DeleteKnowledgeBase(c *gin.Context) {
 		if _, err := assertKnowledgeBaseOwner(q, user.ID, kbID); err != nil {
 			return nil, err
 		}
+		articles, err := queryArticles(q,
+			`SELECT `+articleColumns+` FROM petrichor_kb_article
+			 WHERE user_id = $1 AND knowledge_base_id = $2`, user.ID, kbID)
+		if err != nil {
+			return nil, err
+		}
+		imageObjectKeys := collectArticleS4ObjectKeys(articles, user.ID)
 		if _, err := q.Exec(c,
 			`DELETE FROM petrichor_kb_knowledge_base WHERE id = $1 AND user_id = $2`, kbID, user.ID); err != nil {
 			return nil, err
 		}
+		ScheduleUnreferencedS4Cleanup(user.ID, imageObjectKeys, "deleteKnowledgeBase")
 		invalidatePublicArticleListCache()
 		invalidatePublicArticleDetailCache("")
 		return map[string]any{"knowledgeBaseId": strconv.FormatInt(kbID, 10)}, nil

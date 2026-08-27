@@ -1,7 +1,5 @@
-// qa.go 前台公开问答：限流（visitor-id 主键 + IP 兜底）→ 公开文章/Wiki 检索 →
+// qa.go 前台公开问答：限流（visitor-id 主键 + IP 兜底）→ 最多 8 步只读工具循环 →
 // CHAT 模型流式补全，以 assistant-ui UIMessage 流协议（SSE）输出。
-// 对照 TS public-qa-handlers.ts publicQaChat 与 assistantsvc/chat.go 的同协议写出器；
-// 偏差：Go 版 aicore 未实现工具调用循环，TS 的 agentic 工具编排收敛为单轮检索增强问答。
 package publicapi
 
 import (
@@ -157,11 +155,7 @@ const (
 	qaModeNormal = "normal"
 	qaModeWiki   = "wiki"
 
-	qaMaxQuestionRunes = 200  // 送入检索的问句长度上限
-	qaArticleHitLimit  = 4    // 关键词检索命中的文章数
-	qaCatalogLimit     = 12   // 无命中时的公开文章目录条数
-	qaWikiHitLimit     = 4    // wiki 模式检索的 Wiki 页面数
-	qaContextChars     = 1600 // 单篇文章送入提示词的正文长度上限
+	qaContextChars = 1600 // 单篇文章送入提示词的正文长度上限
 )
 
 type qaChatRequest struct {
@@ -215,17 +209,18 @@ func QaChat(c *gin.Context) {
 		mode = qaModeWiki
 	}
 
-	question := qaLastUserText(req.Messages)
-	knowledgeBlock, kerr := retrievePublicQaKnowledge(ctx, mode, question)
-	if kerr != nil {
-		httpx.HandleError(c, kerr)
+	scope, err := loadPublicArticleScope(ctx)
+	if err != nil {
+		httpx.HandleError(c, err)
 		return
 	}
+	tools := buildPublicQaTools(scope, mode)
 
 	streamPublicQaAnswer(c, streamPublicQaParams{
 		resolved:       resolved,
 		messages:       req.Messages,
-		systemPrompt:   buildPublicQaSystemPrompt(mode, knowledgeBlock),
+		systemPrompt:   buildPublicQaSystemPrompt(mode),
+		tools:          tools,
 		quotaRemaining: quota.Remaining,
 		quotaLimit:     quota.Limit,
 	})
@@ -244,16 +239,6 @@ func loadSiteOwnerUserID(ctx context.Context) (int64, error) {
 }
 
 // ===== 消息转换（对照 convertToModelMessages 的文本子集）=====
-
-// qaLastUserText 从后往前找第一条有文本的 user 消息，作为检索问句。
-func qaLastUserText(messages []json.RawMessage) string {
-	for i := len(messages) - 1; i >= 0; i-- {
-		if text := qaMessageText(messages[i], "user"); text != "" {
-			return text
-		}
-	}
-	return ""
-}
 
 // qaBuildModelMessages 仅保留带文本的 user/assistant/system 消息。
 func qaBuildModelMessages(messages []json.RawMessage) []aicore.ChatMessage {
@@ -317,9 +302,10 @@ func isQaJSONArray(raw json.RawMessage) bool {
 	return strings.HasPrefix(trimmed, "[")
 }
 
-// ===== 检索（单轮 RAG，替代 TS 的工具循环）=====
+// ===== 公开文章/Wiki 工具的只读检索基础 =====
 
 type qaArticleHit struct {
+	articleID int64
 	title     string
 	shareCode string
 	excerpt   string
@@ -340,61 +326,11 @@ const publicShareVisibilityWhere = `s.enabled = true AND s.revoked_at IS NULL
 	AND (s.password_hash IS NULL OR btrim(s.password_hash) = '')
 	AND (s.expires_at IS NULL OR s.expires_at > now())`
 
-// retrievePublicQaKnowledge 组装「本站资料」提示词块：
-// normal 模式检索公开文章（pg_trgm 相似度 + ILIKE），wiki 模式叠加公开 Wiki 页面；
-// 全部无命中时回退公开文章目录，保证「有哪些文章」类问题可答。
-func retrievePublicQaKnowledge(ctx context.Context, mode, question string) (string, error) {
-	keyword := []rune(strings.TrimSpace(question))
-	if len(keyword) > qaMaxQuestionRunes {
-		keyword = keyword[:qaMaxQuestionRunes]
-	}
-	query := strings.TrimSpace(string(keyword))
-
-	blocks := []string{}
-	if query != "" {
-		articles, err := searchPublicQaArticles(ctx, query, qaArticleHitLimit)
-		if err != nil {
-			return "", err
-		}
-		for _, hit := range articles {
-			blocks = append(blocks, formatQaArticleBlock(hit.title, hit.shareCode, hit.excerpt, clipQaText(hit.contentMd, qaContextChars)))
-		}
-		if mode == qaModeWiki {
-			wikiHits, werr := searchPublicQaWikiPages(ctx, query, qaWikiHitLimit)
-			if werr != nil {
-				return "", werr
-			}
-			for _, hit := range wikiHits {
-				blocks = append(blocks, formatQaWikiBlock(hit.pageKey, hit.title, hit.kind, hit.summary,
-					clipQaText(hit.contentMd, qaContextChars)))
-			}
-		}
-	}
-	if len(blocks) == 0 {
-		catalog, err := loadPublicQaArticleCatalog(ctx, qaCatalogLimit)
-		if err != nil {
-			return "", err
-		}
-		if len(catalog) > 0 {
-			lines := []string{"（关键词未直接命中正文，以下是本站公开文章目录）"}
-			for _, item := range catalog {
-				lines = append(lines, fmt.Sprintf("- 《%s》 href=/p/%s 摘要：%s",
-					item.title, item.shareCode, clipQaText(item.excerpt, 120)))
-			}
-			blocks = append(blocks, strings.Join(lines, "\n"))
-		}
-	}
-	if len(blocks) == 0 {
-		return "【本站资料】\n（本站暂无公开资料）", nil
-	}
-	return "【本站资料】\n" + strings.Join(blocks, "\n\n"), nil
-}
-
 // searchPublicQaArticles 对照 ArticleSearch 的相似度排序，但只取无密码有效分享的文章。
 func searchPublicQaArticles(ctx context.Context, query string, limit int64) ([]qaArticleHit, error) {
 	likePattern := "%" + escapeLikePattern(query) + "%"
 	rows, err := pool().Query(ctx,
-		`SELECT a.title, s.share_code,
+		`SELECT a.id, a.title, s.share_code,
 			coalesce(a.public_excerpt, coalesce(a.ai_summary, '')), a.content_md,
 			(similarity(a.title, $2) * 4
 			 + similarity(coalesce(a.public_excerpt, ''), $2) * 2
@@ -417,7 +353,7 @@ func searchPublicQaArticles(ctx context.Context, query string, limit int64) ([]q
 	for rows.Next() {
 		var hit qaArticleHit
 		var score float64
-		if serr := rows.Scan(&hit.title, &hit.shareCode, &hit.excerpt, &hit.contentMd, &score); serr != nil {
+		if serr := rows.Scan(&hit.articleID, &hit.title, &hit.shareCode, &hit.excerpt, &hit.contentMd, &score); serr != nil {
 			return nil, serr
 		}
 		hits = append(hits, hit)
@@ -464,35 +400,6 @@ func searchPublicQaWikiPages(ctx context.Context, query string, limit int64) ([]
 	return hits, rows.Err()
 }
 
-type qaCatalogItem struct {
-	title     string
-	shareCode string
-	excerpt   string
-}
-
-func loadPublicQaArticleCatalog(ctx context.Context, limit int64) ([]qaCatalogItem, error) {
-	rows, err := pool().Query(ctx,
-		`SELECT a.title, s.share_code, coalesce(a.public_excerpt, '')
-		 FROM petrichor_kb_article_share s
-		 JOIN petrichor_kb_article a ON a.id = s.article_id
-		 WHERE `+publicShareVisibilityWhere+`
-		 ORDER BY s.pin_order IS NULL, s.pin_order DESC, a.updated_at DESC
-		 LIMIT $1`, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []qaCatalogItem{}
-	for rows.Next() {
-		var item qaCatalogItem
-		if serr := rows.Scan(&item.title, &item.shareCode, &item.excerpt); serr != nil {
-			return nil, serr
-		}
-		items = append(items, item)
-	}
-	return items, rows.Err()
-}
-
 func clipQaText(text string, max int) string {
 	flat := spaceRe.ReplaceAllString(fenceRe.ReplaceAllString(text, " "), " ")
 	runes := []rune(strings.TrimSpace(flat))
@@ -502,42 +409,28 @@ func clipQaText(text string, max int) string {
 	return strings.TrimSpace(string(runes[:max])) + "…"
 }
 
-func formatQaArticleBlock(title, shareCode, excerpt, content string) string {
-	return strings.Join([]string{
-		"【公开文章】《" + title + "》",
-		"href：/p/" + shareCode,
-		"摘要：" + excerpt,
-		"正文片段：",
-		content,
-	}, "\n")
-}
+// ===== 提示词（对照 TS buildPublicQaSystemPrompt / buildWikiQaSystemPrompt）=====
 
-func formatQaWikiBlock(pageKey, title, kind, summary, content string) string {
-	return strings.Join([]string{
-		"【Wiki 页面】[[pageKey=" + pageKey + "|《" + title + "》]] kind=" + kind,
-		"摘要：" + summary,
-		"正文片段：",
-		content,
-	}, "\n")
-}
-
-// ===== 提示词（对照 buildPublicQaSystemPrompt / buildWikiQaSystemPrompt 的无工具子集）=====
-
-func buildPublicQaSystemPrompt(mode, knowledgeBlock string) string {
-	rules := []string{
-		"你是本站的公开文档问答助手，面向未登录的访客。你的知识范围严格限定在本站「公开分享的文章」之内。",
-		"核心规则：",
-		"1. 遇到自我介绍、能力说明、寒暄等元问题，直接用简短文字回答，不要引用资料。",
-		"2. 内容型问题只依据下方【本站资料】回答；资料不足以回答时，如实说明「本站暂无相关的公开资料」，严禁编造。",
-		"3. 回答涉及具体文章时必须给出依据：用 Markdown 链接标注来源，形如 [文章标题](/p/<shareCode>)；shareCode 只能来自资料块中出现的 href，严禁编造链接。",
-		"4. 资料块中的正文片段可能被截断，不要对片段之外的内容做断言。",
-		"5. 只使用中文回答。答案要直接、结构清晰、避免编造。",
-	}
+func buildPublicQaSystemPrompt(mode string) string {
 	if mode == qaModeWiki {
-		rules = append(rules,
-			"6. 引用 Wiki 页面时可在正文中写 [[pageKey|页面标题]] 形式的内联引用（pageKey 来自资料块的 [[pageKey=...|...]] 标记）；来源文章仍用 /p/<shareCode> 链接。")
+		return strings.Join([]string{
+			"你是本站的公开 Wiki 问答助手，面向未登录的访客，知识范围严格限定在本站公开 Wiki 页面之内。",
+			"内容型问题先调用 wiki_overview 掌握全貌，再用 search_wiki_pages 传入多个同义词定位页面，并对最相关页面调用 read_wiki_page_detail。",
+			"需要多跳推理时可继续读取 links/inLinks 中相关页面。答案正文必须用 [[pageKey|页面标题]] 内联引用真实页面。",
+			"结尾调用 show_citations：Wiki href 写 #wiki-page=<pageKey>，来源文章 href 写 /p/<shareCode>。",
+			"严禁编造或使用公开 Wiki 之外的知识；检索不到就如实回答本站 Wiki 暂无相关资料。",
+			"自我介绍、寒暄等元问题直接简短回答，不调用检索工具。只使用中文，答案直接、结构清晰。",
+		}, "\n")
 	}
-	return strings.Join(rules, "\n") + "\n\n" + knowledgeBlock
+	return strings.Join([]string{
+		"你是本站的公开文档问答助手，面向未登录的访客，知识范围严格限定在本站公开分享的文章之内。",
+		"自我介绍、能力说明、寒暄等元问题直接简短回答，不调用检索或 UI 工具。",
+		"公开文章目录问题调用 list_public_articles；关联型问题优先 search_knowledge_graph；具体内容问题用 search_public_articles 定位文章。",
+		"命中文章后用 search_document_tree 定位章节，片段不足再调用 read_tree_node、read_wiki_page 或 read_source_article 核验原文。",
+		"严禁编造或使用公开文章之外的知识；检索不到就如实回答本站暂无相关的公开资料。",
+		"回答具体内容必须调用 show_citations，href 只能使用工具返回的 /p/<shareCode>，并在正文中用 Markdown 链接标注来源。",
+		"多步任务可用 show_agent_plan/show_progress；结构化对比可用 show_data_table。只使用中文，答案直接、结构清晰。",
+	}, "\n")
 }
 
 // ===== UIMessage 流式输出（帧格式对照 internal/assistantsvc/chat.go 同款协议）=====
@@ -546,6 +439,7 @@ type streamPublicQaParams struct {
 	resolved       *aicore.ResolvedModel
 	messages       []json.RawMessage
 	systemPrompt   string
+	tools          *publicQaToolSet
 	quotaRemaining int64
 	quotaLimit     int64
 }
@@ -553,6 +447,11 @@ type streamPublicQaParams struct {
 const genericStreamErrorText = "An error occurred."
 
 var errQaStreamWriteFailed = fmt.Errorf("public qa stream write failed")
+
+var (
+	publicQaChatWithTools = aicore.ChatWithTools
+	publicQaChatStream    = aicore.ChatStream
+)
 
 type qaSseEmitter struct{ c *gin.Context }
 
@@ -593,27 +492,101 @@ func streamPublicQaAnswer(c *gin.Context, params streamPublicQaParams) {
 	messageID := qaNewStreamID()
 	textPartID := qaNewStreamID()
 	emitter.chunk(map[string]any{"type": "start", "messageId": messageID})
-	emitter.chunk(map[string]any{"type": "start-step"})
-	emitter.chunk(map[string]any{"type": "text-start", "id": textPartID})
-
 	msgs := make([]aicore.ChatMessage, 0, len(params.messages)+1)
 	msgs = append(msgs, aicore.ChatMessage{Role: "system", Content: params.systemPrompt})
 	msgs = append(msgs, qaBuildModelMessages(params.messages)...)
 
 	rt := params.resolved.Runtime
 	rt.Quirks = aicore.ResolveQuirks(rt.ProviderKey, params.resolved.ModelRef)
+	options := params.resolved.Options
+	temperature := 0.2
+	options.Temperature = &temperature
+	definitions := params.tools.definitions()
+	completed := false
+	var runErr error
 
-	_, err := aicore.ChatStream(ctx, rt, params.resolved.ModelRef, msgs, params.resolved.Options,
-		func(delta string) error {
+	for step := 0; step < 8; step++ {
+		if !emitter.chunk(map[string]any{"type": "start-step"}) {
+			runErr = errQaStreamWriteFailed
+			break
+		}
+		textPartID = qaNewStreamID()
+		textStarted := false
+		emitDelta := func(delta string) error {
+			if delta == "" {
+				return nil
+			}
+			if !textStarted {
+				textStarted = true
+				if !emitter.chunk(map[string]any{"type": "text-start", "id": textPartID}) {
+					return errQaStreamWriteFailed
+				}
+			}
 			if !emitter.chunk(map[string]any{"type": "text-delta", "id": textPartID, "delta": delta}) {
 				return errQaStreamWriteFailed
 			}
 			return nil
-		})
+		}
 
-	if err == nil {
-		emitter.chunk(map[string]any{"type": "text-end", "id": textPartID})
+		var result *aicore.ChatResult
+		if step == 7 {
+			result, runErr = publicQaChatStream(ctx, rt, params.resolved.ModelRef, msgs, options, emitDelta)
+		} else {
+			result, runErr = publicQaChatWithTools(ctx, rt, params.resolved.ModelRef, msgs, options, definitions, emitDelta)
+		}
+		if runErr == nil && result != nil && !textStarted && result.Answer != "" {
+			runErr = emitDelta(result.Answer)
+		}
+		if textStarted {
+			emitter.chunk(map[string]any{"type": "text-end", "id": textPartID})
+		}
+		if runErr != nil {
+			break
+		}
+		if result == nil || step == 7 || len(result.ToolCalls) == 0 {
+			emitter.chunk(map[string]any{"type": "finish-step"})
+			completed = true
+			break
+		}
+
+		calls := append([]aicore.ToolCall{}, result.ToolCalls...)
+		for index := range calls {
+			if calls[index].ID == "" {
+				calls[index].ID = qaNewStreamID()
+			}
+		}
+		msgs = append(msgs, aicore.ChatMessage{Role: "assistant", Content: result.Answer, ToolCalls: calls})
+		for _, call := range calls {
+			if call.ID == "" {
+				call.ID = qaNewStreamID()
+			}
+			args, parseErr := parsePublicQaToolArgs(call.ArgsJSON)
+			var output any
+			if parseErr != nil {
+				output = map[string]any{"error": publicQaToolError(parseErr)}
+			} else {
+				toolOutput, toolErr := params.tools.execute(ctx, call.Name, args)
+				if toolErr != nil {
+					output = map[string]any{"error": publicQaToolError(toolErr)}
+				} else {
+					output = toolOutput
+				}
+			}
+			if !emitter.chunk(map[string]any{"type": "tool-input-start", "toolCallId": call.ID, "toolName": call.Name}) ||
+				!emitter.chunk(map[string]any{"type": "tool-input-available", "toolCallId": call.ID, "toolName": call.Name, "input": args}) ||
+				!emitter.chunk(map[string]any{"type": "tool-output-available", "toolCallId": call.ID, "output": output}) {
+				runErr = errQaStreamWriteFailed
+				break
+			}
+			msgs = append(msgs, aicore.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: marshalPublicQaToolOutput(output)})
+		}
 		emitter.chunk(map[string]any{"type": "finish-step"})
+		if runErr != nil {
+			break
+		}
+	}
+
+	if completed && runErr == nil {
 		emitter.chunk(map[string]any{"type": "finish"})
 	} else {
 		// 与 AI SDK 默认 onError 一致：不向客户端泄露服务端错误细节。

@@ -323,6 +323,9 @@ func UpdateArticle(c *gin.Context) {
 		publicExcerpt, readingMinutes, tocJSON, contentHash := buildPublicArticleMetadata(contentMd)
 		contentJson := nullableString(raw, "contentJson")
 		contentMetaJson := nullableString(raw, "contentMetaJson")
+		previousImageObjectKeys := ExtractS4ObjectKeysFromArticleContent(article.ContentJson, article.ContentMd, user.ID)
+		nextImageObjectKeys := ExtractS4ObjectKeysFromArticleContent(contentJson, contentMd, user.ID)
+		removedImageObjectKeys := RemovedS4ObjectKeys(previousImageObjectKeys, nextImageObjectKeys)
 		ctx := c
 		if _, err := q.Exec(ctx,
 			`UPDATE petrichor_kb_article SET title = $1, content_md = $2, content_json = $3,
@@ -341,7 +344,7 @@ func UpdateArticle(c *gin.Context) {
 		if err := replaceArticleTags(q, article.ID, tags); err != nil {
 			return nil, err
 		}
-		// TS 版此处会异步清理被移除的图片对象；Go 对象存储删除设施未迁移，暂不执行。
+		ScheduleUnreferencedS4Cleanup(user.ID, removedImageObjectKeys, "updateArticle")
 
 		invalidatePublicArticleListCache()
 		invalidatePublicArticleDetailCache("")
@@ -405,6 +408,7 @@ func DeleteArticle(c *gin.Context) {
 		if article == nil {
 			return nil, notFoundErr("文章不存在")
 		}
+		imageObjectKeys := ExtractS4ObjectKeysFromArticleContent(article.ContentJson, article.ContentMd, user.ID)
 		ctx := context.Background()
 
 		if _, err := deleteArticleWikiPages(q, user.ID, []ArticleRow{*article}, true); err != nil {
@@ -422,7 +426,7 @@ func DeleteArticle(c *gin.Context) {
 			`DELETE FROM petrichor_kb_node WHERE id = $1 AND user_id = $2`, article.NodeID, user.ID); err != nil {
 			return nil, err
 		}
-		// TS 版此处还会异步清理无引用 S4 图片对象；Go 对象存储删除设施未迁移，暂不执行。
+		ScheduleUnreferencedS4Cleanup(user.ID, imageObjectKeys, "deleteArticle")
 
 		invalidatePublicArticleListCache()
 		invalidatePublicArticleDetailCache("")

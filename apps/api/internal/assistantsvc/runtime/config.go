@@ -1,9 +1,7 @@
 package runtime
 
 import (
-	"os"
-	"strconv"
-	"strings"
+	"petrichor/api/internal/config"
 )
 
 // ===== 配置与 Feature Flag（对照 config.ts）=====
@@ -17,33 +15,15 @@ type AgentFeatureFlags struct {
 	Debug         bool
 }
 
-func envFlag(name string, fallback bool) bool {
-	raw := strings.TrimSpace(os.Getenv(name))
-	if raw == "" {
-		return fallback
-	}
-	return raw == "1" || strings.EqualFold(raw, "true")
-}
-
-func envInt(name string, fallback int64) int64 {
-	raw := strings.TrimSpace(os.Getenv(name))
-	if raw == "" {
-		return fallback
-	}
-	if v, err := strconv.ParseInt(raw, 10, 64); err == nil && v > 0 {
-		return v
-	}
-	return fallback
-}
-
 // ReadAgentFeatureFlags 读取运行开关。
 func ReadAgentFeatureFlags() AgentFeatureFlags {
+	features := config.Get().Agent.Features
 	return AgentFeatureFlags{
-		RuntimeV2:     envFlag("AGENT_RUNTIME_V2", true),
-		SoftRouter:    envFlag("SOFT_ROUTER_ENABLED", true),
-		DynamicSkills: envFlag("AGENT_DYNAMIC_SKILLS", true),
-		Delegation:    envFlag("AGENT_DELEGATION", true),
-		Debug:         envFlag("AGENT_DEBUG", false),
+		RuntimeV2:     features.RuntimeV2,
+		SoftRouter:    features.SoftRouter,
+		DynamicSkills: features.DynamicSkills,
+		Delegation:    features.Delegation,
+		Debug:         features.Debug,
 	}
 }
 
@@ -54,22 +34,56 @@ var budgetByComplexity = map[TaskComplexity]AgentBudget{
 	ComplexityComplex:   {MaxIterations: 24, MaxToolCalls: 32, MaxExecutionMs: 420_000, MaxSubAgents: 5},
 }
 
-// ResolveBudget 按复杂度解析预算（环境变量可覆盖）。
+// ResolveBudget 按复杂度解析预算（TOML 可覆盖）。
 func ResolveBudget(complexity TaskComplexity) AgentBudget {
 	base, ok := budgetByComplexity[complexity]
 	if !ok {
 		base = budgetByComplexity[ComplexitySimple]
 	}
+	overrides := complexityBudgetOverrides(complexity)
 	out := AgentBudget{
-		MaxIterations:  int(envInt("AGENT_MAX_ITERATIONS_"+strings.ToUpper(string(complexity)), int64(base.MaxIterations))),
-		MaxToolCalls:   int(envInt("AGENT_MAX_TOOL_CALLS_"+strings.ToUpper(string(complexity)), int64(base.MaxToolCalls))),
-		MaxExecutionMs: envInt("AGENT_MAX_EXECUTION_MS", base.MaxExecutionMs),
+		MaxIterations:  positiveOr(overrides.MaxIterations, base.MaxIterations),
+		MaxToolCalls:   positiveOr(overrides.MaxToolCalls, base.MaxToolCalls),
+		MaxExecutionMs: positiveInt64Or(config.Get().Agent.Budget.MaxExecutionMs, base.MaxExecutionMs),
 		MaxSubAgents:   base.MaxSubAgents,
 	}
-	if maxTokens := envInt("AGENT_MAX_TOKENS", 0); maxTokens > 0 {
+	if overrides.MaxSubAgents > 0 {
+		out.MaxSubAgents = overrides.MaxSubAgents
+	}
+	if maxTokens := config.Get().Agent.Budget.MaxTokens; maxTokens > 0 {
 		out.MaxTokens = maxTokens
 	}
 	return out
+}
+
+func complexityBudgetOverrides(complexity TaskComplexity) config.AgentComplexityBudget {
+	budget := config.Get().Agent.Budget
+	switch complexity {
+	case ComplexityDirect:
+		return budget.Direct
+	case ComplexitySimple:
+		return budget.Simple
+	case ComplexityMultiStep:
+		return budget.MultiStep
+	case ComplexityComplex:
+		return budget.Complex
+	default:
+		return config.AgentComplexityBudget{}
+	}
+}
+
+func positiveOr(value, fallback int) int {
+	if value > 0 {
+		return value
+	}
+	return fallback
+}
+
+func positiveInt64Or(value, fallback int64) int64 {
+	if value > 0 {
+		return value
+	}
+	return fallback
 }
 
 // MaxDelegationDepthLimit 委派深度硬上限。
@@ -78,25 +92,32 @@ const MaxDelegationDepthLimit = 2
 // ResolveStopPolicyConfig 解析停止策略配置。
 func ResolveStopPolicyConfig(complexity TaskComplexity) StopPolicyConfig {
 	budget := ResolveBudget(complexity)
-	depth := int(envInt("AGENT_MAX_DELEGATION_DEPTH", 2))
+	configured := config.Get().Agent.Budget
+	depth := positiveOr(configured.MaxDelegationDepth, 2)
 	if depth > MaxDelegationDepthLimit {
 		depth = MaxDelegationDepthLimit
 	}
 	return StopPolicyConfig{
 		AgentBudget:             budget,
 		MaxDelegationDepth:      depth,
-		MaxNoProgressIterations: int(envInt("AGENT_MAX_NO_PROGRESS", 3)),
+		MaxNoProgressIterations: positiveOr(configured.MaxNoProgress, 3),
 	}
 }
 
 // ToolDefaultTimeoutMs 工具执行默认超时。
-func ToolDefaultTimeoutMs() int64 { return envInt("AGENT_TOOL_TIMEOUT_MS", 45_000) }
+func ToolDefaultTimeoutMs() int64 {
+	return positiveInt64Or(config.Get().Agent.Budget.ToolTimeoutMs, 45_000)
+}
 
 // ToolDefaultMaxRetries 同一 Tool+Args 默认最多重试次数。
-func ToolDefaultMaxRetries() int { return int(envInt("AGENT_TOOL_MAX_RETRIES", 1)) }
+func ToolDefaultMaxRetries() int {
+	return positiveOr(config.Get().Agent.Budget.ToolMaxRetries, 1)
+}
 
 // SubagentDefaultTimeoutMs 子代理默认超时。
-func SubagentDefaultTimeoutMs() int64 { return envInt("AGENT_SUBAGENT_TIMEOUT_MS", 120_000) }
+func SubagentDefaultTimeoutMs() int64 {
+	return positiveInt64Or(config.Get().Agent.Budget.SubagentTimeoutMs, 120_000)
+}
 
 // ContextBudgetConfig 上下文分区预算。
 type ContextBudgetConfig struct {
@@ -111,7 +132,7 @@ type ContextBudgetConfig struct {
 // ResolveContextBudget 解析上下文预算（比例同 TS：system 8% / skill 12% / evidence 30% / observation 10% / conversation 40%）。
 func ResolveContextBudget(total int64) ContextBudgetConfig {
 	if total <= 0 {
-		total = envInt("AGENT_CONTEXT_TOKENS", 100_000)
+		total = positiveInt64Or(config.Get().Agent.Budget.ContextTokens, 100_000)
 	}
 	return ContextBudgetConfig{
 		Total:        total,

@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest"
 import { aggregateActivities, currentActivityLabel } from "./activity-mapper"
 import { agentRunReducer, createEmptyRun, replayEvents } from "./reducer"
-import { selectCompletionSummary, selectEvidenceBySource } from "./selectors"
+import {
+    selectCitedEvidenceSources,
+    selectCompletionSummary,
+    selectEvidenceBySource,
+    shouldShowCitationSources,
+} from "./selectors"
 import { shouldShowExecutionPanel, type AgentStreamEvent } from "./types"
 
 let sequence = 0
@@ -40,6 +45,16 @@ describe("agentRunReducer", () => {
         expect(run.activities[0].type).toBe("knowledge_search")
     })
 
+    it("旧 Go tool_started 缺少 title 时使用稳定文案而不是 undefined", () => {
+        const run = reduce([
+            event("agent_started", { goal: "小鼹鼠是什么" }),
+            event("tool_started", { callId: "c1", toolId: "knowledge.lookup" }),
+        ])
+        expect(run.activities[0].title).toBe("正在检索并阅读知识库")
+        expect(currentActivityLabel(run.activities)).toBe("正在检索并阅读知识库…")
+        expect(currentActivityLabel(run.activities)).not.toContain("undefined")
+    })
+
     it("失败且将重试的工具展示为「正在尝试其它来源」而不是报错", () => {
         const run = reduce([
             event("tool_started", { callId: "c1", toolId: "research.fetch", title: "正在阅读外部来源" }),
@@ -75,6 +90,42 @@ describe("agentRunReducer", () => {
         ])
         expect(run.evidence).toHaveLength(2)
         expect(run.evidence.map((item) => item.citationIndex)).toEqual([1, 2])
+    })
+
+    it("同一文章的两个章节共享一个来源编号", () => {
+        const run = reduce([
+            event("evidence_created", {
+                evidence: [
+                    {
+                        id: "e1",
+                        source: "knowledge",
+                        title: "什么是 Mole",
+                        nodeKey: "mole-definition",
+                        articleId: "10",
+                        knowledgeBaseId: "1",
+                    },
+                    {
+                        id: "e2",
+                        source: "knowledge",
+                        title: "核心功能",
+                        nodeKey: "mole-features",
+                        articleId: "10",
+                        knowledgeBaseId: "1",
+                    },
+                ],
+            }),
+        ])
+
+        expect(run.evidence).toHaveLength(2)
+        expect(run.evidence.map((item) => item.citationIndex)).toEqual([1, 1])
+        expect(selectCitedEvidenceSources(run).map((item) => item.citationIndex)).toEqual([1])
+        expect(shouldShowCitationSources(run)).toBe(false)
+
+        const completed = agentRunReducer(run, event("agent_completed", {
+            status: "completed",
+            metrics: { durationMs: 1_000, toolCalls: 1 },
+        }))
+        expect(shouldShowCitationSources(completed)).toBe(true)
     })
 
     it("子代理独立更新状态，支持并行展示", () => {
@@ -128,6 +179,27 @@ describe("agentRunReducer", () => {
         ])
         // 保留流式那份：替换成"不是旧内容前缀"的字符串会让下游跳过平滑整段同步
         expect(run.answer).toBe("这是完整答案。\n")
+    })
+
+    it("最终文本只增加 Wiki 波浪线标记时保留流式原文，不整段重刷", () => {
+        const targets = [{
+            pageKey: "entity-mole",
+            title: "小鼹鼠",
+            aliases: ["Mole"],
+            kind: "entity",
+            citationIndex: null,
+        }]
+        const run = reduce([
+            event("wiki_mention_targets", { targets }),
+            event("final_answer_started"),
+            event("final_answer_delta", { delta: "小鼹鼠（Mole）是一款 macOS 清理工具 [1]。" }),
+            event("final_answer_completed", {
+                text: "[[entity-mole|小鼹鼠]]（Mole）是一款 macOS 清理工具 [1]。",
+            }),
+        ])
+
+        expect(run.answer).toBe("小鼹鼠（Mole）是一款 macOS 清理工具 [1]。")
+        expect(run.wikiMentionTargets).toEqual(targets)
     })
 
     it("停止时给出用户可读文案，不暴露内部策略名", () => {

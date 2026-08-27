@@ -1,6 +1,7 @@
 import {
     resolveToolUiSpec,
     toolActivityGroup,
+    toolActivityTitle,
     toolActivityType,
     type AgentActivityType,
 } from "@/lib/agent/tool-ui"
@@ -18,15 +19,20 @@ import type {
  */
 
 export function activityFromToolStarted(event: AgentStreamEvent): AgentActivityViewModel {
-    const payload = event.payload as { callId: string; toolId: string; title: string }
+    const payload = event.payload as { callId?: unknown; toolId?: unknown; title?: unknown }
+    const toolId = typeof payload.toolId === "string" ? payload.toolId.trim() : ""
+    const eventTitle = typeof payload.title === "string" ? payload.title.trim() : ""
     return {
-        id: payload.callId,
-        type: toolActivityType(payload.toolId),
-        title: payload.title,
+        id: typeof payload.callId === "string" && payload.callId.trim()
+            ? payload.callId
+            : `tool:${toolId || "unknown"}:${event.sequence}`,
+        type: toolActivityType(toolId),
+        // 兼容旧 Go 事件或不完整的历史 Run：任何时候都不能把 undefined 暴露给 UI。
+        title: eventTitle || toolActivityTitle(toolId),
         status: "running",
         startedAt: event.timestamp,
-        group: toolActivityGroup(payload.toolId),
-        metadata: { toolId: payload.toolId },
+        group: toolActivityGroup(toolId),
+        metadata: { toolId },
     }
 }
 
@@ -142,7 +148,7 @@ const GROUP_TITLE: Record<string, string> = {
 }
 
 function groupTitle(group: string, _type: AgentActivityType, fallback: string): string {
-    return GROUP_TITLE[group] ?? fallback
+    return GROUP_TITLE[group] ?? (typeof fallback === "string" && fallback.trim() ? fallback : "处理任务")
 }
 
 function groupDetail(
@@ -232,7 +238,10 @@ function mergeStatus(
 export function currentActivityLabel(activities: AgentActivityViewModel[]): string {
     for (let index = activities.length - 1; index >= 0; index -= 1) {
         const activity = activities[index]
-        if (activity.status === "running") return `${activity.title}…`
+        if (activity.status === "running") {
+            const title = typeof activity.title === "string" ? activity.title.trim() : ""
+            return `${title || "正在处理"}…`
+        }
     }
     return activities.length > 0 ? "正在分析…" : "正在准备…"
 }

@@ -47,6 +47,7 @@ type RuntimeConfig struct {
 	APIKey      string
 	Extra       map[string]string
 	Headers     map[string]string
+	APIProtocol string
 	Quirks      Quirks
 }
 
@@ -98,7 +99,7 @@ func loadResolvedModel(ctx context.Context, userID, modelRefID int64, purpose st
 	)
 	err := db.Pool().QueryRow(ctx, `
 		SELECT m.id, m.user_id, m.model_id, m.kind, COALESCE(m.context_window,0), m.enabled,
-		       p.id, p.provider_key, COALESCE(p.base_url,''), p.enabled,
+		       p.id, p.provider_key, COALESCE(p.base_url,''), p.enabled, p.headers_json, p.options_json,
 		       c.id, c.api_key_enc, c.extra_enc
 		FROM petrichor_ai_model m
 		JOIN petrichor_ai_provider p ON p.id = m.provider_id
@@ -106,7 +107,7 @@ func loadResolvedModel(ctx context.Context, userID, modelRefID int64, purpose st
 		WHERE m.id = $1 AND m.user_id = $2
 		LIMIT 1`, modelRefID, userID).
 		Scan(&m.ID, &m.UserID, &m.ModelID, &m.Kind, &m.ContextWindow, &m.Enabled,
-			&p.ID, &p.ProviderKey, &p.BaseURLStr, &p.Enabled,
+			&p.ID, &p.ProviderKey, &p.BaseURLStr, &p.Enabled, &p.HeadersJSON, &p.OptionsJSON,
 			&c.ID, &c.APIKeyEnc, &c.ExtraEnc)
 	if err != nil || !m.Enabled || !p.Enabled || m.Kind != modelKindForPurpose(purpose) {
 		return nil
@@ -116,7 +117,15 @@ func loadResolvedModel(ctx context.Context, userID, modelRefID int64, purpose st
 		ContextWindow: m.ContextWindow,
 		ProviderID:    p.ID, ProviderKey: p.ProviderKey, CredentialID: c.ID,
 		Options: parseGenerationOptions(nil),
-		Runtime: BuildRuntimeConfig(p.ProviderKey, p.BaseURLStr, DecodeApiKey(deref(c.APIKeyEnc)), DecodeExtra(deref(c.ExtraEnc)), nil, Quirks{}),
+		Runtime: BuildRuntimeConfig(
+			p.ProviderKey,
+			p.BaseURLStr,
+			DecodeApiKey(deref(c.APIKeyEnc)),
+			DecodeExtra(deref(c.ExtraEnc)),
+			parseStringMap(p.HeadersJSON),
+			ResolveQuirks(p.ProviderKey, m.ModelID),
+			providerAPIProtocol(p.ProviderKey, p.OptionsJSON),
+		),
 	}
 }
 
@@ -148,6 +157,8 @@ type ProviderRow struct {
 	ProviderKey string
 	BaseURLStr  string
 	Enabled     bool
+	HeadersJSON *string
+	OptionsJSON *string
 }
 
 type CredentialRow struct {
@@ -171,15 +182,34 @@ func parseGenerationOptions(raw *string) GenerationOptions {
 func boolPtr(v bool) *bool { return &v }
 
 // BuildRuntimeConfig 拼装运行时配置。
-func BuildRuntimeConfig(providerKey, baseURL, apiKey string, extra map[string]string, headers map[string]string, quirks Quirks) RuntimeConfig {
+func BuildRuntimeConfig(providerKey, baseURL, apiKey string, extra map[string]string, headers map[string]string, quirks Quirks, apiProtocol ...string) RuntimeConfig {
+	protocol := "chat"
+	if len(apiProtocol) > 0 && strings.TrimSpace(apiProtocol[0]) != "" {
+		protocol = strings.TrimSpace(apiProtocol[0])
+	}
 	return RuntimeConfig{
 		ProviderKey: providerKey,
 		BaseURL:     strings.TrimRight(baseURL, "/"),
 		APIKey:      apiKey,
 		Extra:       extra,
 		Headers:     headers,
+		APIProtocol: protocol,
 		Quirks:      quirks,
 	}
+}
+
+func providerAPIProtocol(providerKey string, raw *string) string {
+	if providerKey != "openai" && providerKey != "azure" && providerKey != "xai" {
+		return "chat"
+	}
+	var options map[string]any
+	if raw != nil {
+		_ = jsonParse(*raw, &options)
+	}
+	if protocol, ok := options["apiProtocol"].(string); ok && (protocol == "chat" || protocol == "responses") {
+		return protocol
+	}
+	return "chat"
 }
 
 func parseStringMap(raw *string) map[string]string {

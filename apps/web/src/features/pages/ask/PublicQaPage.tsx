@@ -150,7 +150,7 @@ function PublicQaChat() {
       new AssistantChatTransport({
         api: "/api/public/qa/chat",
         credentials: "omit",
-        fetch: async (input, init) => {
+        fetch: (async (input, init) => {
           const headers = new Headers(init?.headers)
           if (visitorId) headers.set(VISITOR_ID_HEADER, visitorId)
           if (qaModeRef.current === "wiki") headers.set(QA_MODE_HEADER, "wiki")
@@ -171,7 +171,7 @@ function PublicQaChat() {
             statusText: response.statusText,
             headers: { "content-type": "text/plain; charset=utf-8" },
           })
-        },
+        }) as typeof fetch,
       }),
     [visitorId],
   )

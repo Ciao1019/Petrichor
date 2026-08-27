@@ -7,11 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"petrichor/api/internal/config"
 )
 
 const agentRunColumns = `id, run_key, conversation_id, thread_id, user_id, retry_of_run_key,
@@ -133,13 +134,9 @@ func describeStopReasonForUser(reason *string) any {
 // isAssistantOperator 对照 operator-gate.ts：当前实现 = SUPER_ADMIN。
 func isAssistantOperator(systemRole string) bool { return systemRole == "SUPER_ADMIN" }
 
-// readAgentDebugFlag 对应 readAgentFeatureFlags().debug 的 envFlag 语义。
+// readAgentDebugFlag 对应 TOML 中的 agent.features.debug。
 func readAgentDebugFlag() bool {
-	raw := os.Getenv("AGENT_DEBUG")
-	if raw == "" {
-		return false
-	}
-	return raw == "1" || strings.EqualFold(raw, "true")
+	return config.Get().Agent.Features.Debug
 }
 
 // logStoreError 对照 store.ts 的 logStoreError：结构化日志（fail-open 的排障入口）。

@@ -61,6 +61,7 @@ func registerKBRoutes(rg *gin.RouterGroup) {
 
 	// 构建知识（LLM 注入）
 	kbGroup.POST("/knowledge/build", func(c *gin.Context) { kb.ArticleKnowledgeBuild(c) })
+	kbGroup.POST("/knowledge/build/status", func(c *gin.Context) { kb.ArticleKnowledgeBuildStatus(c) })
 	kbGroup.POST("/knowledge/chunk/list", func(c *gin.Context) { kb.ArticleKnowledgeChunkList(c) })
 
 	// LLM Wiki
@@ -68,9 +69,8 @@ func registerKBRoutes(rg *gin.RouterGroup) {
 	kbGroup.POST("/wiki/tree", func(c *gin.Context) { kb.WikiTree(c) })
 	kbGroup.POST("/wiki/page/list", func(c *gin.Context) { kb.WikiPageList(c) })
 	kbGroup.POST("/wiki/page/detail", func(c *gin.Context) { kb.WikiPageDetail(c) })
-	// TODO(kb 会话): kb.WikiIngest 尚未在 internal/kb 中实现（对应 wiki-agent-handlers 的 ingest），
-	// 为保证 go build ./... 通过暂时下线该路由；实现补齐后恢复本行。
-	// kbGroup.POST("/wiki/ingest", func(c *gin.Context) { kb.WikiIngest(c) })
+	kbGroup.POST("/wiki/graph", func(c *gin.Context) { kb.WikiGraph(c) })
+	kbGroup.POST("/wiki/ingest", func(c *gin.Context) { kb.WikiIngest(c) })
 	kbGroup.POST("/wiki/lint", func(c *gin.Context) { kb.RunWikiLint(c) })
 	kbGroup.POST("/wiki/embedding/run", func(c *gin.Context) { kb.WikiEmbeddingRun(c) })
 	kbGroup.POST("/wiki/patch/list", func(c *gin.Context) { kb.WikiPatchList(c) })

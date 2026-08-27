@@ -21,6 +21,7 @@ type articleLite struct {
 	nodeID          int64
 	title           string
 	contentMd       string
+	contentJSON     *string
 	createdAt       time.Time
 	updatedAt       time.Time
 }
@@ -28,11 +29,11 @@ type articleLite struct {
 // loadOwnedArticle 对应 handlers.ts loadOwnedArticle：不存在返回 404。
 func loadOwnedArticle(q querierLike, userID, articleID int64) (*articleLite, error) {
 	row := q.QueryRow(context.Background(),
-		`SELECT id, knowledge_base_id, node_id, title, content_md, created_at, updated_at
+		`SELECT id, knowledge_base_id, node_id, title, content_md, content_json, created_at, updated_at
 		 FROM petrichor_kb_article WHERE id = $1 AND user_id = $2 LIMIT 1`,
 		articleID, userID)
 	var a articleLite
-	err := row.Scan(&a.id, &a.knowledgeBaseID, &a.nodeID, &a.title, &a.contentMd, &a.createdAt, &a.updatedAt)
+	err := row.Scan(&a.id, &a.knowledgeBaseID, &a.nodeID, &a.title, &a.contentMd, &a.contentJSON, &a.createdAt, &a.updatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, notFoundErr("文章不存在")
@@ -260,6 +261,9 @@ func AgentUpdateArticle(c *gin.Context, actx *authContext) (any, error) {
 	publicExcerpt, readingMinutes, tocJSON, contentHash := buildPublicMetadata(contentMd)
 	contentJSON := nullableString(raw, "contentJson")
 	contentMetaJSON := nullableString(raw, "contentMetaJson")
+	previousImageObjectKeys := kb.ExtractS4ObjectKeysFromArticleContent(existingArticle.contentJSON, existingArticle.contentMd, actx.UserID)
+	nextImageObjectKeys := kb.ExtractS4ObjectKeysFromArticleContent(contentJSON, contentMd, actx.UserID)
+	removedImageObjectKeys := kb.RemovedS4ObjectKeys(previousImageObjectKeys, nextImageObjectKeys)
 	nodeID := int64(0)
 	if err := q.QueryRow(ctx,
 		`UPDATE petrichor_kb_article SET title = $1, content_md = $2, content_json = $3,
@@ -281,7 +285,7 @@ func AgentUpdateArticle(c *gin.Context, actx *authContext) (any, error) {
 	if err := replaceArticleTags(q, articleID, tags); err != nil {
 		return nil, err
 	}
-	// TS 版此处会异步清理被移除的图片对象；Go 对象存储删除设施未迁移，暂不执行。
+	kb.ScheduleUnreferencedS4Cleanup(actx.UserID, removedImageObjectKeys, "agentUpdateArticle")
 	kb.InvalidatePublicArticleCaches("")
 	return map[string]any{
 		"articleId":       idStr(articleID),
@@ -322,6 +326,7 @@ func AgentDeleteArticle(c *gin.Context, actx *authContext) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	imageObjectKeys := kb.ExtractS4ObjectKeysFromArticleContent(full.ContentJson, full.ContentMd, actx.UserID)
 	if _, err := kb.DeleteArticleWikiPagesForAgent(q, actx.UserID, []kb.ArticleRow{*full}, true); err != nil {
 		return nil, err
 	}
@@ -337,7 +342,7 @@ func AgentDeleteArticle(c *gin.Context, actx *authContext) (any, error) {
 		`DELETE FROM petrichor_kb_node WHERE id = $1 AND user_id = $2`, a.nodeID, actx.UserID); err != nil {
 		return nil, err
 	}
-	// TS 版此处还会异步清理无引用 S4 图片对象；Go 对象存储删除设施未迁移，暂不执行。
+	kb.ScheduleUnreferencedS4Cleanup(actx.UserID, imageObjectKeys, "agentDeleteArticle")
 	kb.InvalidatePublicArticleCaches("")
 	return map[string]any{
 		"articleId":       idStr(a.id),
