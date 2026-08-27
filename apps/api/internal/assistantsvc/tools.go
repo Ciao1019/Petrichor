@@ -1,6 +1,6 @@
 package assistantsvc
 
-// tools.go Agent 工具装配（对照 agent-runtime/tools/）。
+// tools.go 负责 Agent 工具装配。
 //
 // 所有工具统一注册进 runtime.DefaultToolRegistry()；执行体走 ToolExecutor，
 // 不存在绕过执行器的调用路径。

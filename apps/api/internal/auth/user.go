@@ -1,4 +1,4 @@
-// Package auth 复刻 src/server/auth 的双会话认证体系与用户模型。
+// Package auth 实现会话认证与用户模型。
 package auth
 
 import (
@@ -30,7 +30,7 @@ type User struct {
 // IsSuperAdmin 是否超级管理员。
 func (u *User) IsSuperAdmin() bool { return u.SystemRole == "SUPER_ADMIN" }
 
-// ToUserResponse 对应 mappers.ts 的 toUserResponse。
+// ToUserResponse 生成客户端用户信息。
 func (u *User) ToUserResponse() map[string]any {
 	return map[string]any{
 		"id":              strconv.FormatInt(u.ID, 10),
@@ -46,12 +46,10 @@ func (u *User) ToUserResponse() map[string]any {
 	}
 }
 
-// ToUserProfileResponse 对应 mappers.ts 的 toUserProfileResponse。
-// 2FA 已按产品决策移除，恒为 false，仅保留字段形状兼容前端。
+// ToUserProfileResponse 生成客户端用户资料。
 func (u *User) ToUserProfileResponse() map[string]any {
 	resp := u.ToUserResponse()
 	resp["signature"] = u.Signature
-	resp["twoFactorEnabled"] = false
 	resp["createdAt"] = httpx.FormatISO(u.CreatedAt)
 	resp["updatedAt"] = httpx.FormatISO(u.UpdatedAt)
 	return resp

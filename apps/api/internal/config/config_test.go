@@ -38,7 +38,6 @@ rest_url = "https://redis.example.com/"
 rest_token = "token"
 
 [agent.features]
-runtime_v2 = false
 debug = true
 
 [agent.budget.multi_step]
@@ -71,7 +70,7 @@ timeout_ms = 9000
 	if cfg.Upstash == nil || cfg.Upstash.RESTURL != "https://redis.example.com" {
 		t.Fatalf("upstash config = %+v", cfg.Upstash)
 	}
-	if cfg.Agent.Features.RuntimeV2 || !cfg.Agent.Features.SoftRouter || !cfg.Agent.Features.Debug {
+	if !cfg.Agent.Features.SoftRouter || !cfg.Agent.Features.Debug {
 		t.Fatalf("agent features = %+v", cfg.Agent.Features)
 	}
 	if got := cfg.Agent.Budget.MultiStep.MaxIterations; got != 16 {

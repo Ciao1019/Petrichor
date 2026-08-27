@@ -290,7 +290,7 @@ func WikiPatchList(c *ginContext) {
 		patches := []map[string]any{}
 		for rows.Next() {
 			var r WikiPatchRow
-			if err := rows.Scan(&r.ID, &r.UserID, &r.KnowledgeBaseID, &r.ThreadID, &r.RunID,
+			if err := rows.Scan(&r.ID, &r.UserID, &r.KnowledgeBaseID,
 				&r.PageKey, &r.Title, &r.Operation, &r.Status, &r.BeforeContentMd,
 				&r.ProposedContentMd, &r.DiffText, &r.Reason, &r.AppliedAt,
 				&r.CreatedAt, &r.UpdatedAt); err != nil {
@@ -319,7 +319,7 @@ func loadPatch(q execQuerier, userID, knowledgeBaseID, patchID int64) (*WikiPatc
 		return nil, notFoundErr("Wiki 补丁不存在")
 	}
 	var r WikiPatchRow
-	if err := rows.Scan(&r.ID, &r.UserID, &r.KnowledgeBaseID, &r.ThreadID, &r.RunID,
+	if err := rows.Scan(&r.ID, &r.UserID, &r.KnowledgeBaseID,
 		&r.PageKey, &r.Title, &r.Operation, &r.Status, &r.BeforeContentMd,
 		&r.ProposedContentMd, &r.DiffText, &r.Reason, &r.AppliedAt,
 		&r.CreatedAt, &r.UpdatedAt); err != nil {
@@ -395,7 +395,7 @@ func WikiPatchApply(c *ginContext) {
 			return nil, err
 		}
 		_ = indexPage
-		if err := logWikiEvent(tx, user.ID, kbID, "PATCH_APPLIED", &page.ID, patch.ThreadID, map[string]any{
+		if err := logWikiEvent(tx, user.ID, kbID, "PATCH_APPLIED", &page.ID, map[string]any{
 			"patchId": strconv.FormatInt(patch.ID, 10),
 			"pageKey": patch.PageKey,
 		}); err != nil {
@@ -453,7 +453,7 @@ func WikiPatchReject(c *ginContext) {
 			now, patch.ID, user.ID); err != nil {
 			return nil, err
 		}
-		if err := logWikiEvent(q, user.ID, kbID, "PATCH_REJECTED", nil, patch.ThreadID, map[string]any{
+		if err := logWikiEvent(q, user.ID, kbID, "PATCH_REJECTED", nil, map[string]any{
 			"patchId": strconv.FormatInt(patch.ID, 10),
 			"pageKey": patch.PageKey,
 		}); err != nil {
@@ -743,12 +743,12 @@ func scanSingleWikiPage(rows pgx.Rows) (*WikiPageRow, error) {
 }
 
 // logWikiEvent 记录 Wiki 审计事件。
-func logWikiEvent(q execQuerier, userID, knowledgeBaseID int64, eventType string, pageID, threadID *int64, payload any) error {
+func logWikiEvent(q execQuerier, userID, knowledgeBaseID int64, eventType string, pageID *int64, payload any) error {
 	payloadJSON := marshalJSON(payload)
 	_, err := q.Exec(context.Background(),
-		`INSERT INTO petrichor_kb_wiki_event_log (user_id, knowledge_base_id, event_type, page_id, thread_id, payload_json)
-		 VALUES ($1,$2,$3,$4,$5,$6)`,
-		userID, knowledgeBaseID, eventType, pageID, threadID, payloadJSON)
+		`INSERT INTO petrichor_kb_wiki_event_log (user_id, knowledge_base_id, event_type, page_id, payload_json)
+		 VALUES ($1,$2,$3,$4,$5)`,
+		userID, knowledgeBaseID, eventType, pageID, payloadJSON)
 	return err
 }
 

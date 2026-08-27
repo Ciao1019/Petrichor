@@ -8,7 +8,6 @@ export default tseslint.config(
         ignores: [
             "dist/**",
             "node_modules/**",
-            "drizzle/**",
             "src/assets/**",
             "src/components/**",
             "src/cuicui/**",

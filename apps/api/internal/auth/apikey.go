@@ -14,7 +14,7 @@ import (
 	httpx "petrichor/api/internal/httpx"
 )
 
-// Agent API Key 体系，复刻 src/server/agent/api-key.ts。
+// Agent API Key 体系。
 
 var AgentApiKeyScopes = []string{
 	"article:write",

@@ -1,4 +1,4 @@
-// projects.go 移植 src/server/projects/logic.ts + handlers.ts（admin 侧）：
+// projects.go 实现开源项目展示页的管理侧配置：
 // 开源项目展示页单例的手写桌面风项目清单。
 package adminpanel
 

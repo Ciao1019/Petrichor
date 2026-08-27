@@ -11,7 +11,6 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/sonner'
 import { AppSidebar } from '@/components/app-sidebar'
 import { AppBreadcrumb } from '@/components/app-breadcrumb'
-import { TwoFactorEnforcementBanner } from '@/components/account/two-factor-enforcement-banner'
 import { dashboardRoutes, isFixedViewportRoute } from '@/lib/dashboard-routes'
 import { enterDemoMode } from '@/lib/demo/demo-mode'
 import { DemoModeBanner } from '@/components/demo-mode-banner'
@@ -257,7 +256,6 @@ function DashboardLayout() {
       <SidebarInset>
         <AppBreadcrumb />
         <DemoModeBanner />
-        <TwoFactorEnforcementBanner />
         <div className="flex min-h-0 flex-1 flex-col">
           <RouteLoadErrorBoundary resetKey={location.pathname}>
             <Suspense fallback={<RouteLoadingFallback />}>

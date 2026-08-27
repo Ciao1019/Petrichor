@@ -1,4 +1,4 @@
-// projects.go 移植 src/server/projects/logic.ts + handlers.ts 的公开侧：
+// projects.go 实现开源项目展示的公开侧读取：
 // 开源项目展示单例读取，缺表/无记录回退默认清单。
 package sitecontent
 

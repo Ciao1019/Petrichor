@@ -11,8 +11,8 @@
 | `petrichor_ai_model` | 该供应商下已启用的模型，由「获取模型列表」写入 |
 | `petrichor_ai_binding` | 用途绑定：CHAT / VISION / DOC_QA / EMBEDDING 各绑一个模型 |
 
-业务代码只说「我要 CHAT 模型」，由 `server/ai/resolution.ts` 查出绑定 → 供应商 → 凭证，
-拼成 `ProviderRuntimeConfig` 交给 `server/ai/model-factory.ts` 实例化。换模型无需改代码。
+业务代码只说「我要 CHAT 模型」，由 `apps/api/internal/aicore/resolve.go` 查出绑定 → 供应商 → 凭证，
+再交给对应协议适配器实例化。换模型无需改代码。
 
 ## 配置流程
 
@@ -26,8 +26,8 @@
    勾选要启用的模型；拉不到时回退到内置模型清单。
 3. **用途绑定**：把模型绑到四个用途上，并按用途设置 maxTokens、temperature、思考模式。
 
-供应商目录定义在 `apps/web/src/server/ai/provider-catalog.ts`，新增一家只需要加一条记录：
-有官方 `@ai-sdk/*` 包的填对应 `sdk`，没有的填 `openai-compatible` 并给上默认 BaseUrl。
+供应商目录定义在 `apps/api/internal/aisvc/catalog.go`；协议实现集中在
+`apps/api/internal/aicore/`，新增供应商时需同步目录、协议能力和测试。
 
 ## 接口协议：chat completions 与 responses
 
@@ -47,14 +47,13 @@ Ollama、LM Studio 等）只实现了 `/chat/completions`，用 SDK 默认值会
 - 只有 OpenAI / Azure OpenAI / xAI 声明了两套，界面上才出现「接口协议」选择器；
 - 用户的选择存在 `petrichor_ai_provider.options_json.apiProtocol`，
   由 `providerApiProtocol()` 读出，`resolveApiProtocol()` 对非法值和不支持的组合回落到默认值；
-- `model-factory.ts` 据此显式取 `provider.chat(id)` 或 `provider.responses(id)`，
-  不走 `provider.languageModel(id)`；
+- Go 协议适配器据此显式选择 Chat Completions 或 Responses，不依赖 SDK 默认值；
 - 「测试连通」会带上表单里当前选的协议，避免「测试通过、实际调用 404」。
 
 其余供应商只有一套协议（Anthropic 的 `/v1/messages`、Gemini 原生接口、Bedrock 的 SigV4、
 以及各家 OpenAI 兼容端点的 `/chat/completions`），走 SDK 统一入口即可。
 
-供应商怪癖修正（`provider-quirks.ts`，DeepSeek 的 json_schema 降级和 thinking 注入）
+供应商怪癖修正在 Go 协议适配层完成（例如 DeepSeek 的 json_schema 降级和 thinking 注入），
 两套端点都会拦截——只匹配 `/chat/completions` 的话，换协议后修正会静默失效。
 
 ## 向量维度
@@ -73,7 +72,7 @@ create index ... using hnsw ((embedding::vector(N)) vector_cosine_ops)
 where vector_dims(embedding) = N
 ```
 
-新维度首次出现时由 `persistDimensions` 自动创建（见 `server/retrieval/vector-space.ts`）。
+新维度首次出现时由 Go 数据层自动创建维度索引。
 查询侧必须带上 `vector_dims(embedding) = N` 过滤并对列做同样的转型才能命中该索引——
 跨维度做 `<=>` 本来就会被 pgvector 拒绝，所以这个过滤是硬性要求而不是优化。
 
@@ -97,30 +96,11 @@ where vector_dims(embedding) = N
 `petrichor_assistant_message_embedding` 是滚动的会话缓存，按维度过滤即可，过期条目
 自然淘汰；`petrichor_agent_memory.embedding` 当前没有读写方。
 
-## 迁移
+## 数据库结构
 
-按顺序执行：
+模型、绑定和向量字段已经全部并入唯一的
+`apps/api/migrations/202608270002_init.sql`，不需要再按顺序执行历史 SQL。Go API 启动时
+会自动完成初始化；初始化后在“模型配置”页面添加供应商、模型和用途绑定即可。
 
-```text
-docs/migrations/2026-08-15-rebuild-ai-model-config.sql
-docs/migrations/2026-08-16-dynamic-embedding-dimensions.sql
-docs/migrations/2026-08-21-article-knowledge-retrieval-index.sql
-```
-
-第一个会 **删除** `petrichor_ai_model_config` 且不迁移存量数据，执行后需要在「模型配置」页重新接入。
-同时会把 `petrichor_assistant_run` / `petrichor_kb_import_job` / `petrichor_ai_review` 上的
-`model_config_id` 清空——这三列语义已改为指向 `petrichor_ai_model.id`，旧值是悬空引用。
-
-第二个把三张表的向量列放宽为无约束 `vector`，拆掉钉死维度的旧 HNSW 索引并按
-新形式重建 1024 维那条，再给 `petrichor_kb_wiki_tree_node` 加上生命周期元数据列。
-存量向量原样保留，`embedding_model` 有意留空——我们无从得知它们是哪个模型写的，
-留空会让它们在下次绑定模型后被判定为待重算。这是保守但正确的行为：
-宁可重算，不要拿来源不明的向量做检索。
-
-第三个新增文章知识检索索引：每个原文分片一条 `chunk` 记录，每个推荐问题一条
-`question` 记录；问题通过 `chunk_id` 指回原文分片。它同时创建全文检索生成列，向量
-HNSW 索引仍由维度探测流程动态创建。迁移会直接回填已有分片和问题的检索行（状态为
-`pending`），无需重新调用大模型构建 Wiki；迁移后在 Wiki 页面触发一次“生成向量”即可补齐。
-
-全新库不用跑这两个脚本，`full-migration.ts` 里已经是最终形态。
-执行前请确认已备份，并确认连接的是目标库。
+从早期数据库升级时，旧的 `petrichor_ai_model_config` 会被清理，需要重新配置模型绑定。
+来源不明的存量向量会被判定为待重算；在 Wiki 页面触发一次“生成向量”即可补齐。

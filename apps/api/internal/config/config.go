@@ -58,7 +58,6 @@ type LocalDevelopmentAuthConfig struct {
 }
 
 type AgentFeatureConfig struct {
-	RuntimeV2     bool
 	SoftRouter    bool
 	DynamicSkills bool
 	Delegation    bool
@@ -86,12 +85,6 @@ type AgentBudgetConfig struct {
 	ContextTokens      int64
 }
 
-type AgentModelConfig struct {
-	BaseURL string
-	APIKey  string
-	Model   string
-}
-
 // AgentResearchConfig 外部研究搜索配置。网页抓取不需要密钥；search 通过
 // provider 选择 Tavily / Serper / Brave / SearXNG。
 type AgentResearchConfig struct {
@@ -105,7 +98,6 @@ type AgentConfig struct {
 	SkillsDirectory string
 	Features        AgentFeatureConfig
 	Budget          AgentBudgetConfig
-	Model           AgentModelConfig
 	Research        AgentResearchConfig
 }
 
@@ -207,12 +199,10 @@ type agentFileConfig struct {
 	SkillsDirectory string                  `toml:"skills_directory"`
 	Features        agentFeaturesFileConfig `toml:"features"`
 	Budget          agentBudgetFileConfig   `toml:"budget"`
-	Model           agentModelFileConfig    `toml:"model"`
 	Research        agentResearchFileConfig `toml:"research"`
 }
 
 type agentFeaturesFileConfig struct {
-	RuntimeV2     *bool `toml:"runtime_v2"`
 	SoftRouter    *bool `toml:"soft_router"`
 	DynamicSkills *bool `toml:"dynamic_skills"`
 	Delegation    *bool `toml:"delegation"`
@@ -232,12 +222,6 @@ type agentBudgetFileConfig struct {
 	ToolMaxRetries     int                   `toml:"tool_max_retries"`
 	SubagentTimeoutMs  int64                 `toml:"subagent_timeout_ms"`
 	ContextTokens      int64                 `toml:"context_tokens"`
-}
-
-type agentModelFileConfig struct {
-	BaseURL string `toml:"base_url"`
-	APIKey  string `toml:"api_key"`
-	Model   string `toml:"model"`
 }
 
 type agentResearchFileConfig struct {
@@ -487,7 +471,6 @@ func normalizeAgent(raw agentFileConfig) AgentConfig {
 	return AgentConfig{
 		SkillsDirectory: strings.TrimSpace(raw.SkillsDirectory),
 		Features: AgentFeatureConfig{
-			RuntimeV2:     boolOrDefault(raw.Features.RuntimeV2, true),
 			SoftRouter:    boolOrDefault(raw.Features.SoftRouter, true),
 			DynamicSkills: boolOrDefault(raw.Features.DynamicSkills, true),
 			Delegation:    boolOrDefault(raw.Features.Delegation, true),
@@ -506,11 +489,6 @@ func normalizeAgent(raw agentFileConfig) AgentConfig {
 			ToolMaxRetries:     raw.Budget.ToolMaxRetries,
 			SubagentTimeoutMs:  raw.Budget.SubagentTimeoutMs,
 			ContextTokens:      raw.Budget.ContextTokens,
-		},
-		Model: AgentModelConfig{
-			BaseURL: strings.TrimSpace(raw.Model.BaseURL),
-			APIKey:  strings.TrimSpace(raw.Model.APIKey),
-			Model:   strings.TrimSpace(raw.Model.Model),
 		},
 		Research: AgentResearchConfig{
 			Provider:  strings.ToLower(strings.TrimSpace(raw.Research.Provider)),

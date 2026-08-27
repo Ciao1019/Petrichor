@@ -1,5 +1,5 @@
-// Package aisvc 是 /api/ai/* 全组接口的 Go 移植，对照 apps/web/src/server/ai/*。
-// 本文件对应 provider-catalog.ts：供应商静态目录（含全部元数据）与纯函数。
+// Package aisvc 实现 /api/ai/* 接口组。
+// 本文件维护供应商静态目录（含全部元数据）与纯函数。
 package aisvc
 
 import (

@@ -1,4 +1,4 @@
-// sitegraph_validate.go 移植 src/server/site-graph/validate.ts：纯函数图谱校验。
+// sitegraph_validate.go 实现纯函数图谱校验。
 package adminpanel
 
 import (

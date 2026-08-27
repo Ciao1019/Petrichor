@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
+	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 
@@ -10,6 +12,7 @@ import (
 	"petrichor/api/internal/bootstrap"
 	"petrichor/api/internal/config"
 	_ "petrichor/api/internal/db"
+	"petrichor/api/internal/dbmigrate"
 	httpx "petrichor/api/internal/httpx"
 	"petrichor/api/internal/routes"
 )
@@ -18,6 +21,9 @@ func main() {
 	cfg, err := config.Initialize()
 	if err != nil {
 		log.Fatal(err)
+	}
+	if err := migrateDatabase(cfg); err != nil {
+		log.Fatal("数据库自动迁移失败，Go API 未启动: ", err)
 	}
 	aicore.WireInvokers()
 	bootstrap.WireLLM()
@@ -63,4 +69,21 @@ func main() {
 	if err := r.Run(addr); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func migrateDatabase(cfg *config.Config) error {
+	log.Print("正在检查数据库迁移")
+	results, err := dbmigrate.Up(context.Background(), cfg)
+	if err != nil {
+		return err
+	}
+	if len(results) == 0 {
+		log.Print("数据库迁移已是最新版本")
+		return nil
+	}
+	for _, result := range results {
+		log.Printf("已执行数据库迁移 %s（%s）", filepath.Base(result.Source.Path), result.Duration)
+	}
+	log.Printf("数据库自动迁移完成，共执行 %d 个迁移", len(results))
+	return nil
 }

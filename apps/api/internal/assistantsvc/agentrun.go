@@ -1,5 +1,4 @@
-// agentrun.go 对照 agent-run-handlers.ts 与 agent-runtime/store.ts：
-// Run 查询接口（V2 表 petrichor_agent_run / trace_event / evidence / subtask）。
+// agentrun.go 提供 Run 查询接口（V2 表 petrichor_agent_run / trace_event / evidence / subtask）。
 // 读路径 fail-open：查询失败退化为「不存在/空列表」，真实原因进结构化日志。
 package assistantsvc
 

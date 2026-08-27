@@ -17,6 +17,7 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
+    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.tsbuildinfo",
     "baseUrl": ".",
     "paths": {
       "@/*": [
@@ -33,17 +34,13 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",
-    "scripts/dev.ts",
+    "scripts/**/*.ts",
     "vite.config.ts",
     "vitest.config.ts",
-    "../../server.ts"
+    "server.ts"
   ],
   "exclude": [
     "node_modules",
-    "e2e",
-    "playwright.config.ts",
-    "src/examples",
-    "src/server",
-    "src/lib/with-rate-limit.ts"
+    "e2e"
   ]
 }

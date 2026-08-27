@@ -22,8 +22,8 @@
 
 - `apps/web`：React + Vite + TypeScript 客户端 SPA，依赖和运行时统一使用 Bun。
 - `apps/api`：Go + Gin API，负责数据库、认证、加密、对象存储、缓存和 Agent 能力。
-- `server.ts`：Bun Web 入口，托管前端静态资源并将 `/api/*`、`/healthz` 同源转发到 Go。
-- 数据库使用 PostgreSQL，支持 Supabase transaction pooler；上传使用 S3 兼容对象存储。
+- `apps/web/server.ts`：Bun Web 入口，托管前端静态资源并将 `/api/*`、`/healthz` 同源转发到 Go。
+- 数据库使用 PostgreSQL，Go 服务启动时通过 Goose 自动初始化或升级；上传使用 S3 兼容对象存储。
 
 ## 功能
 
@@ -41,25 +41,37 @@
 前置要求：Bun 1.3.14+、Go（版本以 `apps/api/go.mod` 为准）和 PostgreSQL。
 
 ```bash
-bun install
+bun install --cwd apps/web
 cp apps/web/.env.example apps/web/.env.local
 cp apps/api/config.example.toml apps/api/config.toml
 ```
 
-编辑两个本地配置文件后，分别启动后端和 Web：
+编辑两个本地配置文件后，分别启动后端和 Web。Go API 会在监听端口前自动执行唯一的
+初始化迁移：
 
 ```bash
 # 终端 1，默认 http://127.0.0.1:8080
-bun run dev:api
+cd apps/api && go run ./cmd/server
 
 # 终端 2，默认 http://127.0.0.1:3000
 bun dev
 ```
 
-初始化数据库 SQL：
+首次启动会创建完整表结构和默认超级管理员：
+
+```text
+账号：admin@petrichor.local
+密码：Petrichor@2026
+```
+
+默认密码公开，仅用于首次登录；登录后请立即在“账号设置 → 密码”中修改。
+
+数据库命令完全由 Go 提供，通常无需手动执行：
 
 ```bash
-bun --silent run db:sql > petrichor-init.sql
+cd apps/api
+go run ./cmd/migrate status
+go run ./cmd/migrate version
 ```
 
 ## 配置
@@ -79,24 +91,16 @@ Go **不读取环境变量**。所有运行配置统一来自 `apps/api/config.t
 | `[cache.upstash]` | Upstash Redis REST 缓存 |
 | `[agent.features]` | Agent Runtime 功能开关 |
 | `[agent.budget]` | 迭代、工具调用、超时、重试和上下文预算 |
-| `[agent.model]` | 预留的模型直连配置 |
+| `[agent.research]` | 可选外部搜索供应商与超时 |
 
 `config.toml` 包含数据库连接串和密钥，已被 Git 与 Docker 忽略。不要提交或输出真实内容；
 `auth.session_secret`、`encryption.key` 和 `encryption.salt` 一旦用于真实数据，不要随意更换。
-
-从旧版 Web 环境文件迁移一次可使用：
-
-```bash
-bun run migrate:go-config
-```
-
-脚本只在 `apps/api/config.toml` 不存在时创建文件，并会从 Web 环境文件中移除后端键，避免覆盖已有配置。
 
 ### Web 前端
 
 [`apps/web/.env.example`](apps/web/.env.example) 只包含 Web 所需配置：
 
-- `NEXT_PUBLIC_*`、`PETRICHOR_PUBLIC_*`、`VITE_*`：浏览器可见的公开配置。
+- `PETRICHOR_PUBLIC_*`、`VITE_*`：浏览器可见的公开配置。
 - `PETRICHOR_GO_API_URL`：Bun Web 代理的 Go API 地址，不会作为 Vite 客户端变量暴露。
 
 数据库、Session、加密、S3、LinuxDo、Upstash 和 Agent 配置不得再写入 Web 环境文件。
@@ -105,13 +109,14 @@ bun run migrate:go-config
 
 ```bash
 bun dev              # 启动 Bun/Vite Web
-bun run dev:api      # 启动 Go API
 bun run typecheck    # TypeScript 类型检查
 bun run lint         # ESLint
 bun run test         # Vitest
 bun run build        # Vite 生产构建
 bun run test:api     # Go 测试
 bun run build:api    # Go 构建
+cd apps/api && go run ./cmd/server  # 自动迁移并启动 Go API
+cd apps/api && go run ./cmd/migrate status  # 查看 Goose 状态
 ```
 
 完整 Go 检查：
@@ -128,19 +133,35 @@ go vet ./...
 .
 ├── apps/
 │   ├── api/                       # Go API
-│   │   ├── cmd/server/            # 服务入口
-│   │   ├── internal/              # 业务、鉴权、数据、存储、Agent
+│   │   ├── cmd/
+│   │   │   ├── server/            # API 服务入口
+│   │   │   └── migrate/           # Goose 命令入口
+│   │   ├── internal/              # Go 私有业务实现
+│   │   ├── migrations/            # 唯一的 Goose init SQL 与嵌入代码
 │   │   └── config.example.toml    # 可提交的配置模板
 │   └── web/                       # React/Vite SPA
-│       ├── src/main.tsx           # Vite 入口
-│       ├── src/client-app.tsx     # 客户端路由入口
-│       ├── src/features/pages/    # 业务页面
-│       ├── src/components/        # 通用和 UI 组件
+│       ├── src/
+│       │   ├── main.tsx           # Vite 浏览器入口
+│       │   ├── client-app.tsx     # 客户端路由入口
+│       │   ├── features/          # 业务功能与页面
+│       │   ├── components/        # 通用和 UI 组件
+│       │   └── lib/               # 浏览器侧工具与 API client
+│       ├── public/                # 静态资源
+│       ├── scripts/               # Web 开发与生成脚本
+│       ├── server.ts              # Bun 静态服务与 Go 反代
+│       ├── patches/               # Web 依赖补丁
+│       ├── bun.lock               # Web 依赖锁文件
 │       └── .env.example           # 仅 Web 配置
-├── docs/                          # SQL、迁移和设计文档
-├── scripts/                       # Bun 开发与迁移脚本
-└── server.ts                      # Bun 静态服务与 Go 反代
+├── docs/
+│   ├── agent/                     # Agent 设计与接入文档
+│   └── database-migrations.md     # Goose 迁移说明
+├── package.json                   # 根命令入口，不承载 Web 依赖
+├── AGENTS.md                      # 项目协作规范
+└── CONTRIBUTING.md                # 贡献流程
 ```
+
+根目录不安装 Node 依赖，也不保存前后端源码；`package.json` 只把常用命令转发到对应应用。
+`node_modules`、`dist`、本地配置和 IDE/Agent 工具目录均被 Git 忽略，不属于仓库结构。
 
 ## 贡献
 

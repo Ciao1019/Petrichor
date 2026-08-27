@@ -1,4 +1,4 @@
-// Package cache 复刻 src/server/cache：Upstash Redis REST 直连 + 优雅降级。
+// Package cache 提供 Upstash Redis REST 直连和优雅降级。
 package cache
 
 import (

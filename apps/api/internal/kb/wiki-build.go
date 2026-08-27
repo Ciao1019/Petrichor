@@ -573,7 +573,7 @@ func persistKnowledgeBuild(ctx context.Context, q txBeginner, userID, kbID int64
 		return nil, 0, 0, err
 	}
 	_ = indexPage
-	if err := logWikiEvent(tx, userID, kbID, "ARTICLE_KNOWLEDGE_BUILD", &sourcePage.ID, nil, map[string]any{
+	if err := logWikiEvent(tx, userID, kbID, "ARTICLE_KNOWLEDGE_BUILD", &sourcePage.ID, map[string]any{
 		"articleId":    strconv.FormatInt(article.ID, 10),
 		"chunkCount":   len(chunks),
 		"entityCount":  entityCount,

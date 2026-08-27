@@ -135,7 +135,7 @@ func IngestWikiCore(q execQuerier, in IngestWikiInput) (map[string]any, error) {
 		if ierr != nil {
 			return nil, ierr
 		}
-		if lerr := logWikiEvent(q, in.UserID, in.KnowledgeBaseID, eventType, &indexPage.ID, nil, map[string]any{
+		if lerr := logWikiEvent(q, in.UserID, in.KnowledgeBaseID, eventType, &indexPage.ID, map[string]any{
 			"articleCount": 0,
 			"pageCount":    1,
 			"purged":       purged,
@@ -217,7 +217,7 @@ func IngestWikiCore(q execQuerier, in IngestWikiInput) (map[string]any, error) {
 	if ierr != nil {
 		return nil, ierr
 	}
-	if lerr := logWikiEvent(q, in.UserID, in.KnowledgeBaseID, eventType, &indexPage.ID, nil, map[string]any{
+	if lerr := logWikiEvent(q, in.UserID, in.KnowledgeBaseID, eventType, &indexPage.ID, map[string]any{
 		"articleCount": len(articles),
 		"pageCount":    len(pageMaps) + 1,
 		"purged":       purged,

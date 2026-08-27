@@ -1,4 +1,4 @@
-// appearance.go 移植 src/server/appearance/logic.ts + public-loader.ts 的公开侧：
+// appearance.go 实现站点外观的公开侧读取：
 // 站点外观单例（当前只有 publicQaEnabled 开关），缺表/无记录回退默认值。
 package sitecontent
 

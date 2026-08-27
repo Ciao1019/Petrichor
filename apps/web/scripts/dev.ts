@@ -7,7 +7,7 @@ const vite = Bun.spawn(["bun", "--bun", "vite"], {
     env: { ...process.env, NODE_ENV: "development" },
 })
 
-const server = Bun.spawn(["bun", "--watch", "../../server.ts"], {
+const server = Bun.spawn(["bun", "--watch", "server.ts"], {
     cwd: webRoot,
     stdout: "inherit",
     stderr: "inherit",

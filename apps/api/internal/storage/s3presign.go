@@ -1,4 +1,4 @@
-// Package storage 复刻 src/server/upload/s3-presign.ts 的 SigV4 预签名与本地对象存取。
+// Package storage 实现 SigV4 预签名与本地对象存取。
 package storage
 
 import (

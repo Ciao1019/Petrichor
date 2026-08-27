@@ -1,4 +1,4 @@
-// Package kb 是知识库组（52 端点）的 Go 移植，逐文件对照 apps/web/src/server/kb/*。
+// Package kb 实现知识库接口组。
 package kb
 
 import (
@@ -203,7 +203,7 @@ type WikiPageRow struct {
 	UpdatedAt       time.Time
 }
 
-const wikiPatchColumns = `id, user_id, knowledge_base_id, thread_id, run_id, page_key, title,
+const wikiPatchColumns = `id, user_id, knowledge_base_id, page_key, title,
 	operation, status, before_content_md, proposed_content_md, diff_text, reason, applied_at,
 	created_at, updated_at`
 
@@ -211,8 +211,6 @@ type WikiPatchRow struct {
 	ID                int64
 	UserID            int64
 	KnowledgeBaseID   int64
-	ThreadID          *int64
-	RunID             *int64
 	PageKey           string
 	Title             string
 	Operation         string

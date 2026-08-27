@@ -1,4 +1,4 @@
-// 自建会话管理：列出/下线 petrichor_auth_session 会话（2FA 已移除，无需 TOTP）。
+// 自建会话管理：列出或下线 petrichor_auth_session 会话。
 package auth
 
 import (
@@ -109,7 +109,6 @@ func ListSessions(c *gin.Context) {
 	httpx.OK(c, gin.H{
 		"sessions":         sessions,
 		"currentSessionId": currentSessionID,
-		"twoFactorEnabled": false, // 2FA 已移除，恒 false
 	})
 }
 

@@ -1,4 +1,4 @@
-// Package uploadsvc 移植 src/server/upload/handlers.ts + local-storage.ts：
+// Package uploadsvc 提供上传、下载和本地对象访问：
 // 上传预签名（S3 SigV4 PUT / 本地 ticket 双模式）、下载预签名与本地对象直传/公开读取。
 package uploadsvc
 

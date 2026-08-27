@@ -1,4 +1,4 @@
-// Package crypto 复刻 src/server/crypto/spring-text-encryptor.ts：
+// Package crypto 实现兼容既有密文的 Spring 风格文本加密：
 // PBKDF2-SHA1(1024) 派生 AES-256-CBC key，输出 hex(iv+ciphertext)。
 package crypto
 

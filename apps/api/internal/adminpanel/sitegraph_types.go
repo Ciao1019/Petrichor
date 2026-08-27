@@ -1,4 +1,4 @@
-// sitegraph_types.go 全站星图共享类型，移植 src/server/site-graph/types.ts。
+// sitegraph_types.go 定义全站星图共享类型。
 package adminpanel
 
 import "encoding/json"

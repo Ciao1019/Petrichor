@@ -1,4 +1,4 @@
-// sitegraph_registry.go 移植 src/server/site-graph/entity-registry.ts：
+// sitegraph_registry.go 实现实体注册表：
 // 实体注册表，解决同一事物在不同文章/批次里被起了不同名字的问题。
 package adminpanel
 

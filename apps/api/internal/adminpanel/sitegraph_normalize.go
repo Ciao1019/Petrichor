@@ -1,4 +1,4 @@
-// sitegraph_normalize.go 移植 src/server/site-graph/normalize.ts：
+// sitegraph_normalize.go 实现星图数据归一化：
 // 业务键归一化、文本钳制、草稿合并与收敛。
 package adminpanel
 

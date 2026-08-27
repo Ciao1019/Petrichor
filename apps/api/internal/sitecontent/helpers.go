@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// isUndefinedTableErr 判断是否 42P01（表不存在，增量迁移未执行）。
+// isUndefinedTableErr 判断是否 42P01（表不存在，数据库初始化未完成）。
 func isUndefinedTableErr(err error) bool {
 	if err == nil {
 		return false

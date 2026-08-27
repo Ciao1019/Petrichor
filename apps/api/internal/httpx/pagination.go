@@ -4,7 +4,7 @@ import (
 	"math"
 )
 
-// PaginationInput 对应 src/server/http/pagination.ts。
+// PaginationInput 是列表接口的统一分页输入。
 type PaginationInput struct {
 	PageNum  *int64  `json:"pageNum"`
 	PageSize *int64  `json:"pageSize"`

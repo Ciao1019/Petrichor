@@ -1,4 +1,4 @@
-// about.go 移植 src/server/about/logic.ts + handlers.ts 的公开侧读取：
+// about.go 实现「关于我」公开侧读取：
 // 单例资料缺失/字段为空时逐项回退默认值，缺表（迁移未执行）时回退默认响应。
 package sitecontent
 
@@ -264,7 +264,7 @@ func loadAboutProfileOrNull(ctx context.Context) (*aboutProfileRecord, error) {
 		return nil, nil
 	}
 	if err != nil && isUndefinedTableErr(err) {
-		// 读取接口允许在增量 SQL 尚未执行时回退默认值。
+		// 读取接口允许在数据库初始化尚未完成时回退默认值。
 		return nil, nil
 	}
 	if err != nil {

@@ -6,9 +6,4 @@ interface ImportMetaEnv {
     readonly PETRICHOR_PUBLIC_GISCUS_REPO_ID?: string
     readonly PETRICHOR_PUBLIC_GISCUS_CATEGORY?: string
     readonly PETRICHOR_PUBLIC_GISCUS_CATEGORY_ID?: string
-    readonly PETRICHOR_PUBLIC_SUPABASE_URL?: string
-    readonly PETRICHOR_PUBLIC_SUPABASE_ANON_KEY?: string
-    readonly NEXT_PUBLIC_REGISTER_ENABLED?: string
-    readonly NEXT_PUBLIC_SUPABASE_URL?: string
-    readonly NEXT_PUBLIC_SUPABASE_ANON_KEY?: string
 }

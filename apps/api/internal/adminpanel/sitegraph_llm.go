@@ -1,6 +1,6 @@
-// sitegraph_llm.go 对照 src/server/site-graph/extract-agent.ts 的模型调用部分：
+// sitegraph_llm.go 实现星图实体抽取的模型调用：
 // 解析 SiteGraphGeneratorFn 注入点的 input（本批文章 + 已知实体清单）→
-// 构造抽取提示词（系统提示与 TS 逐条对齐）→ 调 CHAT 用途绑定模型 →
+// 构造抽取提示词 → 调 CHAT 用途绑定模型 →
 // 提取 JSON 输出（失败重试 1 次）→ 按注入点契约返回 {"nodes":[],"edges":[],"modelName"}。
 //
 // 幻觉拦截 / 实体注册表对齐仍由 sitegraph_service.go 的 parseExtractionResult /

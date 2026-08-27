@@ -1,6 +1,4 @@
-// Package assistantsvc 是站内助手组（/api/assistant/*，11 端点）的 Go 移植，
-// 对照 apps/web/src/server/assistant/*（thread-handlers / chat-handler /
-// agent-run-handlers / wiki-handlers）。租户隔离一律以 user.ID 为准。
+// Package assistantsvc 实现站内助手接口组；租户隔离一律以 user.ID 为准。
 package assistantsvc
 
 import (

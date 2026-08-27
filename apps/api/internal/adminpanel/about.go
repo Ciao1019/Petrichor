@@ -1,4 +1,4 @@
-// about.go 移植 src/server/about/logic.ts + handlers.ts（admin 侧）：
+// about.go 实现「关于我」资料的管理侧配置：
 // 「关于我」单例资料的默认回退、校验归一化与 upsert。
 package adminpanel
 
@@ -227,7 +227,7 @@ func LoadAboutProfileOrNull(ctx context.Context) (*aboutProfileRecord, error) {
 		return nil, nil
 	}
 	if err != nil && isUndefinedTableErr(err) {
-		// 读取接口允许在增量 SQL 尚未执行时回退默认值；写入仍要求先应用迁移。
+		// 读取接口允许在数据库初始化尚未完成时回退默认值；写入仍要求表结构可用。
 		return nil, nil
 	}
 	if err != nil {

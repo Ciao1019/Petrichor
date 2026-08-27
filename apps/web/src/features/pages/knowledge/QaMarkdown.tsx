@@ -235,7 +235,7 @@ export function QaStreamingMarkdown({
  * useStreamPacer 做的是另一件事：只整形"到达的形状"（提交间隔、单次可见字数、
  * 块边界怎么切），不改变谁来控制节奏。理由和实测数字见该文件注释。
  *
- * 还有一处不在这里、但同属这条链的改动：patches/@lobehub__ui@*.patch 把
+ * 还有一处不在这里、但同属这条链的改动：apps/web/patches/@lobehub__ui@*.patch 把
  * marked 的空行 token 并进前一个块。空行块没有可见字符却会占住 useStreamQueue，
  * 把后面的块憋住约 198ms 再整块放出，是块边界最大的一处卡顿来源。
  */

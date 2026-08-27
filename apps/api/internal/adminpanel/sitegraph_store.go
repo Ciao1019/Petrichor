@@ -1,4 +1,4 @@
-// sitegraph_store.go 移植 src/server/site-graph/store.ts 与 graph-query.ts：
+// sitegraph_store.go 实现星图存储和查询：
 // 邻接表 + 关系表的落库、发布流转、运行记录与递归 CTE 图查询。
 package adminpanel
 

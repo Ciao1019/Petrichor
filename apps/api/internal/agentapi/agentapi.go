@@ -1,5 +1,4 @@
-// Package agentapi 是 /api/agent/* 开放接口组与 /api/mcp 的 Go 移植，
-// 逐端点对照 apps/web/src/server/agent/handlers.ts。
+// Package agentapi 实现 /api/agent/* 开放接口组与 /api/mcp。
 package agentapi
 
 import (

@@ -1,4 +1,4 @@
-// appearance.go 移植 src/server/appearance 的 admin 侧：
+// appearance.go 实现站点外观的管理侧配置：
 // 站点外观单例（当前只有 publicQaEnabled 开关）。
 package adminpanel
 

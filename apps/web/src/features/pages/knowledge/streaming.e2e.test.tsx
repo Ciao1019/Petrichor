@@ -237,7 +237,7 @@ describe("流式渲染节奏", () => {
             `  >=96ms 的停顿: ${shaped.gaps || "无"}`,
         )
 
-        // 守的是 patches/@lobehub__ui@*.patch：空行是 marked 的 space token，没有任何
+        // 守的是 apps/web/patches/@lobehub__ui@*.patch：空行是 marked 的 space token，没有任何
         // 可见字符，却会被 useStreamQueue 当成"正在动画的块"，把它后面的块判成 queued
         // 直接 return null，等 (n-1)*charDelay+180 ≈ 198ms 才放行、再整块冒出来。
         // 补丁把空行并进前一个块，块数每次只 +1，这个停顿就没有了。

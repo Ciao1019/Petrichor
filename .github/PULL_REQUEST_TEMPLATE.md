@@ -47,11 +47,10 @@ Closes #
 <!-- 如有 schema 变更，勾选并填写迁移文件名 -->
 
 - [ ] 本 PR 包含 schema 变更
-- [ ] 已在 `docs/migrations/` 添加增量 SQL 文件
-- [ ] 已在 `apps/web/src/server/db/schema.ts` 同步更新
-- [ ] 已验证 `pnpm --silent --filter @petrichor/web db:sql` 生成的 SQL 在新库可一次性执行
+- [ ] 已在 `apps/api/migrations/` 添加带 `-- +goose Up` 的增量 SQL
+- [ ] 已运行 `cd apps/api && go test ./...` 并验证 Goose SQL
 
-迁移文件： `docs/migrations/____.sql`
+迁移文件： `apps/api/migrations/____.sql`
 
 ## 验证 / How to test
 
@@ -59,7 +58,7 @@ Closes #
 
 ```bash
 # 例如
-pnpm dev
+bun dev
 # 然后访问 /xxx，执行 …
 ```
 

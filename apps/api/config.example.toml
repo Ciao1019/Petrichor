@@ -6,6 +6,7 @@ base_url = "http://localhost:3000"
 
 [database]
 url = "postgres://postgres:password@127.0.0.1:5432/postgres"
+# 可选：迁移专用连接；留空时回退到 url。
 migration_url = ""
 
 [auth]
@@ -48,7 +49,6 @@ rest_token = ""
 skills_directory = ""
 
 [agent.features]
-runtime_v2 = true
 soft_router = true
 dynamic_skills = true
 delegation = true
@@ -83,12 +83,6 @@ max_subagents = 2
 max_iterations = 24
 max_tool_calls = 32
 max_subagents = 5
-
-# 预留给后续模型直连；当前主要模型配置仍存数据库。
-[agent.model]
-base_url = ""
-api_key = ""
-model = ""
 
 # 可选外部搜索：tavily / serper / brave / searxng。网页抓取无需配置。
 [agent.research]

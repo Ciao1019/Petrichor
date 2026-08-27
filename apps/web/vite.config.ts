@@ -5,8 +5,7 @@ import { defineConfig } from "vite"
 
 export default defineConfig({
     plugins: [react(), tailwindcss()],
-    // 迁移期间兼容 Go 后端分支现有的 NEXT_PUBLIC_* 本地配置。
-    envPrefix: ["VITE_", "PETRICHOR_PUBLIC_", "NEXT_PUBLIC_"],
+    envPrefix: ["VITE_", "PETRICHOR_PUBLIC_"],
     resolve: {
         alias: [
             { find: "@", replacement: fileURLToPath(new URL("./src", import.meta.url)) },
@@ -14,10 +13,6 @@ export default defineConfig({
                 // 精确替换浏览器端完整 Shiki 入口；shiki/core、shiki/wasm 等子路径保持原实现。
                 find: /^shiki$/,
                 replacement: fileURLToPath(new URL("./src/lib/shiki-browser.ts", import.meta.url)),
-            },
-            {
-                find: "@ast-grep/napi",
-                replacement: fileURLToPath(new URL("./src/server/stubs/ast-grep-napi.ts", import.meta.url)),
             },
         ],
     },

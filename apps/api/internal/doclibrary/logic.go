@@ -1,4 +1,4 @@
-// Package doclibrary 移植 src/server/doc-library/library-logic.ts：
+// Package doclibrary 实现文档库领域逻辑：
 // 文档库 / 文件夹 / 文档三层的租户隔离 CRUD、缓存与存储清理。
 package doclibrary
 

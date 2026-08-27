@@ -4,7 +4,7 @@
     {
       "name": "web",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["--filter", "@petrichor/web", "dev"],
+      "runtimeArgs": ["run", "--cwd", "apps/web", "dev"],
       "port": 3000
     }
   ]

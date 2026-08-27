@@ -63,7 +63,6 @@ export const DEMO_USER: UserProfileResponse = {
     nickname: "演示访客",
     avatar: null,
     signature: "这是一个演示账号，改什么都不会保存。",
-    twoFactorEnabled: false,
     createdAt: daysAgo(30),
     updatedAt: daysAgo(1),
 }

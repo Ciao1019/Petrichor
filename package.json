@@ -4,21 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "packageManager": "bun@1.3.14",
-  "workspaces": [
-    "apps/*"
-  ],
   "scripts": {
-    "postinstall": "bun scripts/prune-unused-framework-peers.ts",
     "dev": "bun run --cwd apps/web dev",
-    "dev:api": "bun scripts/dev-go-api.ts",
-    "migrate:go-config": "bun scripts/migrate-env-to-go-config.ts",
     "build": "bun run --cwd apps/web build",
     "build:api": "cd apps/api && go build ./...",
     "start": "bun run --cwd apps/web start",
-    "db:backfill-public-article-metadata": "bun run --cwd apps/web db:backfill-public-article-metadata",
-    "db:sql": "bun run --silent --cwd apps/web db:sql",
-    "db:run-sql": "bun run --cwd apps/web db:run-sql",
-    "db:migrate": "bun run --cwd apps/web db:migrate",
     "lint": "bun run --cwd apps/web lint",
     "test": "bun run --cwd apps/web test",
     "test:api": "cd apps/api && go test ./...",
@@ -26,14 +16,5 @@
   },
   "engines": {
     "bun": ">=1.3.14"
-  },
-  "trustedDependencies": [
-    "esbuild",
-    "msgpackr-extract",
-    "sharp",
-    "unrs-resolver"
-  ],
-  "patchedDependencies": {
-    "@lobehub/ui@5.15.17": "patches/@lobehub__ui@5.15.17.patch"
   }
 }

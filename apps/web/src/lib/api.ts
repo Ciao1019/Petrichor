@@ -24,7 +24,6 @@ function isAuthEndpoint(url: string) {
   return url.includes("/auth/login")
     || url.includes("/auth/register")
     || url.includes("/auth/linuxdo/callback")
-    || url.includes("/auth/two-factor/")
 }
 
 function shouldRedirectToLoginOnUnauthorized(pathname: string) {
@@ -84,7 +83,6 @@ export interface UserResponse {
 
 export interface UserProfileResponse extends UserResponse {
   signature?: string | null
-  twoFactorEnabled?: boolean
   createdAt: string
   updatedAt: string
 }
@@ -93,39 +91,6 @@ export interface AuthResponse {
   mode?: "login" | "bind"
   token: string
   user: UserResponse
-}
-
-export interface AuthLoginResponse {
-  mode?: "login" | "bind"
-  token?: string
-  user?: UserResponse
-  twoFactorRequired?: boolean
-}
-
-export interface TwoFactorEnableRequest {
-  password: string
-  issuer?: string
-}
-
-export interface TwoFactorEnableResponse {
-  totpURI: string
-  backupCodes: string[]
-}
-
-export interface TwoFactorVerifyTotpRequest {
-  code: string
-  trustDevice?: boolean
-}
-
-export interface TwoFactorVerifyBackupCodeRequest {
-  code: string
-  trustDevice?: boolean
-  disableSession?: boolean
-}
-
-export interface TwoFactorGenerateBackupCodesResponse {
-  status: boolean
-  backupCodes: string[]
 }
 
 export interface UserProfileUpdateRequest {
@@ -140,7 +105,7 @@ export interface ChangePasswordRequest {
 }
 
 export const authApi = {
-  login: (data: LoginRequest) => api.post<AuthLoginResponse>("/auth/login", data),
+  login: (data: LoginRequest) => api.post<AuthResponse>("/auth/login", data),
   register: (data: RegisterRequest) => api.post<AuthResponse>("/auth/register", data),
   logout: () => api.post("/auth/logout"),
   me: () => api.get<UserResponse>("/auth/me"),
@@ -150,42 +115,30 @@ export const authApi = {
   linuxDoCallback: (code: string, state?: string | null) => api.post<AuthResponse>("/auth/linuxdo/callback", { code, state }),
 }
 
-export const twoFactorApi = {
-  enable: (data: TwoFactorEnableRequest) =>
-    api.post<TwoFactorEnableResponse>("/auth/two-factor/enable", data),
-  disable: (data: { password: string }) =>
-    api.post<{ status: boolean }>("/auth/two-factor/disable", data),
-  verifyTotp: (data: TwoFactorVerifyTotpRequest) =>
-    api.post<{ token: string; user: UserResponse }>("/auth/two-factor/verify-totp", data),
-  verifyBackupCode: (data: TwoFactorVerifyBackupCodeRequest) =>
-    api.post<{ token?: string; user: UserResponse }>("/auth/two-factor/verify-backup-code", data),
-  generateBackupCodes: (data: { password: string }) =>
-    api.post<TwoFactorGenerateBackupCodesResponse>("/auth/two-factor/generate-backup-codes", data),
-}
-
 // 登录会话（多地登录）管理相关类型
 export interface AuthSessionItem {
   id: string
+  deviceInfo: string | null
   ip: string | null
   userAgent: string | null
   createdAt: string
-  lastActiveAt: string
+  lastSeenAt: string | null
   expiresAt: string
+  updatedAt: string
   current: boolean
 }
 
 export interface AuthSessionListResponse {
   sessions: AuthSessionItem[]
   currentSessionId: string | null
-  twoFactorEnabled: boolean
 }
 
 export const authSessionApi = {
   list: () => api.get<AuthSessionListResponse>("/auth/sessions"),
-  revoke: (data: { sessionId: string; code: string }) =>
-    api.post<{ success: boolean }>("/auth/sessions/revoke", data),
-  revokeOthers: (data: { code: string }) =>
-    api.post<{ success: boolean; revokedCount: number }>("/auth/sessions/revoke-others", data),
+  revoke: (id: string) =>
+    api.post<{ success: boolean }>("/auth/sessions/revoke", { id }),
+  revokeOthers: () =>
+    api.post<{ success: boolean; revokedCount: number }>("/auth/sessions/revoke-others"),
 }
 
 // 知识库相关类型
@@ -1189,45 +1142,6 @@ export interface KnowledgeBaseWikiLintResponse {
   checkedAt: string
 }
 
-export interface KnowledgeBaseAgentThreadResponse {
-  id: string
-  knowledgeBaseId: string | null
-  knowledgeBaseName?: string | null
-  title: string
-  status: string
-  lastMessageAt?: string | null
-  metadata: unknown
-  createdAt: string | null
-  updatedAt: string | null
-}
-
-export interface KnowledgeBaseAgentMessageResponse {
-  id: string
-  role: "user" | "assistant" | "system" | "tool" | string
-  contentText: string
-  content: unknown
-  metadata: unknown
-  createdAt: string | null
-}
-
-export interface KnowledgeBaseAgentThreadDetailResponse {
-  thread: KnowledgeBaseAgentThreadResponse
-  messages: KnowledgeBaseAgentMessageResponse[]
-}
-
-export interface KnowledgeBaseAgentArtifactResponse {
-  id: string
-  threadId: string
-  runId?: string | null
-  knowledgeBaseId: string | null
-  artifactType: string
-  title: string
-  payload: unknown
-  contentMd?: string | null
-  createdAt: string | null
-  updatedAt: string | null
-}
-
 export interface KnowledgeBaseQaSummary {
   id: string
   name: string
@@ -1503,23 +1417,6 @@ export interface KnowledgeBaseQaModelInfo {
   modelName: string | null
   contextWindow: number | null
   availableModels: KnowledgeBaseQaModelOption[]
-}
-
-export interface KnowledgeBaseQaThreadListParams {
-  cursor?: number
-  limit?: number
-  q?: string
-  scope?: string
-}
-
-export interface KnowledgeBaseQaThreadListResponse {
-  threads: KnowledgeBaseAgentThreadResponse[]
-  nextCursor: number | null
-}
-
-export interface KnowledgeBaseQaThreadDeleteManyResponse {
-  deleted: string[]
-  failed: Array<{ id: string; reason: string }>
 }
 
 export const knowledgeBaseQaApi = {
@@ -2493,50 +2390,6 @@ export interface DocDeleteResponse {
   storageCleanup: DocStorageCleanupSummary
 }
 
-export interface DocQaThreadResponse {
-  id: string
-  libraryId: string | null
-  title: string
-  status: string
-  lastMessageAt: string | null
-  metadata: Record<string, unknown> | null
-  createdAt: string
-  updatedAt: string
-}
-
-export interface DocQaThreadMessage {
-  id: string
-  role: string
-  contentText: string
-  content: Record<string, unknown> | null
-  metadata: Record<string, unknown> | null
-  createdAt: string
-}
-
-export interface DocQaModelOption {
-  configId: string
-  modelId: string
-  modelName: string
-  contextWindow: number
-  isDefault: boolean
-}
-
-export interface DocQaModelInfo {
-  configId: string | null
-  modelId: string | null
-  modelName: string | null
-  contextWindow: number | null
-  availableModels?: DocQaModelOption[]
-}
-
-export interface DocQaThreadListParams {
-  cursor?: number
-  limit?: number
-  q?: string
-  libraryId?: string | null
-  scope?: "cross"
-}
-
 export const docLibraryApi = {
   listLibraries: () => api.get<{ libraries: DocLibrary[] }>("/doc-library/library/list"),
   saveLibrary: (data: DocLibrarySaveRequest) => api.post<{ id: string }>("/doc-library/library/save", data),
@@ -2552,7 +2405,7 @@ export const docLibraryApi = {
   deleteDocument: (id: string) => api.post<DocDeleteResponse>("/doc-library/document/delete", { id }),
 }
 
-// 站内 Assistant（chat-first 壳）：形状对齐 src/server/assistant/thread-handlers.ts
+// 站内 Assistant（chat-first 壳）
 export interface AssistantFocus {
   knowledgeBaseId?: string | null
   libraryId?: string | null
@@ -2599,7 +2452,7 @@ export interface AssistantThreadDetailResponse {
   plans?: AssistantPersistedPlan[]
 }
 
-// Agent Run 视图：形状对齐 src/server/assistant/agent-run-handlers.ts
+// Agent Run 视图
 export interface AgentRunActivityResponse {
   id: string
   toolId: string

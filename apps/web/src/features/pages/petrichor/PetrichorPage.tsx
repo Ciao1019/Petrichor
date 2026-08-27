@@ -46,9 +46,9 @@ const CAPABILITIES: { title: string; tag: string; detail: string; dot: MarkerCol
     },
     {
         title: "认证体系",
-        tag: "Better Auth",
+        tag: "Cookie Session",
         dot: "blue",
-        detail: "会话藏在 httpOnly Cookie 里；邮箱密码、LinuxDo、二步验证都有，第一个注册进来的人自动当上超级管理员。",
+        detail: "会话藏在 httpOnly Cookie 里；支持邮箱密码与 LinuxDo 登录，第一个注册进来的人自动当上超级管理员。",
     },
     {
         title: "对象存储",
@@ -171,7 +171,7 @@ const SELF_HOST_STEPS: { title: string; detail: string; ink: string }[] = [
     {
         title: "初始化表结构",
         ink: "teal",
-        detail: "把 docs/petrichor-init.sql 粘进 Supabase SQL Editor 执行一次；该文件与代码里的 Drizzle schema 保持同步。",
+        detail: "启动 Go API 时会自动执行内嵌的 Goose init，创建完整表结构和默认管理员，不需要 Bun 执行数据库脚本。",
     },
     {
         title: "启动并创建管理员",
@@ -182,30 +182,14 @@ const SELF_HOST_STEPS: { title: string; detail: string; ink: string }[] = [
 
 const TERMINAL_LINES: { text: string; prompt?: boolean; muted?: boolean; caret?: boolean }[] = [
     { text: "git clone https://github.com/Ciao1019/Petrichor.git petrichor", prompt: true },
-    { text: "cd petrichor && bun install", prompt: true },
+    { text: "cd petrichor && bun install --cwd apps/web", prompt: true },
     { text: "cp apps/web/.env.example apps/web/.env.local", prompt: true },
     { text: "cp apps/api/config.example.toml apps/api/config.toml", prompt: true },
-    { text: "# 终端 1：bun run dev:api", muted: true },
+    { text: "# 终端 1：Go API", muted: true },
+    { text: "cd apps/api && go run ./cmd/server", prompt: true },
+    { text: "# 终端 2：Bun/Vite Web", muted: true },
     { text: "bun dev", prompt: true, caret: true },
     { text: "→ http://localhost:3000", muted: true },
-]
-
-const VISUALIZATIONS: { title: string; detail: string; href: string }[] = [
-    {
-        title: "Agent 架构可视化",
-        detail: "助手运行时的分层拆解：会话壳、工具面板、子代理、操作员四层记忆分区。",
-        href: "/tools/visualizations/architecture.html",
-    },
-    {
-        title: "前端技术选型",
-        detail: "UI 层怎么搭：路由、状态、编辑器、组件库与主题体系的取舍。",
-        href: "/tools/visualizations/frontend-stack.html",
-    },
-    {
-        title: "后端技术选型",
-        detail: "服务端分层：handler / 业务逻辑 / Drizzle schema，以及鉴权与存储的边界。",
-        href: "/tools/visualizations/backend-stack.html",
-    },
 ]
 
 const handwritingStyle: React.CSSProperties = {
@@ -481,41 +465,6 @@ export function PetrichorPage() {
                             <p className="mt-3 text-[0.72rem] leading-relaxed" style={{ color: "var(--desk-sheet-muted)" }}>
                                 需要 Bun ≥ 1.3.14 与 Go。后端配置只从 apps/api/config.toml 读取。
                             </p>
-                        </div>
-                    </section>
-
-                    {/* ——— 06 架构可视化 ——— */}
-                    <section aria-labelledby="promo-viz" className="blog-home-fade-in">
-                        <SectionHeading index="06" label="Under the Hood" title="架构可视化" />
-                        <h3 id="promo-viz" className="sr-only">
-                            架构可视化
-                        </h3>
-                        <p className="mb-6 max-w-2xl text-sm leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>
-                            几张交互式的手绘风拆解图，比 README 里的文字更快说清这套东西是怎么搭起来的。
-                        </p>
-                        <div className="promo-sheet px-5 py-1.5 md:px-6">
-                            {VISUALIZATIONS.map((viz) => (
-                                <a
-                                    key={viz.href}
-                                    href={viz.href}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="promo-viz-row group/link -mx-5 block px-5 py-4 md:-mx-6 md:px-6"
-                                >
-                                    <div className="flex items-baseline justify-between gap-4">
-                                        <h4
-                                            className="relative text-[0.88rem] font-bold underline decoration-transparent underline-offset-4 transition-colors duration-200 group-hover/link:decoration-current"
-                                            style={{ color: "var(--desk-sheet-ink)" }}
-                                        >
-                                            {viz.title}
-                                            <LinkDoodle />
-                                        </h4>
-                                    </div>
-                                    <p className="mt-1 text-[0.78rem] leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>
-                                        {viz.detail}
-                                    </p>
-                                </a>
-                            ))}
                         </div>
                     </section>
 

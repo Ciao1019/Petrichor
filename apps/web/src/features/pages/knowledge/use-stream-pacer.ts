@@ -140,7 +140,7 @@ export function useStreamPacer(
           // 新块的第一个可见字留给下一次。
           //
           // 这条只保证「我们交出去的形状」是干净的。真正修掉块边界卡顿的是
-          // patches/@lobehub__ui@*.patch——LobeHub 的平滑器在我们下游，它会把
+          // apps/web/patches/@lobehub__ui@*.patch——LobeHub 的平滑器在我们下游，它会把
           // 我们分开的两次提交重新并到同一帧，marked 于是一次切出空行块和新块，
           // 零可见字的空行块占住 useStreamQueue，后面那块被判 queued 直接
           // return null，约 198ms 后才整块涌出（实测冻结 176ms 再一帧冒 32 字）。

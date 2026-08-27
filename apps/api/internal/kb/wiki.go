@@ -34,8 +34,6 @@ func toWikiPatchResponse(patch *WikiPatchRow) map[string]any {
 	return map[string]any{
 		"id":                strconv.FormatInt(patch.ID, 10),
 		"knowledgeBaseId":   strconv.FormatInt(patch.KnowledgeBaseID, 10),
-		"threadId":          nullableIDString(patch.ThreadID),
-		"runId":             nullableIDString(patch.RunID),
 		"pageKey":           patch.PageKey,
 		"title":             patch.Title,
 		"operation":         patch.Operation,

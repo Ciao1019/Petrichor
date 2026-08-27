@@ -1,4 +1,4 @@
-// Package sitecontent 复刻 src/server/public-content-cache.ts 与各公开读取 loader：
+// Package sitecontent 提供公开内容读取和缓存：
 // about/appearance/projects/site-graph 的公开侧只读入口 + Upstash/进程内缓存失效。
 package sitecontent
 

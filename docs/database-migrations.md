@@ -1,33 +1,45 @@
-# 数据库迁移
+# 数据库初始化与迁移
 
-数据库迁移由运维人员显式执行，不绑定任何托管平台或前端构建流程。
+数据库完全由 Go 和 Goose 管理，与 Bun、Web 构建和前端环境变量无关。
 
-## 工作方式
+## 当前基线
 
-- `docs/migrations/manifest.json` 是唯一自动执行清单，历史回滚和删除脚本不会被目录扫描误执行。
-- `petrichor_schema_migration` 记录文件名、SHA-256、执行时间和完成时间。
-- PostgreSQL transaction advisory lock 保证并发部署不会同时迁移。
-- 清单中的待执行迁移在同一事务内运行；任一语句失败会整体回滚。
-- 已执行文件的校验和变化会阻止继续迁移。不要修改旧迁移，应新增一个后续迁移。
+`apps/api/migrations/202608270002_init.sql` 是当前唯一的 SQL 文件，包含：
 
-## 新增迁移
+- PostgreSQL 扩展和完整表结构；
+- 当前索引、约束和最终字段；
+- 只面向全新数据库的最终结构，不包含历史迁移、兼容回填和废弃对象清理；
+- 默认超级管理员账号。
 
-1. 在 `docs/migrations/` 新增按日期命名的 `.sql` 文件。
-2. 把文件按升序登记到 `docs/migrations/manifest.json`。
-3. 本地执行测试和类型检查，然后提交 SQL 与清单。
-4. 在目标环境发布前显式执行 `bun run db:migrate`。
+Go API 在监听端口前自动执行 `provider.Up`。Goose 通过 `goose_db_version` 判断该基线是否
+已经应用；成功后记录版本，失败则回滚事务并终止 API 启动。
 
-自动迁移必须能在 PostgreSQL 事务内运行。`CREATE INDEX CONCURRENTLY` 等不能在事务内
-执行的操作，需要拆成专门的人工运维步骤，不得直接登记到自动迁移清单。
+## 默认管理员
+
+```text
+账号：admin@petrichor.local
+密码：Petrichor@2026
+```
+
+密码使用 bcrypt 保存。默认明文凭据公开，仅用于首次登录，登录后必须立即修改。
 
 ## 配置
 
-迁移执行器读取 `apps/api/config.toml`。它优先使用 `[database].migration_url`，
-留空时回退到 `[database].url`；Web 环境文件不保存数据库连接串。
+执行器读取 `apps/api/config.toml`，优先使用 `[database].migration_url`，留空时回退到
+`[database].url`。Supabase transaction pooler 下使用 pgx `QueryExecModeExec`。
 
-## 命令
+## 手动诊断命令
+
+正常启动不需要手动迁移。排查时可以在 `apps/api` 下执行：
 
 ```bash
-# 在本地或目标运维环境执行全部待处理迁移
-bun run db:migrate
+go run ./cmd/migrate status
+go run ./cmd/migrate version
+go run ./cmd/migrate up
 ```
+
+## 后续结构变更
+
+当前基线一旦在数据库执行就不可修改。后续结构调整必须新增更高版本的
+`<纯数字版本>_<名称>.sql`，并加入 `-- +goose Up`。每个文件默认在独立事务中执行；
+`CREATE INDEX CONCURRENTLY` 等不能放入事务的操作应作为单独运维步骤处理。

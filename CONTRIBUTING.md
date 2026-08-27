@@ -76,7 +76,7 @@ git push origin feat/your-feature-name
 - ✅ **PR 描述**：按 [`PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) 填写改动说明、关联 Issue、验证方式
 - ✅ **小而完整**：单个 PR 聚焦一件事，避免把多个无关变更打包提交
 - ✅ **不修改 `bun.lock`**，除非确实新增 / 升级了依赖
-- ✅ **数据库迁移**：所有新增的表结构 / 字段变更需放到 `docs/migrations/<yyyy-mm-dd>-<short-name>.sql`，并保证幂等
+- ✅ **数据库迁移**：当前完整基线是 `apps/api/migrations/202608270002_init.sql`；后续变更新增更高版本的 Goose SQL，不要修改已经执行的版本
 - ✅ **不提交密钥**：检查 `.env.local`、连接串、API Key、Token 不能出现在 diff 中
 - ✅ **保持向后兼容**：除非有充分理由并在 PR 中说明
 
@@ -96,16 +96,13 @@ git push origin feat/your-feature-name
 ### 启动
 
 ```bash
-bun install
+bun install --cwd apps/web
 cp apps/web/.env.example apps/web/.env.local
 cp apps/api/config.example.toml apps/api/config.toml
 # Web 公开配置写入 .env.local；后端配置和密钥写入 config.toml
 
-bun --silent run db:sql > petrichor-init.sql
-# 把上面生成的 SQL 在 Supabase SQL Editor 跑一遍
-
-# 终端 1
-bun run dev:api
+# 终端 1：启动前由 Go 自动执行 Goose 初始化
+cd apps/api && go run ./cmd/server
 # 终端 2
 bun dev
 ```

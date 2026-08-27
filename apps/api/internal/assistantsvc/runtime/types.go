@@ -1,7 +1,7 @@
-// Package runtime 是 Petrichor Agent Runtime 的 Go 移植（对照 apps/web/src/server/assistant/agent-runtime/）。
+// Package runtime 实现 Petrichor Agent Runtime。
 //
 // 主循环：Reason → Select Action → Execute → Observe → Update State → Finish / Continue / Re-plan。
-// 底层工具调用循环基于 aicore.ChatWithTools（对应 TS 的 Mastra mastra-bridge）；
+// 底层工具调用循环基于 aicore.ChatWithTools；
 // 本包只负责编排与收敛，具体能力在各自模块里。
 package runtime
 

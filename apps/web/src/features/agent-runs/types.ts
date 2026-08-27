@@ -122,7 +122,7 @@ export type AgentRunViewModel = {
 }
 
 // ---------------------------------------------------------------------------
-// 后端事件协议镜像（与 server/assistant/agent-runtime/events.ts 对齐）
+// Go 后端 Agent Runtime 事件协议镜像
 // ---------------------------------------------------------------------------
 
 export type AgentStreamEventType =

@@ -1,4 +1,4 @@
-// users.go 移植 src/server/admin/handlers.ts + logic.ts：
+// users.go 实现用户管理：
 // 用户列表（关键字/排序/分页）、创建（bcrypt + better_auth 双写）与删除。
 package adminpanel
 

@@ -8,7 +8,6 @@ import (
 
 // AgentFeatureFlags 运行开关。
 type AgentFeatureFlags struct {
-	RuntimeV2     bool
 	SoftRouter    bool
 	DynamicSkills bool
 	Delegation    bool
@@ -19,7 +18,6 @@ type AgentFeatureFlags struct {
 func ReadAgentFeatureFlags() AgentFeatureFlags {
 	features := config.Get().Agent.Features
 	return AgentFeatureFlags{
-		RuntimeV2:     features.RuntimeV2,
 		SoftRouter:    features.SoftRouter,
 		DynamicSkills: features.DynamicSkills,
 		Delegation:    features.Delegation,

@@ -6,6 +6,7 @@
 .vscode/
 .cursor/
 .codex/
+.claude/*.lock
 *.iml
 .fastRequest/
 .trellis
@@ -35,9 +36,6 @@ dev/
 promo/
 
 # Generated local files
-petrichor-init.sql
-*-init.sql
-!docs/petrichor-init.sql
 *.bak-*
 
 # Java/Maven

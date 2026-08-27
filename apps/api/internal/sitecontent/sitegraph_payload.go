@@ -1,5 +1,4 @@
-// sitegraph_payload.go 移植 src/server/site-graph/public-graph.ts + store.ts 的
-// loadPublicGraphPayload 与 payload.ts 纯函数：前台点群公开载荷。
+// sitegraph_payload.go 组装前台点群公开载荷。
 package sitecontent
 
 import (

@@ -1,4 +1,4 @@
-// sitegraph_service.go 移植 src/server/site-graph/service.ts + extract-agent.ts：
+// sitegraph_service.go 编排星图生成、校验、发布与查询：
 // 生成主流程（骨架 + 注入式 LLM 抽取）、校验、发布流转与图查询编排。
 package adminpanel
 

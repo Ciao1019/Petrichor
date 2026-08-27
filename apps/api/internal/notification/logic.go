@@ -1,4 +1,4 @@
-// Package notification 移植 src/server/notification（handlers.ts + logic.ts）：
+// Package notification 提供通知 summary / list / read / read-all：
 // 通知 summary / list / read / read-all，全部需登录。
 package notification
 
@@ -35,7 +35,7 @@ var orderColumnMap = map[string]string{
 	"updated_at": "updatedAt",
 }
 
-// dbOrderByColumns 内部名 → 数据库列名（对应 drizzleColumnMap）。
+// dbOrderByColumns 将接口排序字段映射到数据库列名。
 var dbOrderByColumns = map[string]string{
 	"bizId":     "biz_id",
 	"bizType":   "biz_type",

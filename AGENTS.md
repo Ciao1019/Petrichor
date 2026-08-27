@@ -12,13 +12,14 @@
 
 ## 项目概览
 
-- 仓库根目录是 Bun workspace，工作区应用为 `apps/web` 和 `apps/api`。
+- 仓库根目录提供统一命令；`apps/web` 是独立 Bun package，依赖、锁文件和补丁均保存在
+  Web 目录；`apps/api` 是独立 Go module。
 - `apps/web` 是 Bun + React + Vite + TypeScript 客户端 SPA，入口为
   `apps/web/src/main.tsx`，页面路由由 `react-router-dom` 管理。
 - `apps/api` 是 Go + Gin API 服务，接管 `/api/*` 和 `/healthz`。
-- 根目录 `server.ts` 托管 Vite 静态资源，并把 API 同源转发到 Go 服务。
-- 数据层使用 Supabase PostgreSQL，Drizzle schema 位于
-  `apps/web/src/server/db/schema.ts`。
+- `apps/web/server.ts` 托管 Vite 静态资源，并把 API 同源转发到 Go 服务。
+- 数据层使用 Supabase PostgreSQL，完整结构由 `apps/api/migrations/202608270002_init.sql`
+  定义，并由 Go 服务启动时自动执行。
 - 认证由 Go 服务兼容 Better Auth httpOnly Cookie，业务用户与 Better Auth 用户通过
   `petrichor_user.auth_user_id` 关联。
 - 上传和公开文件访问使用 S3 兼容对象存储。
@@ -28,8 +29,9 @@
 在仓库根目录执行：
 
 ```bash
+bun install --cwd apps/web
 bun dev
-bun run dev:api
+cd apps/api && go run ./cmd/server
 bun run build
 bun run test
 bun run typecheck
@@ -39,31 +41,34 @@ bun run lint
 只针对 Web 应用执行时使用：
 
 ```bash
-bun --filter "@petrichor/web" dev
-bun --filter "@petrichor/web" test
-bun --filter "@petrichor/web" typecheck
-bun --filter "@petrichor/web" lint
-bun --filter "@petrichor/web" build
+bun run --cwd apps/web dev
+bun run --cwd apps/web test
+bun run --cwd apps/web typecheck
+bun run --cwd apps/web lint
+bun run --cwd apps/web build
 ```
 
-生成初始化 SQL 时必须使用 `--silent`，避免 Bun 日志混入 SQL：
+查看数据库迁移状态使用纯 Go 命令：
 
 ```bash
-bun --silent run db:sql
+cd apps/api && go run ./cmd/migrate status
 ```
 
 ## 目录约定
 
 - `apps/api/cmd/server/`：Go API 生产入口。
+- `apps/api/cmd/migrate/`：Goose 数据库迁移命令入口。
 - `apps/api/internal/`：Go 鉴权、业务、数据库、存储、缓存和 Agent 实现。
+- `apps/api/migrations/`：随 Go 二进制内嵌的 Goose 初始化 SQL。
 - `apps/api/config.example.toml`：Go 运行配置模板；本地真实配置为忽略提交的 `config.toml`。
 - `apps/web/src/main.tsx`：Vite 客户端入口。
+- `apps/web/server.ts`：Bun Web 静态服务与 Go API 同源反代入口。
 - `apps/web/src/client-app.tsx`：客户端路由总入口。
 - `apps/web/src/features/pages/`：业务页面组件。
 - `apps/web/src/components/`：通用组件、编辑器组件、shadcn/ui、第三方 UI 迁移组件。
 - `apps/web/src/lib/`：浏览器侧工具、API client、路由工具。
-- `apps/web/src/server/`：迁移期间保留的历史 TypeScript 服务端实现，不是当前运行入口。
-- `docs/`：初始化 SQL、增量迁移脚本和历史迁移说明。
+- `apps/web/bun.lock`、`apps/web/patches/`：Web 依赖锁文件与本地依赖补丁。
+- `docs/`：数据库、Agent、模型配置和设计说明。
 
 ## TypeScript 与代码风格
 
@@ -87,12 +92,13 @@ bun --silent run db:sql
 
 ## 数据库与迁移
 
-- Drizzle 表结构集中在 `apps/web/src/server/db/schema.ts`，SQL 生成逻辑在
-  `apps/web/src/server/db/full-migration.ts` 和相关脚本中。
-- 增量数据库变更应放入 `docs/migrations/`，并在相关文档中说明执行顺序。
-- 需要在生产部署中自动执行的增量 SQL 必须登记到
-  `docs/migrations/manifest.json`；已执行的文件不可修改，应新增后续迁移。
-- Supabase transaction pooler 场景下保持 Postgres.js `prepare: false` 相关约束。
+- 当前完整数据库基线只有 `apps/api/migrations/202608270002_init.sql` 一个 SQL 文件。
+- Go API 在监听端口前自动执行 Goose；迁移失败时服务不得继续启动，数据库流程与 Bun 无关。
+- 后续数据库变更放入 `apps/api/migrations/`，使用更高的纯数字版本前缀并添加
+  `-- +goose Up`；已执行文件不可修改，应新增后续迁移。
+- Goose 使用 `goose_db_version` 管理版本，并以 PostgreSQL 表租约锁避免并发迁移。
+- Supabase transaction pooler 场景下保持 pgx `QueryExecModeExec`，不要启用 prepared
+  statement 缓存。
 - 涉及生产数据库删除、结构变更、批量更新前必须先说明影响范围并获得明确确认。
 
 ## 前端与 UI 约定

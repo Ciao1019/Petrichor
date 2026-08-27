@@ -1,6 +1,5 @@
-// 认证组处理器：移植 app/api/auth/* 与 better-auth-bridge.ts 的登录、注册、登出、
-// 资料、改密等端点。按产品决策移除 2FA 流程：登录不再处理 twoFactorRedirect，
-// 密码通过即发会话；twoFactorEnabled 恒 false。
+// 认证组处理器：实现登录、注册、登出、资料和改密等端点。
+// 密码通过后直接签发会话。
 package auth
 
 import (
@@ -204,7 +203,7 @@ type credentialsRequest struct {
 	Password string `json:"password"`
 }
 
-// Login POST /api/auth/login。2FA 已移除：密码通过直接发会话。
+// Login POST /api/auth/login：密码通过后直接签发会话。
 func Login(c *gin.Context) {
 	var req credentialsRequest
 	if err := httpx.ReadJSON(c, &req); err != nil {
@@ -435,7 +434,7 @@ func Me(c *gin.Context) {
 	httpx.OK(c, CurrentUser(c).ToUserResponse())
 }
 
-// Profile GET /api/auth/profile：twoFactorEnabled 恒 false（2FA 已移除）。
+// Profile GET /api/auth/profile。
 func Profile(c *gin.Context) {
 	httpx.OK(c, CurrentUser(c).ToUserProfileResponse())
 }

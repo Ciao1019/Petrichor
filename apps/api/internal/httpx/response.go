@@ -1,4 +1,4 @@
-// Package httpx 复刻 src/server/http/response.ts 与 pagination.ts 的响应契约。
+// Package httpx 提供统一 HTTP 响应和分页契约。
 package httpx
 
 import (
