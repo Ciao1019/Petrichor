@@ -5,8 +5,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
 func TestEmbeddedMigrations(t *testing.T) {
@@ -16,6 +14,7 @@ func TestEmbeddedMigrations(t *testing.T) {
 	}
 	want := []string{
 		"202608270002_init.sql",
+		"202608280001_knowledge_build_job.sql",
 	}
 	if !reflect.DeepEqual(entries, want) {
 		t.Fatalf("内嵌迁移不符合预期\n实际: %v\n期望: %v", entries, want)
@@ -32,14 +31,33 @@ func TestEmbeddedMigrations(t *testing.T) {
 			t.Fatalf("初始化迁移包含历史清理或数据回填语句: %q", strings.TrimSpace(forbidden))
 		}
 	}
-	if !strings.Contains(sql, "admin@petrichor.local") {
-		t.Fatal("初始化迁移缺少默认管理员账号")
+	for _, required := range []string{
+		"CREATE TABLE public.petrichor_user",
+		"CREATE TABLE public.sa_token_storage",
+		"首次启动后由 /api/auth/setup",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("初始化迁移缺少最终结构: %q", required)
+		}
 	}
-	const passwordHash = "$2y$10$k50nCm9frffjyGwbhOAli.cEZxAz4iy.JAoULnLrPb2SM5k67JPma"
-	if !strings.Contains(sql, passwordHash) {
-		t.Fatal("初始化迁移缺少默认管理员密码哈希")
+	for _, forbidden := range []string{"better_auth", "auth_user_id", "petrichor_auth_session", "Petrichor@2026"} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("初始化迁移残留废弃认证对象: %q", forbidden)
+		}
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte("Petrichor@2026")); err != nil {
-		t.Fatalf("默认管理员密码哈希无效: %v", err)
+
+	data, err = fs.ReadFile(Files, want[1])
+	if err != nil {
+		t.Fatalf("读取知识构建任务迁移失败: %v", err)
+	}
+	jobSQL := string(data)
+	for _, required := range []string{
+		"CREATE TABLE public.petrichor_kb_knowledge_build_job",
+		"uq_petrichor_kb_knowledge_build_job_active",
+		"FOREIGN KEY (article_id)",
+	} {
+		if !strings.Contains(jobSQL, required) {
+			t.Fatalf("知识构建任务迁移缺少结构: %q", required)
+		}
 	}
 }

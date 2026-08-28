@@ -20,8 +20,8 @@
 - `apps/web/server.ts` 托管 Vite 静态资源，并把 API 同源转发到 Go 服务。
 - 数据层使用 Supabase PostgreSQL，完整结构由 `apps/api/migrations/202608270002_init.sql`
   定义，并由 Go 服务启动时自动执行。
-- 认证由 Go 服务兼容 Better Auth httpOnly Cookie，业务用户与 Better Auth 用户通过
-  `petrichor_user.auth_user_id` 关联。
+- 认证使用 Sa-Token-Go 的 Gin 集成，token 状态由 `sa_token_storage` 持久化到 PostgreSQL；
+  业务用户只保存在 `petrichor_user`。
 - 上传和公开文件访问使用 S3 兼容对象存储。
 
 ## 常用命令
@@ -92,7 +92,7 @@ cd apps/api && go run ./cmd/migrate status
 
 ## 数据库与迁移
 
-- 当前完整数据库基线只有 `apps/api/migrations/202608270002_init.sql` 一个 SQL 文件。
+- 完整数据库基线为 `apps/api/migrations/202608270002_init.sql`，后续变更使用更高版本迁移。
 - Go API 在监听端口前自动执行 Goose；迁移失败时服务不得继续启动，数据库流程与 Bun 无关。
 - 后续数据库变更放入 `apps/api/migrations/`，使用更高的纯数字版本前缀并添加
   `-- +goose Up`；已执行文件不可修改，应新增后续迁移。
@@ -132,8 +132,7 @@ cd apps/api && go test ./... && go vet ./...
 - Go 不读取环境变量；数据库、Session、加密、S3、LinuxDo、Upstash 和 Agent 配置统一写入
   `apps/api/config.toml`，模板为 `apps/api/config.example.toml`。
 - `config.toml` 含密钥且已忽略提交，不得输出或提交其真实内容。
-- `auth.session_secret`、`encryption.key`、`encryption.salt` 一旦用于真实数据，
-  不要随意更换。
+- `encryption.key`、`encryption.salt` 一旦用于真实数据，不要随意更换。
 - 生产环境建议在 `[database].url` 使用 Supabase transaction pooler 连接串。
 
 ## Git 与安全操作

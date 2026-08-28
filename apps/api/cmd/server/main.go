@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"petrichor/api/internal/aicore"
+	"petrichor/api/internal/auth"
 	"petrichor/api/internal/bootstrap"
 	"petrichor/api/internal/config"
 	_ "petrichor/api/internal/db"
@@ -25,6 +26,9 @@ func main() {
 	if err := migrateDatabase(cfg); err != nil {
 		log.Fatal("数据库自动迁移失败，Go API 未启动: ", err)
 	}
+	if err := auth.InitializeSaToken(); err != nil {
+		log.Fatal(err)
+	}
 	aicore.WireInvokers()
 	bootstrap.WireLLM()
 	if !config.IsProduction() {
@@ -35,6 +39,7 @@ func main() {
 
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
+	r.Use(auth.SaTokenInterceptor())
 	r.MaxMultipartMemory = 64 << 20
 
 	// 与 Next.js 版本一致：同源部署，无需 CORS。

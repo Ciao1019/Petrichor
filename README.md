@@ -32,7 +32,7 @@
 | 富文本编辑器 | PlateJS、Markdown、代码块、表格、公式、白板、思维导图和媒体嵌入 |
 | 知识库 | 多级目录、标签、搜索、文章分享、RSS / Atom |
 | AI 助手 | 续写、改写、翻译、总结、文档问答和 Agent Runtime |
-| 认证 | 邮箱密码、httpOnly Cookie、LinuxDo OAuth、会话管理 |
+| 认证 | Sa-Token-Go、邮箱密码、httpOnly Cookie、LinuxDo OAuth、会话管理 |
 | 对象存储 | S3 兼容上传和预签名 URL |
 | Agent 集成 | API Key、MCP、可下载 Skill 包、REST 能力和调用审计 |
 
@@ -46,8 +46,8 @@ cp apps/web/.env.example apps/web/.env.local
 cp apps/api/config.example.toml apps/api/config.toml
 ```
 
-编辑两个本地配置文件后，分别启动后端和 Web。Go API 会在监听端口前自动执行唯一的
-初始化迁移：
+编辑两个本地配置文件后，分别启动后端和 Web。Go API 会在监听端口前自动执行全部
+待执行迁移：
 
 ```bash
 # 终端 1，默认 http://127.0.0.1:8080
@@ -57,14 +57,9 @@ cd apps/api && go run ./cmd/server
 bun dev
 ```
 
-首次启动会创建完整表结构和默认超级管理员：
-
-```text
-账号：admin@petrichor.local
-密码：Petrichor@2026
-```
-
-默认密码公开，仅用于首次登录；登录后请立即在“账号设置 → 密码”中修改。
+首次启动只创建最终表结构，不写入任何默认账号。第一次打开站点时，Web 会强制进入管理员
+初始化页，由部署者自行设置管理员名称、登录邮箱和密码。初始化接口使用数据库事务锁，
+只能成功执行一次；完成前普通登录和后台接口均不可用。
 
 数据库命令完全由 Go 提供，通常无需手动执行：
 
@@ -73,6 +68,18 @@ cd apps/api
 go run ./cmd/migrate status
 go run ./cmd/migrate version
 ```
+
+## Vercel 容器部署
+
+仓库根目录的 `vercel.json` 使用 Vercel Services，将 Web 和 Go API 分别构建为
+`Dockerfile.vercel` 容器。`/api/*` 与 `/healthz` 路由到 Go 服务，其余请求路由到 Web
+服务。
+
+Go 容器不会把 `config.toml` 打包进镜像。部署时应将完整文件内容保存到 Vercel 加密环境
+变量 `PETRICHOR_CONFIG_TOML`；容器启动后会以 `0600` 权限还原为 `/app/config.toml`。
+若数据库连接需要独立管理，可同时设置 `PETRICHOR_DATABASE_URL` 与
+`PETRICHOR_MIGRATION_DATABASE_URL`，容器只用它们覆盖 TOML 的 `[database]` 段。项目环境
+变量 `PORT` 应设置为 `8080`。
 
 ## 配置
 
@@ -94,7 +101,7 @@ Go **不读取环境变量**。所有运行配置统一来自 `apps/api/config.t
 | `[agent.research]` | 可选外部搜索供应商与超时 |
 
 `config.toml` 包含数据库连接串和密钥，已被 Git 与 Docker 忽略。不要提交或输出真实内容；
-`auth.session_secret`、`encryption.key` 和 `encryption.salt` 一旦用于真实数据，不要随意更换。
+`encryption.key` 和 `encryption.salt` 一旦用于真实数据，不要随意更换。
 
 ### Web 前端
 
@@ -137,7 +144,7 @@ go vet ./...
 │   │   │   ├── server/            # API 服务入口
 │   │   │   └── migrate/           # Goose 命令入口
 │   │   ├── internal/              # Go 私有业务实现
-│   │   ├── migrations/            # 唯一的 Goose init SQL 与嵌入代码
+│   │   ├── migrations/            # Goose 初始化基线与嵌入代码
 │   │   └── config.example.toml    # 可提交的配置模板
 │   └── web/                       # React/Vite SPA
 │       ├── src/

@@ -11,7 +11,6 @@ import (
 // User 对应 petrichor_user 表记录。
 type User struct {
 	ID               int64     `db:"id"`
-	AuthUserID       *string   `db:"auth_user_id"`
 	Email            string    `db:"email"`
 	PasswordHash     string    `db:"password_hash"`
 	SystemRole       string    `db:"system_role"`

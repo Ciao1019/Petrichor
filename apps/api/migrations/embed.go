@@ -3,7 +3,7 @@ package migrations
 
 import "embed"
 
-// Files 包含 Goose 初始化 SQL。
+// Files 包含唯一的 Goose 初始化 SQL。
 //
 //go:embed *.sql
 var Files embed.FS

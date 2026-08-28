@@ -48,7 +48,7 @@ const CAPABILITIES: { title: string; tag: string; detail: string; dot: MarkerCol
         title: "认证体系",
         tag: "Cookie Session",
         dot: "blue",
-        detail: "会话藏在 httpOnly Cookie 里；支持邮箱密码与 LinuxDo 登录，第一个注册进来的人自动当上超级管理员。",
+        detail: "首次打开站点必须自行初始化管理员名称、邮箱和密码；完成后支持邮箱密码与 LinuxDo 登录，会话保存在 httpOnly Cookie 中。",
     },
     {
         title: "对象存储",
@@ -140,7 +140,7 @@ const AGENT_STEPS: { title: string; detail: string; ink: string }[] = [
 ]
 
 const STACK: { group: string; items: string[] }[] = [
-    { group: "框架", items: ["Bun 1.3", "Vite 8", "React", "TypeScript 5.9", "React Router", "Go", "Gin"] },
+    { group: "框架", items: ["Bun 1.3", "Vite 8", "React", "TypeScript 5.9", "React Router", "Go", "Gin", "Sa-Token"] },
     { group: "编辑器", items: ["PlateJS", "Slate", "Markdown", "KaTeX", "Mind Map", "Whiteboard"] },
     { group: "数据层", items: ["PostgreSQL", "Supabase", "pgx", "S3 兼容存储"] },
     { group: "AI", items: ["Vercel AI SDK", "OpenAI", "Gemini", "DeepSeek", "向量召回", "MCP"] },
@@ -171,12 +171,12 @@ const SELF_HOST_STEPS: { title: string; detail: string; ink: string }[] = [
     {
         title: "初始化表结构",
         ink: "teal",
-        detail: "启动 Go API 时会自动执行内嵌的 Goose init，创建完整表结构和默认管理员，不需要 Bun 执行数据库脚本。",
+        detail: "启动 Go API 时会自动执行唯一的 Goose init，创建最终表结构，不写入默认账号，也不需要 Bun 执行数据库脚本。",
     },
     {
         title: "启动并创建管理员",
         ink: "purple",
-        detail: "分别启动 Go API 与 Bun Web。需要首个管理员时临时开启 TOML 和前端注册开关，注册完成后关闭并重启。",
+        detail: "分别启动 Go API 与 Bun Web。第一次打开站点会进入初始化页，由部署者创建唯一的初始超级管理员。",
     },
 ]
 

@@ -17,6 +17,7 @@ import { DemoModeBanner } from '@/components/demo-mode-banner'
 import { isPublicSitePath } from '@/lib/public-theme-routes'
 import { authApi } from '@/lib/api'
 import { RouteLoadErrorBoundary, RouteLoadSuccessMarker } from '@/components/route-load-boundary'
+import { SiteSetupGate } from '@/components/site-setup-gate'
 
 // Next.js 迁移到 React Router 后不再自动按页面拆包；显式 lazy 才能避免把编辑器、
 // 文档查看器、图表和 AI 管理页全部塞进首个 Rollup chunk。
@@ -285,10 +286,11 @@ function AppThemeScope() {
     <ThemeProvider defaultTheme="system" forcedTheme={forcedTheme}>
       <TooltipProvider>
         <Toaster />
-        <div style={{ position: 'relative', minHeight: '100vh' }}>
-          <RouteLoadErrorBoundary resetKey={location.pathname}>
-            <Suspense fallback={<RouteLoadingFallback />}>
-              <Routes>
+        <SiteSetupGate>
+          <div style={{ position: 'relative', minHeight: '100vh' }}>
+            <RouteLoadErrorBoundary resetKey={location.pathname}>
+              <Suspense fallback={<RouteLoadingFallback />}>
+                <Routes>
               <Route path="/" element={<BlogHomePage />} />
               <Route path="/tags" element={<TagsPage />} />
               <Route path="/graph" element={<SiteGraphPage />} />
@@ -331,11 +333,12 @@ function AppThemeScope() {
                 <Route path="agent/skill" element={<AgentSkillPage />} />
                 <Route path="agent/debug" element={<AgentDebugPage />} />
               </Route>
-              </Routes>
-              <RouteLoadSuccessMarker />
-            </Suspense>
-          </RouteLoadErrorBoundary>
-        </div>
+                </Routes>
+                <RouteLoadSuccessMarker />
+              </Suspense>
+            </RouteLoadErrorBoundary>
+          </div>
+        </SiteSetupGate>
       </TooltipProvider>
     </ThemeProvider>
   )

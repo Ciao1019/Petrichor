@@ -1,0 +1,4 @@
+.git
+config.toml
+*.log
+tmp

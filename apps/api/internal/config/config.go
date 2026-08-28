@@ -113,7 +113,6 @@ type Config struct {
 	LocalStorageDir      string
 	S3                   *S3Config
 	SessionExpire        time.Duration
-	SessionSecret        string
 	RegisterEnabled      bool
 	RegisterDefaultRole  string
 	Encryption           EncryptionConfig
@@ -146,7 +145,6 @@ type databaseFileConfig struct {
 }
 
 type authFileConfig struct {
-	SessionSecret       string                     `toml:"session_secret"`
 	SessionExpireSecond int                        `toml:"session_expire_seconds"`
 	RegisterEnabled     bool                       `toml:"register_enabled"`
 	DefaultSystemRole   string                     `toml:"default_system_role"`
@@ -328,9 +326,6 @@ func normalizeAndValidate(raw fileConfig, path string) (*Config, error) {
 	if databaseURL == "" {
 		return nil, fmt.Errorf("database.url 不能为空")
 	}
-	if len(raw.Auth.SessionSecret) < 32 {
-		return nil, fmt.Errorf("auth.session_secret 至少需要 32 个字符")
-	}
 	sessionExpire := raw.Auth.SessionExpireSecond
 	if sessionExpire == 0 {
 		sessionExpire = DefaultSessionExpireSecs
@@ -383,7 +378,6 @@ func normalizeAndValidate(raw fileConfig, path string) (*Config, error) {
 		LocalStorageDir:      strings.TrimSpace(raw.Storage.LocalDirectory),
 		S3:                   s3,
 		SessionExpire:        time.Duration(sessionExpire) * time.Second,
-		SessionSecret:        raw.Auth.SessionSecret,
 		RegisterEnabled:      raw.Auth.RegisterEnabled,
 		RegisterDefaultRole:  defaultRole,
 		Encryption:           EncryptionConfig{Key: encryptionKey, Salt: encryptionSalt},

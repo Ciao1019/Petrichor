@@ -59,3 +59,5 @@ npm-debug.log*
 
 # Go 本地运行配置（含数据库、密钥与第三方凭证）
 apps/api/config.toml
+/.vercel/
+/.env.local

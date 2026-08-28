@@ -23,6 +23,7 @@ export interface ApiErrorResponse {
 function isAuthEndpoint(url: string) {
   return url.includes("/auth/login")
     || url.includes("/auth/register")
+    || url.includes("/auth/setup")
     || url.includes("/auth/linuxdo/callback")
 }
 
@@ -66,6 +67,16 @@ export interface RegisterRequest {
   name: string
 }
 
+export interface SetupStatusResponse {
+  required: boolean
+}
+
+export interface SetupRequest {
+  email: string
+  username: string
+  password: string
+}
+
 export type SystemRole = "USER" | "SUPER_ADMIN"
 
 export interface UserResponse {
@@ -105,6 +116,8 @@ export interface ChangePasswordRequest {
 }
 
 export const authApi = {
+  setupStatus: () => api.get<SetupStatusResponse>("/auth/setup/status"),
+  setup: (data: SetupRequest) => api.post<AuthResponse>("/auth/setup", data),
   login: (data: LoginRequest) => api.post<AuthResponse>("/auth/login", data),
   register: (data: RegisterRequest) => api.post<AuthResponse>("/auth/register", data),
   logout: () => api.post("/auth/logout"),

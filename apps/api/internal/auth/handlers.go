@@ -13,7 +13,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
@@ -33,17 +32,6 @@ func randomBase64URL(n int) string {
 		panic(fmt.Sprintf("生成随机数失败：%v", err))
 	}
 	return base64.RawURLEncoding.EncodeToString(b)
-}
-
-// newUUID 基于 crypto/rand 的 UUID v4。
-func newUUID() string {
-	var b [16]byte
-	if _, err := cryptorand.Read(b[:]); err != nil {
-		panic(fmt.Sprintf("生成随机数失败：%v", err))
-	}
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
 func firstNonEmpty(values ...string) string {
@@ -68,14 +56,6 @@ func requestIP(c *gin.Context) string {
 	return c.RemoteIP()
 }
 
-// getSessionTokenRaw 自建会话通道取 token：cookie 优先，回退 Bearer。
-func getSessionTokenRaw(c *gin.Context) string {
-	if token, err := c.Cookie(SessionCookieName); err == nil && token != "" {
-		return token
-	}
-	return BearerToken(c)
-}
-
 func findPetrichorUserByEmail(email string) (*User, error) {
 	row := db.Pool().QueryRow(ctx(),
 		`SELECT `+UserColumns+` FROM petrichor_user WHERE lower(email) = $1 LIMIT 1`, normalizeEmail(email))
@@ -84,118 +64,6 @@ func findPetrichorUserByEmail(email string) (*User, error) {
 		return nil, err
 	}
 	return u, nil
-}
-
-// ensureBetterAuthCredentialsForEmail 移植 better-auth-bridge.ts 同名函数：
-// 把 petrichor_user 的凭据同步到 better_auth_user/better_auth_account，
-// 保证后续登录走 credential 通道。返回解析后的 authUserId（无凭据时为 nil）。
-func ensureBetterAuthCredentialsForEmail(email string) (*string, error) {
-	pool := db.Pool()
-	bg := ctx()
-	normalizedEmail := normalizeEmail(email)
-
-	u, err := findPetrichorUserByEmail(normalizedEmail)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	if strings.TrimSpace(u.PasswordHash) == "" {
-		return nil, nil
-	}
-
-	// 兼容历史数据：auth_user_id 缺失时用确定性 id 补建并回写。
-	authUserID := strings.TrimSpace(deref(u.AuthUserID))
-	if authUserID == "" {
-		authUserID = "petrichor_" + strconv.FormatInt(u.ID, 10)
-	}
-	displayName := firstNonEmpty(deref(u.Nickname), deref(u.Username), normalizedEmail)
-
-	if _, ierr := pool.Exec(bg,
-		`INSERT INTO better_auth_user (id, name, email, email_verified, image, created_at, updated_at)
-		 VALUES ($1, $2, $3, true, $4, $5, $6)
-		 ON CONFLICT (email) DO NOTHING`,
-		authUserID, displayName, normalizedEmail, u.Avatar, u.CreatedAt, u.UpdatedAt); ierr != nil {
-		return nil, ierr
-	}
-
-	var resolvedID string
-	if serr := pool.QueryRow(bg,
-		`SELECT id FROM better_auth_user WHERE lower(email) = $1 LIMIT 1`, normalizedEmail).Scan(&resolvedID); serr != nil {
-		if errors.Is(serr, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, serr
-	}
-
-	if deref(u.AuthUserID) != resolvedID {
-		if _, uerr := pool.Exec(bg,
-			`UPDATE petrichor_user SET auth_user_id = $1, updated_at = now() WHERE id = $2`,
-			resolvedID, u.ID); uerr != nil {
-			return nil, uerr
-		}
-	}
-
-	var accountPassword *string
-	aerr := pool.QueryRow(bg,
-		`SELECT password FROM better_auth_account
-		 WHERE provider_id = 'credential' AND account_id = $1 LIMIT 1`, resolvedID).Scan(&accountPassword)
-	switch {
-	case errors.Is(aerr, pgx.ErrNoRows):
-		if _, ierr := pool.Exec(bg,
-			`INSERT INTO better_auth_account (id, account_id, provider_id, user_id, password, created_at, updated_at)
-			 VALUES ($1, $2, 'credential', $2, $3, $4, $5)
-			 ON CONFLICT (provider_id, account_id) DO NOTHING`,
-			"credential_"+strconv.FormatInt(u.ID, 10), resolvedID, u.PasswordHash, u.CreatedAt, u.UpdatedAt); ierr != nil {
-			return nil, ierr
-		}
-	case aerr != nil:
-		return nil, aerr
-	case strings.TrimSpace(deref(accountPassword)) == "":
-		if _, uerr := pool.Exec(bg,
-			`UPDATE better_auth_account SET password = $1, updated_at = now()
-			 WHERE provider_id = 'credential' AND account_id = $2`,
-			u.PasswordHash, resolvedID); uerr != nil {
-			return nil, uerr
-		}
-	}
-
-	resolved := resolvedID
-	return &resolved, nil
-}
-
-// createBetterAuthSession 创建 better_auth_session 并返回裸 token。
-func createBetterAuthSession(authUserID, ip, userAgent string, ttl time.Duration) (string, error) {
-	token := randomBase64URL(32)
-	_, err := db.Pool().Exec(ctx(),
-		`INSERT INTO better_auth_session (id, token, expires_at, user_id, ip_address, user_agent)
-		 VALUES ($1, $2, $3, $4, $5, $6)`,
-		newUUID(), token, time.Now().Add(ttl), authUserID, ip, userAgent)
-	if err != nil {
-		return "", err
-	}
-	return token, nil
-}
-
-// issuePetrichorSession 创建自建会话记录并返回裸 token（对应 issueSessionToken + 插入）。
-func issuePetrichorSession(userID int64, ip, userAgent string) (string, error) {
-	token := randomBase64URL(32)
-	_, err := db.Pool().Exec(ctx(),
-		`INSERT INTO petrichor_auth_session (token_hash, user_id, ip, user_agent, expires_at)
-		 VALUES ($1, $2, $3, $4, $5)`,
-		HashSessionToken(token), userID, ip, userAgent, time.Now().Add(config.Get().SessionExpire))
-	if err != nil {
-		return "", err
-	}
-	return token, nil
-}
-
-// setBetterAuthCookie 设置签名后的 Better Auth 会话 cookie。
-func setBetterAuthCookie(c *gin.Context, bareToken string) {
-	cfg := config.Get()
-	setSessionCookie(c, BetterAuthCookieName(config.IsProduction()),
-		SignBetterAuthCookieValue(bareToken, cfg.SessionSecret), int(cfg.SessionExpire.Seconds()))
 }
 
 type credentialsRequest struct {
@@ -217,26 +85,6 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	if _, err := ensureBetterAuthCredentialsForEmail(email); err != nil {
-		httpx.HandleError(c, err)
-		return
-	}
-
-	pool := db.Pool()
-	bg := context.Background()
-
-	// 凭据校验优先走 better_auth_account.password，回退 petrichor_user.password_hash。
-	var credPassword *string
-	var credAuthUserID *string
-	if err := pool.QueryRow(bg,
-		`SELECT ba.password, bu.id
-		 FROM better_auth_user bu
-		 LEFT JOIN better_auth_account ba ON ba.user_id = bu.id AND ba.provider_id = 'credential'
-		 WHERE lower(bu.email) = $1 LIMIT 1`, email).Scan(&credPassword, &credAuthUserID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		httpx.HandleError(c, err)
-		return
-	}
-
 	u, uerr := findPetrichorUserByEmail(email)
 	if uerr != nil {
 		if errors.Is(uerr, pgx.ErrNoRows) {
@@ -247,29 +95,17 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	matched := false
-	for _, hash := range []*string{credPassword, &u.PasswordHash} {
-		if hash == nil || strings.TrimSpace(*hash) == "" {
-			continue
-		}
-		if bcrypt.CompareHashAndPassword([]byte(*hash), []byte(password)) == nil {
-			matched = true
-			break
-		}
-	}
-	if !matched {
+	if strings.TrimSpace(u.PasswordHash) == "" ||
+		bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
 		httpx.ErrorJSON(c, http.StatusUnauthorized, "邮箱或密码错误")
 		return
 	}
 
-	authUserID := firstNonEmpty(deref(credAuthUserID), deref(u.AuthUserID),
-		"petrichor_"+strconv.FormatInt(u.ID, 10))
-	token, terr := createBetterAuthSession(authUserID, requestIP(c), c.Request.UserAgent(), config.Get().SessionExpire)
+	token, terr := loginWithSaToken(c, u.ID)
 	if terr != nil {
 		httpx.HandleError(c, terr)
 		return
 	}
-	setBetterAuthCookie(c, token)
 	httpx.OK(c, gin.H{"token": token, "user": u.ToUserResponse()})
 }
 
@@ -334,11 +170,9 @@ func Register(c *gin.Context) {
 	pool := db.Pool()
 	bg := context.Background()
 
-	// 邮箱唯一性需同时检查两张表（与 createLocalUserWithBetterAuth 一致）。
 	var exists bool
 	if err := pool.QueryRow(bg,
-		`SELECT EXISTS(SELECT 1 FROM petrichor_user WHERE lower(email) = $1)
-		      OR EXISTS(SELECT 1 FROM better_auth_user WHERE lower(email) = $1)`, email).Scan(&exists); err != nil {
+		`SELECT EXISTS(SELECT 1 FROM petrichor_user WHERE lower(email) = $1)`, email).Scan(&exists); err != nil {
 		httpx.HandleError(c, err)
 		return
 	}
@@ -359,73 +193,37 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	authUserID := newUUID()
 	localPart := strings.TrimSpace(strings.SplitN(email, "@", 2)[0])
 	username := localPart
 	if username == "" {
 		username = name
 	}
 
-	tx, berr := pool.Begin(bg)
-	if berr != nil {
-		httpx.HandleError(c, berr)
-		return
-	}
-	defer func() { _ = tx.Rollback(bg) }()
-
-	if _, ierr := tx.Exec(bg,
-		`INSERT INTO better_auth_user (id, name, email, email_verified, image) VALUES ($1, $2, $3, true, NULL)`,
-		authUserID, name, email); ierr != nil {
-		httpx.HandleError(c, ierr)
-		return
-	}
-	if _, ierr := tx.Exec(bg,
-		`INSERT INTO better_auth_account (id, account_id, provider_id, user_id, password) VALUES ($1, $2, 'credential', $2, $3)`,
-		newUUID(), authUserID, string(passwordHash)); ierr != nil {
-		httpx.HandleError(c, ierr)
-		return
-	}
-
-	u, ierr := ScanUser(tx.QueryRow(bg,
-		`INSERT INTO petrichor_user (auth_user_id, email, password_hash, system_role, user_type, username, nickname)
-		 VALUES ($1, $2, $3, $4, 'LOCAL', $5, $6) RETURNING `+UserColumns,
-		authUserID, email, string(passwordHash), systemRole, username, name))
+	u, ierr := ScanUser(pool.QueryRow(bg,
+		`INSERT INTO petrichor_user (email, password_hash, system_role, user_type, username, nickname)
+		 VALUES ($1, $2, $3, 'LOCAL', $4, $5) RETURNING `+UserColumns,
+		email, string(passwordHash), systemRole, username, name))
 	if ierr != nil {
 		httpx.HandleError(c, ierr)
 		return
 	}
-	if cerr := tx.Commit(bg); cerr != nil {
-		httpx.HandleError(c, cerr)
-		return
-	}
 
-	// 注册后自动登录（对照 TS 注册路由里的 signInEmail）。
-	token, terr := createBetterAuthSession(authUserID, requestIP(c), c.Request.UserAgent(), cfg.SessionExpire)
+	// 注册后由 Sa-Token 自动登录。
+	token, terr := loginWithSaToken(c, u.ID)
 	if terr != nil {
 		httpx.HandleError(c, terr)
 		return
 	}
-	setBetterAuthCookie(c, token)
 	httpx.OK(c, gin.H{"token": token, "user": u.ToUserResponse()})
 }
 
-// Logout POST /api/auth/logout：尽力撤销两条会话通道并清两类 cookie。
+// Logout POST /api/auth/logout：注销当前 Sa-Token 会话并清 Cookie。
 func Logout(c *gin.Context) {
-	if token := getSessionTokenRaw(c); token != "" {
-		_, _ = db.Pool().Exec(ctx(),
-			`UPDATE petrichor_auth_session SET revoked_at = now(), updated_at = now()
-			 WHERE token_hash = $1 AND revoked_at IS NULL`, HashSessionToken(token))
+	if token := currentSaToken(c); token != "" {
+		manager, _ := managerAndPlugin()
+		_ = manager.LogoutByToken(token)
 	}
-
-	cookieName := BetterAuthCookieName(config.IsProduction())
-	if raw, cerr := c.Cookie(cookieName); cerr == nil && raw != "" {
-		if token, ok := VerifyBetterAuthCookieValue(raw, config.Get().SessionSecret); ok {
-			_, _ = db.Pool().Exec(ctx(), `DELETE FROM better_auth_session WHERE token = $1`, token)
-		}
-	}
-
-	ClearSessionCookie(c, SessionCookieName)
-	ClearSessionCookie(c, cookieName)
+	clearAuthTokenCookie(c)
 	httpx.OK(c, gin.H{"success": true})
 }
 
@@ -500,8 +298,7 @@ type changePasswordRequest struct {
 	NewPassword     string `json:"newPassword"`
 }
 
-// ChangePassword POST /api/auth/password/change：
-// 验旧密码 → 双写两张表 → 撤销本人其他自建会话（保留当前会话）。
+// ChangePassword POST /api/auth/password/change：验证旧密码、更新密码并下线其他设备。
 func ChangePassword(c *gin.Context) {
 	current := CurrentUser(c)
 	var req changePasswordRequest
@@ -520,30 +317,12 @@ func ChangePassword(c *gin.Context) {
 		return
 	}
 
-	pool := db.Pool()
-	bg := context.Background()
-
-	// 验证旧密码：优先 petrichor_user.password_hash，回退 credential 账户密码。
-	oldHash := ""
-	if strings.TrimSpace(current.PasswordHash) != "" &&
-		bcrypt.CompareHashAndPassword([]byte(current.PasswordHash), []byte(oldPassword)) == nil {
-		oldHash = current.PasswordHash
-	} else {
-		var credPassword *string
-		qerr := pool.QueryRow(bg,
-			`SELECT ba.password FROM better_auth_account ba
-			 WHERE ba.provider_id = 'credential' AND ba.user_id = $1 AND ba.password IS NOT NULL
-			 LIMIT 1`, deref(current.AuthUserID)).Scan(&credPassword)
-		if qerr == nil && credPassword != nil &&
-			bcrypt.CompareHashAndPassword([]byte(*credPassword), []byte(oldPassword)) == nil {
-			oldHash = *credPassword
-		}
-	}
-	if oldHash == "" {
+	if strings.TrimSpace(current.PasswordHash) == "" ||
+		bcrypt.CompareHashAndPassword([]byte(current.PasswordHash), []byte(oldPassword)) != nil {
 		httpx.ErrorJSON(c, http.StatusBadRequest, "当前密码错误")
 		return
 	}
-	if bcrypt.CompareHashAndPassword([]byte(oldHash), []byte(newPassword)) == nil {
+	if bcrypt.CompareHashAndPassword([]byte(current.PasswordHash), []byte(newPassword)) == nil {
 		httpx.ErrorJSON(c, http.StatusBadRequest, "新密码不能与当前密码相同")
 		return
 	}
@@ -553,54 +332,16 @@ func ChangePassword(c *gin.Context) {
 		httpx.HandleError(c, herr)
 		return
 	}
-	newHash := string(newHashBytes)
-
-	// 确保 better_auth 凭据链路存在（对齐 requireAuthUserIdForPetrichorUser + ensure 同步）。
-	authUserID := strings.TrimSpace(deref(current.AuthUserID))
-	if authUserID == "" {
-		resolved, eerr := ensureBetterAuthCredentialsForEmail(current.Email)
-		if eerr != nil {
-			httpx.HandleError(c, eerr)
-			return
-		}
-		if resolved == nil {
-			httpx.ErrorJSON(c, http.StatusUnauthorized, "登录信息已失效")
-			return
-		}
-		authUserID = *resolved
-	}
-
-	tx, berr := pool.Begin(bg)
-	if berr != nil {
-		httpx.HandleError(c, berr)
-		return
-	}
-	defer func() { _ = tx.Rollback(bg) }()
-
-	if _, uerr := tx.Exec(bg,
+	if _, uerr := db.Pool().Exec(c.Request.Context(),
 		`UPDATE petrichor_user SET password_hash = $1, updated_at = now() WHERE id = $2`,
-		newHash, current.ID); uerr != nil {
+		string(newHashBytes), current.ID); uerr != nil {
 		httpx.HandleError(c, uerr)
 		return
 	}
-	if _, aerr := tx.Exec(bg,
-		`UPDATE better_auth_account SET password = $1, updated_at = now()
-		 WHERE user_id = $2 AND provider_id = 'credential'`,
-		newHash, authUserID); aerr != nil {
-		httpx.HandleError(c, aerr)
-		return
-	}
-	if cerr := tx.Commit(bg); cerr != nil {
-		httpx.HandleError(c, cerr)
-		return
-	}
 
-	// 撤销本人其他有效自建会话；当前 token 对应会话保留。
-	if currentToken := getSessionTokenRaw(c); currentToken != "" {
-		_, _ = pool.Exec(bg,
-			`UPDATE petrichor_auth_session SET revoked_at = now(), updated_at = now()
-			 WHERE user_id = $1 AND revoked_at IS NULL AND token_hash <> $2`,
-			current.ID, HashSessionToken(currentToken))
+	if _, err := logoutOtherSaTokenSessions(current.ID, currentSaToken(c)); err != nil {
+		httpx.HandleError(c, err)
+		return
 	}
 
 	httpx.OK(c, gin.H{"success": true})

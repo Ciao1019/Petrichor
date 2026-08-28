@@ -1,5 +1,5 @@
 // users.go 实现用户管理：
-// 用户列表（关键字/排序/分页）、创建（bcrypt + better_auth 双写）与删除。
+// 用户列表（关键字/排序/分页）、创建与删除。
 package adminpanel
 
 import (
@@ -15,7 +15,6 @@ import (
 	"petrichor/api/internal/auth"
 	"petrichor/api/internal/db"
 	httpx "petrichor/api/internal/httpx"
-	"petrichor/api/internal/storage"
 )
 
 var emailPattern = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
@@ -321,7 +320,7 @@ func UserCreate(c *gin.Context) {
 	ctx := c.Request.Context()
 	pool := db.Pool()
 
-	// 与 TS 一致：先精确邮箱查重，再在事务里做小写查重 + better_auth 查重
+	// 先精确邮箱查重，再在事务里做小写查重。
 	var existingID int64
 	err := pool.QueryRow(ctx,
 		`SELECT id FROM petrichor_user WHERE email = $1 LIMIT 1`, email).Scan(&existingID)
@@ -352,18 +351,6 @@ func UserCreate(c *gin.Context) {
 		httpx.HandleError(c, dupErr)
 		return
 	}
-	authDupErr := tx.QueryRow(ctx,
-		`SELECT id FROM better_auth_user WHERE lower(email) = $1 LIMIT 1`, normalizedEmail).Scan(&dupID)
-	if authDupErr == nil {
-		httpx.HandleError(c, httpx.BadRequest("邮箱已被注册"))
-		return
-	}
-	if !errors.Is(authDupErr, pgx.ErrNoRows) {
-		httpx.HandleError(c, authDupErr)
-		return
-	}
-
-	authUserID := storage.NewUUID()
 	passwordHash, berr := bcrypt.GenerateFromPassword([]byte(password), 10)
 	if berr != nil {
 		httpx.HandleError(c, berr)
@@ -390,26 +377,11 @@ func UserCreate(c *gin.Context) {
 		}
 	}
 
-	if _, ierr := tx.Exec(ctx,
-		`INSERT INTO better_auth_user (id, name, email, email_verified, image, created_at, updated_at)
-		 VALUES ($1,$2,$3,true,NULL,now(),now())`,
-		authUserID, name, normalizedEmail); ierr != nil {
-		httpx.HandleError(c, ierr)
-		return
-	}
-	if _, ierr := tx.Exec(ctx,
-		`INSERT INTO better_auth_account (id, account_id, provider_id, user_id, password, created_at, updated_at)
-		 VALUES ($1,$2,'credential',$3,$4,now(),now())`,
-		storage.NewUUID(), authUserID, authUserID, string(passwordHash)); ierr != nil {
-		httpx.HandleError(c, ierr)
-		return
-	}
-
 	user, uerr := auth.ScanUser(tx.QueryRow(ctx,
 		`INSERT INTO petrichor_user
-		 (auth_user_id, email, password_hash, system_role, user_type, username, nickname, avatar, signature)
-		 VALUES ($1,$2,$3,$4,'LOCAL',$5,$6,NULL,NULL) RETURNING `+auth.UserColumns,
-		authUserID, normalizedEmail, string(passwordHash), systemRole, username, name))
+		 (email, password_hash, system_role, user_type, username, nickname, avatar, signature)
+		 VALUES ($1,$2,$3,'LOCAL',$4,$5,NULL,NULL) RETURNING `+auth.UserColumns,
+		normalizedEmail, string(passwordHash), systemRole, username, name))
 	if uerr != nil {
 		httpx.HandleError(c, uerr)
 		return
@@ -471,34 +443,10 @@ func UserDelete(c *gin.Context) {
 		}
 	}
 
-	tx, terr := pool.Begin(ctx)
-	if terr != nil {
-		httpx.HandleError(c, terr)
-		return
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	authUserID := strings.TrimSpace(derefString(target.AuthUserID))
-	if authUserID != "" {
-		if _, derr := tx.Exec(ctx, `DELETE FROM better_auth_user WHERE id = $1`, authUserID); derr != nil {
-			httpx.HandleError(c, derr)
-			return
-		}
-	}
-	if _, derr := tx.Exec(ctx, `DELETE FROM petrichor_user WHERE id = $1`, target.ID); derr != nil {
+	if _, derr := pool.Exec(ctx, `DELETE FROM petrichor_user WHERE id = $1`, target.ID); derr != nil {
 		httpx.HandleError(c, derr)
 		return
 	}
-	if cerr := tx.Commit(ctx); cerr != nil {
-		httpx.HandleError(c, cerr)
-		return
-	}
+	_ = auth.LogoutSaTokenUser(target.ID)
 	httpx.OK(c, gin.H{})
-}
-
-func derefString(v *string) string {
-	if v == nil {
-		return ""
-	}
-	return *v
 }

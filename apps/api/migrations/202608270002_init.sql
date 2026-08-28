@@ -2,50 +2,11 @@
 
 -- Petrichor 当前版本的全新数据库基线。
 -- 只描述最终结构，不包含历史迁移、兼容回填或废弃对象清理。
--- 默认管理员：admin@petrichor.local
--- 默认密码：Petrichor@2026
--- 首次登录后必须立即修改默认密码。
+-- 数据库创建完成后，首次访问页面时由部署者设置管理员账号和密码。
 
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
-
-CREATE TABLE public.better_auth_account (
-    id text NOT NULL,
-    account_id text NOT NULL,
-    provider_id text NOT NULL,
-    user_id text NOT NULL,
-    access_token text,
-    refresh_token text,
-    id_token text,
-    access_token_expires_at timestamp with time zone,
-    refresh_token_expires_at timestamp with time zone,
-    scope text,
-    password text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-CREATE TABLE public.better_auth_session (
-    id text NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    token text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    ip_address text,
-    user_agent text,
-    user_id text NOT NULL
-);
-
-CREATE TABLE public.better_auth_user (
-    id text NOT NULL,
-    name text NOT NULL,
-    email text NOT NULL,
-    email_verified boolean DEFAULT false NOT NULL,
-    image text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
 
 CREATE TABLE public.petrichor_agent_api_key (
     id bigint NOT NULL,
@@ -497,27 +458,14 @@ ALTER TABLE public.petrichor_assistant_thread ALTER COLUMN id ADD GENERATED ALWA
     CACHE 1
 );
 
-CREATE TABLE public.petrichor_auth_session (
-    id bigint NOT NULL,
-    user_id bigint NOT NULL,
-    token_hash text NOT NULL,
-    device_info text,
-    ip text,
-    user_agent text,
-    expires_at timestamp with time zone NOT NULL,
-    last_seen_at timestamp with time zone,
-    revoked_at timestamp with time zone,
+CREATE TABLE public.sa_token_storage (
+    key text NOT NULL,
+    value bytea NOT NULL,
+    value_type text NOT NULL,
+    expires_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-ALTER TABLE public.petrichor_auth_session ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME public.petrichor_auth_session_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT sa_token_storage_value_type_check CHECK (value_type IN ('string', 'bytes', 'json'))
 );
 
 CREATE TABLE public.petrichor_doc_chunk (
@@ -1202,7 +1150,6 @@ CREATE TABLE public.petrichor_site_project_showcase (
 
 CREATE TABLE public.petrichor_user (
     id bigint NOT NULL,
-    auth_user_id text,
     email text NOT NULL,
     password_hash text NOT NULL,
     system_role text DEFAULT 'USER'::text NOT NULL,
@@ -1226,21 +1173,6 @@ ALTER TABLE public.petrichor_user ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTI
     NO MAXVALUE
     CACHE 1
 );
-
-ALTER TABLE ONLY public.better_auth_account
-    ADD CONSTRAINT better_auth_account_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.better_auth_session
-    ADD CONSTRAINT better_auth_session_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.better_auth_session
-    ADD CONSTRAINT better_auth_session_token_key UNIQUE (token);
-
-ALTER TABLE ONLY public.better_auth_user
-    ADD CONSTRAINT better_auth_user_email_key UNIQUE (email);
-
-ALTER TABLE ONLY public.better_auth_user
-    ADD CONSTRAINT better_auth_user_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.petrichor_agent_api_key
     ADD CONSTRAINT petrichor_agent_api_key_pkey PRIMARY KEY (id);
@@ -1317,11 +1249,8 @@ ALTER TABLE ONLY public.petrichor_assistant_step
 ALTER TABLE ONLY public.petrichor_assistant_thread
     ADD CONSTRAINT petrichor_assistant_thread_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.petrichor_auth_session
-    ADD CONSTRAINT petrichor_auth_session_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY public.petrichor_auth_session
-    ADD CONSTRAINT petrichor_auth_session_token_hash_key UNIQUE (token_hash);
+ALTER TABLE ONLY public.sa_token_storage
+    ADD CONSTRAINT sa_token_storage_pkey PRIMARY KEY (key);
 
 ALTER TABLE ONLY public.petrichor_doc_chunk
     ADD CONSTRAINT petrichor_doc_chunk_pkey PRIMARY KEY (id);
@@ -1440,12 +1369,6 @@ ALTER TABLE ONLY public.petrichor_user
 ALTER TABLE ONLY public.petrichor_user
     ADD CONSTRAINT petrichor_user_pkey PRIMARY KEY (id);
 
-CREATE INDEX idx_better_auth_account_user_id ON public.better_auth_account USING btree (user_id);
-
-CREATE INDEX idx_better_auth_session_expires_at ON public.better_auth_session USING btree (expires_at);
-
-CREATE INDEX idx_better_auth_session_user_id ON public.better_auth_session USING btree (user_id);
-
 CREATE INDEX idx_petrichor_agent_api_key_user ON public.petrichor_agent_api_key USING btree (user_id, revoked_at, created_at DESC);
 
 CREATE INDEX idx_petrichor_agent_call_log_key_created ON public.petrichor_agent_call_log USING btree (api_key_id, created_at DESC);
@@ -1546,9 +1469,7 @@ CREATE INDEX petrichor_assistant_step_run_idx ON public.petrichor_assistant_step
 
 CREATE INDEX petrichor_assistant_thread_user_history_idx ON public.petrichor_assistant_thread USING btree (user_id, updated_at DESC, id DESC);
 
-CREATE INDEX petrichor_auth_session_expires_at_idx ON public.petrichor_auth_session USING btree (expires_at);
-
-CREATE INDEX petrichor_auth_session_user_id_idx ON public.petrichor_auth_session USING btree (user_id);
+CREATE INDEX sa_token_storage_expires_at_idx ON public.sa_token_storage USING btree (expires_at) WHERE (expires_at IS NOT NULL);
 
 CREATE INDEX petrichor_doc_document_folder_idx ON public.petrichor_doc_document USING btree (library_id, folder_id);
 
@@ -1618,8 +1539,6 @@ CREATE INDEX petrichor_notification_user_created_idx ON public.petrichor_notific
 
 CREATE INDEX petrichor_notification_user_read_idx ON public.petrichor_notification USING btree (user_id, read_at);
 
-CREATE UNIQUE INDEX ux_better_auth_account_provider_account ON public.better_auth_account USING btree (provider_id, account_id);
-
 CREATE UNIQUE INDEX ux_petrichor_agent_api_key_hash ON public.petrichor_agent_api_key USING btree (key_hash);
 
 CREATE UNIQUE INDEX ux_petrichor_agent_evidence_key ON public.petrichor_agent_evidence USING btree (run_key, evidence_key);
@@ -1648,15 +1567,7 @@ CREATE UNIQUE INDEX ux_petrichor_site_graph_merge_candidate_pair ON public.petri
 
 CREATE UNIQUE INDEX ux_petrichor_site_graph_node_key ON public.petrichor_site_graph_node USING btree (user_id, node_key);
 
-CREATE UNIQUE INDEX ux_petrichor_user_auth_user_id ON public.petrichor_user USING btree (auth_user_id) WHERE (auth_user_id IS NOT NULL);
-
 CREATE UNIQUE INDEX ux_petrichor_user_linuxdo_account_id ON public.petrichor_user USING btree (linuxdo_account_id) WHERE (linuxdo_account_id IS NOT NULL);
-
-ALTER TABLE ONLY public.better_auth_account
-    ADD CONSTRAINT better_auth_account_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.better_auth_user(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.better_auth_session
-    ADD CONSTRAINT better_auth_session_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.better_auth_user(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.petrichor_agent_api_key
     ADD CONSTRAINT petrichor_agent_api_key_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.petrichor_user(id) ON DELETE CASCADE;
@@ -1711,9 +1622,6 @@ ALTER TABLE ONLY public.petrichor_assistant_run
 
 ALTER TABLE ONLY public.petrichor_assistant_step
     ADD CONSTRAINT petrichor_assistant_step_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.petrichor_assistant_run(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY public.petrichor_auth_session
-    ADD CONSTRAINT petrichor_auth_session_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.petrichor_user(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY public.petrichor_doc_chunk
     ADD CONSTRAINT petrichor_doc_chunk_document_id_fkey FOREIGN KEY (document_id) REFERENCES public.petrichor_doc_document(id) ON DELETE CASCADE;
@@ -1893,49 +1801,4 @@ ALTER TABLE ONLY public.petrichor_site_graph_run
     ADD CONSTRAINT petrichor_site_graph_run_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.petrichor_user(id) ON DELETE CASCADE;
 
 
--- ---------------------------------------------------------------------------
--- 初始超级管理员
--- 账号：admin@petrichor.local
--- 密码：Petrichor@2026
--- ---------------------------------------------------------------------------
-
-INSERT INTO public.better_auth_user (id, name, email, email_verified, created_at, updated_at)
-VALUES ('petrichor_initial_admin', 'Administrator', 'admin@petrichor.local', true, now(), now());
-
-INSERT INTO public.petrichor_user (
-    auth_user_id,
-    email,
-    password_hash,
-    system_role,
-    user_type,
-    username,
-    nickname
-)
-VALUES (
-    'petrichor_initial_admin',
-    'admin@petrichor.local',
-    '$2y$10$k50nCm9frffjyGwbhOAli.cEZxAz4iy.JAoULnLrPb2SM5k67JPma',
-    'SUPER_ADMIN',
-    'LOCAL',
-    'admin',
-    'Administrator'
-);
-
-INSERT INTO public.better_auth_account (
-    id,
-    account_id,
-    provider_id,
-    user_id,
-    password,
-    created_at,
-    updated_at
-)
-VALUES (
-    'petrichor_initial_admin_credential',
-    'petrichor_initial_admin',
-    'credential',
-    'petrichor_initial_admin',
-    '$2y$10$k50nCm9frffjyGwbhOAli.cEZxAz4iy.JAoULnLrPb2SM5k67JPma',
-    now(),
-    now()
-);
+-- 不写入默认账号。首次启动后由 /api/auth/setup 创建唯一的初始超级管理员。

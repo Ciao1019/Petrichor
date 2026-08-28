@@ -58,7 +58,18 @@ func getLinuxDoConfig() (*linuxDoConfig, error) {
 }
 
 func setLinuxDoStateCookie(c *gin.Context, value string, maxAge int) {
-	setSessionCookie(c, linuxDoStateCookie, value, maxAge)
+	if maxAge <= 0 {
+		maxAge = -1
+	}
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     linuxDoStateCookie,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   config.IsProduction(),
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 func buildAuthorizeURL(cfg *linuxDoConfig, state string) string {
@@ -116,7 +127,7 @@ func LinuxDoCallbackPost(c *gin.Context) {
 		return
 	}
 	if result.mode == "login" {
-		setSessionCookie(c, SessionCookieName, result.token, int(config.Get().SessionExpire.Seconds()))
+		setAuthTokenCookie(c, result.token)
 	}
 	setLinuxDoStateCookie(c, "", 0)
 	httpx.OK(c, gin.H{"mode": result.mode, "token": result.token, "user": result.user.ToUserResponse()})
@@ -138,7 +149,7 @@ func LinuxDoCallbackGet(c *gin.Context) {
 		target = base + dashboardAccountPath + "?linuxdoBinding=success"
 	}
 	if result.mode == "login" {
-		setSessionCookie(c, SessionCookieName, result.token, int(config.Get().SessionExpire.Seconds()))
+		setAuthTokenCookie(c, result.token)
 	}
 	setLinuxDoStateCookie(c, "", 0)
 	c.Redirect(http.StatusFound, target)
@@ -229,15 +240,18 @@ const linuxDoUserUpdateSetClause = `linuxdo_account_id = $1, linuxdo_email = $2,
 	username = COALESCE(NULLIF(username, ''), $4), nickname = COALESCE(NULLIF(nickname, ''), $5),
 	avatar = COALESCE(NULLIF(avatar, ''), $6), updated_at = now()`
 
+const linuxDoUserUpdateQuery = `UPDATE petrichor_user SET ` + linuxDoUserUpdateSetClause +
+	` WHERE id = $7 RETURNING ` + UserColumns
+
 func updateLinuxDoBoundUser(userID int64, userInfo *normalizedLinuxDoUser) (*User, error) {
 	return ScanUser(db.Pool().QueryRow(ctx(),
-		`UPDATE petrichor_user SET `+linuxDoUserUpdateSetClause+` WHERE id = $4 RETURNING `+UserColumns,
+		linuxDoUserUpdateQuery,
 		userInfo.accountID, userInfo.email, userInfo.username,
 		userInfo.username, userInfo.nickname, userInfo.avatar, userID))
 }
 
 // resolveLinuxDoLoginUser 仅允许绑定到超级管理员的 Linux.do 账号登录后台，
-// 成功后创建自建会话并签发裸 token。
+// 成功后由 Sa-Token 签发会话。
 func resolveLinuxDoLoginUser(userInfo *normalizedLinuxDoUser, ip, userAgent string) (*User, string, error) {
 	boundUser, err := findPetrichorUserByLinuxDoAccountID(userInfo.accountID)
 	if err != nil {
@@ -254,7 +268,7 @@ func resolveLinuxDoLoginUser(userInfo *normalizedLinuxDoUser, ip, userAgent stri
 	if uerr != nil {
 		return nil, "", uerr
 	}
-	token, terr := issuePetrichorSession(u.ID, ip, userAgent)
+	token, terr := issueSaTokenSession(u.ID, ip, userAgent)
 	if terr != nil {
 		return nil, "", terr
 	}

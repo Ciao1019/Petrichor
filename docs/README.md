@@ -2,8 +2,9 @@
 
 ## 数据库与运维
 
-- [`database-migrations.md`](./database-migrations.md)：Go 启动自动初始化、默认管理员和 Goose 命令。
-- [`../apps/api/migrations/202608270002_init.sql`](../apps/api/migrations/202608270002_init.sql)：当前唯一的数据库初始化脚本。
+- [`database-migrations.md`](./database-migrations.md)：Go 启动自动初始化、首次管理员设置和 Goose 命令。
+- [`../apps/api/migrations/202608270002_init.sql`](../apps/api/migrations/202608270002_init.sql)：完整数据库初始化基线。
+- [`database-migrations.md`](database-migrations.md)：Goose 基线、后续迁移和首次管理员初始化机制。
 - [`ai-model-setup.md`](./ai-model-setup.md)：AI 模型与凭证配置说明。
 
 ## Agent

@@ -4,24 +4,21 @@
 
 ## 当前基线
 
-`apps/api/migrations/202608270002_init.sql` 是当前唯一的 SQL 文件，包含：
+`apps/api/migrations/202608270002_init.sql` 是完整数据库基线，包含：
 
 - PostgreSQL 扩展和完整表结构；
 - 当前索引、约束和最终字段；
 - 只面向全新数据库的最终结构，不包含历史迁移、兼容回填和废弃对象清理；
-- 默认超级管理员账号。
+- Sa-Token 所需的 `sa_token_storage` 持久化表；
+- 不包含任何默认用户或默认密码。
 
-Go API 在监听端口前自动执行 `provider.Up`。Goose 通过 `goose_db_version` 判断该基线是否
-已经应用；成功后记录版本，失败则回滚事务并终止 API 启动。
+Go API 在监听端口前自动执行 `provider.Up`。Goose 通过 `goose_db_version` 判断基线和后续
+迁移是否已经应用；成功后记录版本，失败则回滚事务并终止 API 启动。
 
-## 默认管理员
-
-```text
-账号：admin@petrichor.local
-密码：Petrichor@2026
-```
-
-密码使用 bcrypt 保存。默认明文凭据公开，仅用于首次登录，登录后必须立即修改。
+当前迁移目录还包含 `202608280001_knowledge_build_job.sql`，用于把异步知识构建任务状态
+持久化到 PostgreSQL，避免容器切换或重启后轮询接口丢失任务。第一次打开 Web 时必须自行
+设置管理员名称、登录邮箱和密码；初始化完成前，普通登录和受保护接口都不会放行。初始化
+接口使用 PostgreSQL 事务级 advisory lock，多个并发请求中最多只有一个能够创建首位超级管理员。
 
 ## 配置
 

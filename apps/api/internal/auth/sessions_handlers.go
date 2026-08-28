@@ -1,109 +1,82 @@
-// 自建会话管理：列出或下线 petrichor_auth_session 会话。
+// Sa-Token 登录设备管理。
 package auth
 
 import (
-	"context"
-	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5"
 
-	"petrichor/api/internal/db"
 	httpx "petrichor/api/internal/httpx"
 )
 
-const petrichorSessionColumns = `id, token_hash, device_info, ip, user_agent, last_seen_at, expires_at, created_at, updated_at`
-
-type petrichorSessionRow struct {
-	id         int64
-	tokenHash  string
-	deviceInfo *string
-	ip         *string
-	userAgent  *string
-	lastSeenAt *time.Time
-	expiresAt  time.Time
-	createdAt  time.Time
-	updatedAt  time.Time
-}
-
-func scanPetrichorSessionRow(row interface{ Scan(dest ...any) error }) (*petrichorSessionRow, error) {
-	var s petrichorSessionRow
-	err := row.Scan(&s.id, &s.tokenHash, &s.deviceInfo, &s.ip, &s.userAgent,
-		&s.lastSeenAt, &s.expiresAt, &s.createdAt, &s.updatedAt)
-	if err != nil {
-		return nil, err
+func tokenSessionMetadata(token string) (deviceInfo, ip, userAgent *string) {
+	manager, _ := managerAndPlugin()
+	session, err := manager.GetTokenSession(token, false)
+	if err != nil || session == nil {
+		return nil, nil, nil
 	}
-	return &s, nil
-}
-
-func (s *petrichorSessionRow) toListItem(currentHash *string) gin.H {
-	idStr := strconv.FormatInt(s.id, 10)
-	isCurrent := currentHash != nil && s.tokenHash == *currentHash
-	return gin.H{
-		"id":         idStr,
-		"deviceInfo": s.deviceInfo,
-		"ip":         s.ip,
-		"userAgent":  s.userAgent,
-		"lastSeenAt": formatNullableTime(s.lastSeenAt),
-		"expiresAt":  httpx.FormatISO(s.expiresAt),
-		"createdAt":  httpx.FormatISO(s.createdAt),
-		"updatedAt":  httpx.FormatISO(s.updatedAt),
-		"current":    isCurrent,
+	toPointer := func(value string) *string {
+		if value == "" {
+			return nil
+		}
+		copy := value
+		return &copy
 	}
+	return toPointer(session.GetString(saTokenDeviceInfoKey)),
+		toPointer(session.GetString(saTokenIPKey)),
+		toPointer(session.GetString(saTokenUserAgentKey))
 }
 
-func formatNullableTime(t *time.Time) any {
-	if t == nil {
+func formatUnixTime(seconds int64) any {
+	if seconds <= 0 {
 		return nil
 	}
-	return httpx.FormatISO(*t)
+	return httpx.FormatISO(time.Unix(seconds, 0))
 }
 
-func currentTokenHash(c *gin.Context) *string {
-	token := getSessionTokenRaw(c)
-	if token == "" {
-		return nil
-	}
-	hash := HashSessionToken(token)
-	return &hash
-}
-
-// ListSessions GET /api/auth/sessions：当前用户的有效自建会话，current 标记 token_hash 命中项。
+// ListSessions GET /api/auth/sessions：列出 Sa-Token 中当前用户的有效登录。
 func ListSessions(c *gin.Context) {
 	user := CurrentUser(c)
-	currentHash := currentTokenHash(c)
-
-	rows, err := db.Pool().Query(ctx(),
-		`SELECT `+petrichorSessionColumns+` FROM petrichor_auth_session
-		 WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
-		 ORDER BY updated_at DESC`, user.ID)
+	currentToken := currentSaToken(c)
+	manager, _ := managerAndPlugin()
+	tokens, err := manager.GetTokenValueListByLoginID(strconv.FormatInt(user.ID, 10))
 	if err != nil {
 		httpx.HandleError(c, err)
 		return
 	}
-	defer rows.Close()
 
-	sessions := make([]gin.H, 0, 4)
+	sessions := make([]gin.H, 0, len(tokens))
 	var currentSessionID *string
-	for rows.Next() {
-		s, serr := scanPetrichorSessionRow(rows)
-		if serr != nil {
-			httpx.HandleError(c, serr)
-			return
+	for _, token := range tokens {
+		info, err := manager.GetTokenInfo(token)
+		if err != nil || info == nil {
+			continue
 		}
-		item := s.toListItem(currentHash)
-		if item["current"] == true {
-			id := item["id"].(string)
+		deviceInfo, ip, userAgent := tokenSessionMetadata(token)
+		isCurrent := token == currentToken
+		if isCurrent {
+			id := info.Device
 			currentSessionID = &id
 		}
-		sessions = append(sessions, item)
-	}
-	if rerr := rows.Err(); rerr != nil {
-		httpx.HandleError(c, rerr)
-		return
+		expiresAt := saTokenExpiry(token)
+		var expiresAtValue any
+		if !expiresAt.IsZero() {
+			expiresAtValue = httpx.FormatISO(expiresAt)
+		}
+		sessions = append(sessions, gin.H{
+			"id":         info.Device,
+			"deviceInfo": deviceInfo,
+			"ip":         ip,
+			"userAgent":  userAgent,
+			"lastSeenAt": formatUnixTime(info.ActiveTime),
+			"expiresAt":  expiresAtValue,
+			"createdAt":  formatUnixTime(info.CreateTime),
+			"updatedAt":  formatUnixTime(info.ActiveTime),
+			"current":    isCurrent,
+		})
 	}
 
 	httpx.OK(c, gin.H{
@@ -112,61 +85,50 @@ func ListSessions(c *gin.Context) {
 	})
 }
 
-// RevokeSession POST /api/auth/sessions/revoke {id}。
+// RevokeSession POST /api/auth/sessions/revoke {id}，id 为 Sa-Token device id。
 func RevokeSession(c *gin.Context) {
 	user := CurrentUser(c)
-
 	var body struct {
-		ID httpx.FlexID `json:"id"`
+		ID string `json:"id"`
 	}
 	if err := httpx.ReadJSON(c, &body); err != nil {
 		httpx.HandleError(c, err)
 		return
 	}
-	sessionID := body.ID.Int64()
-
-	bg := context.Background()
-	target, terr := scanPetrichorSessionRow(db.Pool().QueryRow(bg,
-		`SELECT `+petrichorSessionColumns+` FROM petrichor_auth_session
-		 WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL LIMIT 1`, sessionID, user.ID))
-	if terr != nil {
-		if errors.Is(terr, pgx.ErrNoRows) {
-			httpx.ErrorJSON(c, http.StatusNotFound, "会话不存在或已下线")
-			return
-		}
-		httpx.HandleError(c, terr)
+	deviceID := strings.TrimSpace(body.ID)
+	if deviceID == "" {
+		httpx.ErrorJSON(c, http.StatusBadRequest, "会话 ID 不能为空")
 		return
 	}
-	if currentHash := currentTokenHash(c); currentHash != nil && target.tokenHash == *currentHash {
+
+	manager, _ := managerAndPlugin()
+	token, err := manager.GetTokenValue(strconv.FormatInt(user.ID, 10), deviceID)
+	if err != nil || token == "" {
+		httpx.ErrorJSON(c, http.StatusNotFound, "会话不存在或已下线")
+		return
+	}
+	if token == currentSaToken(c) {
 		httpx.ErrorJSON(c, http.StatusBadRequest, "不能下线当前登录的会话")
 		return
 	}
-
-	if _, uerr := db.Pool().Exec(bg,
-		`UPDATE petrichor_auth_session SET revoked_at = now(), updated_at = now()
-		 WHERE id = $1 AND user_id = $2`, sessionID, user.ID); uerr != nil {
-		httpx.HandleError(c, uerr)
+	if err := manager.LogoutByToken(token); err != nil {
+		httpx.HandleError(c, err)
 		return
 	}
 	httpx.OK(c, gin.H{"success": true})
 }
 
-// RevokeOtherSessions POST /api/auth/sessions/revoke-others：下线除当前登录外的所有自建会话。
+// RevokeOtherSessions POST /api/auth/sessions/revoke-others。
 func RevokeOtherSessions(c *gin.Context) {
-	user := CurrentUser(c)
-	currentHash := currentTokenHash(c)
-	if currentHash == nil {
+	currentToken := currentSaToken(c)
+	if currentToken == "" {
 		httpx.ErrorJSON(c, http.StatusUnauthorized, "登录信息已失效，请重新登录")
 		return
 	}
-
-	tag, err := db.Pool().Exec(context.Background(),
-		`UPDATE petrichor_auth_session SET revoked_at = now(), updated_at = now()
-		 WHERE user_id = $1 AND revoked_at IS NULL AND token_hash <> $2`,
-		user.ID, *currentHash)
+	revoked, err := logoutOtherSaTokenSessions(CurrentUser(c).ID, currentToken)
 	if err != nil {
 		httpx.HandleError(c, err)
 		return
 	}
-	httpx.OK(c, gin.H{"success": true, "revokedCount": tag.RowsAffected()})
+	httpx.OK(c, gin.H{"success": true, "revokedCount": revoked})
 }

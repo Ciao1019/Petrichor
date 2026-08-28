@@ -10,7 +10,6 @@ url = "postgres://postgres:password@127.0.0.1:5432/postgres"
 migration_url = ""
 
 [auth]
-session_secret = "replace-with-at-least-32-characters"
 session_expire_seconds = 172800
 register_enabled = false
 default_system_role = "USER"

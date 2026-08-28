@@ -4,6 +4,7 @@ package kb
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -40,21 +41,8 @@ type articleKnowledgeBuildJob struct {
 	UpdatedAt       time.Time
 }
 
-var articleKnowledgeBuildJobs = struct {
-	sync.Mutex
-	items  map[string]*articleKnowledgeBuildJob
-	active map[string]string
-}{
-	items:  map[string]*articleKnowledgeBuildJob{},
-	active: map[string]string{},
-}
-
 // 同时只允许少量文章构建占用模型与数据库；等待槽位期间任务保持 pending。
 var articleKnowledgeBuildSlots = make(chan struct{}, knowledgeBuildConcurrency)
-
-func articleKnowledgeBuildKey(userID, knowledgeBaseID, articleID int64) string {
-	return strconv.FormatInt(userID, 10) + ":" + strconv.FormatInt(knowledgeBaseID, 10) + ":" + strconv.FormatInt(articleID, 10)
-}
 
 func articleKnowledgeBuildJobResponse(job *articleKnowledgeBuildJob) map[string]any {
 	return map[string]any{
@@ -72,94 +60,153 @@ func articleKnowledgeBuildJobResponse(job *articleKnowledgeBuildJob) map[string]
 	}
 }
 
-func cleanupArticleKnowledgeBuildJobsLocked(now time.Time) {
-	for id, job := range articleKnowledgeBuildJobs.items {
-		if (job.Status == "completed" || job.Status == "failed") && now.Sub(job.UpdatedAt) > knowledgeBuildJobTTL {
-			delete(articleKnowledgeBuildJobs.items, id)
+const articleKnowledgeBuildJobColumns = `id, user_id, knowledge_base_id, article_id, status,
+	result_json, error, started_at, completed_at, created_at, updated_at`
+
+func scanArticleKnowledgeBuildJob(row pgx.Row) (*articleKnowledgeBuildJob, error) {
+	var (
+		job       articleKnowledgeBuildJob
+		resultRaw *string
+	)
+	if err := row.Scan(&job.ID, &job.UserID, &job.KnowledgeBaseID, &job.ArticleID, &job.Status,
+		&resultRaw, &job.Error, &job.StartedAt, &job.CompletedAt, &job.CreatedAt, &job.UpdatedAt); err != nil {
+		return nil, err
+	}
+	if resultRaw != nil && strings.TrimSpace(*resultRaw) != "" {
+		if err := json.Unmarshal([]byte(*resultRaw), &job.Result); err != nil {
+			return nil, fmt.Errorf("解析知识构建任务结果失败: %w", err)
 		}
 	}
+	return &job, nil
+}
+
+func cleanupArticleKnowledgeBuildJobs(q execQuerier, now time.Time) error {
+	// 容器异常退出时不会再更新 processing；超过任务硬超时后允许用户重新发起。
+	if _, err := q.Exec(context.Background(),
+		`UPDATE petrichor_kb_knowledge_build_job
+		 SET status = 'failed', error = '知识构建执行中断，请重新发起', completed_at = $1, updated_at = $1
+		 WHERE status IN ('pending', 'processing') AND updated_at < $2`,
+		now, now.Add(-knowledgeBuildJobTimeout)); err != nil {
+		return err
+	}
+	_, err := q.Exec(context.Background(),
+		`DELETE FROM petrichor_kb_knowledge_build_job
+		 WHERE status IN ('completed', 'failed') AND updated_at < $1`,
+		now.Add(-knowledgeBuildJobTTL))
+	return err
+}
+
+func loadActiveArticleKnowledgeBuildJob(q execQuerier, userID, knowledgeBaseID, articleID int64) (*articleKnowledgeBuildJob, error) {
+	job, err := scanArticleKnowledgeBuildJob(q.QueryRow(context.Background(),
+		`SELECT `+articleKnowledgeBuildJobColumns+`
+		 FROM petrichor_kb_knowledge_build_job
+		 WHERE user_id = $1 AND knowledge_base_id = $2 AND article_id = $3
+		   AND status IN ('pending', 'processing')
+		 ORDER BY created_at DESC LIMIT 1`,
+		userID, knowledgeBaseID, articleID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return job, err
+}
+
+func loadOwnedArticleKnowledgeBuildJob(q execQuerier, userID int64, jobID string) (*articleKnowledgeBuildJob, error) {
+	job, err := scanArticleKnowledgeBuildJob(q.QueryRow(context.Background(),
+		`SELECT `+articleKnowledgeBuildJobColumns+`
+		 FROM petrichor_kb_knowledge_build_job WHERE id = $1 AND user_id = $2 LIMIT 1`,
+		jobID, userID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return job, err
 }
 
 func createArticleKnowledgeBuildJob(userID, knowledgeBaseID, articleID int64) (map[string]any, string, bool, error) {
-	articleKnowledgeBuildJobs.Lock()
-	defer articleKnowledgeBuildJobs.Unlock()
+	q := pool()
 
 	now := time.Now()
-	cleanupArticleKnowledgeBuildJobsLocked(now)
-	key := articleKnowledgeBuildKey(userID, knowledgeBaseID, articleID)
-	if activeID := articleKnowledgeBuildJobs.active[key]; activeID != "" {
-		if active := articleKnowledgeBuildJobs.items[activeID]; active != nil && (active.Status == "pending" || active.Status == "processing") {
-			return articleKnowledgeBuildJobResponse(active), active.ID, false, nil
-		}
-		delete(articleKnowledgeBuildJobs.active, key)
+	if err := cleanupArticleKnowledgeBuildJobs(q, now); err != nil {
+		return nil, "", false, err
+	}
+	if active, err := loadActiveArticleKnowledgeBuildJob(q, userID, knowledgeBaseID, articleID); err != nil {
+		return nil, "", false, err
+	} else if active != nil {
+		return articleKnowledgeBuildJobResponse(active), active.ID, false, nil
 	}
 
-	var id string
 	for attempts := 0; attempts < 3; attempts++ {
-		candidate, err := generateCode()
+		id, err := generateCode()
 		if err != nil {
 			return nil, "", false, err
 		}
-		if articleKnowledgeBuildJobs.items[candidate] == nil {
-			id = candidate
-			break
+		job, insertErr := scanArticleKnowledgeBuildJob(q.QueryRow(context.Background(),
+			`INSERT INTO petrichor_kb_knowledge_build_job
+			 (id, user_id, knowledge_base_id, article_id, status, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, 'pending', $5, $5)
+			 ON CONFLICT DO NOTHING
+			 RETURNING `+articleKnowledgeBuildJobColumns,
+			id, userID, knowledgeBaseID, articleID, now))
+		if insertErr == nil {
+			return articleKnowledgeBuildJobResponse(job), job.ID, true, nil
+		}
+		if !errors.Is(insertErr, pgx.ErrNoRows) {
+			return nil, "", false, insertErr
+		}
+		active, activeErr := loadActiveArticleKnowledgeBuildJob(q, userID, knowledgeBaseID, articleID)
+		if activeErr != nil {
+			return nil, "", false, activeErr
+		}
+		if active != nil {
+			return articleKnowledgeBuildJobResponse(active), active.ID, false, nil
 		}
 	}
-	if id == "" {
-		return nil, "", false, errors.New("生成知识构建任务 ID 失败")
-	}
-	job := &articleKnowledgeBuildJob{
-		ID: id, UserID: userID, KnowledgeBaseID: knowledgeBaseID, ArticleID: articleID,
-		Status: "pending", CreatedAt: now, UpdatedAt: now,
-	}
-	articleKnowledgeBuildJobs.items[id] = job
-	articleKnowledgeBuildJobs.active[key] = id
-	return articleKnowledgeBuildJobResponse(job), id, true, nil
+	return nil, "", false, errors.New("生成知识构建任务 ID 失败")
 }
 
-func setArticleKnowledgeBuildProcessing(id string) *articleKnowledgeBuildJob {
-	articleKnowledgeBuildJobs.Lock()
-	defer articleKnowledgeBuildJobs.Unlock()
-	job := articleKnowledgeBuildJobs.items[id]
-	if job == nil {
-		return nil
+func setArticleKnowledgeBuildProcessing(id string) (*articleKnowledgeBuildJob, error) {
+	job, err := scanArticleKnowledgeBuildJob(pool().QueryRow(context.Background(),
+		`UPDATE petrichor_kb_knowledge_build_job
+		 SET status = 'processing', started_at = COALESCE(started_at, now()), updated_at = now()
+		 WHERE id = $1 AND status = 'pending'
+		 RETURNING `+articleKnowledgeBuildJobColumns, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
 	}
-	now := time.Now()
-	job.Status = "processing"
-	job.StartedAt = &now
-	job.UpdatedAt = now
-	copy := *job
-	return &copy
+	return job, err
 }
 
-func finishArticleKnowledgeBuildJob(id string, result map[string]any, err error) {
-	articleKnowledgeBuildJobs.Lock()
-	defer articleKnowledgeBuildJobs.Unlock()
-	job := articleKnowledgeBuildJobs.items[id]
-	if job == nil {
-		return
-	}
-	now := time.Now()
-	job.UpdatedAt = now
-	job.CompletedAt = &now
-	if err == nil {
-		job.Status = "completed"
-		job.Result = result
-		job.Error = nil
+func finishArticleKnowledgeBuildJob(id string, result map[string]any, buildErr error) error {
+	status := "completed"
+	var resultJSON *string
+	var errorMessage *string
+	if buildErr == nil {
+		encoded, err := json.Marshal(result)
+		if err != nil {
+			return err
+		}
+		value := string(encoded)
+		resultJSON = &value
 	} else {
+		status = "failed"
 		message := "知识构建失败，请稍后重试"
 		var httpErr *httpx.HttpError
-		if errors.As(err, &httpErr) {
+		if errors.As(buildErr, &httpErr) {
 			message = httpErr.Message
 		}
-		job.Status = "failed"
-		job.Result = nil
-		job.Error = &message
+		errorMessage = &message
 	}
-	key := articleKnowledgeBuildKey(job.UserID, job.KnowledgeBaseID, job.ArticleID)
-	if articleKnowledgeBuildJobs.active[key] == id {
-		delete(articleKnowledgeBuildJobs.active, key)
+	tag, err := pool().Exec(context.Background(),
+		`UPDATE petrichor_kb_knowledge_build_job
+		 SET status = $2, result_json = $3, error = $4, completed_at = now(), updated_at = now()
+		 WHERE id = $1 AND status IN ('pending', 'processing')`,
+		id, status, resultJSON, errorMessage)
+	if err != nil {
+		return err
 	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("知识构建任务不存在或状态已结束: %s", id)
+	}
+	return nil
 }
 
 func executeArticleKnowledgeBuildJob(id string) {
@@ -174,7 +221,9 @@ func executeArticleKnowledgeBuildJob(id string) {
 		if recovered := recover(); recovered != nil {
 			err := fmt.Errorf("知识构建发生 panic: %v", recovered)
 			slog.Error("后台知识构建异常", "jobId", id, "err", err)
-			finishArticleKnowledgeBuildJob(id, nil, err)
+			if finishErr := finishArticleKnowledgeBuildJob(id, nil, err); finishErr != nil {
+				slog.Error("知识构建任务状态写入失败", "jobId", id, "err", finishErr)
+			}
 		}
 	}()
 
@@ -182,18 +231,26 @@ func executeArticleKnowledgeBuildJob(id string) {
 	case articleKnowledgeBuildSlots <- struct{}{}:
 		acquired = true
 	case <-ctx.Done():
-		finishArticleKnowledgeBuildJob(id, nil, ctx.Err())
+		if err := finishArticleKnowledgeBuildJob(id, nil, ctx.Err()); err != nil {
+			slog.Error("知识构建任务超时状态写入失败", "jobId", id, "err", err)
+		}
 		return
 	}
-	job := setArticleKnowledgeBuildProcessing(id)
+	job, err := setArticleKnowledgeBuildProcessing(id)
+	if err != nil {
+		slog.Error("知识构建任务领取失败", "jobId", id, "err", err)
+		return
+	}
 	if job == nil {
 		return
 	}
-	result, err := buildArticleKnowledgeCore(ctx, pool(), job.UserID, job.KnowledgeBaseID, job.ArticleID)
-	if err != nil {
-		slog.Error("后台知识构建失败", "jobId", id, "userId", job.UserID, "knowledgeBaseId", job.KnowledgeBaseID, "articleId", job.ArticleID, "err", err)
+	result, buildErr := buildArticleKnowledgeCore(ctx, pool(), job.UserID, job.KnowledgeBaseID, job.ArticleID)
+	if buildErr != nil {
+		slog.Error("后台知识构建失败", "jobId", id, "userId", job.UserID, "knowledgeBaseId", job.KnowledgeBaseID, "articleId", job.ArticleID, "err", buildErr)
 	}
-	finishArticleKnowledgeBuildJob(id, result, err)
+	if err := finishArticleKnowledgeBuildJob(id, result, buildErr); err != nil {
+		slog.Error("知识构建任务结果写入失败", "jobId", id, "err", err)
+	}
 }
 
 // ArticleKnowledgeBuild 创建单篇「构建知识」后台任务；重复点击会复用同一运行中任务。
@@ -258,11 +315,15 @@ func ArticleKnowledgeBuildStatus(c *ginContext) {
 		if jobID == "" || len(jobID) > 200 {
 			return nil, badReq("jobId 必须是合法任务 ID")
 		}
-		articleKnowledgeBuildJobs.Lock()
-		defer articleKnowledgeBuildJobs.Unlock()
-		cleanupArticleKnowledgeBuildJobsLocked(time.Now())
-		job := articleKnowledgeBuildJobs.items[jobID]
-		if job == nil || job.UserID != user.ID {
+		q := pool()
+		if err := cleanupArticleKnowledgeBuildJobs(q, time.Now()); err != nil {
+			return nil, err
+		}
+		job, err := loadOwnedArticleKnowledgeBuildJob(q, user.ID, jobID)
+		if err != nil {
+			return nil, err
+		}
+		if job == nil {
 			return nil, notFoundErr("知识构建任务不存在或已过期")
 		}
 		return articleKnowledgeBuildJobResponse(job), nil

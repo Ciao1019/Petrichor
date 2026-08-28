@@ -18,7 +18,6 @@ base_url = "http://localhost:3000/"
 url = "postgres://localhost/petrichor"
 
 [auth]
-session_secret = "12345678901234567890123456789012"
 register_enabled = true
 default_system_role = "super_admin"
 
@@ -89,8 +88,6 @@ unknown = true
 [database]
 url = "postgres://localhost/petrichor"
 
-[auth]
-session_secret = "12345678901234567890123456789012"
 `)
 
 	_, err := LoadFile(path)
@@ -106,9 +103,6 @@ environment = "production"
 
 [database]
 url = "postgres://localhost/petrichor"
-
-[auth]
-session_secret = "12345678901234567890123456789012"
 
 [auth.local_development]
 enabled = true

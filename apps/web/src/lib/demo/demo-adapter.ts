@@ -62,6 +62,7 @@ function isPassthroughRoute(config: InternalAxiosRequestConfig): boolean {
     if (url.startsWith("/api/")) url = url.slice(4)
     return (
         url.startsWith("/public/") ||
+        url.startsWith("/auth/setup") ||
         url.startsWith("/auth/login") ||
         url.startsWith("/auth/register") ||
         url.startsWith("/auth/linuxdo")
