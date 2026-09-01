@@ -5,51 +5,74 @@ Wiki 和文档目录四种知识表示，再让 Agent 按问题类型执行 **Se
 这样既能回答精确事实，也能处理跨文章比较、章节归纳和多跳概念关系，并且最终证据仍可追溯到
 原文或 Wiki 页面。
 
+> [!NOTE]
+> **术语说明**
+>
 > 本文的“产品内 Wiki”指 Petrichor 从知识库文章编译出的知识层；它与仓库的 GitHub Wiki
 > 文档栏不是同一个系统。
 
+### 推荐阅读路径
+
+- **第一次了解 Petrichor**：先读 [完整流程](#1-一张图看完整流程)、[四种知识表示](#2-四种知识表示分别解决什么问题) 和 [Search / Outline / Read](#10-search--outline--readagentic-rag-的核心)。
+- **准备部署或调参**：重点读 [知识构建](#4-单篇构建知识做了什么)、[Markdown 切片](#5-markdown-如何切片)、[索引](#8-词面索引与向量索引) 和 [配置入口](#15-配置与代码入口)。
+- **正在排查召回质量**：直接看 [问答召回](#9-问答时如何召回)、[降级策略](#11-降级失败与一致性) 和 [知识新鲜度](#12-知识新鲜度)。
+
 ## 1. 一张图看完整流程
 
-```text
-Markdown 文章（编辑器 / API / PDF 视觉转写）
-  │
-  ├─ 单篇「构建知识」─────────────────────────────────────────────┐
-  │    ├─ 确定性结构切片 → 原文分片                              │
-  │    ├─ 每片生成 3 个推荐问题 → 问题别名索引                    │
-  │    └─ 整篇抽取实体 / 概念 / 关系 → 产品内 Wiki 页面与知识图谱 │
-  │                                                               │
-  ├─ Wiki「更新 Wiki」→ PageIndex 标题树 + 章节摘要               │
-  │                                                               │
-  └─「生成向量」→ 先原文分片、后推荐问题的 Embedding              │
-                                                                  │
-用户问题                                                           │
-  ├─ 必要时拆成子查询                                              │
-  ├─ 原文：Vector + BM25 ───────┐                                 │
-  ├─ 问题：Vector + BM25 ───────┼─ RRF → 文章级筛选 → 本地重排     │
-  ├─ Wiki：词面检索 ────────────┘          → 去重与多样性控制      │
-  └─ 结构问题：Outline → Agent 选择章节                            │
-                         │                                        │
-                         └─ Read / Read Many 深读原文或 Wiki ──────┘
-                                      │
-                                Evidence + Trace
-                                      │
-                                  最终回答
+```mermaid
+flowchart TB
+  source["Markdown 文章<br/>编辑器 · API · PDF"]
+  build["单篇构建知识"]
+  ingest["更新 Wiki"]
+  vectorize["生成向量"]
+
+  chunks["原文分片<br/>标题路径 + 正文"]
+  questions["推荐问题<br/>原文的检索别名"]
+  semantic["语义 Wiki<br/>实体 · 概念 · 关系"]
+  outline["PageIndex<br/>标题树 + 章节摘要"]
+
+  query["用户问题"]
+  search["混合 Search<br/>Vector · BM25 · Wiki · RRF"]
+  route["Outline<br/>结构导航"]
+  read["Read / Read Many<br/>按需深读"]
+  evidence["Evidence + Trace"]
+  answer["可追溯回答"]
+
+  source --> build
+  source --> ingest
+  source --> vectorize
+  build --> chunks
+  build --> questions
+  build --> semantic
+  ingest --> outline
+  chunks --> vectorize
+  questions --> vectorize
+
+  query --> search
+  query --> route
+  chunks --> search
+  questions --> search
+  semantic --> search
+  outline --> route
+  search --> read
+  route --> read
+  read --> evidence --> answer
 ```
 
-这条链路有两个关键边界：
-
-1. **Search 只找候选，不把整段正文直接塞给模型。** Agent 必须显式 Read，候选才会变成证据。
-2. **推荐问题只是原文分片的检索别名。** 问题索引命中后仍映射回原始 `chunkId`，不会把模型生成的
-   问题当成事实来源。
+> [!IMPORTANT]
+> **两条不可突破的证据边界**
+>
+> 1. **Search 只找候选。** Agent 必须显式 Read，候选正文才会进入 Evidence。
+> 2. **推荐问题只是检索别名。** 命中后仍映射回原始 `chunkId`，模型生成的问题不会成为事实来源。
 
 ## 2. 四种知识表示分别解决什么问题
 
-| 表示 | 主要内容 | 擅长的问题 | 最终读取目标 |
-| --- | --- | --- | --- |
-| 原文分片 | 标题路径 + Markdown 正文 | 精确事实、步骤、代码、引用 | `chunkId` |
-| 推荐问题 | 每个分片的 3 个可能问法 | 用户表述与原文措辞不一致 | 映射回同一 `chunkId` |
-| Wiki 页面 | 实体、概念、关系、聚合摘要 | 概念解释、实体导航、多跳关联 | `pageKey` |
-| PageIndex 目录树 | 原文章节层级与章节摘要 | “哪几章”“按顺序总结”等结构问题 | `nodeKey`，或回退到 `chunkId` |
+| 知识表示 | 核心职责 | 读取定位 |
+| :--- | :--- | :--- |
+| **原文分片** | 保存标题路径与 Markdown 正文，回答精确事实、步骤、代码和引用 | `chunkId` |
+| **推荐问题** | 补齐用户问法与原文措辞之间的差异；命中后回到同一原文分片 | `chunkId` |
+| **Wiki 页面** | 聚合实体、概念、关系与多篇文章贡献，支持语义导航和多跳关联 | `pageKey` |
+| **PageIndex** | 保存章节层级与摘要，处理“有哪些章节”“按顺序总结”等结构问题 | `nodeKey` / `chunkId` |
 
 原文负责事实，Wiki 负责语义导航，目录负责结构。三者不是互相替代的索引副本。
 
@@ -73,22 +96,19 @@ PageIndex 目录时再执行“更新 Wiki”；配置了 Embedding 模型后还
 
 任务的核心阶段如下：
 
-```text
-读取文章和编译说明书
-  ↓
-确定性切片
-  ↓
-┌─ 分片问题生成 ───────────────┐   与整篇抽取并行
-└─ 整篇实体 / 概念 / 关系抽取 ─┘
-  ↓
-全局目录规划
-  ↓
-分批生成 Wiki 页面
-  ↓
-事务写入分片、索引、Wiki、链接、来源引用和索引页
-  ↓
-提交后 best-effort 补原文分片向量
+```mermaid
+flowchart TD
+  load["读取文章与编译说明书"] --> chunk["确定性结构切片"]
+  chunk --> questions["分片问题生成"]
+  chunk --> extract["整篇实体 / 概念 / 关系抽取"]
+  questions --> plan["全局目录规划"]
+  extract --> plan
+  plan --> pages["分批生成 Wiki 页面"]
+  pages --> tx["事务提交<br/>分片 · 索引 · Wiki · 链接 · 来源"]
+  tx --> vectors["提交后补原文分片向量<br/>best-effort"]
 ```
+
+问题生成与整篇抽取并行执行；只有页面、链接和索引准备完整后，结果才会在同一事务中提交。
 
 ### 4.1 编译说明书
 
@@ -104,13 +124,13 @@ PageIndex 目录时再执行“更新 Wiki”；配置了 Embedding 模型后还
 
 ### 5.1 参数
 
-| 参数 | 当前值 | 含义 |
-| --- | ---: | --- |
-| 目标预算 | 1200 | 普通小节合并到这一规模附近就倾向于结束当前分片 |
-| 小尾段阈值 | 400 | 太短的尾段优先并入同一顶层主题的相邻分片 |
-| 标称上限 | 3200 | 超长内容进入回退切分；完整代码围栏可能让单片略超标称值 |
-| 重叠 | 320 | 仅用于超长小节的相邻窗口，普通标题切片不机械重叠 |
-| 单篇上限 | 120 片 | 超出后停止生成后续分片并返回警告 |
+| 参数 | 当前值 | 作用 |
+| :--- | ---: | :--- |
+| 目标预算 | `1200` | 普通小节合并接近该规模时结束当前分片 |
+| 小尾段阈值 | `400` | 短尾段优先并入同一顶层主题的相邻分片 |
+| 标称上限 | `3200` | 超长内容进入回退切分；完整代码围栏可略超上限 |
+| 超长重叠 | `320` | 只用于超长小节的相邻窗口 |
+| 单篇上限 | `120` 片 | 超出后停止生成后续分片并返回警告 |
 
 这些数值是切片算法的文本预算，不是模型 tokenizer 的 token 数。
 
@@ -254,6 +274,25 @@ PostgreSQL 内置 parser 不适合直接切中文，所以应用层使用同一�
 
 以下是登录后站内助手和外部 Agent 文档搜索复用的主召回链路。
 
+```mermaid
+flowchart LR
+  query["原问题 + 子查询"]
+  query --> cv["原文 Vector"]
+  query --> cb["原文 BM25"]
+  query --> qv["问题 Vector"]
+  query --> qb["问题 BM25"]
+  query --> wiki["Wiki 词面检索"]
+  cv --> rrf["RRF 融合"]
+  cb --> rrf
+  qv --> rrf
+  qb --> rrf
+  wiki --> rrf
+  rrf --> balance["文章级平衡"]
+  balance --> rerank["本地重排"]
+  rerank --> diversity["去重 + 多样性控制"]
+  diversity --> candidates["Search 候选"]
+```
+
 ### 9.1 查询改写
 
 简单问题保持原样。较长、包含多个分句或连接词的问题会用确定性规则拆成最多 3 个子查询；调用方
@@ -356,18 +395,18 @@ Main Agent 的 Soft Router 只给出策略提示，不裁剪能力。它可以�
 
 ## 11. 降级、失败与一致性
 
-| 场景 | 行为 |
-| --- | --- |
-| 未配置或调用失败的 Embedding | 继续 BM25、Wiki、文章标题和目录召回 |
-| 原文或问题某一路 SQL 失败 | 记录 `diagnostics.degraded`，其它召回源继续 |
-| Wiki 检索失败 | 原文和问题召回继续 |
-| 现代召回全空 | 启用存量 Tree 向量 / BM25 / 模型目录导航 |
-| 全部召回为空 | 建议改写查询；Agent 可按配置加载 Research Skill |
-| 推荐问题模型失败 | 每片补足 3 个模板问题并返回 warning |
-| Wiki 页面生成失败 | 使用候选摘要页，来源引用仍由系统维护 |
-| 构建事务失败 | 旧知识保持不变，不提交半成品 |
-| 向量补写失败 | 词面索引已可用，向量行标记 failed，可再次补写 |
-| API 重启 | 排队/执行中的知识构建任务丢失；已提交分片、Wiki 和向量不受影响 |
+| 触发条件 | 保底行为 |
+| :--- | :--- |
+| Embedding 未配置或调用失败 | 继续使用 BM25、Wiki、文章标题和目录召回 |
+| 原文或问题某一路 SQL 失败 | 写入 `diagnostics.degraded`，其它召回源继续 |
+| Wiki 检索失败 | 原文与推荐问题召回继续 |
+| 现代召回全空 | 启用存量 Tree Vector / BM25 / 模型目录导航 |
+| 全部召回为空 | 建议改写查询；配置允许时可加载 Research Skill |
+| 推荐问题生成失败 | 每片补足 3 个模板问题并返回 warning |
+| Wiki 页面生成失败 | 回退到候选摘要页，并继续维护来源引用 |
+| 构建事务失败 | 保留旧知识，不提交半成品 |
+| 向量补写失败 | 词面索引继续可用；失败向量可再次补写 |
+| API 重启 | 丢失排队或执行中的知识构建；已提交数据不受影响 |
 
 召回诊断会记录各路候选 key、融合结果、入选文章、去重项、重排策略、耗时和降级原因，并进入
 Trace，便于区分“资料确实不存在”和“某个召回源故障”。
@@ -384,15 +423,27 @@ Trace，便于区分“资料确实不存在”和“某个召回源故障”。
 文章正文变化、切片算法升级或构建版本落后时，分片面板和 Wiki Lint 会标记 stale / outdated。
 重新执行单篇“构建知识”会替换该文分片并更新它对聚合 Wiki 页的贡献，不需要清空整个知识库。
 
-## 13. 两种问答入口不要混淆
+## 13. 三种问答入口不要混淆
 
-| 入口 | 数据范围 | 运行方式 |
-| --- | --- | --- |
-| 登录后站内助手 `/api/assistant/chat` | 当前用户有权访问的知识库 | 完整 Agent Runtime + 本文主召回管线 |
-| 外部 Agent REST / MCP | API Key scope 允许的数据 | 文档搜索复用主混合召回；读写继续受 scope 和审计约束 |
-| 公开问答 `/api/public/qa/chat` | 无密码、未过期的公开分享文章及可达 Wiki 页 | 最多 8 步只读工具循环，独立的公开可见性过滤 |
+### 登录后站内助手
 
-公开问答不会越过分享边界读取私有分片；它不是把登录用户的完整 RAG 索引直接暴露给匿名访客。
+- **接口**：`/api/assistant/chat`
+- **范围**：当前用户有权访问的知识库
+- **运行方式**：完整 Agent Runtime 与本文主召回管线
+
+### 外部 Agent REST / MCP
+
+- **范围**：API Key scope 允许的数据
+- **运行方式**：文档搜索复用主混合召回；读写继续受 scope 和审计约束
+
+### 公开问答
+
+- **接口**：`/api/public/qa/chat`
+- **范围**：无密码、未过期的公开分享文章及其可达 Wiki 页
+- **运行方式**：最多 8 步只读工具循环，并执行独立的公开可见性过滤
+
+> [!WARNING]
+> 公开问答不会越过分享边界读取私有分片，也不会把登录用户的完整 RAG 索引暴露给匿名访客。
 
 ## 14. 推荐操作顺序
 
@@ -418,17 +469,29 @@ page_batch_concurrency = 8
 model_concurrency = 64
 ```
 
-主要实现：
+主要实现按职责分布如下，避免用超长代码路径撑宽表格：
 
-| 关注点 | 代码位置 |
-| --- | --- |
-| 切片与推荐问题 | `apps/api/internal/kb/kb-workflow.go` |
-| 整篇候选、目录规划、页面生成 | `apps/api/internal/kb/kb-workflow_extraction.go` |
-| 构建事务与多文章 Wiki 聚合 | `apps/api/internal/kb/wiki-build.go` |
-| 内存任务队列与并发 | `apps/api/internal/kb/wiki-build-job.go` |
-| 分片/问题向量 | `apps/api/internal/kb/wiki-chunk-index.go` |
-| source 页与 PageIndex 树 | `apps/api/internal/kb/wiki-ingest.go`、`wiki-tree.go` |
-| 混合召回 | `apps/api/internal/assistantsvc/knowledge_recall.go` |
-| Wiki、Tree、重排和多样性 | `apps/api/internal/assistantsvc/knowledge_recall_wiki.go` |
-| Search / Read 工具 | `apps/api/internal/assistantsvc/tools_knowledge.go` |
-| Outline 工具 | `apps/api/internal/assistantsvc/outline_tools.go` |
+**知识构建**
+
+- 切片与推荐问题：`apps/api/internal/kb/kb-workflow.go`
+- 整篇候选、目录规划与页面生成：`apps/api/internal/kb/kb-workflow_extraction.go`
+- 构建事务与多文章 Wiki 聚合：`apps/api/internal/kb/wiki-build.go`
+- 内存任务队列与并发：`apps/api/internal/kb/wiki-build-job.go`
+- 分片与问题向量：`apps/api/internal/kb/wiki-chunk-index.go`
+- source 页与 PageIndex：`apps/api/internal/kb/wiki-ingest.go`、`wiki-tree.go`
+
+**召回与 Agent 工具**
+
+- 混合召回：`apps/api/internal/assistantsvc/knowledge_recall.go`
+- Wiki、Tree、重排与多样性：`apps/api/internal/assistantsvc/knowledge_recall_wiki.go`
+- Search / Read：`apps/api/internal/assistantsvc/tools_knowledge.go`
+- Outline：`apps/api/internal/assistantsvc/outline_tools.go`
+
+---
+
+## 继续阅读
+
+- [Agent Runtime](./runtime.md)：了解循环、预算、Evidence、Trace 与安全边界。
+- [工具协议](./tools.md)：查看工具命名、确认票据和统一输出格式。
+- [外部客户端接入](./clients.md)：把 Petrichor 接入 Claude Code、Codex 或 Cursor。
+- [运维手册](../operations.md)：部署、探针、Worker、指标和发布检查。
