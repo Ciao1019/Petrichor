@@ -6,7 +6,6 @@ const hostname = process.env.HOST ?? "0.0.0.0"
 const staticDirectory = path.join(import.meta.dir, "dist")
 const developmentAssetsUrl = normalizeOrigin(process.env.PETRICHOR_VITE_DEV_SERVER_URL)
 const goApiUrl = normalizeOrigin(process.env.PETRICHOR_GO_API_URL) ?? "http://127.0.0.1:8080"
-const trustProxyHeaders = /^(1|true|yes)$/i.test(process.env.PETRICHOR_TRUST_PROXY_HEADERS ?? "")
 const proxyTimeoutMs = positiveNumber(process.env.PETRICHOR_PROXY_TIMEOUT_MS, 15 * 60 * 1000)
 const isProduction = process.env.NODE_ENV === "production"
 
@@ -161,12 +160,6 @@ function preferredEncoding(header: string | null): "br" | "gzip" | undefined {
 }
 
 function resolveClientIP(request: Request, bunServer: Bun.Server<unknown>) {
-    if (trustProxyHeaders) {
-        for (const header of ["cf-connecting-ip", "x-real-ip", "x-forwarded-for"]) {
-            const candidate = request.headers.get(header)?.split(",", 1)[0]?.trim()
-            if (candidate && isIP(candidate) !== 0) return candidate
-        }
-    }
     const candidate = bunServer.requestIP(request)?.address
     return candidate && isIP(candidate) !== 0 ? candidate : undefined
 }

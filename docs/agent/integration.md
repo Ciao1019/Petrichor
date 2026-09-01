@@ -1,7 +1,7 @@
 # Agent 接入设计说明
 
-> 面向使用者的客户端接入指南（Claude Code / Codex / Cursor 分别怎么装 MCP 与 Skill 包）见
-> 客户端接入步骤见 [clients.md](./clients.md)；本文侧重设计与实现说明。
+> 面向使用者的客户端接入指南（Claude Code / Codex / Cursor 如何安装 MCP 与 Skill 包）见
+> [clients.md](./clients.md)；本文侧重协议、权限和实现边界。
 
 ## 主流平台模式
 

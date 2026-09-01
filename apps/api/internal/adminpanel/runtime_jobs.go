@@ -28,7 +28,7 @@ type deadLetterJob struct {
 	UpdatedAt       time.Time  `json:"updatedAt"`
 }
 
-// AdminDeadLetterJobs 返回两类持久 Worker 的死信，不暴露正文、模型输入或密钥。
+// AdminDeadLetterJobs 返回视觉导入 Worker 的死信，不暴露正文、模型输入或密钥。
 func AdminDeadLetterJobs(c *gin.Context) {
 	limit := 100
 	if raw := c.Query("limit"); raw != "" {
@@ -46,32 +46,20 @@ func AdminDeadLetterJobs(c *gin.Context) {
 
 func loadDeadLetterJobs(ctx context.Context, limit int) ([]deadLetterJob, error) {
 	rows, err := db.Pool().Query(ctx, `
-		SELECT kind, id, user_id, knowledge_base_id, article_id, title,
-		       attempt_count, max_attempts, replay_count, last_error, dead_lettered_at, updated_at
-		FROM (
-		  SELECT 'knowledge_build'::text AS kind, job.id::text AS id, job.user_id,
-		         job.knowledge_base_id, job.article_id, article.title,
-		         job.attempt_count, job.max_attempts, job.replay_count,
-		         job.last_error, job.dead_lettered_at, job.updated_at
-		  FROM petrichor_kb_knowledge_build_job AS job
-		  JOIN petrichor_kb_article AS article ON article.id = job.article_id
-		  WHERE job.status = 'dead_letter'
-		  UNION ALL
-		  SELECT 'document_import'::text, job.id::text, job.user_id,
-		         job.knowledge_base_id, job.article_id, job.title,
-		         COALESCE(MAX(page.attempt_count), 0)::integer,
-		         COALESCE(MAX(page.max_attempts), 5)::integer, job.replay_count,
-		         COALESCE(
-		           (array_agg(page.last_error ORDER BY page.updated_at DESC)
-		             FILTER (WHERE page.last_error IS NOT NULL))[1],
-		           job.error
-		         ), job.dead_lettered_at, job.updated_at
-		  FROM petrichor_kb_import_job AS job
-		  LEFT JOIN petrichor_kb_import_job_page AS page ON page.job_id = job.id
-		  WHERE job.status = 'dead_letter'
-		  GROUP BY job.id
-		) AS dead_jobs
-		ORDER BY dead_lettered_at DESC NULLS LAST, updated_at DESC
+		SELECT 'document_import'::text, job.id::text, job.user_id,
+		       job.knowledge_base_id, job.article_id, job.title,
+		       COALESCE(MAX(page.attempt_count), 0)::integer,
+		       COALESCE(MAX(page.max_attempts), 5)::integer, job.replay_count,
+		       COALESCE(
+		         (array_agg(page.last_error ORDER BY page.updated_at DESC)
+		           FILTER (WHERE page.last_error IS NOT NULL))[1],
+		         job.error
+		       ), job.dead_lettered_at, job.updated_at
+		FROM petrichor_kb_import_job AS job
+		LEFT JOIN petrichor_kb_import_job_page AS page ON page.job_id = job.id
+		WHERE job.status = 'dead_letter'
+		GROUP BY job.id
+		ORDER BY job.dead_lettered_at DESC NULLS LAST, job.updated_at DESC
 		LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
@@ -111,43 +99,16 @@ func AdminReplayDeadLetter(c *gin.Context) {
 		return
 	}
 	var err error
-	switch request.Kind {
-	case "knowledge_build":
-		err = replayKnowledgeBuildDeadLetter(c.Request.Context(), request.ID)
-	case "document_import":
+	if request.Kind != "document_import" {
+		err = &httpx.HttpError{Status: 400, Message: "只支持重放视觉导入死信"}
+	} else {
 		err = replayDocumentImportDeadLetter(c.Request.Context(), request.ID)
-	default:
-		err = &httpx.HttpError{Status: 400, Message: "不支持的死信任务类型"}
 	}
 	if err != nil {
 		httpx.HandleError(c, err)
 		return
 	}
 	httpx.OK(c, map[string]any{"kind": request.Kind, "id": request.ID, "status": "pending"})
-}
-
-func replayKnowledgeBuildDeadLetter(ctx context.Context, id string) error {
-	tag, err := db.Pool().Exec(ctx, `
-		UPDATE petrichor_kb_knowledge_build_job AS job
-		SET status = 'pending', attempt_count = 0, next_attempt_at = now(),
-		    result_json = NULL, error = NULL, last_error = NULL,
-		    started_at = NULL, completed_at = NULL,
-		    lease_owner = NULL, lease_expires_at = NULL, heartbeat_at = NULL,
-		    dead_lettered_at = NULL, replay_count = replay_count + 1, updated_at = now()
-		WHERE job.id = $1 AND job.status = 'dead_letter'
-		  AND NOT EXISTS (
-		    SELECT 1 FROM petrichor_kb_knowledge_build_job AS active
-		    WHERE active.id <> job.id AND active.user_id = job.user_id
-		      AND active.knowledge_base_id = job.knowledge_base_id
-		      AND active.article_id = job.article_id AND active.status IN ('pending', 'processing')
-		  )`, id)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return &httpx.HttpError{Status: 409, Message: "死信不存在，或同一文章已有运行中的构建任务"}
-	}
-	return nil
 }
 
 func replayDocumentImportDeadLetter(ctx context.Context, rawID string) error {

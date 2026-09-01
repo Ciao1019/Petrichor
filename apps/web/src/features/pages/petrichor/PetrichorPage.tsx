@@ -176,7 +176,7 @@ const SELF_HOST_STEPS: { title: string; detail: string; ink: string }[] = [
     {
         title: "启动并创建管理员",
         ink: "purple",
-        detail: "分别启动 Go API 与 Bun Web。第一次打开站点会进入初始化页，由部署者创建唯一的初始超级管理员。",
+        detail: "Docker Compose 会启动 Caddy、Go API、Go Worker 与本地 Redis。第一次打开站点会进入初始化页，由部署者创建唯一的初始超级管理员。",
     },
 ]
 

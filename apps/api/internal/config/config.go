@@ -72,11 +72,6 @@ type DatabasePoolConfig struct {
 	HealthCheckPeriod time.Duration
 }
 
-type UpstashConfig struct {
-	RESTURL   string
-	RESTToken string
-}
-
 type LinuxDoConfig struct {
 	ClientID     string
 	ClientSecret string
@@ -145,26 +140,28 @@ type Config struct {
 	DatabaseURL          string
 	MigrationDatabaseURL string
 	DatabasePool         DatabasePoolConfig
+	KnowledgeBuild       KnowledgeBuildConfig
 	LocalStorageDir      string
 	S3                   *S3Config
 	SessionExpire        time.Duration
 	RegisterEnabled      bool
 	RegisterDefaultRole  string
 	Encryption           EncryptionConfig
-	Upstash              *UpstashConfig
+	Redis                *RedisConfig
 	LinuxDo              LinuxDoConfig
 	LocalDevelopmentAuth LocalDevelopmentAuthConfig
 	Agent                AgentConfig
 }
 
 type fileConfig struct {
-	Server     serverFileConfig     `toml:"server"`
-	Database   databaseFileConfig   `toml:"database"`
-	Auth       authFileConfig       `toml:"auth"`
-	Encryption encryptionFileConfig `toml:"encryption"`
-	Storage    storageFileConfig    `toml:"storage"`
-	Cache      cacheFileConfig      `toml:"cache"`
-	Agent      agentFileConfig      `toml:"agent"`
+	Server         serverFileConfig         `toml:"server"`
+	Database       databaseFileConfig       `toml:"database"`
+	Auth           authFileConfig           `toml:"auth"`
+	Encryption     encryptionFileConfig     `toml:"encryption"`
+	Storage        storageFileConfig        `toml:"storage"`
+	Cache          cacheFileConfig          `toml:"cache"`
+	KnowledgeBuild knowledgeBuildFileConfig `toml:"knowledge_build"`
+	Agent          agentFileConfig          `toml:"agent"`
 }
 
 type serverFileConfig struct {
@@ -230,15 +227,6 @@ type s3FileConfig struct {
 	UploadExpireSeconds   int    `toml:"upload_expire_seconds"`
 	DownloadExpireSeconds int    `toml:"download_expire_seconds"`
 	UseSSL                *bool  `toml:"use_ssl"`
-}
-
-type cacheFileConfig struct {
-	Upstash upstashFileConfig `toml:"upstash"`
-}
-
-type upstashFileConfig struct {
-	RESTURL   string `toml:"rest_url"`
-	RESTToken string `toml:"rest_token"`
 }
 
 type agentFileConfig struct {
@@ -382,6 +370,10 @@ func normalizeAndValidate(raw fileConfig, path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	knowledgeBuild, err := normalizeKnowledgeBuild(raw.KnowledgeBuild)
+	if err != nil {
+		return nil, err
+	}
 	sessionExpire := raw.Auth.SessionExpireSecond
 	if sessionExpire == 0 {
 		sessionExpire = DefaultSessionExpireSecs
@@ -409,7 +401,7 @@ func normalizeAndValidate(raw fileConfig, path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	upstash, err := normalizeUpstash(raw.Cache.Upstash)
+	redisConfig, err := normalizeRedis(raw.Cache.Redis)
 	if err != nil {
 		return nil, err
 	}
@@ -431,13 +423,14 @@ func normalizeAndValidate(raw fileConfig, path string) (*Config, error) {
 		DatabaseURL:          databaseURL,
 		MigrationDatabaseURL: strings.TrimSpace(raw.Database.MigrationURL),
 		DatabasePool:         databasePool,
+		KnowledgeBuild:       knowledgeBuild,
 		LocalStorageDir:      strings.TrimSpace(raw.Storage.LocalDirectory),
 		S3:                   s3,
 		SessionExpire:        time.Duration(sessionExpire) * time.Second,
 		RegisterEnabled:      raw.Auth.RegisterEnabled,
 		RegisterDefaultRole:  defaultRole,
 		Encryption:           encryption,
-		Upstash:              upstash,
+		Redis:                redisConfig,
 		LinuxDo: LinuxDoConfig{
 			ClientID:     strings.TrimSpace(raw.Auth.LinuxDo.ClientID),
 			ClientSecret: strings.TrimSpace(raw.Auth.LinuxDo.ClientSecret),
@@ -638,18 +631,6 @@ func normalizeS3(raw s3FileConfig) (*S3Config, error) {
 	}, nil
 }
 
-func normalizeUpstash(raw upstashFileConfig) (*UpstashConfig, error) {
-	url := strings.TrimRight(strings.TrimSpace(raw.RESTURL), "/")
-	token := strings.TrimSpace(raw.RESTToken)
-	if url == "" && token == "" {
-		return nil, nil
-	}
-	if url == "" || token == "" {
-		return nil, fmt.Errorf("cache.upstash.rest_url 与 cache.upstash.rest_token 必须同时填写")
-	}
-	return &UpstashConfig{RESTURL: url, RESTToken: token}, nil
-}
-
 func normalizeAgent(raw agentFileConfig) AgentConfig {
 	researchTimeout := raw.Research.TimeoutMs
 	if researchTimeout <= 0 {
@@ -736,6 +717,13 @@ func testDefaults() *Config {
 			MaxConnLifetime:   30 * time.Minute,
 			MaxConnIdleTime:   5 * time.Minute,
 			HealthCheckPeriod: time.Minute,
+		},
+		KnowledgeBuild: KnowledgeBuildConfig{
+			Concurrency:              DefaultKnowledgeBuildConcurrency,
+			QueueSize:                DefaultKnowledgeBuildQueueSize,
+			QuestionBatchConcurrency: DefaultKnowledgeBuildQuestionBatchConcurrency,
+			PageBatchConcurrency:     DefaultKnowledgeBuildPageBatchConcurrency,
+			ModelConcurrency:         DefaultKnowledgeBuildModelConcurrency,
 		},
 		SessionExpire:       DefaultSessionExpireSecs * time.Second,
 		RegisterDefaultRole: "USER",

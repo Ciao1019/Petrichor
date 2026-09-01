@@ -259,7 +259,7 @@ func renderExistingPageCatalog(pages []existingKnowledgePage) string {
 // extractDocumentCandidates 整文候选抽取；失败回落本地摘要 + 空候选。
 func extractDocumentCandidates(ctx context.Context, userID int64, profile compileProfile, articleTitle, contentMd string, existingPages []existingKnowledgePage) (string, []knowledgeCandidate, []knowledgeRelation, []string) {
 	fallbackSummary := localDocumentSummary(contentMd)
-	answer, err := ChatInvoker(ctx, ChatRequest{
+	answer, err := invokeKnowledgeBuildChat(ctx, ChatRequest{
 		UserID: userID,
 		SystemPrompt: profile.systemPrompt(
 			"你是 Wiki 候选抽取器。必须从整篇 Markdown 识别被实质讨论的实体、概念及它们之间的关系；不要根据预先切片分别抽取。",
@@ -345,7 +345,7 @@ func planKnowledgeTaxonomy(ctx context.Context, userID int64, profile compilePro
 		itemsText += item + "\n"
 	}
 	parsedAny := false
-	answer, err := ChatInvoker(ctx, ChatRequest{
+	answer, err := invokeKnowledgeBuildChat(ctx, ChatRequest{
 		UserID: userID,
 		SystemPrompt: profile.systemPrompt(
 			"你是 Wiki 导航目录规划器。候选实体和概念已经抽取完成，请一次性为整批候选规划一棵统一、浅层、可复用的中文目录树。",
@@ -559,8 +559,12 @@ func materializeWikiPages(ctx context.Context, userID int64, profile compileProf
 		}
 		batches = append(batches, candidates[start:end])
 	}
+	type batchResult struct {
+		pages    []genPage
+		warnings []string
+	}
 	generatedByKey := map[string]genPage{}
-	outputs := mapWithConcurrency(batches, wikiPageBatchConcurrency, func(batch []knowledgeCandidate) []genPage {
+	outputs := mapWithConcurrency(batches, wikiPageBatchConcurrency, func(batch []knowledgeCandidate) batchResult {
 		fallback := make([]genPage, 0, len(batch))
 		for _, candidate := range batch {
 			fallback = append(fallback, genPage{
@@ -569,7 +573,7 @@ func materializeWikiPages(ctx context.Context, userID int64, profile compileProf
 				contentMd: buildFallbackWikiPage(candidate, relations),
 			})
 		}
-		answer, err := ChatInvoker(ctx, ChatRequest{
+		answer, err := invokeKnowledgeBuildChat(ctx, ChatRequest{
 			UserID: userID,
 			SystemPrompt: profile.systemPrompt(
 				"你是 Wiki 页面编译器。候选已经由整篇文档抽取完成，现在为每个候选生成一篇独立、完整、可直接阅读的 Markdown 页面。",
@@ -596,12 +600,11 @@ func materializeWikiPages(ctx context.Context, userID int64, profile compileProf
 			Op: "kb.build.pages",
 		})
 		if err != nil {
-			warnings = append(warnings, "Wiki 页面生成失败："+err.Error())
-			return fallback
+			return batchResult{pages: fallback, warnings: []string{"Wiki 页面生成失败：" + err.Error()}}
 		}
 		parsed := extractJSONObjects(answer)
 		if parsed == nil {
-			return fallback
+			return batchResult{pages: fallback}
 		}
 		rawPages, _ := parsed["pages"].([]any)
 		pageByKey := map[string]map[string]any{}
@@ -631,10 +634,11 @@ func materializeWikiPages(ctx context.Context, userID int64, profile compileProf
 				contentMd: normalizeGeneratedPageContent(value["contentMd"], candidate),
 			})
 		}
-		return out
+		return batchResult{pages: out}
 	})
 	for _, batchOut := range outputs {
-		for _, page := range batchOut {
+		warnings = append(warnings, batchOut.warnings...)
+		for _, page := range batchOut.pages {
 			generatedByKey[page.pageKey] = page
 		}
 	}

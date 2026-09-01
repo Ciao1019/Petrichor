@@ -4,7 +4,7 @@ host = "0.0.0.0"
 port = 8080
 base_url = "http://localhost:3000"
 # 只信任实际位于 API 前方的反向代理；禁止无条件配置 0.0.0.0/0。
-trusted_proxies = ["127.0.0.1/32", "::1/128"]
+trusted_proxies = ["127.0.0.1/32", "::1/128", "172.30.0.0/24"]
 read_header_timeout_seconds = 10
 read_timeout_seconds = 30
 # SSE/Agent 流式响应由业务超时控制，0 表示不设置全局 WriteTimeout。
@@ -23,6 +23,15 @@ min_conns = 2
 max_conn_lifetime_seconds = 1800
 max_conn_idle_time_seconds = 300
 health_check_period_seconds = 60
+
+# 单 API 实例的知识构建内存队列。文章和阶段任务池共享全局模型信号量，
+# 默认最多同时执行 8 篇文章、发出 64 个模型请求。
+[knowledge_build]
+concurrency = 8
+queue_size = 128
+question_batch_concurrency = 8
+page_batch_concurrency = 8
+model_concurrency = 64
 
 [auth]
 session_expire_seconds = 172800
@@ -56,9 +65,14 @@ upload_expire_seconds = 900
 download_expire_seconds = 3600
 use_ssl = true
 
-[cache.upstash]
-rest_url = ""
-rest_token = ""
+# Docker Compose 使用服务名 redis；本机直接运行 Go 时改为 127.0.0.1。
+[cache.redis]
+url = "redis://redis:6379/0"
+pool_size = 32
+min_idle_conns = 4
+dial_timeout_ms = 2000
+read_timeout_ms = 1000
+write_timeout_ms = 1000
 
 [agent]
 skills_directory = ""

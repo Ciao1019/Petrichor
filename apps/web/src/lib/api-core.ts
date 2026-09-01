@@ -253,7 +253,7 @@ export const adminProjectShowcaseApi = {
   update: (data: ProjectShowcaseUpdateRequest) => api.post<ProjectShowcaseResponse>("/admin/projects", data),
 }
 
-export type AdminDeadLetterJobKind = "knowledge_build" | "document_import"
+export type AdminDeadLetterJobKind = "document_import"
 
 export interface AdminDeadLetterJob {
   kind: AdminDeadLetterJobKind

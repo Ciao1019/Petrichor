@@ -23,7 +23,8 @@
 - `server.trusted_proxies` 只能填写实际位于 API 前方的代理 IP/CIDR，禁止为图方便信任整个公网。
 - TLS 应在入口代理终止；Cookie 在 production 模式下自动启用 `Secure`。
 - 不要把 `config.toml`、`.env.local`、数据库备份或对象存储凭证提交到仓库。
-- `/healthz` 用于存活探测，`/readyz` 会同时检查数据库。
+- `/healthz` 用于存活探测，`/readyz` 会同时检查数据库与已配置的 Redis。
+- Compose 只向公网暴露 Caddy 的 80/443；API 8080 和 Redis 6379 不得开放公网访问。
 
 ## 凭证密文兼容
 

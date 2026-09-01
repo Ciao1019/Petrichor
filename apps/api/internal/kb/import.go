@@ -1,5 +1,5 @@
 // import.go 对照 import-handlers.ts：导入任务登记类逻辑完整移植；
-// PDF 本地抽取与多模态 OCR 循环通过注入变量接入（StartImportJob / VisionPageConverter）。
+// 多模态 OCR 单页转换通过 VisionPageConverter 注入，批量调度由独立 Go Worker 完成。
 package kb
 
 import (

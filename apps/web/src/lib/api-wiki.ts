@@ -217,7 +217,7 @@ export interface ArticleKnowledgeBuildResponse {
   warnings: string[]
 }
 
-export type ArticleKnowledgeBuildJobStatus = "pending" | "processing" | "completed" | "failed" | "dead_letter"
+export type ArticleKnowledgeBuildJobStatus = "pending" | "processing" | "completed" | "failed"
 
 export interface ArticleKnowledgeBuildJobResponse {
   id: string
@@ -227,14 +227,6 @@ export interface ArticleKnowledgeBuildJobResponse {
   status: ArticleKnowledgeBuildJobStatus
   result: ArticleKnowledgeBuildResponse | null
   error: string | null
-  attemptCount: number
-  maxAttempts: number
-  nextAttemptAt: string
-  lastError: string | null
-  leaseExpiresAt: string | null
-  heartbeatAt: string | null
-  deadLetteredAt: string | null
-  replayCount: number
   startedAt: string | null
   completedAt: string | null
   createdAt: string | null
@@ -424,9 +416,10 @@ async function restoreBlobErrorBody(error: unknown): Promise<unknown> {
   return error
 }
 
-const ARTICLE_KNOWLEDGE_BUILD_POLL_TIMEOUT_MS = 12 * 60 * 1_000
+// 服务端单任务最长 15 分钟，额外预留一轮排队和最终状态返回时间。
+const ARTICLE_KNOWLEDGE_BUILD_POLL_TIMEOUT_MS = 30 * 60 * 1_000
 
-/** 创建异步构建任务并等待最终结果；页面请求不会再占用一个长连接。 */
+/** 创建异步构建任务并等待最终结果；页面请求不会占用一个长连接。 */
 export async function buildArticleKnowledgeAndWait(
   data: ArticleKnowledgeBuildInput,
 ): Promise<ArticleKnowledgeBuildResponse> {
@@ -445,7 +438,7 @@ export async function buildArticleKnowledgeAndWait(
     pollIntervalMs = Math.min(2_500, Math.round(pollIntervalMs * 1.35))
   }
 
-  if (job.status === "failed" || job.status === "dead_letter") {
+  if (job.status === "failed") {
     throw new Error(job.error || "知识构建失败")
   }
   if (!job.result) {

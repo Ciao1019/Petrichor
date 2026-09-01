@@ -7,6 +7,7 @@ import (
 
 	"petrichor/api/internal/db"
 	"petrichor/api/internal/httpx"
+	"petrichor/api/internal/kb"
 )
 
 type jobStatusCount struct {
@@ -15,14 +16,10 @@ type jobStatusCount struct {
 }
 
 // AdminRuntimeMetrics GET /api/admin/runtime/metrics。
-// 仅返回进程、连接池和持久化任务的聚合值，不包含用户输入与敏感配置。
+// 仅返回进程、连接池、内存知识构建与持久视觉导入的聚合值，不包含用户输入与敏感配置。
 func AdminRuntimeMetrics(c *gin.Context) {
 	ctx := c.Request.Context()
-	knowledgeJobs, err := loadJobStatusCounts(ctx, "petrichor_kb_knowledge_build_job")
-	if err != nil {
-		httpx.HandleError(c, err)
-		return
-	}
+	knowledgeJobs := kb.ArticleKnowledgeBuildStatusCounts()
 	importJobs, err := loadJobStatusCounts(ctx, "petrichor_kb_import_job")
 	if err != nil {
 		httpx.HandleError(c, err)

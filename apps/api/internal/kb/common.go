@@ -56,10 +56,6 @@ var ChatInvoker func(ctx context.Context, req ChatRequest) (string, error)
 // EmbedInvoker 向量生成注入点；nil 时向量端点 503，best-effort 路径静默跳过。
 var EmbedInvoker func(ctx context.Context, req EmbedRequest) ([][]float32, error)
 
-// StartImportJob 导入任务后台处理钩子（PDF 本地抽取 + 多模态 OCR 循环）。
-// nil 时跳过后台调度，仅保留登记类逻辑。
-var StartImportJob func(ctx context.Context, jobID int64)
-
 func requireChat() error {
 	if ChatInvoker == nil {
 		return &httpx.HttpError{Status: 503, Message: "AI 服务未就绪"}

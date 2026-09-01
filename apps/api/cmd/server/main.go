@@ -17,6 +17,7 @@ import (
 	"petrichor/api/internal/aicore"
 	"petrichor/api/internal/auth"
 	"petrichor/api/internal/bootstrap"
+	"petrichor/api/internal/cache"
 	"petrichor/api/internal/config"
 	"petrichor/api/internal/db"
 	"petrichor/api/internal/dbmigrate"
@@ -46,6 +47,10 @@ func run() error {
 		return fmt.Errorf("初始化数据库连接池失败: %w", err)
 	}
 	defer db.Close()
+	if err := cache.Initialize(startupCtx); err != nil {
+		return fmt.Errorf("初始化 Redis 缓存失败: %w", err)
+	}
+	defer cache.Close()
 	if err := auth.InitializeSaToken(); err != nil {
 		return err
 	}
@@ -81,6 +86,10 @@ func run() error {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
 		defer cancel()
 		if err := db.Ping(ctx); err != nil {
+			httpx.ErrorJSON(c, http.StatusServiceUnavailable, "服务尚未就绪")
+			return
+		}
+		if err := cache.Ping(ctx); err != nil {
 			httpx.ErrorJSON(c, http.StatusServiceUnavailable, "服务尚未就绪")
 			return
 		}
@@ -121,17 +130,8 @@ func run() error {
 
 	signalCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
-	workerCtx, cancelWorkers := context.WithCancel(context.Background())
-	waitKnowledgeWorkers := kb.StartArticleKnowledgeBuildWorkers(workerCtx)
-	waitImportWorkers := kb.StartImportJobWorkers(workerCtx)
-	waitWorkers := func() {
-		waitKnowledgeWorkers()
-		waitImportWorkers()
-	}
-	defer func() {
-		cancelWorkers()
-		waitWorkers()
-	}()
+	waitKnowledgeBuilds := kb.StartArticleKnowledgeBuildScheduler(signalCtx, cfg.KnowledgeBuild)
+	defer waitKnowledgeBuilds()
 	serveErr := make(chan error, 1)
 	go func() {
 		log.Printf("Petrichor Go API listening on %s", addr)
@@ -146,7 +146,6 @@ func run() error {
 		return fmt.Errorf("Go API 监听失败: %w", err)
 	case <-signalCtx.Done():
 		log.Print("收到关停信号，正在停止接收新请求")
-		cancelWorkers()
 	}
 
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), cfg.HTTPServer.ShutdownTimeout)
@@ -155,11 +154,11 @@ func run() error {
 		_ = server.Close()
 		return fmt.Errorf("Go API 优雅关闭超时: %w", err)
 	}
-	waitWorkers()
 	if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("Go API 关闭时监听异常: %w", err)
 	}
-	log.Print("Petrichor Go API 已安全关闭")
+	waitKnowledgeBuilds()
+	log.Print("Petrichor Go API 与知识构建队列已安全关闭")
 	return nil
 }
 

@@ -16,6 +16,7 @@ func TestEmbeddedMigrations(t *testing.T) {
 		"202608270002_init.sql",
 		"202608280001_knowledge_build_job.sql",
 		"202608280002_worker_retry_and_dead_letter.sql",
+		"202608280003_drop_knowledge_build_job.sql",
 	}
 	if !reflect.DeepEqual(entries, want) {
 		t.Fatalf("内嵌迁移不符合预期\n实际: %v\n期望: %v", entries, want)
@@ -77,5 +78,14 @@ func TestEmbeddedMigrations(t *testing.T) {
 		if !strings.Contains(retrySQL, required) {
 			t.Fatalf("Worker 重试迁移缺少结构: %q", required)
 		}
+	}
+
+	data, err = fs.ReadFile(Files, want[3])
+	if err != nil {
+		t.Fatalf("读取知识构建内存队列迁移失败: %v", err)
+	}
+	dropJobSQL := string(data)
+	if !strings.Contains(dropJobSQL, "DROP TABLE public.petrichor_kb_knowledge_build_job") {
+		t.Fatal("知识构建内存队列迁移没有删除旧任务表")
 	}
 }

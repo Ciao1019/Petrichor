@@ -17,7 +17,7 @@ export function DemoModeBanner() {
                 演示模式
             </span>
             <span className="text-amber-800/80 dark:text-amber-200/70">
-                演示模式只会看到部分菜单；连接 Bun Web 与 Go API 后可使用完整功能。
+                演示模式只会看到部分菜单；连接正式 Go API 后可使用完整功能。
             </span>
             <span className="ml-auto">
                 <Button

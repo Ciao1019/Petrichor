@@ -43,7 +43,16 @@ type ChatResult struct {
 	HasToolCalls bool
 }
 
-var httpClient = &http.Client{Timeout: 300 * time.Second}
+var httpClient = newAIHTTPClient()
+
+func newAIHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// 知识构建会对同一模型端点产生并行请求；扩大 keep-alive 池可避免 HTTP/1.1
+	// 兼容供应商在每批任务之间反复建立 TCP/TLS 连接，HTTP/2 仍自动复用连接。
+	transport.MaxIdleConns = 128
+	transport.MaxIdleConnsPerHost = 64
+	return &http.Client{Transport: transport, Timeout: 300 * time.Second}
+}
 
 func (r RuntimeConfig) effectiveBaseURL(fallback string) string {
 	if r.BaseURL != "" {

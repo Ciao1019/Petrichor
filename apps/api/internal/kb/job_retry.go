@@ -11,12 +11,10 @@ import (
 )
 
 const (
-	workerMaxAttempts    = 5
 	workerRetryBaseDelay = 5 * time.Second
 	workerRetryMaxDelay  = 5 * time.Minute
 	workerLeaseDuration  = 90 * time.Second
 	workerHeartbeatEvery = 20 * time.Second
-	workerDeadLetterTTL  = 30 * 24 * time.Hour
 )
 
 // workerRetryDelay 使用有上限的指数退避，并按任务 ID 加入稳定抖动，避免批量失败后同时重试。

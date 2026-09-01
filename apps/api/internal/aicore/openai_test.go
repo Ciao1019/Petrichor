@@ -10,6 +10,17 @@ import (
 	"testing"
 )
 
+func TestAIHTTPClientKeepsParallelConnectionsAlive(t *testing.T) {
+	transport, ok := httpClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("AI HTTP transport type = %T", httpClient.Transport)
+	}
+	if transport.MaxIdleConns < 128 || transport.MaxIdleConnsPerHost < 64 {
+		t.Fatalf("AI HTTP keep-alive pool too small: total=%d perHost=%d",
+			transport.MaxIdleConns, transport.MaxIdleConnsPerHost)
+	}
+}
+
 func TestOpenAIChatStreamCollectsAnswerWithoutDeltaCallback(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "text/event-stream")

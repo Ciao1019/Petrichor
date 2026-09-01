@@ -1,0 +1,111 @@
+name: petrichor
+
+services:
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --loglevel
+      - warning
+    ports:
+      - "127.0.0.1:${PETRICHOR_REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - backend
+
+  api:
+    image: petrichor-api:local
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+      args:
+        GOPROXY: ${PETRICHOR_GOPROXY:-https://proxy.golang.org,direct}
+    restart: unless-stopped
+    command: ["server"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    secrets:
+      - petrichor_config
+    volumes:
+      - app-data:/data
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+    stop_grace_period: 2m
+    networks:
+      - backend
+
+  worker:
+    image: petrichor-api:local
+    restart: unless-stopped
+    command: ["worker"]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    secrets:
+      - petrichor_config
+    volumes:
+      - app-data:/data
+    stop_grace_period: 2m
+    networks:
+      - backend
+
+  web:
+    image: petrichor-web:local
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      PETRICHOR_DOMAIN: ${PETRICHOR_DOMAIN:-:80}
+    ports:
+      - "${PETRICHOR_HTTP_PORT:-80}:80"
+      - "${PETRICHOR_HTTPS_PORT:-443}:443"
+      - "${PETRICHOR_HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - backend
+
+networks:
+  backend:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+secrets:
+  petrichor_config:
+    file: ./apps/api/config.toml
+
+volumes:
+  app-data:
+  caddy-config:
+  caddy-data:
+  redis-data:

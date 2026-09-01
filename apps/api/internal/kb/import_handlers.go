@@ -13,9 +13,7 @@ import (
 
 // ===== 端点 =====
 
-// CreateImportJob 登记导入任务。
-// 偏差：TS 版在服务端同步做 PDF 本地逐页抽取；Go 版抽取整体交给 StartImportJob 钩子
-// （含页面行落库），本端点只负责任务登记与归属校验。
+// CreateImportJob 登记导入任务；页面上传完成后由独立 Go Worker 从数据库领取。
 func CreateImportJob(c *gin.Context) {
 	run(c, func(c *gin.Context) (any, error) {
 		user := currentUser(c)
@@ -44,10 +42,6 @@ func CreateImportJob(c *gin.Context) {
 			user.ID, kbID, parentID, fileName, sourceKey, title, modelConfigID)
 		if err != nil {
 			return nil, err
-		}
-
-		if StartImportJob != nil {
-			StartImportJob(c.Request.Context(), job.ID)
 		}
 
 		var folderName *string
@@ -155,9 +149,6 @@ func AttachImportOcrPages(c *gin.Context) {
 			}
 		}
 
-		if StartImportJob != nil {
-			StartImportJob(c.Request.Context(), job.ID)
-		}
 		_ = concurrency // 并发度由后台处理器自行决定；保留解析以对齐校验行为
 		return map[string]any{"attached": len(accepted), "status": "processing"}, nil
 	})
@@ -325,9 +316,6 @@ func RetryImportJobFailedPages(c *gin.Context) {
 			     replay_count = replay_count + 1, updated_at = now()
 			 WHERE id = $1`, job.ID); err != nil {
 			return nil, err
-		}
-		if StartImportJob != nil {
-			StartImportJob(c.Request.Context(), job.ID)
 		}
 		return map[string]any{"retried": failedCount, "status": "processing"}, nil
 	})

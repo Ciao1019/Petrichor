@@ -61,9 +61,9 @@ export function WorkerDeadLettersPage() {
     <div className="flex flex-1 flex-col gap-5 p-4 md:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Worker 死信队列</h1>
+          <h1 className="text-2xl font-semibold">视觉导入死信队列</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            查看耗尽自动重试的知识构建和视觉导入任务，并将任务原子重放到持久队列。
+            查看耗尽自动重试的视觉导入任务，并将任务原子重放到持久队列。
           </p>
         </div>
         <Button variant="outline" onClick={() => void load()} disabled={loading}>
@@ -93,9 +93,7 @@ export function WorkerDeadLettersPage() {
                   <div key={key} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="outline">
-                          {job.kind === "knowledge_build" ? "知识构建" : "视觉导入"}
-                        </Badge>
+                        <Badge variant="outline">视觉导入</Badge>
                         <span className="truncate font-medium">{job.title}</span>
                         <span className="font-mono text-xs text-muted-foreground">#{job.id}</span>
                       </div>

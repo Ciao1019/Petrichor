@@ -2,7 +2,7 @@
 // fetchS3ObjectBytes + scheduleImportJobProcessing 后台循环）：
 //
 //   - RunVisionPageConversion：单页整图 → VISION 模型 → Markdown，接 VisionPageConverter；
-//   - StartImportJobProcessing：后台任务池（并发 ≤ 2）逐页处理 PENDING 页，
+//   - StartImportJobWorkers：后台任务池（并发 ≤ 2）逐页处理 PENDING 页，
 //     全部成功后自动合并生成文章，语义对照 TS processImportJobInBackground。
 //
 // 模型调用经由本文件声明的 VisionChatInvoker 注入点：kb 包不能直接 import aicore
@@ -64,8 +64,6 @@ const (
 	importGlobalLockKey           = int32(0x494D5054) // "IMPT"
 	importJobLockBase             = int64(0x494D500000000000)
 )
-
-var importJobWake = make(chan struct{}, 1)
 
 // s3DownloadClient 页面图片下载客户端；预签名 URL 本身带时效，超时只防悬挂。
 var s3DownloadClient = &http.Client{Timeout: 120 * time.Second}
@@ -188,15 +186,6 @@ func normalizeVisionMarkdown(raw string) string {
 }
 
 // ===== 后台任务循环 =====
-
-// StartImportJobProcessing 只发送唤醒信号；任务本身以数据库状态为准，避免请求进程
-// 重启后丢失。真正执行由 StartImportJobWorkers 启动的持久 Worker 完成。
-func StartImportJobProcessing(_ context.Context, _ int64) {
-	select {
-	case importJobWake <- struct{}{}:
-	default:
-	}
-}
 
 // StartImportJobWorkers 启动跨实例全局并发为 2 的导入 Worker，并返回等待函数。
 func StartImportJobWorkers(ctx context.Context) func() {
@@ -417,8 +406,6 @@ func waitImportJobPoll(ctx context.Context) bool {
 	select {
 	case <-ctx.Done():
 		return false
-	case <-importJobWake:
-		return true
 	case <-timer.C:
 		return true
 	}

@@ -17,12 +17,13 @@
 - `apps/web` 是 Bun + React + Vite + TypeScript 客户端 SPA，入口为
   `apps/web/src/main.tsx`，页面路由由 `react-router-dom` 管理。
 - `apps/api` 是 Go + Gin API 服务，接管 `/api/*` 和 `/healthz`。
-- `apps/web/server.ts` 托管 Vite 静态资源，并把 API 同源转发到 Go 服务。
+- 生产环境由 `apps/web/Caddyfile` 托管 Vite 静态资源并反代 Go API；`apps/web/server.ts` 仅用于本地 Bun 运行。
 - 数据层使用 Supabase PostgreSQL，完整结构由 `apps/api/migrations/202608270002_init.sql`
   定义，并由 Go 服务启动时自动执行。
 - 认证使用 Sa-Token-Go 的 Gin 集成，token 状态由 `sa_token_storage` 持久化到 PostgreSQL；
   业务用户只保存在 `petrichor_user`。
 - 上传和公开文件访问使用 S3 兼容对象存储。
+- 生产部署统一使用根目录 `compose.yaml`：Caddy、Go API、独立视觉导入 Worker 与本地 Redis；Redis 使用 `go-redis/v9`。知识构建由 API 内存队列执行，视觉导入任务以 PostgreSQL 为事实来源。
 
 ## 常用命令
 
@@ -36,6 +37,7 @@ bun run build
 bun run test
 bun run typecheck
 bun run lint
+docker compose up -d --build
 ```
 
 只针对 Web 应用执行时使用：
@@ -58,11 +60,13 @@ cd apps/api && go run ./cmd/migrate status
 
 - `apps/api/cmd/server/`：Go API 生产入口。
 - `apps/api/cmd/migrate/`：Goose 数据库迁移命令入口。
+- `apps/api/cmd/worker/`：视觉文档导入常驻 Worker 入口；知识构建 Worker 位于 API 进程内。
 - `apps/api/internal/`：Go 鉴权、业务、数据库、存储、缓存和 Agent 实现。
 - `apps/api/migrations/`：随 Go 二进制内嵌的 Goose 初始化 SQL。
 - `apps/api/config.example.toml`：Go 运行配置模板；本地真实配置为忽略提交的 `config.toml`。
 - `apps/web/src/main.tsx`：Vite 客户端入口。
-- `apps/web/server.ts`：Bun Web 静态服务与 Go API 同源反代入口。
+- `apps/web/server.ts`：本地 Bun Web 静态服务与 Go API 同源反代入口。
+- `apps/web/Caddyfile`：生产静态资源服务、压缩、缓存与 Go API 同源反代。
 - `apps/web/src/client-app.tsx`：客户端路由总入口。
 - `apps/web/src/features/pages/`：业务页面组件。
 - `apps/web/src/components/`：通用组件、编辑器组件、shadcn/ui、第三方 UI 迁移组件。
@@ -139,7 +143,7 @@ cd apps/api && go test ./... && go vet ./...
 ## 环境与部署
 
 - Web 公开配置样例为 `apps/web/.env.example`，实际配置写入 `apps/web/.env.local`。
-- Go 不读取环境变量；数据库、Session、加密、S3、LinuxDo、Upstash 和 Agent 配置统一写入
+- Go 不读取环境变量；数据库、Session、加密、S3、LinuxDo、Redis 和 Agent 配置统一写入
   `apps/api/config.toml`，模板为 `apps/api/config.example.toml`。
 - `config.toml` 含密钥且已忽略提交，不得输出或提交其真实内容。
 - `encryption.key`、`encryption.salt` 一旦用于真实数据，不要随意更换。

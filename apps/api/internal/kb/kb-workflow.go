@@ -20,11 +20,9 @@ const (
 	knowledgeChunkLimit        = 120
 	questionBatchMaxChars      = 4000
 	questionBatchMaxItems      = 4
-	questionBatchConcurrency   = 3
 	wikiDocumentMaxChars       = 72000
 	wikiItemLimit              = 24
 	wikiPageBatchSize          = 4
-	wikiPageBatchConcurrency   = 3
 )
 
 var (
@@ -523,9 +521,12 @@ func mapWithConcurrency[T any, R any](values []T, concurrency int, mapper func(T
 
 // generateChunkQuestions 为每个切片生成 3 个推荐问题；LLM 失败回落模板问题。
 func generateChunkQuestions(ctx context.Context, userID int64, profile compileProfile, articleTitle string, chunks []wfChunk) ([]chunkWithQuestions, []string) {
-	warnings := []string{}
+	type batchResult struct {
+		chunks   []chunkWithQuestions
+		warnings []string
+	}
 	batches := batchChunksByBudget(chunks, questionBatchMaxChars, questionBatchMaxItems)
-	outputs := mapWithConcurrency(batches, questionBatchConcurrency, func(batch []wfChunk) []chunkWithQuestions {
+	outputs := mapWithConcurrency(batches, questionBatchConcurrency, func(batch []wfChunk) batchResult {
 		fallback := make([]chunkWithQuestions, 0, len(batch))
 		for _, chunk := range batch {
 			fallback = append(fallback, chunkWithQuestions{chunk: chunk,
@@ -537,7 +538,7 @@ func generateChunkQuestions(ctx context.Context, userID int64, profile compilePr
 				"<chunk id=\""+chunk.chunkKey+"\" heading=\""+renderHeadingTrail(chunk)+"\">\n"+
 					chunk.contentMd+"\n</chunk>")
 		}
-		answer, err := ChatInvoker(ctx, ChatRequest{
+		answer, err := invokeKnowledgeBuildChat(ctx, ChatRequest{
 			UserID: userID,
 			SystemPrompt: profile.systemPrompt(
 				"你是知识库问题生成器。为每个 Markdown 切片生成恰好 3 个用户可能提出的推荐问题。",
@@ -549,16 +550,15 @@ func generateChunkQuestions(ctx context.Context, userID int64, profile compilePr
 			Op:      "kb.build.questions",
 		})
 		if err != nil {
-			warnings = append(warnings, "推荐问题生成失败："+err.Error())
-			return fallback
+			return batchResult{chunks: fallback, warnings: []string{"推荐问题生成失败：" + err.Error()}}
 		}
 		parsed := extractJSONObjects(answer)
 		if parsed == nil {
-			return fallback
+			return batchResult{chunks: fallback}
 		}
 		questionsMap, ok := parsed["questions"].(map[string]any)
 		if !ok {
-			return fallback
+			return batchResult{chunks: fallback}
 		}
 		out := make([]chunkWithQuestions, 0, len(batch))
 		missing := 0
@@ -569,14 +569,17 @@ func generateChunkQuestions(ctx context.Context, userID int64, profile compilePr
 			out = append(out, chunkWithQuestions{chunk: chunk,
 				recommendedQuestions: normalizeRecommendedQuestions(questionsMap[chunk.chunkKey], chunk.heading)})
 		}
+		result := batchResult{chunks: out}
 		if missing > 0 {
-			warnings = append(warnings, jsonInt(missing)+" 个切片未拿到模型问题，已使用模板问题")
+			result.warnings = []string{jsonInt(missing) + " 个切片未拿到模型问题，已使用模板问题"}
 		}
-		return out
+		return result
 	})
 	flat := []chunkWithQuestions{}
+	warnings := []string{}
 	for _, batchOut := range outputs {
-		flat = append(flat, batchOut...)
+		flat = append(flat, batchOut.chunks...)
+		warnings = append(warnings, batchOut.warnings...)
 	}
 	uniqueWarnings := dedupeStrings(warnings)
 	if len(uniqueWarnings) > 5 {

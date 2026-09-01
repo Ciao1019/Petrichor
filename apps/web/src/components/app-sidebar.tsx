@@ -210,7 +210,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         isActive: isDashboardSectionPath(location.pathname, "admin/site-graph"),
       },
       {
-        title: "Worker 死信",
+        title: "导入死信",
         url: dashboardRoutes.adminWorkerDeadLetters,
         icon: IconListDetails,
         isActive: isDashboardSectionPath(location.pathname, "admin/worker-dead-letters"),

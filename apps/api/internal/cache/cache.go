@@ -1,18 +1,18 @@
-// Package cache 提供 Upstash Redis REST 直连和优雅降级。
+// Package cache 提供基于 go-redis 的 Redis 缓存和进程内降级。
 package cache
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/singleflight"
 
 	"petrichor/api/internal/config"
@@ -28,66 +28,71 @@ func CacheKey(parts ...string) string {
 	return namespace + ":" + strings.Join(parts, ":")
 }
 
-type redisClient struct {
-	baseURL string
-	token   string
-	http    *http.Client
-}
-
 var (
-	once           sync.Once
-	client         *redisClient // nil = 未配置，禁用缓存
-	memStore       sync.Map     // 本地兜底缓存（单实例语义）
+	clientMu       sync.RWMutex
+	client         *redis.Client // nil = 未配置或已关闭，使用进程内降级
+	memStore       sync.Map
 	loadGroup      singleflight.Group
 	lastMemCleanup atomic.Int64
 )
 
-func getClient() *redisClient {
-	once.Do(func() {
-		upstash := config.Get().Upstash
-		if upstash == nil {
-			return
-		}
-		client = &redisClient{baseURL: upstash.RESTURL, token: upstash.RESTToken, http: &http.Client{Timeout: 5 * time.Second}}
-		slog.Info("[cache] Upstash Redis 缓存已启用")
-	})
-	return client
+// Initialize 创建 Redis TCP 连接池并在启动阶段完成探测。
+func Initialize(ctx context.Context) error {
+	cfg := config.Get().Redis
+	if cfg == nil {
+		slog.Info("[cache] Redis 未配置，使用进程内缓存")
+		return nil
+	}
+
+	options, err := redis.ParseURL(cfg.URL)
+	if err != nil {
+		return err
+	}
+	options.PoolSize = cfg.PoolSize
+	options.MinIdleConns = cfg.MinIdleConns
+	options.DialTimeout = cfg.DialTimeout
+	options.ReadTimeout = cfg.ReadTimeout
+	options.WriteTimeout = cfg.WriteTimeout
+	candidate := redis.NewClient(options)
+	if err := candidate.Ping(ctx).Err(); err != nil {
+		_ = candidate.Close()
+		return err
+	}
+
+	clientMu.Lock()
+	previous := client
+	client = candidate
+	clientMu.Unlock()
+	if previous != nil {
+		_ = previous.Close()
+	}
+	slog.Info("[cache] Redis TCP 缓存已启用", "poolSize", cfg.PoolSize, "minIdleConns", cfg.MinIdleConns)
+	return nil
 }
 
-func (r *redisClient) cmd(args ...string) (json.RawMessage, error) {
-	body, err := json.Marshal(args)
-	if err != nil {
-		return nil, err
+// Ping 验证已配置 Redis 的可用性；未配置时视为可用。
+func Ping(ctx context.Context) error {
+	if r := getClient(); r != nil {
+		return r.Ping(ctx).Err()
 	}
-	req, err := http.NewRequest(http.MethodPost, r.baseURL, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
+	return nil
+}
+
+// Close 释放 Redis 连接池。
+func Close() {
+	clientMu.Lock()
+	previous := client
+	client = nil
+	clientMu.Unlock()
+	if previous != nil {
+		_ = previous.Close()
 	}
-	req.Header.Set("Authorization", "Bearer "+r.token)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := r.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("upstash: HTTP %d", resp.StatusCode)
-	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if err != nil {
-		return nil, err
-	}
-	var parsed struct {
-		Result json.RawMessage `json:"result"`
-		Error  string          `json:"error"`
-	}
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		return nil, err
-	}
-	if parsed.Error != "" {
-		return nil, fmt.Errorf("upstash: %s", parsed.Error)
-	}
-	return parsed.Result, nil
+}
+
+func getClient() *redis.Client {
+	clientMu.RLock()
+	defer clientMu.RUnlock()
+	return client
 }
 
 type memEntry struct {
@@ -96,25 +101,29 @@ type memEntry struct {
 }
 
 func memGet(key string) (json.RawMessage, bool) {
-	v, ok := memStore.Load(key)
+	value, ok := memStore.Load(key)
 	if !ok {
 		return nil, false
 	}
-	e := v.(memEntry)
-	if !e.expireAt.IsZero() && time.Now().After(e.expireAt) {
+	entry, ok := value.(memEntry)
+	if !ok {
 		memStore.Delete(key)
 		return nil, false
 	}
-	return e.value, true
+	if !entry.expireAt.IsZero() && time.Now().After(entry.expireAt) {
+		memStore.Delete(key)
+		return nil, false
+	}
+	return entry.value, true
 }
 
 func memSet(key string, value []byte, ttl time.Duration) {
 	cleanupExpiredMemoryEntries(time.Now())
-	e := memEntry{value: append([]byte(nil), value...)}
+	entry := memEntry{value: append([]byte(nil), value...)}
 	if ttl > 0 {
-		e.expireAt = time.Now().Add(ttl)
+		entry.expireAt = time.Now().Add(ttl)
 	}
-	memStore.Store(key, e)
+	memStore.Store(key, entry)
 }
 
 func cleanupExpiredMemoryEntries(now time.Time) {
@@ -134,28 +143,33 @@ func cleanupExpiredMemoryEntries(now time.Time) {
 // GetRaw 读取原始 JSON 缓存值。
 func GetRaw(key string) ([]byte, bool) {
 	if r := getClient(); r != nil {
-		result, err := r.cmd("GET", key)
-		if err == nil && len(result) > 0 && string(result) != "null" {
+		result, err := r.Get(context.Background(), key).Bytes()
+		if err == nil {
+			memStore.Delete(key)
 			return result, true
 		}
+		if !errors.Is(err, redis.Nil) {
+			slog.Warn("[cache] 读取 Redis 失败（回退进程内）", "key", key, "err", err)
+		}
 	}
-	if v, ok := memGet(key); ok {
-		return v, true
+	if value, ok := memGet(key); ok {
+		return value, true
 	}
 	return nil, false
 }
 
 // SetRaw 写入原始 JSON 缓存值。
 func SetRaw(key string, value []byte, ttlSeconds int) {
+	ttl := time.Duration(ttlSeconds) * time.Second
 	if r := getClient(); r != nil {
-		ttlArg := fmt.Sprintf("%d", ttlSeconds)
-		if _, err := r.cmd("SET", key, string(value), "EX", ttlArg); err == nil {
+		if err := r.Set(context.Background(), key, value, ttl).Err(); err == nil {
+			memStore.Delete(key)
 			return
 		} else {
-			slog.Warn("[cache] 写入缓存失败（回退进程内）", "key", key, "err", err)
+			slog.Warn("[cache] 写入 Redis 失败（回退进程内）", "key", key, "err", err)
 		}
 	}
-	memSet(key, value, time.Duration(ttlSeconds)*time.Second)
+	memSet(key, value, ttl)
 }
 
 // ReadThrough 读穿透 cache-aside。loader 返回值需可 JSON 序列化。
@@ -165,7 +179,6 @@ func ReadThrough[T any](key string, ttlSeconds int, loader func() (T, error)) (T
 		return cached, nil
 	}
 	value, err, _ := loadGroup.Do(key, func() (any, error) {
-		// 等待同键加载期间缓存可能已经写入，进入临界区后必须二次检查。
 		if cached, ok := readCached[T](key); ok {
 			return cached, nil
 		}
@@ -201,54 +214,47 @@ func readCached[T any](key string) (T, bool) {
 	return value, true
 }
 
-// Drop 删除键。
+// Drop 删除键。UNLINK 在 Redis 主线程外释放值，避免大对象阻塞。
 func Drop(keys ...string) {
 	if len(keys) == 0 {
 		return
 	}
 	if r := getClient(); r != nil {
-		args := append([]string{"DEL"}, keys...)
-		if _, err := r.cmd(args...); err == nil {
-			for _, k := range keys {
-				memStore.Delete(k)
-			}
-			return
+		if err := r.Unlink(context.Background(), keys...).Err(); err != nil {
+			slog.Warn("[cache] 删除 Redis 缓存失败", "count", len(keys), "err", err)
 		}
 	}
-	for _, k := range keys {
-		memStore.Delete(k)
+	for _, key := range keys {
+		memStore.Delete(key)
 	}
 }
 
-// DropByPrefix 按前缀删除（SCAN）。
+// DropByPrefix 使用增量 SCAN + UNLINK 删除前缀，避免阻塞 Redis。
 func DropByPrefix(prefix string) {
 	if r := getClient(); r != nil {
-		cursor := "0"
+		ctx := context.Background()
+		var cursor uint64
 		for {
-			result, err := r.cmd("SCAN", cursor, "MATCH", prefix+"*", "COUNT", "200")
+			keys, next, err := r.Scan(ctx, cursor, prefix+"*", 200).Result()
 			if err != nil {
+				slog.Warn("[cache] 扫描 Redis 缓存失败", "prefix", prefix, "err", err)
 				break
 			}
-			var pair [2]json.RawMessage
-			if err := json.Unmarshal(result, &pair); err != nil {
-				break
-			}
-			var keys []string
-			_ = json.Unmarshal(pair[1], &keys)
 			if len(keys) > 0 {
-				args := append([]string{"DEL"}, keys...)
-				_, _ = r.cmd(args...)
+				if err := r.Unlink(ctx, keys...).Err(); err != nil {
+					slog.Warn("[cache] 批量删除 Redis 缓存失败", "prefix", prefix, "count", len(keys), "err", err)
+					break
+				}
 			}
-			cursor = strings.Trim(string(pair[0]), `"`)
-			if cursor == "0" {
+			cursor = next
+			if cursor == 0 {
 				break
 			}
 		}
 	}
-	// 进程内兜底同步清理
-	memStore.Range(func(k, _ any) bool {
-		if ks, ok := k.(string); ok && strings.HasPrefix(ks, prefix) {
-			memStore.Delete(ks)
+	memStore.Range(func(key, _ any) bool {
+		if value, ok := key.(string); ok && strings.HasPrefix(value, prefix) {
+			memStore.Delete(value)
 		}
 		return true
 	})
