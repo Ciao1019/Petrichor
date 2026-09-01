@@ -175,11 +175,9 @@ flowchart TB
 
 Go 后端只读取 `apps/api/config.toml`；Web 公开变量只写入 `apps/web/.env.local`：
 
-| 配置位置 | 负责内容 |
-| :--- | :--- |
-| `apps/api/config.toml` | PostgreSQL、Session、加密、S3、LinuxDo、Redis、Agent 与模型凭证 |
-| `apps/web/.env.local` | `PETRICHOR_PUBLIC_*`、`VITE_*` 与本地 Go API 代理地址 |
-| 根目录 `.env` | Compose 域名、公开端口、Redis 本机端口与 Go 模块代理 |
+- **`apps/api/config.toml`** — PostgreSQL、Session、加密、存储、LinuxDo、Redis、Agent 与模型凭证。
+- **`apps/web/.env.local`** — 浏览器公开变量与本地 Go API 代理地址，只用于 Web 开发和构建。
+- **根目录 `.env`** — Compose 域名、公开端口、Redis 本机端口与 Go 模块代理。
 
 生产镜像由 Caddy 直接提供 Vite 构建产物，不运行 Bun Server。`config.toml` 通过 Compose secret 挂载，不会进入镜像。
 
