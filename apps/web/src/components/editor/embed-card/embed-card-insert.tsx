@@ -189,7 +189,6 @@ function EmbedCardDialogBody({
             <AlertDialogDescription asChild>
                 <div className="w-full">
                     <Input
-                        autoFocus
                         className="w-full"
                         onChange={(event) => setValue(event.target.value)}
                         onKeyDown={(event) => {

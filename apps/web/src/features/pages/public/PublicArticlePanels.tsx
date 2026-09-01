@@ -3,7 +3,6 @@ import * as React from "react"
 import { List, Loader2, X } from "@/components/iconimate"
 import { Suspense, useMemo } from "react"
 
-import { PlateMarkdownPreview } from "@/components/plate/PlateMarkdownPreview"
 import { ArticleImageLightbox, useArticleImageLightbox } from "@/features/pages/public/ArticleImageLightbox"
 import { cn } from "@/lib/utils"
 import type { TocItem } from "@/features/pages/public/public-article-utils"
@@ -16,6 +15,10 @@ type PublicArticlePanelProps = {
   activeHeadingId: string
   onTocClick: (id: string) => void
 }
+
+const LazyPlateMarkdownPreview = React.lazy(() => (
+  import("@/components/plate/PlateMarkdownPreview").then((module) => ({ default: module.PlateMarkdownPreview }))
+))
 
 const TOC_MIN_LEVEL = 2
 const TOC_MAX_LEVEL = 4
@@ -69,7 +72,8 @@ function PublicArticleFloatingToc({
         const active = activeHeadingId === item.id
         const w = active ? (LINE_W_ACTIVE[item.level] ?? 18) : (LINE_W[item.level] ?? 10)
         return (
-          <div
+          <button
+            type="button"
             key={item.id}
             data-toc-id={item.id}
             data-level={item.level}
@@ -78,7 +82,7 @@ function PublicArticleFloatingToc({
           >
             <span className="ftoc-text">{item.text}</span>
             <span className="ftoc-line" style={{ width: w }} />
-          </div>
+          </button>
         )
       })}
     </nav>
@@ -101,7 +105,10 @@ function MobileTocDrawer({
   return (
     <div className="lg:hidden">
       {/* 遮罩层 */}
-      <div
+      <button
+        type="button"
+        aria-label="关闭目录"
+        tabIndex={open ? 0 : -1}
         className={cn(
           "fixed inset-0 z-40 bg-blue-950/55 transition-opacity duration-300",
           open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
@@ -169,14 +176,16 @@ export function PublicArticlePanel({
   return (
     <>
       <div ref={contentContainerRef}>
-        <PlateMarkdownPreview
-          contentJson={contentJson}
-          contentMetaJson={contentMetaJson}
-          markdown={contentMd}
-          headings={toc}
-          className="mx-auto max-w-none"
-          publicMediaAccess
-        />
+        <Suspense fallback={<div className="min-h-40 animate-pulse rounded-xl bg-white/5" />}>
+          <LazyPlateMarkdownPreview
+            contentJson={contentJson}
+            contentMetaJson={contentMetaJson}
+            markdown={contentMd}
+            headings={toc}
+            className="mx-auto max-w-none"
+            publicMediaAccess
+          />
+        </Suspense>
       </div>
       <ArticleImageLightbox image={lightbox.image} onClose={lightbox.close} />
       {navToc.length > 0 ? (

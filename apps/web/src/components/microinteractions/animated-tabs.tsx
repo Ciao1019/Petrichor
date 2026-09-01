@@ -137,9 +137,10 @@ export function AnimatedTabs({
       let nextIndex = currentIndex;
       for (let offset = 0; offset < options.length; offset += 1) {
         nextIndex = (nextIndex + direction + options.length) % options.length;
-        if (options[nextIndex]?.disabled) continue;
+        const nextOption = options[nextIndex];
+        if (!nextOption || nextOption.disabled) continue;
         buttonRefs.current[nextIndex]?.focus();
-        selectValue(options[nextIndex].value);
+        selectValue(nextOption.value);
         return;
       }
     },
@@ -205,8 +206,10 @@ export function AnimatedTabs({
                   ? enabledIndexes[0]
                   : enabledIndexes.at(-1);
                 if (nextIndex === undefined) return;
+                const nextOption = options[nextIndex];
+                if (!nextOption) return;
                 buttonRefs.current[nextIndex]?.focus();
-                selectValue(options[nextIndex].value);
+                selectValue(nextOption.value);
               }
             }}
           >

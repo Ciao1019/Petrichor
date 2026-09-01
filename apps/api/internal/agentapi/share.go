@@ -53,8 +53,8 @@ func scanShareLite(row interface{ Scan(dest ...any) error }) (*shareLite, error)
 	return &s, nil
 }
 
-func loadShareByArticle(q querierLike, articleID int64) (*shareLite, error) {
-	row := q.QueryRow(context.Background(),
+func loadShareByArticle(ctx context.Context, q querierLike, articleID int64) (*shareLite, error) {
+	row := q.QueryRow(ctx,
 		`SELECT `+shareLiteColumns+` FROM petrichor_kb_article_share WHERE article_id = $1 LIMIT 1`,
 		articleID)
 	share, err := scanShareLite(row)
@@ -143,6 +143,7 @@ func toAgentShareResponse(share *shareLite) map[string]any {
 
 // AgentShareCreate POST /api/agent/article/share/create（scope share:write）。
 func AgentShareCreate(c *gin.Context, actx *authContext) (any, error) {
+	ctx := c.Request.Context()
 	if err := requireAgentScope(actx, "share:write"); err != nil {
 		return nil, err
 	}
@@ -155,12 +156,11 @@ func AgentShareCreate(c *gin.Context, actx *authContext) (any, error) {
 		return nil, err
 	}
 	q := dbPool()
-	ctx := context.Background()
-	if _, err := loadOwnedArticle(q, actx.UserID, articleID); err != nil {
+	if _, err := loadOwnedArticle(ctx, q, actx.UserID, articleID); err != nil {
 		return nil, err
 	}
 
-	existing, err := loadShareByArticle(q, articleID)
+	existing, err := loadShareByArticle(ctx, q, articleID)
 	if err != nil {
 		return nil, err
 	}
@@ -246,6 +246,7 @@ func AgentShareCreate(c *gin.Context, actx *authContext) (any, error) {
 
 // AgentShareRevoke POST /api/agent/article/share/revoke（scope share:write）。
 func AgentShareRevoke(c *gin.Context, actx *authContext) (any, error) {
+	ctx := c.Request.Context()
 	if err := requireAgentScope(actx, "share:write"); err != nil {
 		return nil, err
 	}
@@ -258,12 +259,11 @@ func AgentShareRevoke(c *gin.Context, actx *authContext) (any, error) {
 		return nil, err
 	}
 	q := dbPool()
-	ctx := context.Background()
-	if _, err := loadOwnedArticle(q, actx.UserID, articleID); err != nil {
+	if _, err := loadOwnedArticle(ctx, q, actx.UserID, articleID); err != nil {
 		return nil, err
 	}
 
-	share, err := loadShareByArticle(q, articleID)
+	share, err := loadShareByArticle(ctx, q, articleID)
 	if err != nil {
 		return nil, err
 	}
@@ -298,6 +298,7 @@ func AgentShareRevoke(c *gin.Context, actx *authContext) (any, error) {
 
 // AgentShareInfo POST /api/agent/article/share/info（scope share:write）。
 func AgentShareInfo(c *gin.Context, actx *authContext) (any, error) {
+	ctx := c.Request.Context()
 	if err := requireAgentScope(actx, "share:write"); err != nil {
 		return nil, err
 	}
@@ -310,11 +311,11 @@ func AgentShareInfo(c *gin.Context, actx *authContext) (any, error) {
 		return nil, err
 	}
 	q := dbPool()
-	if _, err := loadOwnedArticle(q, actx.UserID, articleID); err != nil {
+	if _, err := loadOwnedArticle(ctx, q, actx.UserID, articleID); err != nil {
 		return nil, err
 	}
 
-	share, err := loadShareByArticle(q, articleID)
+	share, err := loadShareByArticle(ctx, q, articleID)
 	if err != nil {
 		return nil, err
 	}

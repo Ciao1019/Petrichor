@@ -106,7 +106,9 @@ function extractItems(rawItems: unknown[], pageHeight: number): RawTextItem[] {
         if (!transform || transform.length < 6) continue
         const x = transform[4]
         const yBottom = transform[5]
-        const fontHeight = Math.abs(transform[3]) || Math.hypot(transform[2] ?? 0, transform[3] ?? 0) || 10
+        if (typeof x !== "number" || typeof yBottom !== "number") continue
+        const transformHeight = transform[3] ?? 0
+        const fontHeight = Math.abs(transformHeight) || Math.hypot(transform[2] ?? 0, transformHeight) || 10
         const width = typeof item.width === "number" ? item.width : item.str.length * fontHeight * 0.5
         const height = typeof item.height === "number" && item.height > 0 ? item.height : fontHeight
         const top = pageHeight - yBottom - height

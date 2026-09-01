@@ -11,10 +11,10 @@ export function buildFallbackMindmapData(title: string, toc: TocItem[]): MindEli
 
   for (const item of toc) {
     const node: TreeNode = { topic: item.text, children: [] }
-    while (stack.length > 1 && stack[stack.length - 1].level >= item.level) {
+    while (stack.length > 1 && (stack.at(-1)?.level ?? 0) >= item.level) {
       stack.pop()
     }
-    stack[stack.length - 1].node.children?.push(node)
+    stack.at(-1)?.node.children?.push(node)
     stack.push({ level: item.level, node })
   }
 

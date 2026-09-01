@@ -1,4 +1,4 @@
-// wiki3.go 对照 article-knowledge-index.ts：分片索引状态、chunk/list 与 wiki/embedding/run。
+// wiki-chunk-index.go 文章分片索引：索引状态查询、chunk 列表与向量补写端点。
 package kb
 
 import (
@@ -35,8 +35,7 @@ type embeddingProfile struct {
 }
 
 // loadEmbeddingProfileOrNull 只读解析 EMBEDDING 绑定；未配置/失效返回 nil。
-func loadEmbeddingProfileOrNull(q execQuerier, userID int64) (*embeddingProfile, error) {
-	ctx := context.Background()
+func loadEmbeddingProfileOrNull(ctx context.Context, q execQuerier, userID int64) (*embeddingProfile, error) {
 	var (
 		modelRefID int64
 		modelID    string
@@ -65,11 +64,11 @@ type indexPhaseStatus struct {
 }
 
 // getArticleIndexStatus 对应 getKnowledgeBaseArticleIndexStatus（Postgres 路径）。
-func getArticleIndexStatus(q execQuerier, userID, knowledgeBaseID int64) (map[string]any, error) {
-	if _, err := assertKnowledgeBaseOwner(q, userID, knowledgeBaseID); err != nil {
+func getArticleIndexStatus(ctx context.Context, q execQuerier, userID, knowledgeBaseID int64) (map[string]any, error) {
+	if _, err := assertKnowledgeBaseOwner(ctx, q, userID, knowledgeBaseID); err != nil {
 		return nil, err
 	}
-	profile, err := loadEmbeddingProfileOrNull(q, userID)
+	profile, err := loadEmbeddingProfileOrNull(ctx, q, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +80,7 @@ func getArticleIndexStatus(q execQuerier, userID, knowledgeBaseID int64) (map[st
 			and embedding_model = $3 and embedding_dimensions = $4 and embedding_version = $5)`
 		args = append(args, profile.model, *profile.dimensions, profile.version)
 	}
-	rows, err := q.Query(context.Background(),
+	rows, err := q.Query(ctx,
 		`SELECT source_type,
 		   count(*)::bigint AS total,
 		   count(*) filter (where `+countableCond+`)::bigint AS embedded,
@@ -168,10 +167,10 @@ func ArticleKnowledgeChunkList(c *ginContext) {
 			return nil, err
 		}
 		q := pool()
-		if _, err := assertKnowledgeBaseOwner(q, user.ID, kbID); err != nil {
+		if _, err := assertKnowledgeBaseOwner(c.Request.Context(), q, user.ID, kbID); err != nil {
 			return nil, err
 		}
-		article, err := queryArticle(q,
+		article, err := queryArticle(c.Request.Context(), q,
 			`SELECT `+articleColumns+` FROM petrichor_kb_article
 			 WHERE id = $1 AND user_id = $2 AND knowledge_base_id = $3 LIMIT 1`,
 			articleID, user.ID, kbID)
@@ -181,14 +180,14 @@ func ArticleKnowledgeChunkList(c *ginContext) {
 		if article == nil {
 			return nil, notFoundErr("文章不存在")
 		}
-		chunkRows, err := queryChunks(q,
+		chunkRows, err := queryChunks(c.Request.Context(), q,
 			`SELECT `+chunkColumns+` FROM petrichor_kb_article_chunk
 			 WHERE user_id = $1 AND knowledge_base_id = $2 AND article_id = $3 ORDER BY position ASC`,
 			user.ID, kbID, article.ID)
 		if err != nil {
 			return nil, err
 		}
-		sourcePage, err := loadWikiPage(q, user.ID, kbID, buildArticleWikiSourcePageKey(article.ID))
+		sourcePage, err := loadWikiPage(c.Request.Context(), q, user.ID, kbID, buildArticleWikiSourcePageKey(article.ID))
 		if err != nil {
 			return nil, err
 		}
@@ -255,8 +254,8 @@ func ArticleKnowledgeChunkList(c *ginContext) {
 	})
 }
 
-func queryChunks(q execQuerier, sql string, args ...any) ([]ChunkRow, error) {
-	rows, err := q.Query(context.Background(), sql, args...)
+func queryChunks(ctx context.Context, q execQuerier, sql string, args ...any) ([]ChunkRow, error) {
+	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -296,8 +295,8 @@ type pendingIndexRow struct {
 }
 
 // loadPendingIndexRows 待重算行：模型/维度/版本不一致或尚未就绪。
-func loadPendingIndexRows(q execQuerier, userID, knowledgeBaseID int64, sourceType string, profile *embeddingProfile) ([]pendingIndexRow, bool, error) {
-	rows, err := q.Query(context.Background(),
+func loadPendingIndexRows(ctx context.Context, q execQuerier, userID, knowledgeBaseID int64, sourceType string, profile *embeddingProfile) ([]pendingIndexRow, bool, error) {
+	rows, err := q.Query(ctx,
 		`SELECT id, embedding_text FROM petrichor_kb_article_chunk_index
 		 WHERE user_id = $1 AND knowledge_base_id = $2 AND source_type = $3 AND id IN (
 		   SELECT id FROM petrichor_kb_article_chunk_index
@@ -342,7 +341,7 @@ func nullableInt(v *int32) any {
 }
 
 // writeIndexEmbeddings 分批生成向量并回写索引行；失败时标记 failed 并抛出。
-func writeIndexEmbeddings(q execQuerier, userID int64, rowsIn []pendingIndexRow, profile *embeddingProfile) (int, error) {
+func writeIndexEmbeddings(ctx context.Context, q execQuerier, userID int64, rowsIn []pendingIndexRow, profile *embeddingProfile) (int, error) {
 	written := 0
 	for offset := 0; offset < len(rowsIn); offset += indexBatchSize {
 		end := offset + indexBatchSize
@@ -354,13 +353,13 @@ func writeIndexEmbeddings(q execQuerier, userID int64, rowsIn []pendingIndexRow,
 		for _, row := range batch {
 			texts = append(texts, row.embeddingText)
 		}
-		vectors, err := EmbedInvoker(context.Background(), EmbedRequest{
+		vectors, err := EmbedInvoker(ctx, EmbedRequest{
 			UserID: userID, Texts: texts, Op: "kb.article-index",
 		})
 		if err != nil {
 			message := truncateRunes(err.Error(), 1000)
 			for _, row := range batch {
-				_, _ = q.Exec(context.Background(),
+				_, _ = q.Exec(context.WithoutCancel(ctx),
 					`UPDATE petrichor_kb_article_chunk_index SET embedding_status = 'failed',
 					 embedding_error = $1, embedding_updated_at = now() WHERE id = $2`, message, row.id)
 			}
@@ -374,7 +373,7 @@ func writeIndexEmbeddings(q execQuerier, userID int64, rowsIn []pendingIndexRow,
 			if literal == "" {
 				continue
 			}
-			if _, uerr := q.Exec(context.Background(),
+			if _, uerr := q.Exec(ctx,
 				`UPDATE petrichor_kb_article_chunk_index SET embedding = $1::vector,
 				 embedding_status = 'ready', embedding_model = $2, embedding_dimensions = $3,
 				 embedding_version = $4, embedding_error = NULL, embedding_updated_at = now(), updated_at = now()
@@ -428,45 +427,46 @@ func WikiEmbeddingRun(c *ginContext) {
 			return nil, err
 		}
 		q := pool()
-		profile, err := loadEmbeddingProfileOrNull(q, user.ID)
+		ctx := c.Request.Context()
+		profile, err := loadEmbeddingProfileOrNull(ctx, q, user.ID)
 		if err != nil {
 			return nil, err
 		}
 		if profile == nil {
 			return nil, badReq("未配置向量模型：请先在「AI 模型配置」绑定 EMBEDDING 模型")
 		}
-		if _, err := assertKnowledgeBaseOwner(q, user.ID, kbID); err != nil {
+		if _, err := assertKnowledgeBaseOwner(ctx, q, user.ID, kbID); err != nil {
 			return nil, err
 		}
 
-		chunkRows, chunkHasMore, err := loadPendingIndexRows(q, user.ID, kbID, "chunk", profile)
+		chunkRows, chunkHasMore, err := loadPendingIndexRows(ctx, q, user.ID, kbID, "chunk", profile)
 		if err != nil {
 			return nil, err
 		}
-		embeddedChunks, err := writeIndexEmbeddings(q, user.ID, chunkRows, profile)
+		embeddedChunks, err := writeIndexEmbeddings(ctx, q, user.ID, chunkRows, profile)
 		if err != nil {
 			return nil, err
 		}
 
 		embeddedQuestions := 0
 		if !chunkHasMore {
-			remaining, _, err := loadPendingIndexRows(q, user.ID, kbID, "chunk", profile)
+			remaining, _, err := loadPendingIndexRows(ctx, q, user.ID, kbID, "chunk", profile)
 			if err != nil {
 				return nil, err
 			}
 			if len(remaining) == 0 {
-				questionRows, _, qerr := loadPendingIndexRows(q, user.ID, kbID, "question", profile)
+				questionRows, _, qerr := loadPendingIndexRows(ctx, q, user.ID, kbID, "question", profile)
 				if qerr != nil {
 					return nil, qerr
 				}
-				embeddedQuestions, err = writeIndexEmbeddings(q, user.ID, questionRows, profile)
+				embeddedQuestions, err = writeIndexEmbeddings(ctx, q, user.ID, questionRows, profile)
 				if err != nil {
 					return nil, err
 				}
 			}
 		}
 
-		status, err := getArticleIndexStatus(q, user.ID, kbID)
+		status, err := getArticleIndexStatus(ctx, q, user.ID, kbID)
 		if err != nil {
 			return nil, err
 		}

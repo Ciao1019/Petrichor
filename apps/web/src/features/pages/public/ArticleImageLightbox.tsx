@@ -107,6 +107,7 @@ export function ArticleImageLightbox({ image, onClose }: { image: LightboxImage 
         let capture = false
         if (pointers.length === 2) {
             const [a, b] = pointers
+            if (!a || !b) return
             gestureRef.current = {
                 startDist: Math.hypot(a.x - b.x, a.y - b.y),
                 startMid: pointFromEvent({ clientX: (a.x + b.x) / 2, clientY: (a.y + b.y) / 2 }),
@@ -137,6 +138,7 @@ export function ArticleImageLightbox({ image, onClose }: { image: LightboxImage 
         const gesture = gestureRef.current
         if (pointers.length === 2 && gesture) {
             const [a, b] = pointers
+            if (!a || !b) return
             const dist = Math.hypot(a.x - b.x, a.y - b.y)
             if (gesture.startDist > 0) {
                 const nextScale = gesture.startTransform.scale * (dist / gesture.startDist)
@@ -179,7 +181,7 @@ export function ArticleImageLightbox({ image, onClose }: { image: LightboxImage 
             onContextMenu={(event) => event.preventDefault()}
         >
             {/* 遮罩：单击关闭 */}
-            <div className="absolute inset-0 bg-black/85" onClick={onClose} />
+            <button type="button" aria-label="关闭图片预览" className="absolute inset-0 bg-black/85" onClick={onClose} />
 
             <img
                 src={image.src}

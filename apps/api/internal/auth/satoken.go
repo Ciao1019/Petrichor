@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -80,8 +81,29 @@ func managerAndPlugin() (*sagin.Manager, *sagin.Plugin) {
 
 // SaTokenInterceptor 使用官方 Gin 集成统一提取 Header、Cookie 和 Query token。
 func SaTokenInterceptor() gin.HandlerFunc {
-	_, plugin := managerAndPlugin()
-	return plugin.TokenInterceptor()
+	manager, _ := managerAndPlugin()
+	return func(c *gin.Context) {
+		// 上游 Sa-Token 默认还会从 Query 读取 Token。Session 出现在 URL 中会泄漏到
+		// 访问日志、浏览器历史和 Referrer，因此这里只允许 Header/Cookie。
+		c.Set("satoken_token", manager.CutTokenPrefix(rawSessionTokenFromRequest(c)))
+		c.Next()
+	}
+}
+
+func rawSessionTokenFromRequest(c *gin.Context) string {
+	if value := strings.TrimSpace(c.GetHeader(SessionCookieName)); value != "" {
+		return value
+	}
+	if authorization := strings.TrimSpace(c.GetHeader("Authorization")); authorization != "" {
+		const bearer = "Bearer "
+		if len(authorization) > len(bearer) && strings.EqualFold(authorization[:len(bearer)], bearer) {
+			return strings.TrimSpace(authorization[len(bearer):])
+		}
+	}
+	if cookie, err := c.Cookie(SessionCookieName); err == nil {
+		return strings.TrimSpace(cookie)
+	}
+	return ""
 }
 
 func currentSaToken(c *gin.Context) string {
@@ -89,7 +111,7 @@ func currentSaToken(c *gin.Context) string {
 		return token
 	}
 	manager, _ := managerAndPlugin()
-	return sagin.NewContext(sagin.NewGinContext(c), manager).GetTokenValue()
+	return manager.CutTokenPrefix(rawSessionTokenFromRequest(c))
 }
 
 func setAuthTokenCookie(c *gin.Context, token string) {

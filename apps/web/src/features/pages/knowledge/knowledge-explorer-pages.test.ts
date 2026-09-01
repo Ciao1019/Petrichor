@@ -52,8 +52,9 @@ describe("knowledge explorer pages", () => {
 
   it("文章标题和摘要都可以被搜索", () => {
     const sourcePage = pages[1]
-    expect(matchesKnowledgeExplorerQuery(sourcePage, "小鼹鼠")).toBe(true)
-    expect(matchesKnowledgeExplorerQuery(sourcePage, "macOS")).toBe(true)
-    expect(matchesKnowledgeExplorerQuery(sourcePage, "不存在")).toBe(false)
+    expect(sourcePage).toBeDefined()
+    expect(matchesKnowledgeExplorerQuery(sourcePage!, "小鼹鼠")).toBe(true)
+    expect(matchesKnowledgeExplorerQuery(sourcePage!, "macOS")).toBe(true)
+    expect(matchesKnowledgeExplorerQuery(sourcePage!, "不存在")).toBe(false)
   })
 })

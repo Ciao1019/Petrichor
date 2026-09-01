@@ -142,9 +142,9 @@ func buildInternalLink(internalURL *string) map[string]any {
 }
 
 // requireOwner 对应 share-handlers.ts 的 requireOwner：文章不存在 404，非属主 403。
-func requireOwner(q execQuerier, userID, articleID int64) error {
+func requireOwner(ctx context.Context, q execQuerier, userID, articleID int64) error {
 	var ownerUserID int64
-	err := q.QueryRow(context.Background(),
+	err := q.QueryRow(ctx,
 		`SELECT b.user_id FROM petrichor_kb_article a
 		 JOIN petrichor_kb_node n ON n.id = a.node_id
 		 JOIN petrichor_kb_knowledge_base b ON b.id = n.knowledge_base_id
@@ -194,8 +194,8 @@ func existingPasswordHash(existing *ShareRow) *string {
 }
 
 // loadShareByArticle 按文章取唯一分享记录（ux_petrichor_kb_article_share_article）。
-func loadShareByArticle(q execQuerier, articleID int64) (*ShareRow, error) {
-	rows, err := q.Query(context.Background(),
+func loadShareByArticle(ctx context.Context, q execQuerier, articleID int64) (*ShareRow, error) {
+	rows, err := q.Query(ctx,
 		`SELECT `+shareColumns+` FROM petrichor_kb_article_share WHERE article_id = $1 LIMIT 1`, articleID)
 	if err != nil {
 		return nil, err
@@ -250,10 +250,10 @@ func CreateArticleShare(c *gin.Context) {
 			return nil, err
 		}
 		q := pool()
-		if err := requireOwner(q, user.ID, articleID); err != nil {
+		if err := requireOwner(c.Request.Context(), q, user.ID, articleID); err != nil {
 			return nil, err
 		}
-		existing, err := loadShareByArticle(q, articleID)
+		existing, err := loadShareByArticle(c.Request.Context(), q, articleID)
 		if err != nil {
 			return nil, err
 		}
@@ -283,7 +283,7 @@ func CreateArticleShare(c *gin.Context) {
 
 		var share *ShareRow
 		if existing != nil {
-			rows, uerr := q.Query(c,
+			rows, uerr := q.Query(c.Request.Context(),
 				`UPDATE petrichor_kb_article_share SET share_code = $3, enabled = $4,
 				 expires_at = $5, password_hash = $6, is_repost = $7, original_url = $8,
 				 original_author_name = $9, internal_url = $10, revoked_at = NULL, updated_at = now()
@@ -298,7 +298,7 @@ func CreateArticleShare(c *gin.Context) {
 				return nil, uerr
 			}
 		} else {
-			rows, ierr := q.Query(c,
+			rows, ierr := q.Query(c.Request.Context(),
 				`INSERT INTO petrichor_kb_article_share (user_id, article_id, share_code, enabled,
 				 expires_at, password_hash, is_repost, original_url, original_author_name, internal_url)
 				 VALUES ($1,$2,$3,true,$4,$5,$6,$7,$8,$9) RETURNING `+shareColumns,
@@ -374,10 +374,10 @@ func RevokeArticleShare(c *gin.Context) {
 			return nil, err
 		}
 		q := pool()
-		if err := requireOwner(q, user.ID, articleID); err != nil {
+		if err := requireOwner(c.Request.Context(), q, user.ID, articleID); err != nil {
 			return nil, err
 		}
-		share, err := loadShareByArticle(q, articleID)
+		share, err := loadShareByArticle(c.Request.Context(), q, articleID)
 		if err != nil {
 			return nil, err
 		}
@@ -392,7 +392,7 @@ func RevokeArticleShare(c *gin.Context) {
 			}, nil
 		}
 		now := time.Now()
-		if _, err := q.Exec(c,
+		if _, err := q.Exec(c.Request.Context(),
 			`UPDATE petrichor_kb_article_share SET enabled = false, revoked_at = $1, updated_at = $1
 			 WHERE id = $2`, now, share.ID); err != nil {
 			return nil, err
@@ -424,10 +424,10 @@ func ArticleShareInfo(c *gin.Context) {
 			return nil, err
 		}
 		q := pool()
-		if err := requireOwner(q, user.ID, articleID); err != nil {
+		if err := requireOwner(c.Request.Context(), q, user.ID, articleID); err != nil {
 			return nil, err
 		}
-		share, err := loadShareByArticle(q, articleID)
+		share, err := loadShareByArticle(c.Request.Context(), q, articleID)
 		if err != nil {
 			return nil, err
 		}
@@ -505,10 +505,10 @@ func SetArticleSharePin(c *gin.Context) {
 			}
 		}
 		q := pool()
-		if err := requireOwner(q, user.ID, articleID); err != nil {
+		if err := requireOwner(c.Request.Context(), q, user.ID, articleID); err != nil {
 			return nil, err
 		}
-		share, err := loadShareByArticle(q, articleID)
+		share, err := loadShareByArticle(c.Request.Context(), q, articleID)
 		if err != nil {
 			return nil, err
 		}
@@ -519,7 +519,7 @@ func SetArticleSharePin(c *gin.Context) {
 			return nil, badReq("文章未处于公开状态,无法置顶")
 		}
 		now := time.Now()
-		updated, err := updateShareReturning(q,
+		updated, err := updateShareReturning(c.Request.Context(), q,
 			`UPDATE petrichor_kb_article_share SET pin_order = $1, updated_at = $2 WHERE id = $3 RETURNING `+shareColumns,
 			pinOrder, now, share.ID)
 		if err != nil {
@@ -539,8 +539,8 @@ func SetArticleSharePin(c *gin.Context) {
 
 func ptrInt32(v int32) *int32 { return &v }
 
-func updateShareReturning(q execQuerier, sql string, args ...any) (*ShareRow, error) {
-	rows, err := q.Query(context.Background(), sql, args...)
+func updateShareReturning(ctx context.Context, q execQuerier, sql string, args ...any) (*ShareRow, error) {
+	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -4,6 +4,7 @@ package agentapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -279,7 +280,9 @@ func callMCPTool(c *gin.Context, actx *auth.AgentAuthContext, toolName string, a
 
 	ip := resolveClientIp(c)
 	userAgent := c.GetHeader("User-Agent")
-	recordAgentCallLogRow(actx, "POST", spec.endpoint, ip, userAgentPtr(userAgent),
+	logCtx, cancelLog := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 5*time.Second)
+	defer cancelLog()
+	recordAgentCallLogRow(logCtx, actx, "POST", spec.endpoint, ip, userAgentPtr(userAgent),
 		string(argsRaw), string(bodyBytes), statusCode, durationMs, execErr)
 
 	if statusCode >= 200 && statusCode < 300 {

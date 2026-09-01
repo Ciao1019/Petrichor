@@ -20,7 +20,7 @@ func AgentWikiPageList(c *gin.Context, actx *authContext) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	pages, err := kb.ListWikiPagesForAgent(dbPool(), actx.UserID, kbID)
+	pages, err := kb.ListWikiPagesForAgent(c.Request.Context(), dbPool(), actx.UserID, kbID)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func AgentWikiPageDetail(c *gin.Context, actx *authContext) (any, error) {
 	if pageKey == "" || len([]rune(pageKey)) > 200 {
 		return nil, badReq("pageKey 必须在 1 到 200 个字符之间")
 	}
-	return kb.LoadWikiPageDetailForAgent(dbPool(), actx.UserID, kbID, pageKey)
+	return kb.LoadWikiPageDetailForAgent(c.Request.Context(), dbPool(), actx.UserID, kbID, pageKey)
 }
 
 // AgentWikiLint POST /api/agent/wiki/lint（scope wiki:read）。
@@ -63,7 +63,7 @@ func AgentWikiLint(c *gin.Context, actx *authContext) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return kb.RunWikiLintForAgent(dbPool(), actx.UserID, kbID)
+	return kb.RunWikiLintForAgent(c.Request.Context(), dbPool(), actx.UserID, kbID)
 }
 
 // AgentWikiIngest POST /api/agent/wiki/ingest（scope wiki:write）。
@@ -92,7 +92,7 @@ func AgentWikiIngest(c *gin.Context, actx *authContext) (any, error) {
 			articleIDs = append(articleIDs, id)
 		}
 	}
-	result, err := kb.IngestWikiCore(dbPool(), kb.IngestWikiInput{
+	result, err := kb.IngestWikiCore(c.Request.Context(), dbPool(), kb.IngestWikiInput{
 		UserID:          actx.UserID,
 		KnowledgeBaseID: kbID,
 		ArticleIDs:      articleIDs,

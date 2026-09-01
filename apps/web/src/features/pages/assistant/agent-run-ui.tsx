@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo } from "react"
 import {
-    ComposerPrimitive,
     makeAssistantDataUI,
     useAuiState,
     useMessagePartText,
@@ -27,7 +26,7 @@ import { annotateNormalQaWikiMentions } from "@/lib/wiki-mentions"
 /** 事件摄取：只把事件写进 Store，本身不渲染任何内容 */
 export const AgentEventDataUI = makeAssistantDataUI({
     name: "agent-event",
-    render: ({ data }) => {
+    render: function AgentEventRenderer({ data }) {
         const append = useAgentRunsStore((state) => state.appendEvent)
         useEffect(() => {
             if (isAgentStreamEvent(data)) append(data)
@@ -54,7 +53,7 @@ export function useCurrentAgentRun(): AgentRunViewModel | null {
 }
 
 /**
- * 消息内的执行面板。
+ * 消息内的执行轨迹。
  * 简单请求（direct、无工具活动）不渲染，保持原有简洁聊天体验。
  */
 export function AgentRunPanel() {
@@ -121,20 +120,6 @@ export function AgentAnswerText() {
     const { text, status } = useMessagePartText()
     if (usesRunAnswer(run)) return null
     return <QaStreamingMarkdown text={text} running={!run && status?.type === "running"} />
-}
-
-/** 运行中的停止按钮（挂在面板外，确保移动端也始终可达，§162.31） */
-export function AgentStopButton() {
-    return (
-        <ComposerPrimitive.Cancel asChild>
-            <button
-                type="button"
-                className="rounded-md border border-border/60 px-2 py-1 text-[12px] text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-            >
-                停止
-            </button>
-        </ComposerPrimitive.Cancel>
-    )
 }
 
 /**

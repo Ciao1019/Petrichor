@@ -82,7 +82,8 @@ export const suggestionPlugin = toTPlatePlugin<SuggestionConfig>(
     },
   },
   render: {
-    belowNodes: SuggestionLineBreak as any,
+    // 上游两个 Plate 泛型实例在类型层无法合并，运行时包装器契约一致。
+    belowNodes: SuggestionLineBreak as never,
     node: SuggestionLeaf,
   },
 });

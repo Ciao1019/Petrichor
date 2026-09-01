@@ -138,6 +138,7 @@ async function runPool<T>(items: T[], limit: number, worker: (item: T) => Promis
     while (cursor < items.length) {
       const current = items[cursor]
       cursor += 1
+      if (current === undefined) return
       await worker(current)
     }
   })

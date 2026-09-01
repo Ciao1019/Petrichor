@@ -239,7 +239,7 @@ func GenerateArticleMindmap(c *ginContext) {
 		forceRebuild := rawBool(raw, "forceRebuild")
 
 		q := pool()
-		article, err := queryArticle(q,
+		article, err := queryArticle(c.Request.Context(), q,
 			`SELECT `+articleColumns+` FROM petrichor_kb_article WHERE id = $1 LIMIT 1`, articleID)
 		if err != nil {
 			return nil, err
@@ -247,7 +247,7 @@ func GenerateArticleMindmap(c *ginContext) {
 		if article == nil || article.UserID != user.ID {
 			return nil, notFoundErr("文章不存在")
 		}
-		kbRow, err := scanKB(q.QueryRow(c,
+		kbRow, err := scanKB(q.QueryRow(c.Request.Context(),
 			`SELECT `+kbColumns+` FROM petrichor_kb_knowledge_base WHERE id = $1 LIMIT 1`,
 			article.KnowledgeBaseID))
 		if err != nil {
@@ -280,7 +280,7 @@ func GenerateArticleMindmap(c *ginContext) {
 			}
 		}
 
-		answer, err := ChatInvoker(c, ChatRequest{
+		answer, err := ChatInvoker(c.Request.Context(), ChatRequest{
 			UserID:       user.ID,
 			SystemPrompt: buildMindmapSystemPrompt(mode),
 			Message:      buildMindmapUserMessage(kbRow.Name, article.Title, article.ContentMd),
@@ -305,14 +305,14 @@ func GenerateArticleMindmap(c *ginContext) {
 		generatedAt := time.Now()
 
 		if mode == "KNOWLEDGE_GRAPH" {
-			if _, uerr := q.Exec(c,
+			if _, uerr := q.Exec(c.Request.Context(),
 				`UPDATE petrichor_kb_article SET mindmap_kg_json = $1, mindmap_kg_content_hash = $2,
 				 mindmap_kg_generated_at = $3, updated_at = $3 WHERE id = $4`,
 				generatedJSON, currentHash, generatedAt, article.ID); uerr != nil {
 				return nil, uerr
 			}
 		} else {
-			if _, uerr := q.Exec(c,
+			if _, uerr := q.Exec(c.Request.Context(),
 				`UPDATE petrichor_kb_article SET mindmap_json = $1, mindmap_content_hash = $2,
 				 mindmap_generated_at = $3, updated_at = $3 WHERE id = $4`,
 				generatedJSON, currentHash, generatedAt, article.ID); uerr != nil {
@@ -413,7 +413,7 @@ func GenerateArticleSummary(c *ginContext) {
 		forceRebuild := rawBool(raw, "forceRebuild")
 
 		q := pool()
-		article, err := queryArticle(q,
+		article, err := queryArticle(c.Request.Context(), q,
 			`SELECT `+articleColumns+` FROM petrichor_kb_article WHERE id = $1 AND user_id = $2 LIMIT 1`,
 			articleID, user.ID)
 		if err != nil {
@@ -437,7 +437,7 @@ func GenerateArticleSummary(c *ginContext) {
 			}, nil
 		}
 
-		answer, err := ChatInvoker(c, ChatRequest{
+		answer, err := ChatInvoker(c.Request.Context(), ChatRequest{
 			UserID:       user.ID,
 			SystemPrompt: buildArticleSummarySystemPrompt(),
 			Message:      buildArticleSummaryUserMessage(article.Title, article.ContentMd),
@@ -451,7 +451,7 @@ func GenerateArticleSummary(c *ginContext) {
 			return nil, nerr
 		}
 		generatedAt := time.Now()
-		if _, uerr := q.Exec(c,
+		if _, uerr := q.Exec(c.Request.Context(),
 			`UPDATE petrichor_kb_article SET ai_summary = $1, ai_summary_content_hash = $2,
 			 ai_summary_generated_at = $3, updated_at = $3 WHERE id = $4 AND user_id = $5`,
 			summary, currentHash, generatedAt, article.ID, user.ID); uerr != nil {

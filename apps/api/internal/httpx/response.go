@@ -2,6 +2,8 @@
 package httpx
 
 import (
+	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -79,13 +81,53 @@ func ErrorJSON(c *gin.Context, status int, msg string) {
 	})
 }
 
+// ErrorLogger 在请求结束后统一记录 HandleError 收敛的错误，并为没有显式
+// error cause 的 5xx 响应提供兜底日志。SSE 已经写出 200 后仍可能失败，因此
+// 不能只按 HTTP status 判断，还必须检查 gin.Context.Errors。
+func ErrorLogger() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		startedAt := time.Now()
+		c.Next()
+
+		status := c.Writer.Status()
+		fields := []any{
+			"requestId", RequestIDValue(c),
+			"method", c.Request.Method,
+			"path", c.Request.URL.Path,
+			"status", status,
+			"durationMs", time.Since(startedAt).Milliseconds(),
+		}
+		if last := c.Errors.Last(); last != nil {
+			fields = append(fields, "err", last.Err)
+			if status >= http.StatusInternalServerError || status < http.StatusBadRequest {
+				slog.Error("HTTP 请求处理失败", fields...)
+			} else {
+				slog.Warn("HTTP 请求未完成", fields...)
+			}
+			return
+		}
+		if status >= http.StatusInternalServerError {
+			slog.Error("HTTP 请求返回服务端错误", fields...)
+		}
+	}
+}
+
 // HandleError 统一错误出口（对应 toErrorResponse）。
 func HandleError(c *gin.Context, err error) {
 	if err == nil {
 		return
 	}
-	if he, ok := err.(*HttpError); ok {
+	// 交给 ErrorLogger 在请求结束后统一输出，避免各 handler 重复、遗漏或只打印
+	// 一行没有 method/path/status 的裸错误。
+	_ = c.Error(err)
+	var he *HttpError
+	if errors.As(err, &he) {
 		ErrorJSON(c, he.Status, he.Message)
+		return
+	}
+	var maxBytesError *http.MaxBytesError
+	if errors.As(err, &maxBytesError) {
+		ErrorJSON(c, http.StatusRequestEntityTooLarge, "请求体超过允许大小")
 		return
 	}
 	// 参数绑定失败等类型错误按 400 处理
@@ -94,13 +136,16 @@ func HandleError(c *gin.Context, err error) {
 		ErrorJSON(c, http.StatusBadRequest, "请求参数错误")
 		return
 	}
-	gin.DefaultErrorWriter.Write([]byte(err.Error() + "\n"))
 	ErrorJSON(c, http.StatusInternalServerError, "系统异常，请稍后重试")
 }
 
 // ReadJSON 解析 JSON 请求体（对应 readJson）。
 func ReadJSON(c *gin.Context, target any) error {
 	if err := c.ShouldBindJSON(target); err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			return &HttpError{Status: http.StatusRequestEntityTooLarge, Message: "请求体超过允许大小"}
+		}
 		return BadRequest("请求体必须是合法 JSON")
 	}
 	return nil

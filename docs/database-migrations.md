@@ -16,7 +16,9 @@ Go API 在监听端口前自动执行 `provider.Up`。Goose 通过 `goose_db_ver
 迁移是否已经应用；成功后记录版本，失败则回滚事务并终止 API 启动。
 
 当前迁移目录还包含 `202608280001_knowledge_build_job.sql`，用于把异步知识构建任务状态
-持久化到 PostgreSQL，避免容器切换或重启后轮询接口丢失任务。第一次打开 Web 时必须自行
+持久化到 PostgreSQL；`202608280002_worker_retry_and_dead_letter.sql` 为知识构建任务与视觉
+导入任务增加指数退避调度、最大尝试次数、租约心跳、死信和重放审计字段。升级时旧的
+`processing` 知识构建任务会安全回到 `pending`，不删除业务数据。第一次打开 Web 时必须自行
 设置管理员名称、登录邮箱和密码；初始化完成前，普通登录和受保护接口都不会放行。初始化
 接口使用 PostgreSQL 事务级 advisory lock，多个并发请求中最多只有一个能够创建首位超级管理员。
 

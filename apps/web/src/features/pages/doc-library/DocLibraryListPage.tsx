@@ -44,7 +44,7 @@ function pickBookColor(id: string): BookColor {
   for (let i = 0; i < id.length; i += 1) {
     hash = (hash * 31 + id.charCodeAt(i)) >>> 0
   }
-  return BOOK_COLORS[hash % BOOK_COLORS.length]
+  return BOOK_COLORS[hash % BOOK_COLORS.length] ?? "blue"
 }
 
 function resolveApiErrorMessage(error: unknown, fallback: string): string {

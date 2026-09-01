@@ -19,6 +19,8 @@ COPY --from=builder --chown=bun:bun /app/server.ts ./server.ts
 USER bun
 
 ENV NODE_ENV=production
+# Vercel Services 的入口代理负责清洗访客 IP 头，Web 容器可以安全接收。
+ENV PETRICHOR_TRUST_PROXY_HEADERS=true
 ENV PORT=8080
 EXPOSE 8080
 

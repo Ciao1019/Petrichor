@@ -209,6 +209,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         icon: IconNetwork,
         isActive: isDashboardSectionPath(location.pathname, "admin/site-graph"),
       },
+      {
+        title: "Worker 死信",
+        url: dashboardRoutes.adminWorkerDeadLetters,
+        icon: IconListDetails,
+        isActive: isDashboardSectionPath(location.pathname, "admin/worker-dead-letters"),
+      },
     ]
   }, [location.pathname, user?.systemRole])
 

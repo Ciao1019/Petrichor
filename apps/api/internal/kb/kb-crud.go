@@ -62,11 +62,11 @@ func ListKnowledgeBases(c *gin.Context) {
 		}
 
 		var total int64
-		if err := q.QueryRow(c,
+		if err := q.QueryRow(c.Request.Context(),
 			`SELECT COUNT(*) FROM petrichor_kb_knowledge_base WHERE user_id = $1`, user.ID).Scan(&total); err != nil {
 			return nil, err
 		}
-		rows, err := q.Query(c,
+		rows, err := q.Query(c.Request.Context(),
 			`SELECT `+kbColumns+` FROM petrichor_kb_knowledge_base WHERE user_id = $1
 			 ORDER BY updated_at`+order+` LIMIT $2 OFFSET $3`, user.ID, p.Limit, p.Offset)
 		if err != nil {
@@ -103,7 +103,7 @@ func CreateKnowledgeBase(c *gin.Context) {
 			return nil, err
 		}
 
-		r, err := scanKB(pool().QueryRow(c,
+		r, err := scanKB(pool().QueryRow(c.Request.Context(),
 			`INSERT INTO petrichor_kb_knowledge_base (user_id, name, description)
 			 VALUES ($1, $2, $3) RETURNING `+kbColumns,
 			user.ID, name, description))
@@ -126,7 +126,7 @@ func DetailKnowledgeBase(c *gin.Context) {
 		if err != nil {
 			return nil, err
 		}
-		r, err := assertKnowledgeBaseOwner(pool(), user.ID, kbID)
+		r, err := assertKnowledgeBaseOwner(c.Request.Context(), pool(), user.ID, kbID)
 		if err != nil {
 			return nil, err
 		}
@@ -155,10 +155,10 @@ func UpdateKnowledgeBase(c *gin.Context) {
 			return nil, err
 		}
 		q := pool()
-		if _, err := assertKnowledgeBaseOwner(q, user.ID, kbID); err != nil {
+		if _, err := assertKnowledgeBaseOwner(c.Request.Context(), q, user.ID, kbID); err != nil {
 			return nil, err
 		}
-		r, err := scanKB(q.QueryRow(c,
+		r, err := scanKB(q.QueryRow(c.Request.Context(),
 			`UPDATE petrichor_kb_knowledge_base SET name = $1, description = $2, updated_at = now()
 			 WHERE id = $3 AND user_id = $4 RETURNING `+kbColumns,
 			name, description, kbID, user.ID))
@@ -182,17 +182,17 @@ func DeleteKnowledgeBase(c *gin.Context) {
 			return nil, err
 		}
 		q := pool()
-		if _, err := assertKnowledgeBaseOwner(q, user.ID, kbID); err != nil {
+		if _, err := assertKnowledgeBaseOwner(c.Request.Context(), q, user.ID, kbID); err != nil {
 			return nil, err
 		}
-		articles, err := queryArticles(q,
+		articles, err := queryArticles(c.Request.Context(), q,
 			`SELECT `+articleColumns+` FROM petrichor_kb_article
 			 WHERE user_id = $1 AND knowledge_base_id = $2`, user.ID, kbID)
 		if err != nil {
 			return nil, err
 		}
 		imageObjectKeys := collectArticleS4ObjectKeys(articles, user.ID)
-		if _, err := q.Exec(c,
+		if _, err := q.Exec(c.Request.Context(),
 			`DELETE FROM petrichor_kb_knowledge_base WHERE id = $1 AND user_id = $2`, kbID, user.ID); err != nil {
 			return nil, err
 		}

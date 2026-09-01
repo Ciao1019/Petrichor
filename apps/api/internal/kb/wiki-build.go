@@ -1,13 +1,11 @@
-// wiki-build.go 对照 wiki-agent-logic.ts 的 buildArticleKnowledge / ingestKnowledgeBaseWiki
-// 与 wiki-tree.ts 的 buildArticleTree。LLM 调用统一走 ChatInvoker（nil 时 503）。
+// wiki-build.go 「构建知识」的编译与落库：整篇抽取的候选如何变成
+// source / entity / concept 页面、出链与来源引用。异步任务外壳在 wiki-build-job.go。
+// LLM 调用统一走 ChatInvoker（nil 时 503）。
 package kb
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strconv"
 	"strings"
@@ -15,328 +13,14 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-
-	httpx "petrichor/api/internal/httpx"
 )
 
-// ===== knowledge/build =====
-
-const (
-	knowledgeBuildJobTTL      = 24 * time.Hour
-	knowledgeBuildJobTimeout  = 15 * time.Minute
-	knowledgeBuildConcurrency = 2
-)
-
-type articleKnowledgeBuildJob struct {
-	ID              string
-	UserID          int64
-	KnowledgeBaseID int64
-	ArticleID       int64
-	Status          string
-	Result          map[string]any
-	Error           *string
-	StartedAt       *time.Time
-	CompletedAt     *time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-}
-
-// 同时只允许少量文章构建占用模型与数据库；等待槽位期间任务保持 pending。
-var articleKnowledgeBuildSlots = make(chan struct{}, knowledgeBuildConcurrency)
-
-func articleKnowledgeBuildJobResponse(job *articleKnowledgeBuildJob) map[string]any {
-	return map[string]any{
-		"id":              job.ID,
-		"userId":          strconv.FormatInt(job.UserID, 10),
-		"knowledgeBaseId": strconv.FormatInt(job.KnowledgeBaseID, 10),
-		"articleId":       strconv.FormatInt(job.ArticleID, 10),
-		"status":          job.Status,
-		"result":          job.Result,
-		"error":           job.Error,
-		"startedAt":       isoPtr(job.StartedAt),
-		"completedAt":     isoPtr(job.CompletedAt),
-		"createdAt":       iso(job.CreatedAt),
-		"updatedAt":       iso(job.UpdatedAt),
-	}
-}
-
-const articleKnowledgeBuildJobColumns = `id, user_id, knowledge_base_id, article_id, status,
-	result_json, error, started_at, completed_at, created_at, updated_at`
-
-func scanArticleKnowledgeBuildJob(row pgx.Row) (*articleKnowledgeBuildJob, error) {
-	var (
-		job       articleKnowledgeBuildJob
-		resultRaw *string
-	)
-	if err := row.Scan(&job.ID, &job.UserID, &job.KnowledgeBaseID, &job.ArticleID, &job.Status,
-		&resultRaw, &job.Error, &job.StartedAt, &job.CompletedAt, &job.CreatedAt, &job.UpdatedAt); err != nil {
-		return nil, err
-	}
-	if resultRaw != nil && strings.TrimSpace(*resultRaw) != "" {
-		if err := json.Unmarshal([]byte(*resultRaw), &job.Result); err != nil {
-			return nil, fmt.Errorf("解析知识构建任务结果失败: %w", err)
-		}
-	}
-	return &job, nil
-}
-
-func cleanupArticleKnowledgeBuildJobs(q execQuerier, now time.Time) error {
-	// 容器异常退出时不会再更新 processing；超过任务硬超时后允许用户重新发起。
-	if _, err := q.Exec(context.Background(),
-		`UPDATE petrichor_kb_knowledge_build_job
-		 SET status = 'failed', error = '知识构建执行中断，请重新发起', completed_at = $1, updated_at = $1
-		 WHERE status IN ('pending', 'processing') AND updated_at < $2`,
-		now, now.Add(-knowledgeBuildJobTimeout)); err != nil {
-		return err
-	}
-	_, err := q.Exec(context.Background(),
-		`DELETE FROM petrichor_kb_knowledge_build_job
-		 WHERE status IN ('completed', 'failed') AND updated_at < $1`,
-		now.Add(-knowledgeBuildJobTTL))
-	return err
-}
-
-func loadActiveArticleKnowledgeBuildJob(q execQuerier, userID, knowledgeBaseID, articleID int64) (*articleKnowledgeBuildJob, error) {
-	job, err := scanArticleKnowledgeBuildJob(q.QueryRow(context.Background(),
-		`SELECT `+articleKnowledgeBuildJobColumns+`
-		 FROM petrichor_kb_knowledge_build_job
-		 WHERE user_id = $1 AND knowledge_base_id = $2 AND article_id = $3
-		   AND status IN ('pending', 'processing')
-		 ORDER BY created_at DESC LIMIT 1`,
-		userID, knowledgeBaseID, articleID))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	return job, err
-}
-
-func loadOwnedArticleKnowledgeBuildJob(q execQuerier, userID int64, jobID string) (*articleKnowledgeBuildJob, error) {
-	job, err := scanArticleKnowledgeBuildJob(q.QueryRow(context.Background(),
-		`SELECT `+articleKnowledgeBuildJobColumns+`
-		 FROM petrichor_kb_knowledge_build_job WHERE id = $1 AND user_id = $2 LIMIT 1`,
-		jobID, userID))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	return job, err
-}
-
-func createArticleKnowledgeBuildJob(userID, knowledgeBaseID, articleID int64) (map[string]any, string, bool, error) {
-	q := pool()
-
-	now := time.Now()
-	if err := cleanupArticleKnowledgeBuildJobs(q, now); err != nil {
-		return nil, "", false, err
-	}
-	if active, err := loadActiveArticleKnowledgeBuildJob(q, userID, knowledgeBaseID, articleID); err != nil {
-		return nil, "", false, err
-	} else if active != nil {
-		return articleKnowledgeBuildJobResponse(active), active.ID, false, nil
-	}
-
-	for attempts := 0; attempts < 3; attempts++ {
-		id, err := generateCode()
-		if err != nil {
-			return nil, "", false, err
-		}
-		job, insertErr := scanArticleKnowledgeBuildJob(q.QueryRow(context.Background(),
-			`INSERT INTO petrichor_kb_knowledge_build_job
-			 (id, user_id, knowledge_base_id, article_id, status, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, 'pending', $5, $5)
-			 ON CONFLICT DO NOTHING
-			 RETURNING `+articleKnowledgeBuildJobColumns,
-			id, userID, knowledgeBaseID, articleID, now))
-		if insertErr == nil {
-			return articleKnowledgeBuildJobResponse(job), job.ID, true, nil
-		}
-		if !errors.Is(insertErr, pgx.ErrNoRows) {
-			return nil, "", false, insertErr
-		}
-		active, activeErr := loadActiveArticleKnowledgeBuildJob(q, userID, knowledgeBaseID, articleID)
-		if activeErr != nil {
-			return nil, "", false, activeErr
-		}
-		if active != nil {
-			return articleKnowledgeBuildJobResponse(active), active.ID, false, nil
-		}
-	}
-	return nil, "", false, errors.New("生成知识构建任务 ID 失败")
-}
-
-func setArticleKnowledgeBuildProcessing(id string) (*articleKnowledgeBuildJob, error) {
-	job, err := scanArticleKnowledgeBuildJob(pool().QueryRow(context.Background(),
-		`UPDATE petrichor_kb_knowledge_build_job
-		 SET status = 'processing', started_at = COALESCE(started_at, now()), updated_at = now()
-		 WHERE id = $1 AND status = 'pending'
-		 RETURNING `+articleKnowledgeBuildJobColumns, id))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	return job, err
-}
-
-func finishArticleKnowledgeBuildJob(id string, result map[string]any, buildErr error) error {
-	status := "completed"
-	var resultJSON *string
-	var errorMessage *string
-	if buildErr == nil {
-		encoded, err := json.Marshal(result)
-		if err != nil {
-			return err
-		}
-		value := string(encoded)
-		resultJSON = &value
-	} else {
-		status = "failed"
-		message := "知识构建失败，请稍后重试"
-		var httpErr *httpx.HttpError
-		if errors.As(buildErr, &httpErr) {
-			message = httpErr.Message
-		}
-		errorMessage = &message
-	}
-	tag, err := pool().Exec(context.Background(),
-		`UPDATE petrichor_kb_knowledge_build_job
-		 SET status = $2, result_json = $3, error = $4, completed_at = now(), updated_at = now()
-		 WHERE id = $1 AND status IN ('pending', 'processing')`,
-		id, status, resultJSON, errorMessage)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("知识构建任务不存在或状态已结束: %s", id)
-	}
-	return nil
-}
-
-func executeArticleKnowledgeBuildJob(id string) {
-	ctx, cancel := context.WithTimeout(context.Background(), knowledgeBuildJobTimeout)
-	defer cancel()
-
-	acquired := false
-	defer func() {
-		if acquired {
-			<-articleKnowledgeBuildSlots
-		}
-		if recovered := recover(); recovered != nil {
-			err := fmt.Errorf("知识构建发生 panic: %v", recovered)
-			slog.Error("后台知识构建异常", "jobId", id, "err", err)
-			if finishErr := finishArticleKnowledgeBuildJob(id, nil, err); finishErr != nil {
-				slog.Error("知识构建任务状态写入失败", "jobId", id, "err", finishErr)
-			}
-		}
-	}()
-
-	select {
-	case articleKnowledgeBuildSlots <- struct{}{}:
-		acquired = true
-	case <-ctx.Done():
-		if err := finishArticleKnowledgeBuildJob(id, nil, ctx.Err()); err != nil {
-			slog.Error("知识构建任务超时状态写入失败", "jobId", id, "err", err)
-		}
-		return
-	}
-	job, err := setArticleKnowledgeBuildProcessing(id)
-	if err != nil {
-		slog.Error("知识构建任务领取失败", "jobId", id, "err", err)
-		return
-	}
-	if job == nil {
-		return
-	}
-	result, buildErr := buildArticleKnowledgeCore(ctx, pool(), job.UserID, job.KnowledgeBaseID, job.ArticleID)
-	if buildErr != nil {
-		slog.Error("后台知识构建失败", "jobId", id, "userId", job.UserID, "knowledgeBaseId", job.KnowledgeBaseID, "articleId", job.ArticleID, "err", buildErr)
-	}
-	if err := finishArticleKnowledgeBuildJob(id, result, buildErr); err != nil {
-		slog.Error("知识构建任务结果写入失败", "jobId", id, "err", err)
-	}
-}
-
-// ArticleKnowledgeBuild 创建单篇「构建知识」后台任务；重复点击会复用同一运行中任务。
-func ArticleKnowledgeBuild(c *ginContext) {
-	run(c, func(c *ginContext) (any, error) {
-		user := currentUser(c)
-		raw, err := readBody(c)
-		if err != nil {
-			return nil, err
-		}
-		kbID, err := reqID(raw["knowledgeBaseId"], "ID 必须是正整数")
-		if err != nil {
-			return nil, err
-		}
-		articleID, err := reqID(raw["articleId"], "ID 必须是正整数")
-		if err != nil {
-			return nil, err
-		}
-		_ = rawBool(raw, "forceRebuild") // 当前构建恒为全量重建，保留兼容参数。
-		if err := requireChat(); err != nil {
-			return nil, err
-		}
-
-		q := pool()
-		if _, err := assertKnowledgeBaseOwner(q, user.ID, kbID); err != nil {
-			return nil, err
-		}
-		article, err := queryArticle(q,
-			`SELECT `+articleColumns+` FROM petrichor_kb_article
-			 WHERE id = $1 AND user_id = $2 AND knowledge_base_id = $3 LIMIT 1`,
-			articleID, user.ID, kbID)
-		if err != nil {
-			return nil, err
-		}
-		if article == nil {
-			return nil, notFoundErr("文章不存在")
-		}
-		if trimSpace(article.ContentMd) == "" {
-			return nil, badReq("文章没有可构建的 Markdown 内容")
-		}
-
-		response, jobID, created, err := createArticleKnowledgeBuildJob(user.ID, kbID, articleID)
-		if err != nil {
-			return nil, err
-		}
-		if created {
-			go executeArticleKnowledgeBuildJob(jobID)
-		}
-		return response, nil
-	})
-}
-
-// ArticleKnowledgeBuildStatus 查询当前用户创建的知识构建任务。
-func ArticleKnowledgeBuildStatus(c *ginContext) {
-	run(c, func(c *ginContext) (any, error) {
-		user := currentUser(c)
-		raw, err := readBody(c)
-		if err != nil {
-			return nil, err
-		}
-		jobID := trimmedString(raw, "jobId")
-		if jobID == "" || len(jobID) > 200 {
-			return nil, badReq("jobId 必须是合法任务 ID")
-		}
-		q := pool()
-		if err := cleanupArticleKnowledgeBuildJobs(q, time.Now()); err != nil {
-			return nil, err
-		}
-		job, err := loadOwnedArticleKnowledgeBuildJob(q, user.ID, jobID)
-		if err != nil {
-			return nil, err
-		}
-		if job == nil {
-			return nil, notFoundErr("知识构建任务不存在或已过期")
-		}
-		return articleKnowledgeBuildJobResponse(job), nil
-	})
-}
-
-// buildArticleKnowledgeCore 切片 → 问题/候选并行抽取 → 目录 → 页面物化 → 落库。
 func buildArticleKnowledgeCore(ctx context.Context, q txBeginner, userID, kbID, articleID int64) (map[string]any, error) {
-	kb, err := assertKnowledgeBaseOwner(q, userID, kbID)
+	kb, err := assertKnowledgeBaseOwner(ctx, q, userID, kbID)
 	if err != nil {
 		return nil, err
 	}
-	article, err := queryArticle(q,
+	article, err := queryArticle(ctx, q,
 		`SELECT `+articleColumns+` FROM petrichor_kb_article
 			 WHERE id = $1 AND user_id = $2 AND knowledge_base_id = $3 LIMIT 1`,
 		articleID, userID, kbID)
@@ -350,7 +34,10 @@ func buildArticleKnowledgeCore(ctx context.Context, q txBeginner, userID, kbID, 
 		return nil, badReq("文章没有可构建的 Markdown 内容")
 	}
 
-	existingRows, err := queryWikiPagesWhere(q,
+	// 编译上下文：知识库名 + 该库自定义的编译说明书（没保存过就是空的）。
+	profile := loadCompileProfile(ctx, q, userID, kb)
+
+	existingRows, err := queryWikiPagesWhere(ctx, q,
 		`user_id = $1 AND knowledge_base_id = $2 AND kind IN ('entity','concept') AND archived_at IS NULL`,
 		userID, kbID)
 	if err != nil {
@@ -404,7 +91,7 @@ func buildArticleKnowledgeCore(ctx context.Context, q txBeginner, userID, kbID, 
 				parallelErrors <- fmt.Errorf("推荐问题生成异常: %v", recovered)
 			}
 		}()
-		chunksWithQuestions, questionWarnings = generateChunkQuestions(ctx, userID, kb.Name, article.Title, chunks)
+		chunksWithQuestions, questionWarnings = generateChunkQuestions(ctx, userID, profile, article.Title, chunks)
 	}()
 	go func() {
 		defer parallel.Done()
@@ -414,7 +101,7 @@ func buildArticleKnowledgeCore(ctx context.Context, q txBeginner, userID, kbID, 
 			}
 		}()
 		documentSummary, candidates, relations, extractionWarnings = extractDocumentCandidates(
-			ctx, userID, kb.Name, article.Title, article.ContentMd, existingPages)
+			ctx, userID, profile, article.Title, article.ContentMd, existingPages)
 	}()
 	parallel.Wait()
 	close(parallelErrors)
@@ -435,8 +122,8 @@ func buildArticleKnowledgeCore(ctx context.Context, q txBeginner, userID, kbID, 
 			chunks[index].recommendedQuestions = normalizeRecommendedQuestions(nil, chunks[index].heading)
 		}
 	}
-	candidates, warnings = planKnowledgeTaxonomy(ctx, userID, kb.Name, article.Title, candidates, existingPages, warnings)
-	items, warnings := materializeWikiPages(ctx, userID, kb.Name, article.Title, article.ContentMd, candidates, relations, warnings)
+	candidates, warnings = planKnowledgeTaxonomy(ctx, userID, profile, article.Title, candidates, existingPages, warnings)
+	items, warnings := materializeWikiPages(ctx, userID, profile, article.Title, article.ContentMd, candidates, relations, warnings)
 
 	sourcePage, entityCount, conceptCount, werr := persistKnowledgeBuild(
 		ctx, q, userID, kbID, kb.Name, article, chunksWithQuestions, documentSummary, items, relations, warnings)
@@ -446,10 +133,10 @@ func buildArticleKnowledgeCore(ctx context.Context, q txBeginner, userID, kbID, 
 
 	// 提交后 best-effort 补向量；EmbedInvoker 未注入时静默跳过。
 	if EmbedInvoker != nil {
-		if profile, perr := loadEmbeddingProfileOrNull(q, userID); perr == nil && profile != nil {
-			rows, _, lerr := loadPendingIndexRows(q, userID, kbID, "chunk", profile)
+		if profile, perr := loadEmbeddingProfileOrNull(ctx, q, userID); perr == nil && profile != nil {
+			rows, _, lerr := loadPendingIndexRows(ctx, q, userID, kbID, "chunk", profile)
 			if lerr == nil {
-				_, _ = writeIndexEmbeddings(q, userID, rows, profile)
+				_, _ = writeIndexEmbeddings(ctx, q, userID, rows, profile)
 			}
 		}
 	}
@@ -497,7 +184,7 @@ func persistKnowledgeBuild(ctx context.Context, q txBeginner, userID, kbID int64
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	defer tx.Rollback(context.Background())
+	defer tx.Rollback(context.WithoutCancel(ctx))
 
 	now := time.Now()
 	if _, err := tx.Exec(ctx,
@@ -568,17 +255,17 @@ func persistKnowledgeBuild(ctx context.Context, q txBeginner, userID, kbID int64
 	}
 
 	sourcePageKey := buildArticleWikiSourcePageKey(article.ID)
-	if err := detachArticleFromGeneratedKnowledgePages(tx, userID, kbID, article.ID); err != nil {
+	if err := detachArticleFromGeneratedKnowledgePages(ctx, tx, userID, kbID, article.ID); err != nil {
 		return nil, 0, 0, err
 	}
-	if _, err := deleteWikiPageByKey(tx, userID, kbID, sourcePageKey); err != nil {
+	if _, err := deleteWikiPageByKey(ctx, tx, userID, kbID, sourcePageKey); err != nil {
 		return nil, 0, 0, err
 	}
 
 	entityCount, conceptCount := 0, 0
 	generatedPages := make([]*WikiPageRow, 0, len(items))
 	for _, item := range items {
-		page, perr := upsertExtractedKnowledgePage(tx, userID, kbID, article, item)
+		page, perr := upsertExtractedKnowledgePage(ctx, tx, userID, kbID, article, item)
 		if perr != nil {
 			return nil, 0, 0, perr
 		}
@@ -589,7 +276,7 @@ func persistKnowledgeBuild(ctx context.Context, q txBeginner, userID, kbID int64
 			conceptCount++
 		}
 	}
-	if err := rebuildGeneratedKnowledgePageLinks(tx, userID, kbID); err != nil {
+	if err := rebuildGeneratedKnowledgePageLinks(ctx, tx, userID, kbID); err != nil {
 		return nil, 0, 0, err
 	}
 
@@ -607,7 +294,7 @@ func persistKnowledgeBuild(ctx context.Context, q txBeginner, userID, kbID int64
 		"entityCount":              entityCount,
 		"conceptCount":             conceptCount,
 	}
-	sourcePage, err := upsertWikiPage(tx, upsertWikiPageInput{
+	sourcePage, err := upsertWikiPage(ctx, tx, upsertWikiPageInput{
 		UserID: userID, KnowledgeBaseID: kbID,
 		PageKey: sourcePageKey, Title: article.Title, Kind: "source",
 		ContentMd: builtSourceContent, Summary: &documentSummary,
@@ -618,23 +305,19 @@ func persistKnowledgeBuild(ctx context.Context, q txBeginner, userID, kbID int64
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	if _, err := tx.Exec(ctx,
-		`DELETE FROM petrichor_kb_wiki_link WHERE from_page_id = $1`, sourcePage.ID); err != nil {
+	sourceLinks := make([]wikiLinkInput, 0, len(generatedPages))
+	for _, page := range generatedPages {
+		sourceLinks = append(sourceLinks, wikiLinkInput{ToPageKey: page.PageKey, LinkType: "extracts"})
+	}
+	if err := replaceWikiPageLinks(ctx, tx, sourcePage, sourceLinks); err != nil {
 		return nil, 0, 0, err
 	}
-	for _, page := range generatedPages {
-		if _, err := tx.Exec(ctx,
-			`INSERT INTO petrichor_kb_wiki_link (user_id, knowledge_base_id, from_page_id, to_page_key, link_type)
-			 VALUES ($1,$2,$3,$4,'extracts')`, userID, kbID, sourcePage.ID, page.PageKey); err != nil {
-			return nil, 0, 0, err
-		}
-	}
-	indexPage, err := rebuildWikiIndex(tx, userID, kbID, kbName, time.Now())
+	indexPage, err := rebuildWikiIndex(ctx, tx, userID, kbID, kbName, time.Now())
 	if err != nil {
 		return nil, 0, 0, err
 	}
 	_ = indexPage
-	if err := logWikiEvent(tx, userID, kbID, "ARTICLE_KNOWLEDGE_BUILD", &sourcePage.ID, map[string]any{
+	if err := logWikiEvent(ctx, tx, userID, kbID, "ARTICLE_KNOWLEDGE_BUILD", &sourcePage.ID, map[string]any{
 		"articleId":    strconv.FormatInt(article.ID, 10),
 		"chunkCount":   len(chunks),
 		"entityCount":  entityCount,
@@ -649,8 +332,8 @@ func persistKnowledgeBuild(ctx context.Context, q txBeginner, userID, kbID int64
 	return sourcePage, entityCount, conceptCount, nil
 }
 
-func queryWikiPagesWhere(q execQuerier, where string, args ...any) ([]WikiPageRow, error) {
-	rows, err := q.Query(context.Background(),
+func queryWikiPagesWhere(ctx context.Context, q execQuerier, where string, args ...any) ([]WikiPageRow, error) {
+	rows, err := q.Query(ctx,
 		`SELECT `+wikiPageColumns+` FROM petrichor_kb_wiki_page WHERE `+where, args...)
 	if err != nil {
 		return nil, err
@@ -667,45 +350,9 @@ func queryWikiPagesWhere(q execQuerier, where string, args ...any) ([]WikiPageRo
 	return out, rows.Err()
 }
 
-// deleteWikiPageByKey 物理删除单个页面及其派生数据；返回是否删除。
-func deleteWikiPageByKey(q execQuerier, userID, knowledgeBaseID int64, pageKey string) (bool, error) {
-	page, err := loadWikiPage(q, userID, knowledgeBaseID, pageKey)
-	if err != nil {
-		return false, err
-	}
-	if page == nil {
-		return false, nil
-	}
-	ctx := context.Background()
-	if _, err := q.Exec(ctx,
-		`UPDATE petrichor_kb_wiki_event_log SET page_id = NULL WHERE page_id = $1`, page.ID); err != nil {
-		return false, err
-	}
-	if _, err := q.Exec(ctx,
-		`DELETE FROM petrichor_kb_wiki_link
-		 WHERE user_id = $1 AND knowledge_base_id = $2 AND (from_page_id = $3 OR to_page_key = $4)`,
-		userID, knowledgeBaseID, page.ID, page.PageKey); err != nil {
-		return false, err
-	}
-	if _, err := q.Exec(ctx,
-		`DELETE FROM petrichor_kb_wiki_source_ref WHERE page_id = $1`, page.ID); err != nil {
-		return false, err
-	}
-	if _, err := q.Exec(ctx,
-		`DELETE FROM petrichor_kb_wiki_tree_node WHERE page_id = $1`, page.ID); err != nil {
-		return false, err
-	}
-	if _, err := q.Exec(ctx,
-		`DELETE FROM petrichor_kb_wiki_page WHERE id = $1 AND user_id = $2 AND knowledge_base_id = $3`,
-		page.ID, userID, knowledgeBaseID); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
 // upsertExtractedKnowledgePage 实体/概念页聚合写入。
-func upsertExtractedKnowledgePage(q execQuerier, userID, knowledgeBaseID int64, article *ArticleRow, item extractedItem) (*WikiPageRow, error) {
-	existing, err := loadWikiPage(q, userID, knowledgeBaseID, item.candidate.pageKey)
+func upsertExtractedKnowledgePage(ctx context.Context, q execQuerier, userID, knowledgeBaseID int64, article *ArticleRow, item extractedItem) (*WikiPageRow, error) {
+	existing, err := loadWikiPage(ctx, q, userID, knowledgeBaseID, item.candidate.pageKey)
 	if err != nil {
 		return nil, err
 	}
@@ -791,7 +438,7 @@ func upsertExtractedKnowledgePage(q execQuerier, userID, knowledgeBaseID int64, 
 		}
 		refInputs = append(refInputs, sourceRefInput{ArticleID: id, Note: &note})
 	}
-	page, err := upsertWikiPage(q, upsertWikiPageInput{
+	page, err := upsertWikiPage(ctx, q, upsertWikiPageInput{
 		UserID: userID, KnowledgeBaseID: knowledgeBaseID,
 		PageKey: item.candidate.pageKey, Title: item.candidate.name, Kind: item.candidate.kind,
 		ContentMd:   renderAggregatedKnowledgePage(item.candidate.name, metadata),
@@ -803,7 +450,7 @@ func upsertExtractedKnowledgePage(q execQuerier, userID, knowledgeBaseID int64, 
 	if err != nil {
 		return nil, err
 	}
-	if err := replaceGeneratedKnowledgePageLinks(q, page, metadata); err != nil {
+	if err := replaceGeneratedKnowledgePageLinks(ctx, q, page, metadata); err != nil {
 		return nil, err
 	}
 	return page, nil
@@ -841,8 +488,8 @@ func sortedKeys(m map[string]any) []string {
 
 // detachArticleFromGeneratedKnowledgePages 从实体/概念页的 contributions 中摘除文章；
 // 无贡献且无底稿的页面直接删除。
-func detachArticleFromGeneratedKnowledgePages(q execQuerier, userID, knowledgeBaseID, articleID int64) error {
-	pages, err := queryWikiPagesWhere(q,
+func detachArticleFromGeneratedKnowledgePages(ctx context.Context, q execQuerier, userID, knowledgeBaseID, articleID int64) error {
+	pages, err := queryWikiPagesWhere(ctx, q,
 		`user_id = $1 AND knowledge_base_id = $2 AND kind IN ('entity','concept')`,
 		userID, knowledgeBaseID)
 	if err != nil {
@@ -863,7 +510,7 @@ func detachArticleFromGeneratedKnowledgePages(q execQuerier, userID, knowledgeBa
 		metadata["contributions"] = contributions
 		baseContent := optString(metadata["baseContentMd"])
 		if len(contributions) == 0 && baseContent == "" {
-			if _, derr := deleteWikiPageByKey(q, userID, knowledgeBaseID, page.PageKey); derr != nil {
+			if _, derr := deleteWikiPageByKey(ctx, q, userID, knowledgeBaseID, page.PageKey); derr != nil {
 				return derr
 			}
 			continue
@@ -891,7 +538,7 @@ func detachArticleFromGeneratedKnowledgePages(q execQuerier, userID, knowledgeBa
 			note := "构建知识：" + title
 			refInputs = append(refInputs, sourceRefInput{ArticleID: id, Note: &note})
 		}
-		updatedPage, uerr := upsertWikiPage(q, upsertWikiPageInput{
+		updatedPage, uerr := upsertWikiPage(ctx, q, upsertWikiPageInput{
 			UserID: userID, KnowledgeBaseID: knowledgeBaseID,
 			PageKey: page.PageKey, Title: page.Title, Kind: page.Kind,
 			ContentMd:   renderAggregatedKnowledgePage(page.Title, metadata),
@@ -903,7 +550,7 @@ func detachArticleFromGeneratedKnowledgePages(q execQuerier, userID, knowledgeBa
 		if uerr != nil {
 			return uerr
 		}
-		if err := replaceGeneratedKnowledgePageLinks(q, updatedPage, metadata); err != nil {
+		if err := replaceGeneratedKnowledgePageLinks(ctx, q, updatedPage, metadata); err != nil {
 			return err
 		}
 	}
@@ -976,28 +623,35 @@ func renderAggregatedKnowledgePage(title string, metadata map[string]any) string
 }
 
 // replaceGeneratedKnowledgePageLinks 按 metadata.relations 重写页面出链。
-func replaceGeneratedKnowledgePageLinks(q execQuerier, page *WikiPageRow, metadata map[string]any) error {
-	if _, err := q.Exec(context.Background(),
-		`DELETE FROM petrichor_kb_wiki_link WHERE from_page_id = $1`, page.ID); err != nil {
-		return err
-	}
+func replaceGeneratedKnowledgePageLinks(ctx context.Context, q execQuerier, page *WikiPageRow, metadata map[string]any) error {
+	return replaceWikiPageLinks(ctx, q, page, knowledgePageOutLinks(page.PageKey, metadata, nil))
+}
+
+// knowledgePageOutLinks 从页面 metadata 的关系里取出以该页为起点的出链。
+// activePageKeys 非空时只保留仍然存在的目标页，避免重建出一批断链。
+func knowledgePageOutLinks(
+	pageKey string, metadata map[string]any, activePageKeys map[string]struct{},
+) []wikiLinkInput {
+	var links []wikiLinkInput
 	for _, relation := range collectKnowledgePageRelations(metadata) {
-		if relation["fromPageKey"] != page.PageKey || relation["toPageKey"] == page.PageKey {
+		if relation["fromPageKey"] != pageKey {
 			continue
 		}
-		if _, err := q.Exec(context.Background(),
-			`INSERT INTO petrichor_kb_wiki_link (user_id, knowledge_base_id, from_page_id, to_page_key, link_type)
-			 VALUES ($1,$2,$3,$4,$5)`, page.UserID, page.KnowledgeBaseID, page.ID,
-			relation["toPageKey"], relation["relationType"]); err != nil {
-			return err
+		if activePageKeys != nil {
+			if _, active := activePageKeys[relation["toPageKey"]]; !active {
+				continue
+			}
 		}
+		links = append(links, wikiLinkInput{
+			ToPageKey: relation["toPageKey"], LinkType: relation["relationType"],
+		})
 	}
-	return nil
+	return links
 }
 
 // rebuildGeneratedKnowledgePageLinks 全量重编实体/概念页之间的关系链接。
-func rebuildGeneratedKnowledgePageLinks(q execQuerier, userID, knowledgeBaseID int64) error {
-	pages, err := queryWikiPagesWhere(q,
+func rebuildGeneratedKnowledgePageLinks(ctx context.Context, q execQuerier, userID, knowledgeBaseID int64) error {
+	pages, err := queryWikiPagesWhere(ctx, q,
 		`user_id = $1 AND knowledge_base_id = $2 AND kind IN ('entity','concept') AND archived_at IS NULL`,
 		userID, knowledgeBaseID)
 	if err != nil {
@@ -1012,28 +666,15 @@ func rebuildGeneratedKnowledgePageLinks(q execQuerier, userID, knowledgeBaseID i
 		pageIDs = append(pageIDs, pages[i].ID)
 		activePageKeys[pages[i].PageKey] = struct{}{}
 	}
-	if _, err := q.Exec(context.Background(),
-		`DELETE FROM petrichor_kb_wiki_link WHERE from_page_id = ANY($1)`, pageIDs); err != nil {
-		return err
-	}
+	linksByPage := make(map[int64][]wikiLinkInput, len(pages))
+	pageKeys := make(map[int64]string, len(pages))
 	for i := range pages {
 		page := &pages[i]
-		for _, relation := range collectKnowledgePageRelations(readKnowledgePageMetadata(page.FrontmatterJson)) {
-			if relation["fromPageKey"] != page.PageKey || relation["toPageKey"] == page.PageKey {
-				continue
-			}
-			if _, active := activePageKeys[relation["toPageKey"]]; !active {
-				continue
-			}
-			if _, err := q.Exec(context.Background(),
-				`INSERT INTO petrichor_kb_wiki_link (user_id, knowledge_base_id, from_page_id, to_page_key, link_type)
-				 VALUES ($1,$2,$3,$4,$5)`, userID, knowledgeBaseID, page.ID,
-				relation["toPageKey"], relation["relationType"]); err != nil {
-				return err
-			}
-		}
+		pageKeys[page.ID] = page.PageKey
+		linksByPage[page.ID] = knowledgePageOutLinks(page.PageKey,
+			readKnowledgePageMetadata(page.FrontmatterJson), activePageKeys)
 	}
-	return nil
+	return replaceWikiPageLinksBatch(ctx, q, userID, knowledgeBaseID, pageIDs, linksByPage, pageKeys)
 }
 
 // renderBuiltSourcePage 渲染构建完成的 source 页面。

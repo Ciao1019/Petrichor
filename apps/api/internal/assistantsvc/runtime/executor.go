@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"strings"
 	"sync/atomic"
 
@@ -247,6 +248,18 @@ func (e *ToolExecutor) succeed(callID string, tool *AgentToolDefinition, input a
 func (e *ToolExecutor) fail(_ context.Context, callID string, tool *AgentToolDefinition, agentErr *AgentError, input any, startedAt int64, retries int, permissionDecision string) ToolRunOutcome {
 	durationMs := nowMs() - startedAt
 	shape := agentErr.ToShape()
+	state := e.deps.State.Current()
+	slog.Warn("Agent 工具执行失败",
+		"agentRunId", state.RunID,
+		"userId", state.UserID,
+		"callId", callID,
+		"toolId", tool.ID,
+		"errorCode", shape.Code,
+		"retryable", shape.Retryable,
+		"retries", retries,
+		"durationMs", durationMs,
+		"err", shape.Message,
+	)
 	observation := e.deps.Observations.Add(ErrorObservation(tool.ID, shape))
 
 	e.deps.State.AddObservation(observation)

@@ -13,7 +13,7 @@ export function useCurrentAgentRunEvidence(citationIndex: number | null): Eviden
         if (citationIndex == null) return null
         const runs = Object.values(state.runs)
         for (let index = runs.length - 1; index >= 0; index -= 1) {
-            const match = runs[index].evidence.find((item) => item.citationIndex === citationIndex)
+            const match = runs[index]?.evidence.find((item) => item.citationIndex === citationIndex)
             if (match) return match
         }
         return null

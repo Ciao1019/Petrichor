@@ -25,6 +25,14 @@ import {
   resolveTargetText,
 } from "@/features/pages/knowledge/document-import-job-shared"
 
+function pageStatusLabel(status: DocumentImportPageResponse["status"]) {
+  if (status === "done") return "已完成"
+  if (status === "failed") return "失败"
+  if (status === "dead_letter") return "死信"
+  if (status === "processing") return "处理中"
+  return "待处理"
+}
+
 export function DocumentImportJobDetailPage() {
   const { jobId } = useParams<{ jobId: string }>()
   const navigate = useNavigate()
@@ -210,6 +218,12 @@ export function DocumentImportJobDetailPage() {
           </div>
 
           {job.error ? <p className="text-sm text-destructive">{job.error}</p> : null}
+          {job.deadLetteredAt ? (
+            <p className="text-xs text-muted-foreground">
+              已于 {formatDateTime(job.deadLetteredAt)} 进入死信队列
+              {job.replayCount > 0 ? ` · 历史重放 ${job.replayCount} 次` : ""}
+            </p>
+          ) : null}
 
           <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-lg border px-4 py-3">
@@ -260,11 +274,11 @@ export function DocumentImportJobDetailPage() {
                         className={cn(
                           "text-xs",
                           page.status === "done" && "text-emerald-600 dark:text-emerald-400",
-                          page.status === "failed" && "text-destructive",
-                          page.status === "pending" && "text-muted-foreground",
+                          (page.status === "failed" || page.status === "dead_letter") && "text-destructive",
+                          (page.status === "pending" || page.status === "processing") && "text-muted-foreground",
                         )}
                       >
-                        {page.status === "done" ? "已完成" : page.status === "failed" ? "失败" : "待处理"}
+                        {pageStatusLabel(page.status)}
                       </span>
                       <span className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">
                         {page.extractedBy === "pdf" ? "本地抽取" : "模型识别"}
@@ -273,13 +287,21 @@ export function DocumentImportJobDetailPage() {
                     {page.status === "pending" && page.extractedBy === "vision" && !page.imageKey ? (
                       <span className="shrink-0 text-xs text-muted-foreground">等待上传页面图片</span>
                     ) : null}
-                    {page.status === "failed" ? (
+                    {page.status === "failed" || page.status === "dead_letter" ? (
                       <Button size="sm" variant="ghost" disabled={busy} onClick={() => retryPage(page.pageNo)}>
                         重试
                       </Button>
                     ) : null}
                   </div>
-                  {page.error ? <p className="text-xs text-destructive">{page.error}</p> : null}
+                  {page.extractedBy === "vision" && page.attemptCount > 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      自动尝试 {page.attemptCount}/{page.maxAttempts}
+                      {page.status === "pending" ? ` · 下次调度 ${formatDateTime(page.nextAttemptAt)}` : ""}
+                    </p>
+                  ) : null}
+                  {page.lastError || page.error ? (
+                    <p className="text-xs text-destructive">{page.lastError || page.error}</p>
+                  ) : null}
                 </li>
               ))}
             </ul>

@@ -4,7 +4,6 @@ package agentapi
 import (
 	"context"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -27,8 +26,8 @@ type articleLite struct {
 }
 
 // loadOwnedArticle 对应 handlers.ts loadOwnedArticle：不存在返回 404。
-func loadOwnedArticle(q querierLike, userID, articleID int64) (*articleLite, error) {
-	row := q.QueryRow(context.Background(),
+func loadOwnedArticle(ctx context.Context, q querierLike, userID, articleID int64) (*articleLite, error) {
+	row := q.QueryRow(ctx,
 		`SELECT id, knowledge_base_id, node_id, title, content_md, content_json, created_at, updated_at
 		 FROM petrichor_kb_article WHERE id = $1 AND user_id = $2 LIMIT 1`,
 		articleID, userID)
@@ -80,8 +79,7 @@ func parseTitleInput(raw map[string]any) (string, error) {
 }
 
 // replaceArticleTags 对应 handlers.ts replaceArticleTags（全量重建，去重限 50）。
-func replaceArticleTags(querier querierLike, articleID int64, tags []string) error {
-	ctx := context.Background()
+func replaceArticleTags(ctx context.Context, querier querierLike, articleID int64, tags []string) error {
 	if _, err := querier.Exec(ctx,
 		`DELETE FROM petrichor_kb_article_tag WHERE article_id = $1`, articleID); err != nil {
 		return err
@@ -113,8 +111,8 @@ func replaceArticleTags(querier querierLike, articleID int64, tags []string) err
 }
 
 // loadTags 按标签名排序加载文章标签。
-func loadTags(q querierLike, articleID int64) ([]string, error) {
-	rows, err := q.Query(context.Background(),
+func loadTags(ctx context.Context, q querierLike, articleID int64) ([]string, error) {
+	rows, err := q.Query(ctx,
 		`SELECT tag FROM petrichor_kb_article_tag WHERE article_id = $1 ORDER BY tag ASC`, articleID)
 	if err != nil {
 		return nil, err
@@ -170,20 +168,20 @@ func AgentCreateArticle(c *gin.Context, actx *authContext) (any, error) {
 	}
 
 	q := dbPool()
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	tx, err := q.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback(context.Background())
+	defer tx.Rollback(context.WithoutCancel(ctx))
 
-	if _, err := kb.AssertKnowledgeBaseOwnerForAgent(tx, actx.UserID, kbID); err != nil {
+	if _, err := kb.AssertKnowledgeBaseOwnerForAgent(ctx, tx, actx.UserID, kbID); err != nil {
 		return nil, err
 	}
-	if err := assertFolderParent(tx, actx.UserID, kbID, parentID, hasParent); err != nil {
+	if err := assertFolderParent(ctx, tx, actx.UserID, kbID, parentID, hasParent); err != nil {
 		return nil, err
 	}
-	sortOrder, err := nextSortOrder(tx, actx.UserID, kbID, parentID, hasParent)
+	sortOrder, err := nextSortOrder(ctx, tx, actx.UserID, kbID, parentID, hasParent)
 	if err != nil {
 		return nil, err
 	}
@@ -209,10 +207,10 @@ func AgentCreateArticle(c *gin.Context, actx *authContext) (any, error) {
 		publicExcerpt, readingMinutes, tocJSON, contentHash).Scan(&articleID, &createdAt); err != nil {
 		return nil, err
 	}
-	if err := replaceArticleTags(tx, articleID, tags); err != nil {
+	if err := replaceArticleTags(ctx, tx, articleID, tags); err != nil {
 		return nil, err
 	}
-	if err := tx.Commit(context.Background()); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
 	kb.InvalidatePublicArticleCaches("")
@@ -252,8 +250,8 @@ func AgentUpdateArticle(c *gin.Context, actx *authContext) (any, error) {
 	}
 
 	q := dbPool()
-	ctx := context.Background()
-	existingArticle, err := loadOwnedArticle(q, actx.UserID, articleID)
+	ctx := c.Request.Context()
+	existingArticle, err := loadOwnedArticle(ctx, q, actx.UserID, articleID)
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +280,7 @@ func AgentUpdateArticle(c *gin.Context, actx *authContext) (any, error) {
 		title, nodeID, actx.UserID); err != nil {
 		return nil, err
 	}
-	if err := replaceArticleTags(q, articleID, tags); err != nil {
+	if err := replaceArticleTags(ctx, q, articleID, tags); err != nil {
 		return nil, err
 	}
 	kb.ScheduleUnreferencedS4Cleanup(actx.UserID, removedImageObjectKeys, "agentUpdateArticle")
@@ -310,7 +308,7 @@ func AgentDeleteArticle(c *gin.Context, actx *authContext) (any, error) {
 		return nil, err
 	}
 	q := dbPool()
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	row := q.QueryRow(ctx,
 		`SELECT id, knowledge_base_id, node_id, title, content_md FROM petrichor_kb_article
 		 WHERE id = $1 AND user_id = $2 LIMIT 1`, articleID, actx.UserID)
@@ -322,12 +320,12 @@ func AgentDeleteArticle(c *gin.Context, actx *authContext) (any, error) {
 		return nil, err
 	}
 
-	full, err := queryOwnedArticleRows(q, actx.UserID, a.id)
+	full, err := queryOwnedArticleRows(ctx, q, actx.UserID, a.id)
 	if err != nil {
 		return nil, err
 	}
 	imageObjectKeys := kb.ExtractS4ObjectKeysFromArticleContent(full.ContentJson, full.ContentMd, actx.UserID)
-	if _, err := kb.DeleteArticleWikiPagesForAgent(q, actx.UserID, []kb.ArticleRow{*full}, true); err != nil {
+	if _, err := kb.DeleteArticleWikiPagesForAgent(c.Request.Context(), q, actx.UserID, []kb.ArticleRow{*full}, true); err != nil {
 		return nil, err
 	}
 	if _, err := q.Exec(ctx,
@@ -354,8 +352,8 @@ func AgentDeleteArticle(c *gin.Context, actx *authContext) (any, error) {
 }
 
 // queryOwnedArticleRows 取完整行供 Wiki 派生数据清理使用。
-func queryOwnedArticleRows(q *pgxpool.Pool, userID, articleID int64) (*kb.ArticleRow, error) {
-	return kb.QueryOwnedArticleForAgent(q, userID, articleID)
+func queryOwnedArticleRows(ctx context.Context, q *pgxpool.Pool, userID, articleID int64) (*kb.ArticleRow, error) {
+	return kb.QueryOwnedArticleForAgent(ctx, q, userID, articleID)
 }
 
 // ===== move =====
@@ -394,16 +392,16 @@ func AgentMoveArticle(c *gin.Context, actx *authContext) (any, error) {
 	}
 
 	q := dbPool()
-	ctx := context.Background()
-	a, err := loadOwnedArticle(q, actx.UserID, articleID)
+	ctx := c.Request.Context()
+	a, err := loadOwnedArticle(ctx, q, actx.UserID, articleID)
 	if err != nil {
 		return nil, err
 	}
-	if err := assertFolderParent(q, actx.UserID, a.knowledgeBaseID, targetParentID, hasTargetParent); err != nil {
+	if err := assertFolderParent(ctx, q, actx.UserID, a.knowledgeBaseID, targetParentID, hasTargetParent); err != nil {
 		return nil, err
 	}
 
-	allNodes, err := loadMoveNodes(q, actx.UserID, a.knowledgeBaseID)
+	allNodes, err := loadMoveNodes(ctx, q, actx.UserID, a.knowledgeBaseID)
 	if err != nil {
 		return nil, err
 	}
@@ -489,8 +487,8 @@ func AgentMoveArticle(c *gin.Context, actx *authContext) (any, error) {
 	}, nil
 }
 
-func loadMoveNodes(q *pgxpool.Pool, userID, knowledgeBaseID int64) ([]moveNodeLite, error) {
-	rows, err := q.Query(context.Background(),
+func loadMoveNodes(ctx context.Context, q *pgxpool.Pool, userID, knowledgeBaseID int64) ([]moveNodeLite, error) {
+	rows, err := q.Query(ctx,
 		`SELECT id, parent_id, sort_order FROM petrichor_kb_node
 		 WHERE user_id = $1 AND knowledge_base_id = $2`, userID, knowledgeBaseID)
 	if err != nil {
@@ -582,273 +580,4 @@ func moveIntoSiblingOrder(siblingIDs []int64, movingNodeID int64, targetIndex *i
 	out = append(out, movingNodeID)
 	out = append(out, withoutMoving[safeIndex:]...)
 	return out
-}
-
-// ===== list =====
-
-type listNodeLite struct {
-	id       int64
-	parentID *int64
-	name     string
-}
-
-// AgentListArticles POST /api/agent/article/list（scope doc:read）。
-func AgentListArticles(c *gin.Context, actx *authContext) (any, error) {
-	if err := requireAgentScope(actx, "doc:read"); err != nil {
-		return nil, err
-	}
-	raw, err := readBodyMap(c)
-	if err != nil {
-		return nil, err
-	}
-	kbID, err := reqID(raw["knowledgeBaseId"], "ID 必须是正整数")
-	if err != nil {
-		return nil, err
-	}
-	parentID, hasParentFilter, err := optID(raw, "parentId")
-	if err != nil {
-		return nil, err
-	}
-	parentScope := trimmedString(raw, "parentScope")
-	if parentScope == "" {
-		parentScope = "ANY"
-	}
-	if parentScope != "ANY" && parentScope != "DIRECT" {
-		return nil, badReq("parentScope 非法")
-	}
-	requiredTags, err := parseTagsInput(raw)
-	if err != nil {
-		return nil, err
-	}
-	keyword := trimmedString(raw, "keyword")
-	if len([]rune(keyword)) > 200 {
-		return nil, badReq("keyword 长度不能超过 200")
-	}
-	limit := int64(50)
-	if v, ok := raw["limit"].(float64); ok && v >= 1 && v <= 200 && float64(int64(v)) == v {
-		limit = int64(v)
-	}
-
-	q := dbPool()
-	ctx := context.Background()
-	if _, err := kb.AssertKnowledgeBaseOwnerForAgent(q, actx.UserID, kbID); err != nil {
-		return nil, err
-	}
-
-	sqlText := `SELECT a.id, a.knowledge_base_id, a.title, a.created_at, a.updated_at,
-		       n.id, n.parent_id, n.name, n.sort_order
-		FROM petrichor_kb_article a
-		INNER JOIN petrichor_kb_node n ON n.id = a.node_id
-		WHERE a.user_id = $1 AND a.knowledge_base_id = $2`
-	args := []any{actx.UserID, kbID}
-	if keyword != "" {
-		args = append(args, "%"+escapeLike(keyword)+"%")
-		sqlText += ` AND a.title ILIKE $` + strconv.Itoa(len(args))
-	}
-	sqlText += ` ORDER BY a.updated_at DESC, a.id DESC`
-	rows, err := q.Query(ctx, sqlText, args...)
-	if err != nil {
-		return nil, err
-	}
-	type articleListRow struct {
-		articleID int64
-		title     string
-		createdAt time.Time
-		updatedAt time.Time
-		nodeID    int64
-		parentID  *int64
-		nodeName  string
-		nodeOrder int32
-	}
-	var rowsData []articleListRow
-	for rows.Next() {
-		var row articleListRow
-		if err := rows.Scan(&row.articleID, new(int64), &row.title, &row.createdAt, &row.updatedAt,
-			&row.nodeID, &row.parentID, &row.nodeName, &row.nodeOrder); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		rowsData = append(rowsData, row)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	articleIDs := make([]int64, 0, len(rowsData))
-	for i := range rowsData {
-		articleIDs = append(articleIDs, rowsData[i].articleID)
-	}
-	tagsByArticle, err := loadTagsByArticleIDs(q, articleIDs)
-	if err != nil {
-		return nil, err
-	}
-	nodeMap, err := loadListNodeMap(q, actx.UserID, kbID)
-	if err != nil {
-		return nil, err
-	}
-
-	requiredTagSet := map[string]struct{}{}
-	for _, tag := range requiredTags {
-		requiredTagSet[tag] = struct{}{}
-	}
-	filteredByTag := []articleListRow{}
-	for i := range rowsData {
-		row := &rowsData[i]
-		if len(requiredTagSet) == 0 {
-			filteredByTag = append(filteredByTag, *row)
-			continue
-		}
-		tags := map[string]struct{}{}
-		for _, tag := range tagsByArticle[row.articleID] {
-			tags[tag] = struct{}{}
-		}
-		allMatched := true
-		for tag := range requiredTagSet {
-			if _, ok := tags[tag]; !ok {
-				allMatched = false
-				break
-			}
-		}
-		if allMatched {
-			filteredByTag = append(filteredByTag, *row)
-		}
-	}
-
-	filteredByParent := []articleListRow{}
-	for i := range filteredByTag {
-		row := filteredByTag[i]
-		if !hasParentFilter {
-			filteredByParent = append(filteredByParent, row)
-			continue
-		}
-		if parentScope == "DIRECT" {
-			if sameParentLite(row.parentID, optionalIDPtr(parentID, hasParentFilter)) {
-				filteredByParent = append(filteredByParent, row)
-			}
-			continue
-		}
-		if !hasParentFilter || isNodeUnderAncestor(nodeMap, row.nodeID, parentID) {
-			filteredByParent = append(filteredByParent, row)
-		}
-	}
-
-	totalAfterFilter := len(filteredByParent)
-	if int64(totalAfterFilter) > limit {
-		filteredByParent = filteredByParent[:limit]
-	}
-	items := make([]map[string]any, 0, len(filteredByParent))
-	for i := range filteredByParent {
-		row := &filteredByParent[i]
-		items = append(items, map[string]any{
-			"articleId":       idStr(row.articleID),
-			"nodeId":          idStr(row.nodeID),
-			"knowledgeBaseId": idStr(kbID),
-			"parentId":        nullableIDStr(row.parentID),
-			"title":           row.title,
-			"tags":            tagsFor(tagsByArticle, row.articleID),
-			"path":            buildArticlePathLite(nodeMap, row.nodeID),
-			"sortOrder":       row.nodeOrder,
-			"createdAt":       iso(row.createdAt),
-			"updatedAt":       iso(row.updatedAt),
-		})
-	}
-	return map[string]any{
-		"knowledgeBaseId": idStr(kbID),
-		"items":           items,
-		"hasMore":         int64(totalAfterFilter) > limit,
-	}, nil
-}
-
-func tagsFor(tagsByArticle map[int64][]string, articleID int64) []string {
-	if tags, ok := tagsByArticle[articleID]; ok {
-		return tags
-	}
-	return []string{}
-}
-
-func loadTagsByArticleIDs(q *pgxpool.Pool, articleIDs []int64) (map[int64][]string, error) {
-	result := map[int64][]string{}
-	if len(articleIDs) == 0 {
-		return result, nil
-	}
-	rows, err := q.Query(context.Background(),
-		`SELECT article_id, tag FROM petrichor_kb_article_tag
-		 WHERE article_id = ANY($1) ORDER BY tag ASC`, articleIDs)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var articleID int64
-		var tag string
-		if err := rows.Scan(&articleID, &tag); err != nil {
-			return nil, err
-		}
-		result[articleID] = append(result[articleID], tag)
-	}
-	return result, rows.Err()
-}
-
-func loadListNodeMap(q *pgxpool.Pool, userID, knowledgeBaseID int64) (map[int64]listNodeLite, error) {
-	rows, err := q.Query(context.Background(),
-		`SELECT id, parent_id, name FROM petrichor_kb_node
-		 WHERE user_id = $1 AND knowledge_base_id = $2`, userID, knowledgeBaseID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	result := map[int64]listNodeLite{}
-	for rows.Next() {
-		var node listNodeLite
-		if err := rows.Scan(&node.id, &node.parentID, &node.name); err != nil {
-			return nil, err
-		}
-		result[node.id] = node
-	}
-	return result, rows.Err()
-}
-
-// isNodeUnderAncestor 对照 handlers.ts 同名函数。
-func isNodeUnderAncestor(nodeMap map[int64]listNodeLite, nodeID, ancestorID int64) bool {
-	current, ok := nodeMap[nodeID]
-	depth := 0
-	for ok && depth < 100 {
-		if current.parentID != nil && *current.parentID == ancestorID {
-			return true
-		}
-		if current.parentID == nil {
-			return false
-		}
-		current, ok = nodeMap[*current.parentID]
-		depth++
-	}
-	return false
-}
-
-// buildArticlePathLite 对照 share-logic.ts buildArticlePath（"/a/b" 形式）。
-func buildArticlePathLite(nodeMap map[int64]listNodeLite, nodeID int64) string {
-	if nodeID <= 0 {
-		return "/"
-	}
-	names := []string{}
-	visited := map[int64]struct{}{}
-	current, ok := nodeMap[nodeID]
-	depth := 0
-	for ok && depth <= 100 {
-		if _, seen := visited[current.id]; seen {
-			return "/"
-		}
-		visited[current.id] = struct{}{}
-		names = append([]string{current.name}, names...)
-		if current.parentID == nil {
-			break
-		}
-		current, ok = nodeMap[*current.parentID]
-		depth++
-	}
-	if len(names) == 0 {
-		return "/"
-	}
-	return "/" + strings.Join(names, "/")
 }

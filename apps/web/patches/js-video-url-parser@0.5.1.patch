@@ -1,0 +1,21 @@
+diff --git a/lib/util.js b/lib/util.js
+index c471af7780a94f72f081a096e4026503094c3113..5d289bae096de3adab0bf5813606811cee1e7a67 100644
+--- a/lib/util.js
++++ b/lib/util.js
+@@ -93,11 +93,13 @@
+ exports.getTime = function getTime(timeString) {
+-  if (typeof timeString === 'undefined') {
++  if (typeof timeString !== 'string' || timeString.length === 0 || timeString.length > 128) {
+     return 0;
+   }
+-  if (timeString.match(/^(\d+[smhdw]?)+$/)) {
++  // PATCH(petrichor): avoid nested quantified groups from GHSA-8fgx-wgvr-pcx8.
++  // Unit/colon separators make every repetition unambiguous and keep matching linear.
++  if (/^\d+(?:[smhdw]\d+)*[smhdw]?$/.test(timeString)) {
+     return getLetterTime(timeString);
+   }
+-  if (timeString.match(/^(\d+:?)+$/)) {
++  if (/^\d+(?::\d+)*:?$/.test(timeString)) {
+     return getColonTime(timeString);
+   }
+   return 0;

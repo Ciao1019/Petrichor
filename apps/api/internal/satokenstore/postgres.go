@@ -14,6 +14,13 @@ import (
 
 var errKeyNotFound = errors.New("sa-token storage key not found")
 
+const operationTimeout = 5 * time.Second
+
+// Sa-Token Storage 接口不传 context，故每次数据库操作使用独立且有界的上下文，避免连接无限占用。
+func operationContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), operationTimeout)
+}
+
 // Storage 将 Sa-Token 的键值和 TTL 持久化到 PostgreSQL。
 type Storage struct {
 	pool *pgxpool.Pool
@@ -65,7 +72,9 @@ func (s *Storage) Set(key string, value any, expiration time.Duration) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.pool.Exec(context.Background(),
+	ctx, cancel := operationContext()
+	defer cancel()
+	_, err = s.pool.Exec(ctx,
 		`INSERT INTO sa_token_storage (key, value, value_type, expires_at)
 		 VALUES ($1, $2, $3, $4)
 		 ON CONFLICT (key) DO UPDATE
@@ -83,7 +92,9 @@ func (s *Storage) SetKeepTTL(key string, value any) error {
 	if err != nil {
 		return err
 	}
-	tag, err := s.pool.Exec(context.Background(),
+	ctx, cancel := operationContext()
+	defer cancel()
+	tag, err := s.pool.Exec(ctx,
 		`UPDATE sa_token_storage
 		 SET value = $2, value_type = $3, updated_at = now()
 		 WHERE key = $1 AND (expires_at IS NULL OR expires_at > now())`,
@@ -103,7 +114,9 @@ func (s *Storage) Get(key string) (any, error) {
 		data      []byte
 		valueType string
 	)
-	err := s.pool.QueryRow(context.Background(),
+	ctx, cancel := operationContext()
+	defer cancel()
+	err := s.pool.QueryRow(ctx,
 		`SELECT value, value_type FROM sa_token_storage
 		 WHERE key = $1 AND (expires_at IS NULL OR expires_at > now())`, key).
 		Scan(&data, &valueType)
@@ -121,7 +134,9 @@ func (s *Storage) Delete(keys ...string) error {
 	if len(keys) == 0 {
 		return nil
 	}
-	_, err := s.pool.Exec(context.Background(),
+	ctx, cancel := operationContext()
+	defer cancel()
+	_, err := s.pool.Exec(ctx,
 		`DELETE FROM sa_token_storage WHERE key = ANY($1)`, keys)
 	return err
 }
@@ -129,7 +144,9 @@ func (s *Storage) Delete(keys ...string) error {
 // Exists 判断键是否存在且未过期。
 func (s *Storage) Exists(key string) bool {
 	var exists bool
-	err := s.pool.QueryRow(context.Background(),
+	ctx, cancel := operationContext()
+	defer cancel()
+	err := s.pool.QueryRow(ctx,
 		`SELECT EXISTS(
 			SELECT 1 FROM sa_token_storage
 			WHERE key = $1 AND (expires_at IS NULL OR expires_at > now())
@@ -149,7 +166,9 @@ func likePattern(pattern string) string {
 
 // Keys 返回匹配 Sa-Token 星号模式的所有有效键。
 func (s *Storage) Keys(pattern string) ([]string, error) {
-	rows, err := s.pool.Query(context.Background(),
+	ctx, cancel := operationContext()
+	defer cancel()
+	rows, err := s.pool.Query(ctx,
 		`SELECT key FROM sa_token_storage
 		 WHERE key LIKE $1 ESCAPE '\' AND (expires_at IS NULL OR expires_at > now())
 		 ORDER BY key`, likePattern(pattern))
@@ -171,7 +190,9 @@ func (s *Storage) Keys(pattern string) ([]string, error) {
 
 // Expire 重设过期时间；非正 TTL 表示永不过期。
 func (s *Storage) Expire(key string, expiration time.Duration) error {
-	tag, err := s.pool.Exec(context.Background(),
+	ctx, cancel := operationContext()
+	defer cancel()
+	tag, err := s.pool.Exec(ctx,
 		`UPDATE sa_token_storage SET expires_at = $2, updated_at = now()
 		 WHERE key = $1 AND (expires_at IS NULL OR expires_at > now())`,
 		key, expirationTime(expiration))
@@ -187,7 +208,9 @@ func (s *Storage) Expire(key string, expiration time.Duration) error {
 // TTL 返回剩余 TTL；-1 表示永不过期，-2 表示不存在或已过期。
 func (s *Storage) TTL(key string) (time.Duration, error) {
 	var expiresAt *time.Time
-	err := s.pool.QueryRow(context.Background(),
+	ctx, cancel := operationContext()
+	defer cancel()
+	err := s.pool.QueryRow(ctx,
 		`SELECT expires_at FROM sa_token_storage
 		 WHERE key = $1 AND (expires_at IS NULL OR expires_at > now())`, key).
 		Scan(&expiresAt)
@@ -209,11 +232,15 @@ func (s *Storage) TTL(key string) (time.Duration, error) {
 
 // Clear 清空 Sa-Token 存储。
 func (s *Storage) Clear() error {
-	_, err := s.pool.Exec(context.Background(), `DELETE FROM sa_token_storage`)
+	ctx, cancel := operationContext()
+	defer cancel()
+	_, err := s.pool.Exec(ctx, `DELETE FROM sa_token_storage`)
 	return err
 }
 
 // Ping 检查数据库连接。
 func (s *Storage) Ping() error {
-	return s.pool.Ping(context.Background())
+	ctx, cancel := operationContext()
+	defer cancel()
+	return s.pool.Ping(ctx)
 }

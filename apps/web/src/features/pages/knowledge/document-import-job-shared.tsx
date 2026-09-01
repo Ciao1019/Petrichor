@@ -9,6 +9,7 @@ export const STATUS_META: Record<DocumentImportJobStatus, { label: string; class
   processing: { label: "进行中", className: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
   completed: { label: "已完成", className: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
   failed: { label: "失败", className: "bg-destructive/10 text-destructive" },
+  dead_letter: { label: "死信", className: "bg-destructive/15 text-destructive" },
   canceled: { label: "已取消", className: "bg-muted text-muted-foreground" },
 }
 
@@ -38,7 +39,7 @@ export function resolveStatusMeta(job: DocumentImportJobResponse): { label: stri
   if (job.status === "failed" && job.failedPages > 0) {
     return { ...STATUS_META.failed, label: "有失败页" }
   }
-  return STATUS_META[job.status] ?? STATUS_META.pending
+  return STATUS_META[job.status] ?? { label: "等待中", className: "bg-muted text-muted-foreground" }
 }
 
 export function StatusBadge({ job }: { job: DocumentImportJobResponse }) {

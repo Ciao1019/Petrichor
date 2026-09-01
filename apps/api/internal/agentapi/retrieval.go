@@ -230,8 +230,8 @@ func (h *treeHitOut) toMap() map[string]any {
 	return m
 }
 
-func loadTreeNodesLite(q *pgxpool.Pool, userID, kbID int64, articleID *int64) ([]kb.TreeNodeRow, error) {
-	return kb.LoadTreeNodesForAgent(q, userID, kbID, articleID)
+func loadTreeNodesLite(ctx context.Context, q *pgxpool.Pool, userID, kbID int64, articleID *int64) ([]kb.TreeNodeRow, error) {
+	return kb.LoadTreeNodesForAgent(ctx, q, userID, kbID, articleID)
 }
 
 func buildNodePathOf(node *kb.TreeNodeRow, byKey map[string]*kb.TreeNodeRow) string {
@@ -261,11 +261,11 @@ func clipTreeContent(contentMd string) string {
 
 // retrieveTreeNodesForAgentCore 对照 wiki-tree.ts retrieveTreeNodesForAgent：
 // LLM 在目录树上推理导航选节点；LLM 不可用或解析失败退回关键词打分。
-func retrieveTreeNodesForAgentCore(q *pgxpool.Pool, userID, kbID int64, query string, limit int, articleID *int64) ([]map[string]any, error) {
-	if _, err := kb.AssertKnowledgeBaseOwnerForAgent(q, userID, kbID); err != nil {
+func retrieveTreeNodesForAgentCore(ctx context.Context, q *pgxpool.Pool, userID, kbID int64, query string, limit int, articleID *int64) ([]map[string]any, error) {
+	if _, err := kb.AssertKnowledgeBaseOwnerForAgent(ctx, q, userID, kbID); err != nil {
 		return nil, err
 	}
-	nodes, err := loadTreeNodesLite(q, userID, kbID, articleID)
+	nodes, err := loadTreeNodesLite(ctx, q, userID, kbID, articleID)
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +277,7 @@ func retrieveTreeNodesForAgentCore(q *pgxpool.Pool, userID, kbID int64, query st
 		byKey[nodes[i].NodeKey] = &nodes[i]
 	}
 
-	selected := selectNodeKeysByLLM(userID, query, nodes, limit)
+	selected := selectNodeKeysByLLM(ctx, userID, query, nodes, limit)
 	out := []map[string]any{}
 	appendHit := func(node *kb.TreeNodeRow, reason *string) {
 		out = append(out, (&treeHitOut{
@@ -318,7 +318,7 @@ type selectedNode struct {
 }
 
 // selectNodeKeysByLLM 对照 wiki-tree.ts selectNodeKeys。
-func selectNodeKeysByLLM(userID int64, query string, nodes []kb.TreeNodeRow, limit int) []selectedNode {
+func selectNodeKeysByLLM(ctx context.Context, userID int64, query string, nodes []kb.TreeNodeRow, limit int) []selectedNode {
 	if len(nodes) > maxOutlineNodes || kb.ChatInvoker == nil {
 		return nil
 	}
@@ -332,7 +332,7 @@ func selectNodeKeysByLLM(userID int64, query string, nodes []kb.TreeNodeRow, lim
 		}
 		outlineLines = append(outlineLines, indent+"- ["+node.NodeKey+"] "+node.Title+summaryPart)
 	}
-	answer, err := kb.ChatInvoker(context.Background(), kb.ChatRequest{
+	answer, err := kb.ChatInvoker(ctx, kb.ChatRequest{
 		UserID: userID,
 		SystemPrompt: strings.Join([]string{
 			"你在用「推理式检索」浏览文档目录树来回答问题。",
@@ -420,8 +420,8 @@ func keywordTreeFallback(nodes []kb.TreeNodeRow, query string, limit int) []*kb.
 }
 
 // semanticSearchTreeNodesCore 对照 wiki-tree.ts semanticSearchTreeNodes（pgvector 余弦相似度）。
-func semanticSearchTreeNodesCore(q *pgxpool.Pool, userID, kbID int64, query string, limit int, articleID *int64) ([]map[string]any, error) {
-	if _, err := kb.AssertKnowledgeBaseOwnerForAgent(q, userID, kbID); err != nil {
+func semanticSearchTreeNodesCore(ctx context.Context, q *pgxpool.Pool, userID, kbID int64, query string, limit int, articleID *int64) ([]map[string]any, error) {
+	if _, err := kb.AssertKnowledgeBaseOwnerForAgent(ctx, q, userID, kbID); err != nil {
 		return nil, err
 	}
 	keyword := strings.TrimSpace(query)
@@ -431,7 +431,7 @@ func semanticSearchTreeNodesCore(q *pgxpool.Pool, userID, kbID int64, query stri
 	if kb.EmbedInvoker == nil {
 		return nil, httpx.BadRequest("向量语义检索需要配置 PostgreSQL 与向量模型")
 	}
-	vectors, err := kb.EmbedInvoker(context.Background(), kb.EmbedRequest{UserID: userID, Texts: []string{keyword}, Op: "kb.doc.semantic"})
+	vectors, err := kb.EmbedInvoker(ctx, kb.EmbedRequest{UserID: userID, Texts: []string{keyword}, Op: "kb.doc.semantic"})
 	if err != nil {
 		return nil, err
 	}
@@ -441,7 +441,6 @@ func semanticSearchTreeNodesCore(q *pgxpool.Pool, userID, kbID int64, query stri
 	vec := vectors[0]
 	dims := len(vec)
 
-	ctx := context.Background()
 	modelID := ""
 	if err := q.QueryRow(ctx,
 		`SELECT m.model_id FROM petrichor_ai_binding b
@@ -487,7 +486,7 @@ func semanticSearchTreeNodesCore(q *pgxpool.Pool, userID, kbID int64, query stri
 		return []map[string]any{}, nil
 	}
 
-	nodes, err := loadTreeNodesLite(q, userID, kbID, articleID)
+	nodes, err := loadTreeNodesLite(ctx, q, userID, kbID, articleID)
 	if err != nil {
 		return nil, err
 	}

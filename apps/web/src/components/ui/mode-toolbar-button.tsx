@@ -27,13 +27,7 @@ export function ModeToolbarButton(props: DropdownMenuProps) {
 
   const isSuggesting = usePluginOption(SuggestionPlugin, 'isSuggesting');
 
-  let value = 'editing';
-
-  if (readOnly) value = 'viewing';
-
-  if (isSuggesting) value = 'suggestion';
-
-  const item: Record<string, { icon: React.ReactNode; label: string }> = {
+  const item = {
     editing: {
       icon: <PenIcon />,
       label: 'Editing',
@@ -47,13 +41,17 @@ export function ModeToolbarButton(props: DropdownMenuProps) {
       label: 'Viewing',
     },
   };
+  let value: keyof typeof item = 'editing';
+  if (readOnly) value = 'viewing';
+  if (isSuggesting) value = 'suggestion';
+  const selectedItem = item[value];
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen} modal={false} {...props}>
       <DropdownMenuTrigger asChild>
         <ToolbarButton pressed={open} tooltip="Editing mode" isDropdown>
-          {item[value].icon}
-          <span className="hidden lg:inline">{item[value].label}</span>
+          {selectedItem.icon}
+          <span className="hidden lg:inline">{selectedItem.label}</span>
         </ToolbarButton>
       </DropdownMenuTrigger>
 

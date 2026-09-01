@@ -193,7 +193,7 @@ func handleLinuxDoCallback(c *gin.Context, code, state string) (*linuxDoCallback
 		return &linuxDoCallbackResult{mode: "bind", token: "", user: user}, nil
 	}
 
-	user, token, lerr := resolveLinuxDoLoginUser(userInfo, requestIP(c), c.Request.UserAgent())
+	user, token, lerr := resolveLinuxDoLoginUser(c.Request.Context(), userInfo, requestIP(c), c.Request.UserAgent())
 	if lerr != nil {
 		return nil, lerr
 	}
@@ -223,8 +223,8 @@ func resolveLinuxDoCallbackMode(c *gin.Context, state string) (string, error) {
 	return "login", nil
 }
 
-func findPetrichorUserByLinuxDoAccountID(accountID string) (*User, error) {
-	row := db.Pool().QueryRow(ctx(),
+func findPetrichorUserByLinuxDoAccountID(ctx context.Context, accountID string) (*User, error) {
+	row := db.Pool().QueryRow(ctx,
 		`SELECT `+UserColumns+` FROM petrichor_user WHERE linuxdo_account_id = $1 LIMIT 1`, accountID)
 	u, err := ScanUser(row)
 	if err != nil {
@@ -243,8 +243,8 @@ const linuxDoUserUpdateSetClause = `linuxdo_account_id = $1, linuxdo_email = $2,
 const linuxDoUserUpdateQuery = `UPDATE petrichor_user SET ` + linuxDoUserUpdateSetClause +
 	` WHERE id = $7 RETURNING ` + UserColumns
 
-func updateLinuxDoBoundUser(userID int64, userInfo *normalizedLinuxDoUser) (*User, error) {
-	return ScanUser(db.Pool().QueryRow(ctx(),
+func updateLinuxDoBoundUser(ctx context.Context, userID int64, userInfo *normalizedLinuxDoUser) (*User, error) {
+	return ScanUser(db.Pool().QueryRow(ctx,
 		linuxDoUserUpdateQuery,
 		userInfo.accountID, userInfo.email, userInfo.username,
 		userInfo.username, userInfo.nickname, userInfo.avatar, userID))
@@ -252,8 +252,8 @@ func updateLinuxDoBoundUser(userID int64, userInfo *normalizedLinuxDoUser) (*Use
 
 // resolveLinuxDoLoginUser 仅允许绑定到超级管理员的 Linux.do 账号登录后台，
 // 成功后由 Sa-Token 签发会话。
-func resolveLinuxDoLoginUser(userInfo *normalizedLinuxDoUser, ip, userAgent string) (*User, string, error) {
-	boundUser, err := findPetrichorUserByLinuxDoAccountID(userInfo.accountID)
+func resolveLinuxDoLoginUser(ctx context.Context, userInfo *normalizedLinuxDoUser, ip, userAgent string) (*User, string, error) {
+	boundUser, err := findPetrichorUserByLinuxDoAccountID(ctx, userInfo.accountID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -264,7 +264,7 @@ func resolveLinuxDoLoginUser(userInfo *normalizedLinuxDoUser, ip, userAgent stri
 		return nil, "", httpx.Unauthorized("该 Linux.do 账号绑定的用户不是超级管理员，无法登录后台")
 	}
 
-	u, uerr := updateLinuxDoBoundUser(boundUser.ID, userInfo)
+	u, uerr := updateLinuxDoBoundUser(ctx, boundUser.ID, userInfo)
 	if uerr != nil {
 		return nil, "", uerr
 	}
@@ -284,14 +284,14 @@ func bindLinuxDoAccount(c *gin.Context, userInfo *normalizedLinuxDoUser) (*User,
 	if deref(current.LinuxDoAccountID) != "" && deref(current.LinuxDoAccountID) != userInfo.accountID {
 		return nil, httpx.BadRequest("当前账号已绑定其他 Linux.do 账号")
 	}
-	existing, err := findPetrichorUserByLinuxDoAccountID(userInfo.accountID)
+	existing, err := findPetrichorUserByLinuxDoAccountID(c.Request.Context(), userInfo.accountID)
 	if err != nil {
 		return nil, err
 	}
 	if existing != nil && existing.ID != current.ID {
 		return nil, httpx.BadRequest("该 Linux.do 账号已绑定其他用户")
 	}
-	return updateLinuxDoBoundUser(current.ID, userInfo)
+	return updateLinuxDoBoundUser(c.Request.Context(), current.ID, userInfo)
 }
 
 // ---- 上游 HTTP 调用（带一次重试与 30s 超时） ----

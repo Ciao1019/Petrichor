@@ -34,7 +34,8 @@ export function ListToolbarButton({
 }) {
   const state = useListToolbarButtonState({ nodeType });
   const { props: buttonProps } = useListToolbarButton(state);
-  const { icon, label } = nodeTypeMap[nodeType] ?? nodeTypeMap[KEYS.ulClassic];
+  const defaultItem = { icon: <List />, label: 'Bulleted List' };
+  const { icon, label } = nodeTypeMap[nodeType] ?? nodeTypeMap[KEYS.ulClassic] ?? defaultItem;
 
   return (
     <ToolbarButton {...props} {...buttonProps} tooltip={label}>

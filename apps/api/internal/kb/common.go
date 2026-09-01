@@ -333,7 +333,7 @@ type ChunkIndexRow struct {
 
 const jobColumns = `id, user_id, knowledge_base_id, parent_node_id, source_type, file_name,
 	source_key, title, total_pages, processed_pages, status, model_config_id, article_id, error,
-	created_at, updated_at`
+	lease_owner, lease_expires_at, heartbeat_at, dead_lettered_at, replay_count, created_at, updated_at`
 
 type JobRow struct {
 	ID              int64
@@ -350,24 +350,34 @@ type JobRow struct {
 	ModelConfigID   *int64
 	ArticleID       *int64
 	Error           *string
+	LeaseOwner      *string
+	LeaseExpiresAt  *time.Time
+	HeartbeatAt     *time.Time
+	DeadLetteredAt  *time.Time
+	ReplayCount     int32
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
 
 const jobPageColumns = `id, job_id, page_no, image_key, extracted_by, status, markdown, error,
-	created_at, updated_at`
+	attempt_count, max_attempts, next_attempt_at, last_error, dead_lettered_at, created_at, updated_at`
 
 type JobPageRow struct {
-	ID          int64
-	JobID       int64
-	PageNo      int32
-	ImageKey    *string
-	ExtractedBy string
-	Status      string
-	Markdown    *string
-	Error       *string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID             int64
+	JobID          int64
+	PageNo         int32
+	ImageKey       *string
+	ExtractedBy    string
+	Status         string
+	Markdown       *string
+	Error          *string
+	AttemptCount   int32
+	MaxAttempts    int32
+	NextAttemptAt  time.Time
+	LastError      *string
+	DeadLetteredAt *time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // ===== 哈希与格式化工具 =====

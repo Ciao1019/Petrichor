@@ -46,11 +46,16 @@ export type AgentActivityGroupViewModel = {
     key: string
     type: AgentActivityType
     title: string
+    /** 做了什么：次数与产出，一句话 */
     detail?: string
+    /** 怎么做到的（召回方式等）：次要信息，弱化展示，不和 detail 挤成一行 */
+    note?: string
     status: AgentActivityStatus
     count: number
     startedAt?: number
     completedAt?: number
+    /** 组内工具耗时之和；取后端 tool_completed 的 durationMs，不含 SSE 传输延迟 */
+    durationMs?: number
 }
 
 export type SubAgentViewModel = {
@@ -99,16 +104,10 @@ export type AgentRunViewModel = {
     subagents: SubAgentViewModel[]
     evidence: EvidenceViewModel[]
     loadedSkills: string[]
-    /** 实时答案全文：换段时旧段落保留，新内容接在其后 */
+    /** 实时答案全文：只保留当前作答段，换段时丢弃上一段（工具调用前的过程旁白） */
     answer: string
     /** 流式回答开始前下发的 Wiki 词典；只影响原位渲染，不改写 answer。 */
     wikiMentionTargets?: WikiMentionTarget[]
-    /**
-     * 当前作答段在 answer 中的起始下标。
-     * final_answer_completed 只覆盖这一段，前面已归档的段落原样保留，
-     * 否则结尾会把用户已经读到的内容整段换掉。
-     */
-    answerSegmentStart: number
     /** 面向用户的停止说明；不含内部策略名 */
     stopMessage?: string
     errorMessage?: string

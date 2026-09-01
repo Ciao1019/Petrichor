@@ -107,7 +107,7 @@ func knowledgeHitFromMap(item map[string]any) KnowledgeSearchHit {
 func SearchKnowledgeForAPI(request KnowledgeSearchRequest) ([]KnowledgeSearchHit, error) {
 	ctx := request.Context
 	if ctx == nil {
-		ctx = context.Background()
+		return nil, fmt.Errorf("知识检索缺少调用上下文")
 	}
 	focus := map[string]any{}
 	input := map[string]any{

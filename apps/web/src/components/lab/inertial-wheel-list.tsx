@@ -137,7 +137,7 @@ export default function WheelList({
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const steps: Record<string, number> = { ArrowUp: -1, ArrowDown: 1, PageUp: -5, PageDown: 5 };
     let target: number;
-    if (event.key in steps) target = indexRef.current + steps[event.key];
+    if (event.key in steps) target = indexRef.current + (steps[event.key] ?? 0);
     else if (event.key === "Home") target = 0;
     else if (event.key === "End") target = items.length - 1;
     else return;
@@ -153,8 +153,10 @@ export default function WheelList({
     const measure = () => {
       const options = scroller.querySelectorAll<HTMLElement>('[role="option"]');
       if (!options.length) return;
+      const firstOption = options[0];
+      if (!firstOption) return;
       setMetrics({
-        itemH: options[0].offsetHeight,
+        itemH: firstOption.offsetHeight,
         centers: Array.from(options, (el) => el.offsetTop + el.offsetHeight / 2),
         half: scroller.clientHeight / 2,
       });
@@ -175,11 +177,14 @@ export default function WheelList({
   useEffect(() => () => window.clearTimeout(settleTimer.current), []);
 
   useEffect(() => {
-    onStateChange?.({ value: items[index], index, count: items.length, settled });
+    const currentValue = items[index];
+    if (currentValue !== undefined) {
+      onStateChange?.({ value: currentValue, index, count: items.length, settled });
+    }
   }, [items, index, settled, onStateChange]);
 
   const optionId = (i: number) => `${idBase}-opt-${i}`;
-  const value = items[index];
+  const value = items[index] ?? "";
 
   return (
     <div className="relative w-full max-w-[var(--wheel-w)]" style={WHEEL_VARS}>
@@ -209,7 +214,7 @@ export default function WheelList({
                 label={item}
                 selected={i === index}
                 scrollY={scrollY}
-                center={metrics.centers[i] ?? fallbackMetrics(items.length).centers[i]}
+                center={metrics.centers[i] ?? fallbackMetrics(items.length).centers[i] ?? 0}
                 half={metrics.half}
                 drum={drum}
                 flat={Boolean(reduced)}

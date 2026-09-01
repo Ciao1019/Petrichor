@@ -16,7 +16,6 @@ import { AssistantChatTransport, useChatRuntime } from "@assistant-ui/react-ai-s
 import { ArrowUp, BookOpen, Copy, MessageCircleQuestion, RefreshCw, Square } from "@/components/iconimate"
 
 import { MarkdownText } from "@/components/assistant-ui/markdown-text"
-import { ToolFallback } from "@/components/assistant-ui/tool-fallback"
 import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import { QaMarkdownScope, QaMarkdownText, QaPreparing, WikiLinkClickProvider } from "@/features/pages/knowledge/QaMarkdown"
 import { SignedUrlPublicAccessProvider } from "@/hooks/use-signed-url"
@@ -363,7 +362,7 @@ function AssistantMessageBubble() {
   return (
     <div className="flex w-full items-start gap-3">
       <img
-        src="/about-avatar.png"
+        src="/about-avatar.avif"
         alt="助手头像"
         className="mt-0.5 size-8 shrink-0 rounded-full border border-white/15 object-cover"
         loading="lazy"
@@ -382,14 +381,15 @@ function AssistantMessageBubble() {
               )
             }
           >
-            <QaPreparing state="searching" />
+            <QaPreparing state="connecting" />
           </AuiIf>
           <div className="wrap-break-word text-white/90">
             <MessagePrimitive.Parts>
               {({ part }) => {
                 if (part.type === "text") return <QaMarkdownText />
+                // 只渲染有专用卡片的工具；泛用的「已使用工具: xxx」是内部实现细节，不外露。
                 if (part.type === "tool-call") {
-                  return <div className="not-prose my-3">{part.toolUI ?? <ToolFallback {...part} />}</div>
+                  return part.toolUI ? <div className="not-prose my-3">{part.toolUI}</div> : null
                 }
                 return null
               }}

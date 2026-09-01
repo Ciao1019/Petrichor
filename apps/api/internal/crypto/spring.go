@@ -1,13 +1,16 @@
-// Package crypto 实现兼容既有密文的 Spring 风格文本加密：
-// PBKDF2-SHA1(1024) 派生 AES-256-CBC key，输出 hex(iv+ciphertext)。
+// Package crypto 提供带版本的凭证加密。新密文使用 HKDF-SHA256 + AES-256-GCM；
+// 解密时仍兼容历史 Spring PBKDF2-SHA1 + AES-CBC 密文，便于滚动迁移。
 package crypto
 
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hkdf"
 	"crypto/pbkdf2"
 	"crypto/rand"
 	"crypto/sha1"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -18,9 +21,12 @@ const (
 	pbkdf2Iterations = 1024
 	aesKeyLen        = 32
 	aesBlockSize     = 16
+	ciphertextV2     = "v2:"
 )
 
-func deriveKey(key, saltHex string) ([]byte, error) {
+var credentialAssociatedData = []byte("petrichor:credential:v2")
+
+func decodeSalt(key, saltHex string) ([]byte, error) {
 	if strings.TrimSpace(key) == "" {
 		return nil, errors.New("encrypt-key 不能为空")
 	}
@@ -35,10 +41,30 @@ func deriveKey(key, saltHex string) ([]byte, error) {
 	if err != nil {
 		return nil, errors.New("encrypt-salt 必须为合法的 hex 字符串")
 	}
+	return saltBytes, nil
+}
+
+func deriveKey(key, saltHex string) ([]byte, error) {
+	salt, err := decodeSalt(key, saltHex)
+	if err != nil {
+		return nil, err
+	}
+	derived, err := hkdf.Key(sha256.New, []byte(key), salt, string(credentialAssociatedData), aesKeyLen)
+	if err != nil {
+		return nil, fmt.Errorf("派生凭证密钥失败: %w", err)
+	}
+	return derived, nil
+}
+
+func deriveLegacyKey(key, saltHex string) ([]byte, error) {
+	saltBytes, err := decodeSalt(key, saltHex)
+	if err != nil {
+		return nil, err
+	}
 	return pbkdf2.Key(sha1.New, key, saltBytes, pbkdf2Iterations, aesKeyLen)
 }
 
-// EncryptText 加密明文。
+// EncryptText 使用 AES-256-GCM 加密并返回带版本前缀的 base64url 密文。
 func EncryptText(key, saltHex, plainText string) (string, error) {
 	secretKey, err := deriveKey(key, saltHex)
 	if err != nil {
@@ -48,26 +74,57 @@ func EncryptText(key, saltHex, plainText string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	iv := make([]byte, aesBlockSize)
-	if _, err := rand.Read(iv); err != nil {
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
 		return "", err
 	}
-	plain := []byte(plainText)
-	padding := aesBlockSize - len(plain)%aesBlockSize
-	padded := make([]byte, len(plain)+padding)
-	copy(padded, plain)
-	for i := len(plain); i < len(padded); i++ {
-		padded[i] = byte(padding) // PKCS7，与 node crypto 默认一致
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
 	}
-	mode := cipher.NewCBCEncrypter(block, iv)
-	out := make([]byte, len(padded))
-	mode.CryptBlocks(out, padded)
-	return hex.EncodeToString(append(iv, out...)), nil
+	sealed := aead.Seal(nil, nonce, []byte(plainText), credentialAssociatedData)
+	payload := append(nonce, sealed...)
+	return ciphertextV2 + base64.RawURLEncoding.EncodeToString(payload), nil
 }
 
-// DecryptText 解密密文。
-func DecryptText(key, saltHex, cipherHex string) (string, error) {
+// DecryptText 自动识别 v2 AEAD 密文；无版本前缀时按历史 AES-CBC 格式读取。
+func DecryptText(key, saltHex, encoded string) (string, error) {
+	if strings.HasPrefix(encoded, ciphertextV2) {
+		return decryptV2(key, saltHex, strings.TrimPrefix(encoded, ciphertextV2))
+	}
+	return decryptLegacy(key, saltHex, encoded)
+}
+
+func decryptV2(key, saltHex, payloadBase64 string) (string, error) {
 	secretKey, err := deriveKey(key, saltHex)
+	if err != nil {
+		return "", err
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(payloadBase64)
+	if err != nil {
+		return "", fmt.Errorf("v2 密文 base64url 解码失败")
+	}
+	block, err := aes.NewCipher(secretKey)
+	if err != nil {
+		return "", err
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	if len(payload) < aead.NonceSize()+aead.Overhead() {
+		return "", fmt.Errorf("v2 密文长度非法")
+	}
+	nonce, ciphertext := payload[:aead.NonceSize()], payload[aead.NonceSize():]
+	plain, err := aead.Open(nil, nonce, ciphertext, credentialAssociatedData)
+	if err != nil {
+		return "", fmt.Errorf("v2 密文完整性校验失败")
+	}
+	return string(plain), nil
+}
+
+func decryptLegacy(key, saltHex, cipherHex string) (string, error) {
+	secretKey, err := deriveLegacyKey(key, saltHex)
 	if err != nil {
 		return "", err
 	}

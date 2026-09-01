@@ -153,6 +153,13 @@ type RoutingHint struct {
 	Reasoning  string   `json:"reasoning,omitempty"`
 }
 
+// Actionable 置信度是否够高到值得据此行动。
+// Runtime 用它决定要不要采纳提示，接口层用它决定要不要把意图展示给用户——
+// 两处必须同一条线，否则界面上写着"知识库"，Agent 却完全没按知识库路线走。
+func (h *RoutingHint) Actionable() bool {
+	return h != nil && len(h.Domains) > 0 && h.Confidence >= routerHintMinConfidence
+}
+
 // ToolNamespace 工具命名空间。
 type ToolNamespace string
 
@@ -199,7 +206,6 @@ type ToolExecutionContext struct {
 	UserID          int64
 	ConversationID  string
 	Focus           map[string]any
-	QaMode          string // normal | wiki
 	SystemRole      string
 	DelegationDepth int
 	State           *AgentState

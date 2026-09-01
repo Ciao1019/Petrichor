@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type Ref } from "react"
+import { lazy, Suspense, useState, useEffect, useRef, type Ref } from "react"
 import { motion, AnimatePresence } from "motion/react"
 import { QRCodeSVG } from "qrcode.react"
 import type { MindElixirData } from "mind-elixir"
@@ -12,7 +12,6 @@ import { PublicArticleErrorCard, PublicArticlePasswordCard } from "@/features/pa
 import { PublicArticleComments } from "@/features/pages/public/PublicArticleComments"
 import { PublicArticlePanel, PublicMindmapPanel } from "@/features/pages/public/PublicArticlePanels"
 import { PublicArticlePrevNext } from "@/features/pages/public/PublicArticlePrevNext"
-import { QaMarkdownScope, QaStreamingMarkdown } from "@/features/pages/knowledge/QaMarkdown"
 import {
   shouldRenderPublicArticleBody,
   shouldShowPublicArticleLoadingCard,
@@ -20,6 +19,24 @@ import {
 import { useSignedUrl } from "@/hooks/use-signed-url"
 import type { TocItem } from "@/features/pages/public/public-article-utils"
 import { cn } from "@/lib/utils"
+
+const LazyPublicArticleSummaryMarkdown = lazy(async () => {
+  const module = await import("@/features/pages/knowledge/QaMarkdown")
+  return {
+    default: function PublicArticleSummaryMarkdown({ text }: { text: string }) {
+      return (
+        <module.QaMarkdownScope>
+          <module.QaStreamingMarkdown
+            text={text}
+            revealOnMount
+            revealCps={PUBLIC_ARTICLE_SUMMARY_REVEAL_CPS}
+            catchupMs={null}
+          />
+        </module.QaMarkdownScope>
+      )
+    },
+  }
+})
 
 export type PublicArticlePageModel = {
   shareCode: string | undefined
@@ -203,15 +220,9 @@ function PublicArticleAiSummary({ summary }: { summary: string | null }) {
       <div className="post-ai-summary-label">AI 总结</div>
       <div className="post-ai-summary-text">
         {/* 不写死 light：前台已统一暗色，强制浅色会让内容变成暗底暗字 */}
-        <QaMarkdownScope>
-          <QaStreamingMarkdown
-            key={normalizedSummary}
-            text={normalizedSummary}
-            revealOnMount
-            revealCps={PUBLIC_ARTICLE_SUMMARY_REVEAL_CPS}
-            catchupMs={null}
-          />
-        </QaMarkdownScope>
+        <Suspense fallback={<span className="text-sm text-muted-foreground">正在加载总结…</span>}>
+          <LazyPublicArticleSummaryMarkdown key={normalizedSummary} text={normalizedSummary} />
+        </Suspense>
       </div>
     </section>
   )
@@ -487,6 +498,12 @@ function ArticleCardPreview({
         {/* 分割线 */}
         <div style={{ height: 1, background: CARD.borderDark, marginBottom: 12 }} />
 
+        {createdAt ? (
+          <p style={{ fontFamily: CARD.fontMono, fontSize: 8, letterSpacing: "0.08em", color: CARD.inkLight, marginBottom: 6 }}>
+            {createdAt}
+          </p>
+        ) : null}
+
         {/* 标题 */}
         <h2 style={{
           fontFamily: CARD.fontDisplay,
@@ -525,23 +542,26 @@ function ArticleCardPreview({
         {/* ── 标签行 ── */}
         {tags.length > 0 ? (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
-            {tags.slice(0, 5).map((tag, i) => (
-              <span
-                key={tag}
-                style={{
-                  padding: "2px 8px",
-                  borderRadius: 999,
-                  fontSize: 9,
-                  fontFamily: CARD.fontSans,
-                  letterSpacing: "0.03em",
-                  background: TAG_COLORS[i % TAG_COLORS.length].bg,
-                  color: TAG_COLORS[i % TAG_COLORS.length].fg,
-                  border: `1px solid ${TAG_COLORS[i % TAG_COLORS.length].border}`,
-                }}
-              >
-                # {tag}
-              </span>
-            ))}
+            {tags.slice(0, 5).map((tag, i) => {
+              const color = TAG_COLORS[i % TAG_COLORS.length] ?? { bg: "transparent", fg: "currentColor", border: "currentColor" }
+              return (
+                <span
+                  key={tag}
+                  style={{
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    fontSize: 9,
+                    fontFamily: CARD.fontSans,
+                    letterSpacing: "0.03em",
+                    background: color.bg,
+                    color: color.fg,
+                    border: `1px solid ${color.border}`,
+                  }}
+                >
+                  # {tag}
+                </span>
+              )
+            })}
           </div>
         ) : null}
 

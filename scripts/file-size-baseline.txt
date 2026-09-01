@@ -1,0 +1,2 @@
+# 模块行数基线：历史遗留的超长文件及其当前行数上限。
+# 由 scripts/check-file-size.sh --update 生成，只能变小，不能变大。

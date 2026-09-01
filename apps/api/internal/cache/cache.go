@@ -8,10 +8,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 
 	"petrichor/api/internal/config"
 )
@@ -33,9 +35,11 @@ type redisClient struct {
 }
 
 var (
-	once     sync.Once
-	client   *redisClient // nil = 未配置，禁用缓存
-	memStore sync.Map     // 本地兜底缓存（单实例语义）
+	once           sync.Once
+	client         *redisClient // nil = 未配置，禁用缓存
+	memStore       sync.Map     // 本地兜底缓存（单实例语义）
+	loadGroup      singleflight.Group
+	lastMemCleanup atomic.Int64
 )
 
 func getClient() *redisClient {
@@ -66,7 +70,10 @@ func (r *redisClient) cmd(args ...string) (json.RawMessage, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("upstash: HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
 		return nil, err
 	}
@@ -102,11 +109,26 @@ func memGet(key string) (json.RawMessage, bool) {
 }
 
 func memSet(key string, value []byte, ttl time.Duration) {
+	cleanupExpiredMemoryEntries(time.Now())
 	e := memEntry{value: append([]byte(nil), value...)}
 	if ttl > 0 {
 		e.expireAt = time.Now().Add(ttl)
 	}
 	memStore.Store(key, e)
+}
+
+func cleanupExpiredMemoryEntries(now time.Time) {
+	last := time.Unix(lastMemCleanup.Load(), 0)
+	if now.Sub(last) < time.Minute || !lastMemCleanup.CompareAndSwap(last.Unix(), now.Unix()) {
+		return
+	}
+	memStore.Range(func(key, value any) bool {
+		entry, ok := value.(memEntry)
+		if ok && !entry.expireAt.IsZero() && now.After(entry.expireAt) {
+			memStore.Delete(key)
+		}
+		return true
+	})
 }
 
 // GetRaw 读取原始 JSON 缓存值。
@@ -139,20 +161,44 @@ func SetRaw(key string, value []byte, ttlSeconds int) {
 // ReadThrough 读穿透 cache-aside。loader 返回值需可 JSON 序列化。
 func ReadThrough[T any](key string, ttlSeconds int, loader func() (T, error)) (T, error) {
 	var zero T
-	if raw, ok := GetRaw(key); ok {
-		var v T
-		if err := json.Unmarshal(raw, &v); err == nil {
-			return v, nil
-		}
+	if cached, ok := readCached[T](key); ok {
+		return cached, nil
 	}
-	fresh, err := loader()
+	value, err, _ := loadGroup.Do(key, func() (any, error) {
+		// 等待同键加载期间缓存可能已经写入，进入临界区后必须二次检查。
+		if cached, ok := readCached[T](key); ok {
+			return cached, nil
+		}
+		fresh, loadErr := loader()
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		if raw, marshalErr := json.Marshal(fresh); marshalErr == nil {
+			SetRaw(key, raw, ttlSeconds)
+		}
+		return fresh, nil
+	})
 	if err != nil {
 		return zero, err
 	}
-	if raw, jerr := json.Marshal(fresh); jerr == nil {
-		SetRaw(key, raw, ttlSeconds)
+	fresh, ok := value.(T)
+	if !ok {
+		return zero, fmt.Errorf("缓存加载结果类型不匹配: %s", key)
 	}
 	return fresh, nil
+}
+
+func readCached[T any](key string) (T, bool) {
+	var zero T
+	raw, ok := GetRaw(key)
+	if !ok {
+		return zero, false
+	}
+	var value T
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return zero, false
+	}
+	return value, true
 }
 
 // Drop 删除键。
@@ -207,5 +253,3 @@ func DropByPrefix(prefix string) {
 		return true
 	})
 }
-
-var _ = url.QueryEscape // 保持 import 对齐

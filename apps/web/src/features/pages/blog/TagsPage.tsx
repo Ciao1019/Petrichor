@@ -239,8 +239,7 @@ export function TagsPage() {
             setArticles([])
             setError(resolveArticleListError(e))
         } finally {
-            if (isCanceled()) return
-            setLoading(false)
+            if (!isCanceled()) setLoading(false)
         }
     }, [])
 

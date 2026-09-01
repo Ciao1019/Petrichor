@@ -25,6 +25,11 @@ type assistantContextPack struct {
 
 // buildAssistantContextPack 对齐 TS 的动态最近窗口与持久摘要。摘要刷新失败时严格
 // fail-open：有旧摘要就用旧摘要 + 最近原文，没有旧摘要就保留原消息交给 Runtime 裁剪。
+// assistantCompressNotify 折叠历史前后各调一次（"running" / "done"）。
+// 只在真的要重算摘要时才触发——那是一次额外的 LLM 调用，用户会等；
+// 命中已有摘要或无需折叠时不发，免得闪一下没有意义的提示。
+type assistantCompressNotify func(status string)
+
 func buildAssistantContextPack(
 	ctx context.Context,
 	userID, threadID int64,
@@ -32,6 +37,7 @@ func buildAssistantContextPack(
 	messages []map[string]any,
 	tokenBudget int64,
 	resolved *aicore.ResolvedModel,
+	onCompress assistantCompressNotify,
 ) assistantContextPack {
 	recentCount := resolveAssistantRecentCount(messages, tokenBudget)
 	cutoff := len(messages) - recentCount
@@ -49,8 +55,14 @@ func buildAssistantContextPack(
 
 	summary := existingSummary
 	if needsRefresh && resolved != nil {
+		if onCompress != nil {
+			onCompress("running")
+		}
 		if refreshed, err := refreshAssistantSummary(ctx, userID, threadID, recentCount, existingSummary, foldable, resolved); err == nil {
 			summary = refreshed
+		}
+		if onCompress != nil {
+			onCompress("done")
 		}
 	}
 	background := buildAssistantBackground(summary, recalled, operatorMemory)

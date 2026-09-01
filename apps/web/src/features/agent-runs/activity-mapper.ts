@@ -50,7 +50,11 @@ export function activityPatchFromToolCompleted(event: AgentStreamEvent): Partial
         description: payload.summary,
         status: "completed",
         completedAt: event.timestamp,
-        metadata: { toolId: payload.toolId, evidenceCount: payload.evidenceIds?.length ?? 0 },
+        metadata: {
+            toolId: payload.toolId,
+            evidenceCount: payload.evidenceIds?.length ?? 0,
+            durationMs: typeof payload.durationMs === "number" ? payload.durationMs : undefined,
+        },
     }
 }
 
@@ -113,6 +117,9 @@ export function aggregateActivities(activities: AgentActivityViewModel[]): Agent
                 title: groupTitle(activity.group, activity.type, activity.title),
                 status: activity.status,
                 count: 1,
+                ...(sumDuration(undefined, activity) != null
+                    ? { durationMs: sumDuration(undefined, activity) }
+                    : {}),
                 ...(activity.startedAt != null ? { startedAt: activity.startedAt } : {}),
                 ...(activity.completedAt != null ? { completedAt: activity.completedAt } : {}),
             })
@@ -122,6 +129,7 @@ export function aggregateActivities(activities: AgentActivityViewModel[]): Agent
         existing.count += 1
         // 组状态取"最不确定"的那个：只要还有在跑的就算运行中
         existing.status = mergeStatus(existing.status, activity.status)
+        existing.durationMs = sumDuration(existing.durationMs, activity)
         if (activity.completedAt != null) {
             existing.completedAt = Math.max(existing.completedAt ?? 0, activity.completedAt)
         }
@@ -129,7 +137,9 @@ export function aggregateActivities(activities: AgentActivityViewModel[]): Agent
     }
 
     for (const group of groups.values()) {
-        group.detail = groupDetail(group, members.get(group.key) ?? [])
+        const activities = members.get(group.key) ?? []
+        group.detail = groupDetail(group, activities)
+        group.note = groupNote(group, activities)
     }
 
     return [...groups.values()].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0))
@@ -158,8 +168,6 @@ function groupDetail(
     switch (group.key) {
         case "knowledge": {
             const searchCount = countTool(activities, "knowledge.search") + countTool(activities, "knowledge.lookup")
-            const searches = activities.filter((item) =>
-                item.metadata?.toolId === "knowledge.search" || item.metadata?.toolId === "knowledge.lookup")
             const reads = activities.filter((item) =>
                 item.metadata?.toolId === "knowledge.lookup"
                 || item.metadata?.toolId === "knowledge.read"
@@ -167,16 +175,13 @@ function groupDetail(
             const readableCount = reads.reduce((count, item) =>
                 count + (hasEvidence(item) ? Number(item.metadata?.evidenceCount ?? 0) : 0), 0)
             const runningCount = reads.filter((item) => item.status === "running").length
-            const retrieval = latestRetrievalLabel(searches)
             if (readableCount > 0) {
                 const searchDetail = searchCount > 0 ? `检索 ${searchCount} 次，` : ""
                 const runningDetail = runningCount > 0 ? "，仍在继续阅读" : ""
-                const retrievalDetail = retrieval ? ` · ${retrieval}` : ""
-                return `${searchDetail}深读了 ${readableCount} 个相关章节${runningDetail}${retrievalDetail}`
+                return `${searchDetail}深读了 ${readableCount} 个相关章节${runningDetail}`
             }
             if (runningCount > 0) return `正在深读 ${runningCount} 个候选章节`
             if (reads.length > 0) return `尝试读取了 ${reads.length} 个章节，但没有可引用正文`
-            if (searchCount > 0 && retrieval) return `${searchCount > 1 ? `完成了 ${searchCount} 次检索 · ` : ""}${retrieval}`
             return searchCount > 1 ? `完成了 ${searchCount} 次检索` : undefined
         }
         case "research": {
@@ -198,6 +203,26 @@ function groupDetail(
     }
 }
 
+function sumDuration(
+    current: number | undefined,
+    activity: AgentActivityViewModel,
+): number | undefined {
+    const value = activity.metadata?.durationMs
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return current
+    return (current ?? 0) + value
+}
+
+/** 召回方式属于"怎么做到的"，从 detail 里拆出来单独弱化展示 */
+function groupNote(
+    group: AgentActivityGroupViewModel,
+    activities: AgentActivityViewModel[],
+): string | undefined {
+    if (group.key !== "knowledge") return undefined
+    const searches = activities.filter((item) =>
+        item.metadata?.toolId === "knowledge.search" || item.metadata?.toolId === "knowledge.lookup")
+    return latestRetrievalLabel(searches)
+}
+
 function countTool(activities: AgentActivityViewModel[], toolId: string): number {
     return activities.filter((item) => item.metadata?.toolId === toolId).length
 }
@@ -211,7 +236,7 @@ function hasEvidence(activity: AgentActivityViewModel): boolean {
 /** 从后端安全摘要中提取用户可读的召回方式，不向普通 UI 暴露原始 Trace/分数。 */
 function latestRetrievalLabel(searches: AgentActivityViewModel[]): string | undefined {
     for (let index = searches.length - 1; index >= 0; index -= 1) {
-        const summary = searches[index].description ?? ""
+        const summary = searches[index]?.description ?? ""
         const start = summary.indexOf("（")
         const end = summary.lastIndexOf("）")
         if (start >= 0 && end > start) return summary.slice(start + 1, end)
@@ -231,14 +256,14 @@ function mergeStatus(
     left: AgentActivityViewModel["status"],
     right: AgentActivityViewModel["status"],
 ): AgentActivityViewModel["status"] {
-    return STATUS_RANK[right] > STATUS_RANK[left] ? right : left
+    return (STATUS_RANK[right] ?? 0) > (STATUS_RANK[left] ?? 0) ? right : left
 }
 
 /** 运行中状态条文案：取最近一条仍在进行的活动（§162.20） */
 export function currentActivityLabel(activities: AgentActivityViewModel[]): string {
     for (let index = activities.length - 1; index >= 0; index -= 1) {
         const activity = activities[index]
-        if (activity.status === "running") {
+        if (activity?.status === "running") {
             const title = typeof activity.title === "string" ? activity.title.trim() : ""
             return `${title || "正在处理"}…`
         }

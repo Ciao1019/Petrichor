@@ -2,10 +2,15 @@
 
 ## 数据库与运维
 
-- [`database-migrations.md`](./database-migrations.md)：Go 启动自动初始化、首次管理员设置和 Goose 命令。
+- [`database-migrations.md`](./database-migrations.md)：Goose 基线、自动迁移和首次管理员初始化机制。
+- [`operations.md`](./operations.md)：探针、优雅关停、可恢复 Worker、指标与发布检查。
+- [`../SECURITY.md`](../SECURITY.md)：漏洞报告、安全部署基线与依赖审计策略。
 - [`../apps/api/migrations/202608270002_init.sql`](../apps/api/migrations/202608270002_init.sql)：完整数据库初始化基线。
-- [`database-migrations.md`](database-migrations.md)：Goose 基线、后续迁移和首次管理员初始化机制。
 - [`ai-model-setup.md`](./ai-model-setup.md)：AI 模型与凭证配置说明。
+
+## 知识库
+
+- [`knowledge-portability.md`](./knowledge-portability.md)：OKF 导出、Skill 包蒸馏、编译说明书与知识新鲜度。
 
 ## Agent
 

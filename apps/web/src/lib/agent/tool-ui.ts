@@ -34,6 +34,7 @@ type ToolUiSpec = {
 const TOOL_UI: Record<string, ToolUiSpec> = {
     "knowledge.lookup": { activityType: "knowledge_search", running: "正在检索并阅读知识库", done: "检索并阅读知识库", group: "knowledge" },
     "knowledge.search": { activityType: "knowledge_search", running: "正在搜索知识库", done: "搜索知识库", group: "knowledge" },
+    "knowledge.outline": { activityType: "knowledge_read", running: "正在读取文档目录", done: "读取文档目录", group: "knowledge" },
     "knowledge.read_many": { activityType: "knowledge_read", running: "正在并行阅读知识章节", done: "并行阅读知识章节", group: "knowledge" },
     "knowledge.read": { activityType: "knowledge_read", running: "正在阅读知识文档", done: "阅读知识文档", group: "knowledge" },
     "knowledge.list_bases": { activityType: "knowledge_search", running: "正在查看知识库列表", done: "查看知识库列表", group: "knowledge" },
@@ -79,7 +80,7 @@ const GENERIC: ToolUiSpec = { activityType: "tool", running: "正在处理", don
 export function resolveToolUiSpec(toolId: string): ToolUiSpec {
     if (TOOL_UI[toolId]) return TOOL_UI[toolId]
     const namespace = toolId.split(".")[0]
-    return NAMESPACE_FALLBACK[namespace] ?? GENERIC
+    return namespace ? (NAMESPACE_FALLBACK[namespace] ?? GENERIC) : GENERIC
 }
 
 export function toolActivityType(toolId: string): AgentActivityType {

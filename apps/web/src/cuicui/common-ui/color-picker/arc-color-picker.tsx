@@ -95,10 +95,10 @@ export const ArcColorPicker = ({
       return
     }
     const rect = sliderRef.current.getBoundingClientRect()
-    const clientX =
-      "touches" in event ? event.touches[0].clientX : event.clientX
-    const clientY =
-      "touches" in event ? event.touches[0].clientY : event.clientY
+    const touch = "touches" in event ? event.touches[0] : undefined
+    if ("touches" in event && !touch) return
+    const clientX = touch?.clientX ?? ("clientX" in event ? event.clientX : 0)
+    const clientY = touch?.clientY ?? ("clientY" in event ? event.clientY : 0)
     const x = clampNumber((clientX - rect.left) / rect.width, 0, 1)
     const y = clampNumber((clientY - rect.top) / rect.height, 0, 1)
     const nextHue = Math.round(x * 360)

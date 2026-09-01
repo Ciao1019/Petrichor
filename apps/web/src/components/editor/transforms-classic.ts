@@ -80,8 +80,9 @@ const insertInlineMap: Record<
 };
 
 export function insertBlock(editor: PlateEditor, type: string) {
-  if (type in insertBlockMap) {
-    insertBlockMap[type](editor, type);
+  const insert = insertBlockMap[type];
+  if (insert) {
+    insert(editor, type);
   } else {
     const path = editor.api.block()?.[1];
     if (path) {

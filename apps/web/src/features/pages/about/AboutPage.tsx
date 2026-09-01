@@ -66,7 +66,7 @@ function resolveApiError(error: unknown) {
 function PixelAvatar() {
     return (
         <img
-            src="/about-avatar.png"
+            src="/about-avatar.avif"
             alt="头像"
             className="relative z-10 h-full w-full rounded-md object-cover drop-shadow-[0_0_15px_rgba(255,255,255,0.22)]"
             loading="lazy"
@@ -112,7 +112,6 @@ export function AboutPage() {
     const [profile, setProfile] = React.useState<AboutProfileResponse>(fallbackProfile)
     const [loading, setLoading] = React.useState(true)
     const [error, setError] = React.useState<string | null>(null)
-    const [parallax, setParallax] = React.useState({ x: 0, y: 0 })
 
     const fetchProfile = React.useCallback(async (isCanceled: () => boolean = () => false) => {
         setLoading(true)
@@ -126,8 +125,7 @@ export function AboutPage() {
             setProfile(fallbackProfile)
             setError(resolveApiError(e))
         } finally {
-            if (isCanceled()) return
-            setLoading(false)
+            if (!isCanceled()) setLoading(false)
         }
     }, [])
 
@@ -145,25 +143,9 @@ export function AboutPage() {
         [profile.intro],
     )
 
-    const handlePointerMove = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
-        if (event.pointerType === "touch") return
-
-        const rect = event.currentTarget.getBoundingClientRect()
-        setParallax({
-            x: (rect.width / 2 - (event.clientX - rect.left)) / 80,
-            y: (rect.height / 2 - (event.clientY - rect.top)) / 80,
-        })
-    }, [])
-
-    const resetParallax = React.useCallback(() => {
-        setParallax({ x: 0, y: 0 })
-    }, [])
-
     return (
         <main
             className="scrollbar-hide retypeset-home relative flex min-h-screen flex-col overflow-hidden bg-[#0044cc] font-mono text-white selection:bg-yellow-300 selection:text-blue-950"
-            onPointerMove={handlePointerMove}
-            onPointerLeave={resetParallax}
         >
             <div className="blog-home-grid pointer-events-none fixed inset-0 z-0" />
 

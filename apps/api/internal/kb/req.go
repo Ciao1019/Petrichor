@@ -127,8 +127,8 @@ func rawBool(raw map[string]any, key string) bool {
 // ===== 共享断言 =====
 
 // assertKnowledgeBaseOwner 对应 handlers.ts 同名函数：不存在即 404。
-func assertKnowledgeBaseOwner(q execQuerier, userID, knowledgeBaseID int64) (*KBRow, error) {
-	r, err := scanKB(q.QueryRow(context.Background(),
+func assertKnowledgeBaseOwner(ctx context.Context, q execQuerier, userID, knowledgeBaseID int64) (*KBRow, error) {
+	r, err := scanKB(q.QueryRow(ctx,
 		`SELECT `+kbColumns+` FROM petrichor_kb_knowledge_base WHERE id = $1 AND user_id = $2 LIMIT 1`,
 		knowledgeBaseID, userID))
 	if err != nil {
@@ -141,8 +141,7 @@ func assertKnowledgeBaseOwner(q execQuerier, userID, knowledgeBaseID int64) (*KB
 }
 
 // assertNodeOwner 节点不存在即 404。
-func assertNodeOwner(q execQuerier, userID, nodeID int64) (*NodeRow, error) {
-	ctx := context.Background()
+func assertNodeOwner(ctx context.Context, q execQuerier, userID, nodeID int64) (*NodeRow, error) {
 	rows, err := q.Query(ctx,
 		`SELECT `+nodeColumns+` FROM petrichor_kb_node WHERE id = $1 AND user_id = $2 LIMIT 1`,
 		nodeID, userID)
@@ -162,11 +161,11 @@ func assertNodeOwner(q execQuerier, userID, nodeID int64) (*NodeRow, error) {
 }
 
 // assertFolderParent 父节点必须是当前知识库下的文件夹；parentId 为空时直接通过。
-func assertFolderParent(q execQuerier, userID, knowledgeBaseID int64, parentID *int64) (*NodeRow, error) {
+func assertFolderParent(ctx context.Context, q execQuerier, userID, knowledgeBaseID int64, parentID *int64) (*NodeRow, error) {
 	if parentID == nil {
 		return nil, nil
 	}
-	parent, err := assertNodeOwner(q, userID, *parentID)
+	parent, err := assertNodeOwner(ctx, q, userID, *parentID)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +176,7 @@ func assertFolderParent(q execQuerier, userID, knowledgeBaseID int64, parentID *
 }
 
 // nextSortOrder 取同级最大 sort_order + 1。
-func nextSortOrder(q execQuerier, userID, knowledgeBaseID int64, parentID *int64) (int32, error) {
+func nextSortOrder(ctx context.Context, q execQuerier, userID, knowledgeBaseID int64, parentID *int64) (int32, error) {
 	var sql string
 	var args []any
 	if parentID == nil {
@@ -190,15 +189,15 @@ func nextSortOrder(q execQuerier, userID, knowledgeBaseID int64, parentID *int64
 		args = []any{userID, knowledgeBaseID, *parentID}
 	}
 	var max int32
-	if err := q.QueryRow(context.Background(), sql, args...).Scan(&max); err != nil {
+	if err := q.QueryRow(ctx, sql, args...).Scan(&max); err != nil {
 		return 0, err
 	}
 	return max + 1, nil
 }
 
 // loadTags 按标签名排序加载文章标签。
-func loadTags(q execQuerier, articleID int64) ([]string, error) {
-	rows, err := q.Query(context.Background(),
+func loadTags(ctx context.Context, q execQuerier, articleID int64) ([]string, error) {
+	rows, err := q.Query(ctx,
 		`SELECT tag FROM petrichor_kb_article_tag WHERE article_id = $1 ORDER BY tag ASC`, articleID)
 	if err != nil {
 		return nil, err
@@ -252,13 +251,13 @@ func normalizeTags(raw []any) ([]string, error) {
 }
 
 // replaceArticleTags 全量重建文章标签。
-func replaceArticleTags(q execQuerier, articleID int64, tags []string) error {
-	if _, err := q.Exec(context.Background(),
+func replaceArticleTags(ctx context.Context, q execQuerier, articleID int64, tags []string) error {
+	if _, err := q.Exec(ctx,
 		`DELETE FROM petrichor_kb_article_tag WHERE article_id = $1`, articleID); err != nil {
 		return err
 	}
 	for _, tag := range tags {
-		if _, err := q.Exec(context.Background(),
+		if _, err := q.Exec(ctx,
 			`INSERT INTO petrichor_kb_article_tag (article_id, tag) VALUES ($1, $2)
 			 ON CONFLICT DO NOTHING`, articleID, tag); err != nil {
 			return err

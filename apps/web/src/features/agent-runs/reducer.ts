@@ -34,7 +34,6 @@ export function createEmptyRun(runId: string, goal = "", startedAt = Date.now())
         evidence: [],
         loadedSkills: [],
         answer: "",
-        answerSegmentStart: 0,
         startedAt,
         lastSequence: 0,
     }
@@ -176,41 +175,32 @@ function applyEvent(state: AgentRunViewModel, event: AgentStreamEvent): AgentRun
                     : [],
             }
 
-        // 换段：工具调用打断了上一段话。不清空已流出的内容——那会让用户
-        // 看见字凭空消失；把上一段归档、另起一段继续（工具卡片按顺序穿插）。
-        // 只有 replace=true 的整段重答才丢弃前文。
-        case "final_answer_started": {
-            if (payload.replace === true) return { ...state, answer: "", answerSegmentStart: 0 }
-            if (!state.answer.trim()) return { ...state, answerSegmentStart: state.answer.length }
-            const archived = `${state.answer.trimEnd()}\n\n`
-            return { ...state, answer: archived, answerSegmentStart: archived.length }
-        }
+        // 换段：上一段是工具调用前的过程旁白，不是回答。
+        // 后端把这类文本从答案里剔除（runtime/segment.go 扣住未发出的旁白，
+        // 只有超长的才会先流出来再走到这里），落库的 answer 也只有最后一段——
+        // 前端把它留在屏幕上，读到的正文就会比落库那份多一段，刷新后凭空少一截。
+        // replace=true 的整段重答同理，都是丢弃前文。
+        case "final_answer_started":
+            return { ...state, answer: "" }
 
         case "final_answer_delta":
             return { ...state, answer: state.answer + String(payload.delta ?? "") }
 
-        // 服务端的最终答案只是最后一段，用它覆盖当前段即可；
-        // 整段替换会把前面已归档的内容抹掉，表现为结尾突然刷新一大坨。
-        //
-        // 而且只在内容真的变了时才替换：服务端那份经过 trim 和 dedupeRepeatedAnswer
+        // 只在内容真的变了时才替换：服务端那份经过 trim 和 dedupeRepeatedAnswer
         // 归一化，几乎必然和流式累积的那段差一点空白。一旦替换出一个"不是旧内容前缀"
         // 的字符串，下游 useSmoothStreamContent 会直接 syncImmediate 跳过全部平滑，
         // 表现就是「一开始正常，最后一下全出来」。
         case "final_answer_completed": {
             if (typeof payload.text !== "string") return state
-            const streamed = state.answer.slice(state.answerSegmentStart)
-            if (isSameAnswerBody(streamed, payload.text)) return state
+            if (isSameAnswerBody(state.answer, payload.text)) return state
             // 普通问答的波浪线由词典在 Markdown 渲染前原位补上；若最终文本只比
             // 流式原文多这些 [[..]] 标记，不覆盖 answer，避免整段清空重画。
-            const renderedStreamed = annotateNormalQaWikiMentions(
-                streamed,
+            const rendered = annotateNormalQaWikiMentions(
+                state.answer,
                 state.wikiMentionTargets ?? [],
             )
-            if (isSameAnswerBody(renderedStreamed, payload.text)) return state
-            return {
-                ...state,
-                answer: state.answer.slice(0, state.answerSegmentStart) + payload.text,
-            }
+            if (isSameAnswerBody(rendered, payload.text)) return state
+            return { ...state, answer: payload.text }
         }
 
         case "agent_completed":
@@ -295,7 +285,9 @@ function upsertActivity(
     const index = activities.findIndex((item) => item.id === activity.id)
     if (index < 0) return [...activities, activity]
     const next = [...activities]
-    next[index] = { ...next[index], ...activity }
+    const current = next[index]
+    if (!current) return activities
+    next[index] = { ...current, ...activity }
     return next
 }
 
@@ -306,7 +298,9 @@ function patchActivity(
     const index = activities.findIndex((item) => item.id === patch.id)
     if (index < 0) return activities
     const next = [...activities]
-    next[index] = { ...next[index], ...patch }
+    const current = next[index]
+    if (!current) return activities
+    next[index] = { ...current, ...patch }
     return next
 }
 
@@ -330,7 +324,9 @@ function upsertSubAgent(list: SubAgentViewModel[], item: SubAgentViewModel): Sub
     const index = list.findIndex((existing) => existing.id === item.id)
     if (index < 0) return [...list, item]
     const next = [...list]
-    next[index] = { ...next[index], ...item }
+    const current = next[index]
+    if (!current) return list
+    next[index] = { ...current, ...item }
     return next
 }
 
@@ -342,7 +338,9 @@ function patchSubAgent(
     const index = list.findIndex((item) => item.id === id)
     if (index < 0) return list
     const next = [...list]
-    next[index] = { ...next[index], ...patch }
+    const current = next[index]
+    if (!current) return list
+    next[index] = { ...current, ...patch }
     return next
 }
 

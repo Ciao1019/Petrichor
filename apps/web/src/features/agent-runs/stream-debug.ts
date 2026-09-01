@@ -29,7 +29,7 @@ function enabled(): boolean {
 function median(values: number[]): number {
     if (values.length === 0) return 0
     const sorted = [...values].sort((a, b) => a - b)
-    return sorted[Math.floor(sorted.length / 2)]
+    return sorted[Math.floor(sorted.length / 2)] ?? 0
 }
 
 export function traceAnswerStream(
@@ -69,13 +69,18 @@ export function traceAnswerStream(
             const { samples } = trace
             if (samples.length === 0) return
 
-            const totalMs = samples[samples.length - 1].at - trace.startedAt
+            const lastSample = samples.at(-1)
+            if (!lastSample) return
+            const totalMs = lastSample.at - trace.startedAt
             const chars = samples.reduce((sum, s) => sum + s.chars, 0)
             const sizes = samples.map((s) => s.chars)
             let gapMax = 0
             let gapAtIndex = 0
             for (let i = 1; i < samples.length; i += 1) {
-                const gap = samples[i].at - samples[i - 1].at
+                const current = samples[i]
+                const previous = samples[i - 1]
+                if (!current || !previous) continue
+                const gap = current.at - previous.at
                 if (gap > gapMax) {
                     gapMax = gap
                     gapAtIndex = i

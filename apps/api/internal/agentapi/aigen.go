@@ -4,7 +4,6 @@
 package agentapi
 
 import (
-	"context"
 	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
@@ -98,6 +97,7 @@ func buildArticleSummaryUserMessage(title, contentMd string) string {
 
 // AgentGenerateArticleSummary POST /api/agent/article/summary/generate（scope ai:write）。
 func AgentGenerateArticleSummary(c *gin.Context, actx *authContext) (any, error) {
+	ctx := c.Request.Context()
 	if err := requireAgentScope(actx, "ai:write"); err != nil {
 		return nil, err
 	}
@@ -112,7 +112,6 @@ func AgentGenerateArticleSummary(c *gin.Context, actx *authContext) (any, error)
 	forceRebuild := rawBool(raw, "forceRebuild")
 
 	q := dbPool()
-	ctx := context.Background()
 	row := q.QueryRow(ctx,
 		`SELECT id, title, content_md,
 		        COALESCE(ai_summary_content_hash, ''), COALESCE(ai_summary, ''),
@@ -392,6 +391,7 @@ func knowledgeGraphLabelOf(mode string) string {
 
 // AgentGenerateArticleMindmap POST /api/agent/article/mindmap/generate（scope ai:write）。
 func AgentGenerateArticleMindmap(c *gin.Context, actx *authContext) (any, error) {
+	ctx := c.Request.Context()
 	if err := requireAgentScope(actx, "ai:write"); err != nil {
 		return nil, err
 	}
@@ -413,8 +413,7 @@ func AgentGenerateArticleMindmap(c *gin.Context, actx *authContext) (any, error)
 	forceRebuild := rawBool(raw, "forceRebuild")
 
 	q := dbPool()
-	ctx := context.Background()
-	full, err := kb.QueryOwnedArticleForAgent(q, actx.UserID, articleID)
+	full, err := kb.QueryOwnedArticleForAgent(ctx, q, actx.UserID, articleID)
 	if err != nil {
 		return nil, err
 	}

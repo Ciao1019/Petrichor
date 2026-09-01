@@ -81,7 +81,12 @@ export function MediaToolbarButton({
   nodeType,
   ...props
 }: DropdownMenuProps & { nodeType: string }) {
-  const currentConfig = MEDIA_CONFIG[nodeType];
+  const currentConfig = MEDIA_CONFIG[nodeType] ?? {
+    accept: ['*'],
+    icon: <FileUpIcon className="size-4" />,
+    title: 'Insert File',
+    tooltip: 'File',
+  };
 
   const editor = useEditorRef();
   const [open, setOpen] = React.useState(false);

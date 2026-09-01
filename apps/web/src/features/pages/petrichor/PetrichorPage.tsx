@@ -4,7 +4,7 @@ import * as React from "react"
 
 import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 
-import { BlueNote, DateTag, HandStamp, HandUnderline, LinkDoodle, MarkerHighlight, type MarkerColor } from "../about/DeskAccents"
+import { BlueNote, DateTag, HandStamp, HandUnderline, MarkerHighlight, type MarkerColor } from "../about/DeskAccents"
 
 /* 项目宣传页（/petrichor）。
    骨架与「关于我」保持一致：同一片暖纸背景 + 像素花、右侧固定站点 dock、同宽正文容器；
@@ -210,27 +210,9 @@ function SectionHeading({ index, label, title }: { index: string; label: string;
 }
 
 export function PetrichorPage() {
-    const [parallax, setParallax] = React.useState({ x: 0, y: 0 })
-
-    const handlePointerMove = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
-        if (event.pointerType === "touch") return
-
-        const rect = event.currentTarget.getBoundingClientRect()
-        setParallax({
-            x: (rect.width / 2 - (event.clientX - rect.left)) / 80,
-            y: (rect.height / 2 - (event.clientY - rect.top)) / 80,
-        })
-    }, [])
-
-    const resetParallax = React.useCallback(() => {
-        setParallax({ x: 0, y: 0 })
-    }, [])
-
     return (
         <main
             className="scrollbar-hide retypeset-home relative flex min-h-screen flex-col overflow-hidden font-mono"
-            onPointerMove={handlePointerMove}
-            onPointerLeave={resetParallax}
         >
             <div className="blog-home-grid pointer-events-none fixed inset-0 z-0" />
 

@@ -49,8 +49,8 @@ func toWikiPatchResponse(patch *WikiPatchRow) map[string]any {
 }
 
 // loadWikiPageRows 未归档页面，kind/title 升序。
-func loadWikiPageRows(q execQuerier, userID, knowledgeBaseID int64) ([]WikiPageRow, error) {
-	rows, err := q.Query(context.Background(),
+func loadWikiPageRows(ctx context.Context, q execQuerier, userID, knowledgeBaseID int64) ([]WikiPageRow, error) {
+	rows, err := q.Query(ctx,
 		`SELECT `+wikiPageColumns+` FROM petrichor_kb_wiki_page
 		 WHERE user_id = $1 AND knowledge_base_id = $2 AND archived_at IS NULL
 		 ORDER BY kind ASC, title ASC`, userID, knowledgeBaseID)
@@ -70,8 +70,8 @@ func loadWikiPageRows(q execQuerier, userID, knowledgeBaseID int64) ([]WikiPageR
 }
 
 // loadWikiPage 按 pageKey 取单页（normalize 后）；无行返回 nil。
-func loadWikiPage(q execQuerier, userID, knowledgeBaseID int64, pageKey string) (*WikiPageRow, error) {
-	rows, err := q.Query(context.Background(),
+func loadWikiPage(ctx context.Context, q execQuerier, userID, knowledgeBaseID int64, pageKey string) (*WikiPageRow, error) {
+	rows, err := q.Query(ctx,
 		`SELECT `+wikiPageColumns+` FROM petrichor_kb_wiki_page
 		 WHERE user_id = $1 AND knowledge_base_id = $2 AND page_key = $3 LIMIT 1`,
 		userID, knowledgeBaseID, normalizePageKey(pageKey))
@@ -85,8 +85,8 @@ func loadWikiPage(q execQuerier, userID, knowledgeBaseID int64, pageKey string) 
 	return scanWikiPageRows(rows)
 }
 
-func querySourceRefs(q execQuerier, sql string, args ...any) ([]SourceRefRow, error) {
-	rows, err := q.Query(context.Background(), sql, args...)
+func querySourceRefs(ctx context.Context, q execQuerier, sql string, args ...any) ([]SourceRefRow, error) {
+	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -102,8 +102,8 @@ func querySourceRefs(q execQuerier, sql string, args ...any) ([]SourceRefRow, er
 	return out, rows.Err()
 }
 
-func queryLinks(q execQuerier, sql string, args ...any) ([]WikiLinkRow, error) {
-	rows, err := q.Query(context.Background(), sql, args...)
+func queryLinks(ctx context.Context, q execQuerier, sql string, args ...any) ([]WikiLinkRow, error) {
+	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -313,10 +313,10 @@ func WikiPageList(c *ginContext) {
 			return nil, err
 		}
 		q := pool()
-		if _, err := assertKnowledgeBaseOwner(q, user.ID, kbID); err != nil {
+		if _, err := assertKnowledgeBaseOwner(c.Request.Context(), q, user.ID, kbID); err != nil {
 			return nil, err
 		}
-		pages, err := loadWikiPageRows(q, user.ID, kbID)
+		pages, err := loadWikiPageRows(c.Request.Context(), q, user.ID, kbID)
 		if err != nil {
 			return nil, err
 		}
@@ -347,16 +347,16 @@ func WikiPageDetail(c *ginContext) {
 		if pageKey == "" || len([]rune(pageKey)) > 200 {
 			return nil, badReq("pageKey 必须在 1 到 200 个字符之间")
 		}
-		return wikiPageDetailCore(pool(), user.ID, kbID, pageKey)
+		return wikiPageDetailCore(c.Request.Context(), pool(), user.ID, kbID, pageKey)
 	})
 }
 
 // wikiPageDetailCore Wiki 页面详情组装（用户端与 Agent 端共用）。
-func wikiPageDetailCore(q execQuerier, userID, kbID int64, pageKey string) (map[string]any, error) {
-	if _, err := assertKnowledgeBaseOwner(q, userID, kbID); err != nil {
+func wikiPageDetailCore(ctx context.Context, q execQuerier, userID, kbID int64, pageKey string) (map[string]any, error) {
+	if _, err := assertKnowledgeBaseOwner(ctx, q, userID, kbID); err != nil {
 		return nil, err
 	}
-	page, err := loadWikiPage(q, userID, kbID, pageKey)
+	page, err := loadWikiPage(ctx, q, userID, kbID, pageKey)
 	if err != nil {
 		return nil, err
 	}
@@ -364,7 +364,7 @@ func wikiPageDetailCore(q execQuerier, userID, kbID int64, pageKey string) (map[
 		return nil, notFoundErr("Wiki 页面不存在")
 	}
 
-	sourceRefs, err := querySourceRefs(q,
+	sourceRefs, err := querySourceRefs(ctx, q,
 		`SELECT `+sourceRefColumns+` FROM petrichor_kb_wiki_source_ref WHERE page_id = $1 ORDER BY id ASC`, page.ID)
 	if err != nil {
 		return nil, err
@@ -375,7 +375,7 @@ func wikiPageDetailCore(q execQuerier, userID, kbID int64, pageKey string) (map[
 		for i := range sourceRefs {
 			articleIDs = append(articleIDs, sourceRefs[i].ArticleID)
 		}
-		titles, terr := loadIDNameMap(q,
+		titles, terr := loadIDNameMap(ctx, q,
 			`SELECT id, title FROM petrichor_kb_article WHERE id = ANY($1)`, articleIDs)
 		if terr != nil {
 			return nil, terr
@@ -383,20 +383,20 @@ func wikiPageDetailCore(q execQuerier, userID, kbID int64, pageKey string) (map[
 		refTitles = titles
 	}
 
-	outLinks, err := queryLinks(q,
+	outLinks, err := queryLinks(ctx, q,
 		`SELECT `+wikiLinkColumns+` FROM petrichor_kb_wiki_link WHERE from_page_id = $1 ORDER BY to_page_key ASC`,
 		page.ID)
 	if err != nil {
 		return nil, err
 	}
-	inLinks, err := queryLinks(q,
+	inLinks, err := queryLinks(ctx, q,
 		`SELECT `+wikiLinkColumns+` FROM petrichor_kb_wiki_link
 			 WHERE user_id = $1 AND knowledge_base_id = $2 AND to_page_key = $3 ORDER BY from_page_id ASC`,
 		userID, kbID, page.PageKey)
 	if err != nil {
 		return nil, err
 	}
-	activePages, err := loadWikiPageRows(q, userID, kbID)
+	activePages, err := loadWikiPageRows(ctx, q, userID, kbID)
 	if err != nil {
 		return nil, err
 	}

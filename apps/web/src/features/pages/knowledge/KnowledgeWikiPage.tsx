@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { BookOpen, CheckCircle2, Eye, FileStack, Link2, ListTree, Loader2, RefreshCw, RotateCcw, Sparkles, Wand2 } from "@/components/iconimate"
+import { BookOpen, CheckCircle2, Download, Eye, FileStack, FileText, Link2, ListTree, Loader2, RefreshCw, RotateCcw, Sparkles, Wand2 } from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
@@ -15,12 +15,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { AppPagination } from "@/components/app-pagination"
 import { ModalShell } from "@/components/petrichor-ui/modal-shell"
+import { KnowledgeWikiGuideDialog } from "./KnowledgeWikiGuideDialog"
+import { StatCard, WikiTreeOutline } from "./KnowledgeWikiCards"
 import {
+  exportKnowledgeBaseSkillPack,
+  exportKnowledgeBaseWikiBundle,
   knowledgeBaseQaApi,
   knowledgeBaseWikiAgentApi,
+  type KnowledgeBaseWikiExportFormat,
   type KnowledgeBaseQaSummary,
   type KnowledgeBaseWikiDashboardResponse,
   type KnowledgeBaseWikiPageDetailResponse,
@@ -43,6 +54,13 @@ const SEVERITY_META: Record<string, { label: string; className: string }> = {
   error: { label: "错误", className: "bg-destructive/10 text-destructive" },
   warning: { label: "警告", className: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
   info: { label: "提示", className: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
+}
+
+const EXPORT_SUCCESS_MESSAGE: Record<KnowledgeBaseWikiExportFormat | "skill" | "skill-with-sources", string> = {
+  okf: "已导出 OKF bundle",
+  obsidian: "已导出 Obsidian vault",
+  skill: "已导出 Agent Skill 包",
+  "skill-with-sources": "已导出 Agent Skill 包（含源文档）",
 }
 
 const EMPTY_WIKI_PAGES: KnowledgeBaseWikiPageResponse[] = []
@@ -70,62 +88,7 @@ function kindLabel(kind: KnowledgeBaseWikiPageKind) {
 /** 从 `source-<id>` 形式的 pageKey 解析出文章 ID；非源文档页返回 null。 */
 function articleIdFromPageKey(pageKey: string): string | null {
   const match = pageKey.match(/^source-(\d+)$/)
-  return match ? match[1] : null
-}
-
-/** PageIndex 式文档目录树：把扁平节点按 depth 缩进渲染成层级大纲。 */
-function WikiTreeOutline({ nodes }: { nodes: KnowledgeBaseWikiTreeNode[] }) {
-  if (nodes.length === 0) {
-    return <p className="text-xs text-muted-foreground">该文档暂无目录树节点，重新生成 Wiki 后会自动构建。</p>
-  }
-  return (
-    <ul className="app-scrollbar max-h-[32vh] space-y-0.5 overflow-auto rounded-md border bg-muted/20 p-2">
-      {nodes.map((node) => (
-        <li
-          key={node.nodeKey}
-          className="rounded px-2 py-1 hover:bg-accent/60"
-          style={{ paddingLeft: `${Math.min(node.depth, 6) * 14 + 8}px` }}
-        >
-          <div className="flex items-baseline gap-2">
-            <span className={cn("truncate text-sm", node.depth === 0 ? "font-semibold" : "font-medium")}>
-              {node.title}
-            </span>
-            {node.tokenEstimate > 0 ? (
-              <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">~{node.tokenEstimate} tok</span>
-            ) : null}
-          </div>
-          {node.summary ? (
-            <p className="truncate text-xs text-muted-foreground">{node.summary}</p>
-          ) : null}
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  detail,
-}: {
-  icon: React.ComponentType<{ className?: string }>
-  label: string
-  value: React.ReactNode
-  detail: React.ReactNode
-}) {
-  return (
-    <div className="rounded-xl border border-border/70 bg-card/60 p-4 shadow-sm shadow-black/[0.02]">
-      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-        <span className="flex size-7 items-center justify-center rounded-lg bg-muted">
-          <Icon className="size-3.5" />
-        </span>
-        {label}
-      </div>
-      <div className="mt-3 text-2xl font-semibold tracking-tight tabular-nums">{value}</div>
-      <div className="mt-1 text-xs text-muted-foreground">{detail}</div>
-    </div>
-  )
+  return match?.[1] ?? null
 }
 
 export function KnowledgeWikiPage() {
@@ -141,6 +104,9 @@ export function KnowledgeWikiPage() {
   const [fullRebuildOpen, setFullRebuildOpen] = React.useState(false)
   const [linting, setLinting] = React.useState(false)
   const [embedding, setEmbedding] = React.useState(false)
+  const [exporting, setExporting] = React.useState(false)
+  const [guideOpen, setGuideOpen] = React.useState(false)
+  const [guideEnabled, setGuideEnabled] = React.useState(false)
 
   const [pageDetail, setPageDetail] = React.useState<KnowledgeBaseWikiPageDetailResponse | null>(null)
   const [pageDetailLoading, setPageDetailLoading] = React.useState(false)
@@ -258,7 +224,8 @@ export function KnowledgeWikiPage() {
     setLinting(true)
     try {
       const res = await knowledgeBaseWikiAgentApi.lint(selectedKbId)
-      toast.success(`结构检查完成，得分 ${res.data.score}，发现 ${res.data.issueCount} 个问题`)
+      const staleHint = res.data.stalePageCount > 0 ? `，其中 ${res.data.stalePageCount} 页源文档已变更` : ""
+      toast.success(`结构检查完成，得分 ${res.data.score}，发现 ${res.data.issueCount} 个问题${staleHint}`)
       setDashboard((current) => current ? { ...current, lint: res.data } : current)
     } catch (error) {
       toast.error(resolveApiErrorMessage(error, "结构检查失败"))
@@ -266,6 +233,34 @@ export function KnowledgeWikiPage() {
       setLinting(false)
     }
   }, [selectedKbId])
+
+  const runExport = React.useCallback(async (target: KnowledgeBaseWikiExportFormat | "skill" | "skill-with-sources") => {
+    if (!selectedKbId || typeof window === "undefined") return
+    setExporting(true)
+    let objectUrl: string | null = null
+    try {
+      const { blob, filename } = target === "skill" || target === "skill-with-sources"
+        ? await exportKnowledgeBaseSkillPack({
+          knowledgeBaseId: selectedKbId,
+          includeSources: target === "skill-with-sources",
+        })
+        : await exportKnowledgeBaseWikiBundle({ knowledgeBaseId: selectedKbId, format: target })
+      objectUrl = window.URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = objectUrl
+      link.download = filename
+      document.body.append(link)
+      link.click()
+      link.remove()
+      toast.success(EXPORT_SUCCESS_MESSAGE[target])
+    } catch (error) {
+      toast.error(resolveApiErrorMessage(error, "导出失败"))
+    } finally {
+      if (objectUrl) window.URL.revokeObjectURL(objectUrl)
+      setExporting(false)
+    }
+  }, [selectedKbId])
+
 
   const openPageDetail = React.useCallback(async (page: KnowledgeBaseWikiPageResponse) => {
     if (!selectedKbId) return
@@ -302,6 +297,10 @@ export function KnowledgeWikiPage() {
     }
   }, [selectedKbId])
 
+  React.useEffect(() => {
+    setGuideEnabled(false)
+  }, [selectedKbId])
+
   const closePageDetail = React.useCallback(() => {
     pageDetailRequestRef.current += 1
     setPageDetail(null)
@@ -311,7 +310,7 @@ export function KnowledgeWikiPage() {
 
   const lint = dashboard?.lint
   const pages = dashboard?.pages ?? EMPTY_WIKI_PAGES
-  const busy = ingesting || linting || embedding || fullRebuilding
+  const busy = ingesting || linting || embedding || fullRebuilding || exporting
   const embeddingStatus = dashboard?.embedding
 
   const PAGE_SIZE = 10
@@ -388,6 +387,50 @@ export function KnowledgeWikiPage() {
           <Button size="sm" variant="outline" className="bg-background/70" onClick={() => runLint()} disabled={!selectedKbId || busy}>
             <CheckCircle2 className={cn("mr-1.5 size-3.5", linting && "animate-spin")} />
             结构检查
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="sm"
+                variant="outline"
+                className="bg-background/70"
+                disabled={!selectedKbId || busy}
+                title="把整个 Wiki 导出成一组带 frontmatter 的 Markdown 文件"
+              >
+                <Download className={cn("mr-1.5 size-3.5", exporting && "animate-spin")} />
+                {exporting ? "导出中…" : "导出"}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuItem className="flex-col items-start gap-0.5" onSelect={() => runExport("okf")}>
+                <span className="text-sm">OKF bundle</span>
+                <span className="text-xs text-muted-foreground">标准 Markdown 链接，供其他 Agent 消费</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem className="flex-col items-start gap-0.5" onSelect={() => runExport("obsidian")}>
+                <span className="text-sm">Obsidian vault</span>
+                <span className="text-xs text-muted-foreground">保留 [[wikilink]]，解压即可用 Obsidian 打开</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem className="flex-col items-start gap-0.5" onSelect={() => runExport("skill")}>
+                <span className="text-sm">Agent Skill 包</span>
+                <span className="text-xs text-muted-foreground">按引用度精选页面，装进 Claude Code / Codex 直接用</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem className="flex-col items-start gap-0.5" onSelect={() => runExport("skill-with-sources")}>
+                <span className="text-sm">Agent Skill 包（含源文档）</span>
+                <span className="text-xs text-muted-foreground">额外带上源文档全文，体积更大但可直接引原文</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            size="sm"
+            variant="outline"
+            className="bg-background/70"
+            onClick={() => setGuideOpen(true)}
+            disabled={!selectedKbId || busy}
+            title="自定义这个知识库该抽什么、怎么归类、页面怎么写"
+          >
+            <FileText className="mr-1.5 size-3.5" />
+            编译说明书
+            {guideEnabled ? <Badge variant="secondary" className="ml-1.5 text-[10px]">已启用</Badge> : null}
           </Button>
           {embeddingStatus?.supported ? (
             <Button
@@ -472,7 +515,9 @@ export function KnowledgeWikiPage() {
               icon={CheckCircle2}
               label="结构质量"
               value={lint ? lint.score : "-"}
-              detail={lint ? `${lint.issueCount} 个待处理问题` : "尚未完成检查"}
+              detail={lint
+                ? `${lint.issueCount} 个待处理问题${lint.stalePageCount > 0 ? ` · ${lint.stalePageCount} 页待重编译` : ""}`
+                : "尚未完成检查"}
             />
           </div>
 
@@ -575,9 +620,20 @@ export function KnowledgeWikiPage() {
               <div className="border-b px-4 py-3 text-sm font-medium">
                 Lint 问题（{lint.issues.length}）
               </div>
+              {lint.stalePageCount > 0 ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-amber-500/[0.06] px-4 py-2.5">
+                  <span className="text-xs text-muted-foreground">
+                    {lint.stalePageCount} 个页面的源文档已变更或编译流程已升级，重新编译即可对齐。
+                  </span>
+                  <Button size="sm" variant="outline" onClick={() => runIngest()} disabled={!selectedKbId || busy}>
+                    <Sparkles className={cn("mr-1.5 size-3.5", ingesting && "animate-spin")} />
+                    {ingesting ? "更新中…" : "更新 Wiki"}
+                  </Button>
+                </div>
+              ) : null}
               <ul className="divide-y">
                 {lint.issues.map((issue, index) => {
-                  const meta = SEVERITY_META[issue.severity] ?? SEVERITY_META.info
+                  const meta = SEVERITY_META[issue.severity] ?? { className: "", label: "信息" }
                   return (
                     <li key={`${issue.code}-${issue.pageKey}-${index}`} className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-sm">
                       <Badge className={cn("text-[11px]", meta.className)}>{meta.label}</Badge>
@@ -591,6 +647,13 @@ export function KnowledgeWikiPage() {
           ) : null}
         </>
       )}
+
+      <KnowledgeWikiGuideDialog
+        knowledgeBaseId={selectedKbId}
+        open={guideOpen}
+        onOpenChange={setGuideOpen}
+        onEnabledChange={setGuideEnabled}
+      />
 
       {/* 完全重建确认弹窗 —— 破坏性操作，必须显式确认 */}
       <ModalShell
@@ -626,11 +689,11 @@ export function KnowledgeWikiPage() {
         <div className="flex flex-col gap-2 px-1 py-1 text-sm text-muted-foreground">
           <p>会被删除的内容：</p>
           <ul className="list-disc space-y-1 pl-5">
-            <li>全部 Wiki 页面，包含索引页、源文档页及其衍生知识页（共 {pages.length} 个）</li>
+            <li>全部编译产出的 Wiki 页面，包含索引页、源文档页及其衍生知识页（共 {pages.length} 个）</li>
             <li>全部页面链接与来源引用</li>
             <li>全部文档目录树节点及其向量（共 {dashboard?.treeNodeCount ?? 0} 个，重建后需要重新生成向量）</li>
           </ul>
-          <p>会被保留的内容：源文章本身、问答历史与事件日志。</p>
+          <p>会被保留的内容：源文章本身、编译说明书、问答历史与事件日志。</p>
           <p className="text-destructive">此操作不可撤销，且会重新调用模型编译所有文章，可能产生较多耗时与费用。</p>
         </div>
       </ModalShell>

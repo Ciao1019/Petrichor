@@ -33,6 +33,7 @@ import {
 import { knowledgeBaseArticlePath } from "@/lib/dashboard-routes"
 import { cn } from "@/lib/utils"
 import { prepareWikiMarkdown } from "@/features/pages/knowledge/knowledge-wiki-markdown"
+import { KnowledgeWikiActions } from "@/features/pages/knowledge/KnowledgeWikiActions"
 import {
   filterKnowledgeExplorerPages,
   matchesKnowledgeExplorerQuery,
@@ -474,6 +475,7 @@ export function KnowledgeExplorerPanel({
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
+      <KnowledgeWikiActions knowledgeBaseId={knowledgeBaseId} pageCount={pages.length} />
       <div className="grid min-h-[640px] gap-4 lg:h-[calc(100vh-15rem)] lg:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="flex max-h-[360px] min-h-40 flex-col overflow-hidden rounded-lg border bg-muted/20 lg:max-h-none lg:min-h-0">
           <div className="space-y-3 border-b p-3">
@@ -616,6 +618,8 @@ export function KnowledgeExplorerPanel({
                 </div>
               ) : (
                 <>
+                  {/* Markdown 内链本身可键盘操作；容器仅代理冒泡后的链接点击。 */}
+                  {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
                   <div onClick={handleMarkdownClick}>
                     <MarkdownPreview
                       value={prepareWikiMarkdown(detail.contentMd, detail.title, relatedKnowledge, resolvePageTitle)}

@@ -193,7 +193,7 @@ func (r *PetrichorAgentRuntime) runSubagent(
 	}
 	execCtx := &ToolExecutionContext{
 		Context: ctx, RunID: state.Current().RunID, DBRunID: request.DBRunID, UserID: request.UserID,
-		ConversationID: request.ConversationID, Focus: request.Focus, QaMode: request.QaMode,
+		ConversationID: request.ConversationID, Focus: request.Focus,
 		SystemRole: request.SystemRole, DelegationDepth: depth, State: state.Current(),
 		RecordTokenUsage: func(input, output int64) {
 			state.AddTokenUsage(input, output)

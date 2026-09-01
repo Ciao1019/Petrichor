@@ -741,14 +741,18 @@ function fileMatchesFilter(file: FileEntry, filter: FileSystemFilter) {
 
   if (Number.isNaN(time)) return false
   if (filter.operator === "in-range" || filter.operator === "not-in-range") {
-    const from = Date.parse(filter.value[0])
-    const to = Date.parse(filter.value[1] ?? filter.value[0])
+    const firstValue = filter.value[0]
+    if (!firstValue) return false
+    const from = Date.parse(firstValue)
+    const to = Date.parse(filter.value[1] ?? firstValue)
     const isInRange = time >= from && time <= to
 
     return filter.operator === "not-in-range" ? !isInRange : isInRange
   }
 
-  const cutoff = dateFilterPresetCutoff(filter.value[0]).getTime()
+  const preset = filter.value[0]
+  if (!preset) return false
+  const cutoff = dateFilterPresetCutoff(preset).getTime()
 
   return filter.operator === "before" ? time <= cutoff : time >= cutoff
 }
@@ -1601,7 +1605,7 @@ export function FileSystem({
 
       setDateRangeDialog({
         initialRange:
-          existing && isCustomDateRangeValue(existing.value)
+          existing && isCustomDateRangeValue(existing.value) && existing.value[0] && existing.value[1]
             ? {
                 from: new Date(existing.value[0]),
                 to: new Date(existing.value[1]),
@@ -1843,6 +1847,7 @@ export function FileSystem({
         if (next.length <= GALLERY_STAGE_POOL_SIZE) return next
 
         let evicted = next[0]
+        if (!evicted) return next
 
         for (const candidate of next) {
           if (candidate === path) continue
@@ -3340,6 +3345,7 @@ function useEntryTypeAhead() {
 
       for (let step = 0; step < entries.length; step += 1) {
         const entry = entries[(startIndex + step) % entries.length]
+        if (!entry) continue
 
         if (entry.name.toLowerCase().startsWith(state.buffer)) {
           event.preventDefault()
@@ -3378,7 +3384,9 @@ function moveGridSelection({
   } else if (key === "ArrowLeft" || key === "ArrowRight") {
     nextEntry = entries[currentIndex + (key === "ArrowLeft" ? -1 : 1)]
   } else {
-    const currentElement = itemRefs.get(entries[currentIndex].path)
+    const currentEntry = entries[currentIndex]
+    if (!currentEntry) return false
+    const currentElement = itemRefs.get(currentEntry.path)
 
     if (!currentElement) return false
 
@@ -3853,7 +3861,7 @@ function FileSystemPierreTree({
         if (leftEntry && rightEntry) {
           return compareEntriesBySort(leftEntry, rightEntry, sort)
         }
-        return left.segments[depth] < right.segments[depth] ? -1 : 1
+        return (left.segments[depth] ?? "").localeCompare(right.segments[depth] ?? "")
       }
       return left.segments.length - right.segments.length
     }

@@ -46,8 +46,6 @@ const STATUS_META: Record<SiteGraphStatus, { label: string; className: string }>
     ARCHIVED: { label: "已归档", className: "border-border bg-muted text-muted-foreground" },
 }
 
-const SOURCE_LABEL = { AGENT: "Agent", MANUAL: "人工", SYSTEM: "系统" } as const
-
 export type SiteGraphScope = "all" | "published"
 
 /**

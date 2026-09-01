@@ -259,23 +259,13 @@ func requestBodyForLog(c *gin.Context) string {
 	return string(raw)
 }
 
-// resolveClientIp 对照 handlers.ts resolveClientIp。
+// resolveClientIp 只使用 Gin 按可信代理配置解析后的地址。
 func resolveClientIp(c *gin.Context) *string {
-	for _, header := range []string{"X-Forwarded-For", "X-Real-Ip", "Cf-Connecting-Ip"} {
-		value := c.GetHeader(header)
-		if value == "" {
-			continue
-		}
-		part := value
-		if idx := strings.IndexByte(part, ','); idx >= 0 {
-			part = part[:idx]
-		}
-		part = strings.TrimSpace(part)
-		if part != "" {
-			return &part
-		}
+	value := strings.TrimSpace(c.ClientIP())
+	if value == "" {
+		return nil
 	}
-	return nil
+	return &value
 }
 
 // recordAgentCallLog 写入调用日志；失败只告警不影响主流程（对照 recordAgentCallLog）。
@@ -298,7 +288,8 @@ func recordAgentCallLog(
 	if handlerErr != nil {
 		errorMessage = clipLogText(handlerErr.Error(), 1000)
 	}
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 5*time.Second)
+	defer cancel()
 	_, err := dbPool().Exec(ctx,
 		`INSERT INTO petrichor_agent_call_log
 		 (user_id, api_key_id, api_key_prefix, method, path, ip, user_agent,
@@ -316,6 +307,7 @@ func recordAgentCallLog(
 
 // recordAgentCallLogRow 供 MCP 工具委托复用（path 使用工具对应的 REST 端点）。
 func recordAgentCallLogRow(
+	ctx context.Context,
 	actx *auth.AgentAuthContext,
 	method, path string,
 	ip, userAgent *string,
@@ -328,7 +320,7 @@ func recordAgentCallLogRow(
 	if handlerErr != nil {
 		errorMessage = clipLogText(handlerErr.Error(), 1000)
 	}
-	_, err := dbPool().Exec(context.Background(),
+	_, err := dbPool().Exec(ctx,
 		`INSERT INTO petrichor_agent_call_log
 		 (user_id, api_key_id, api_key_prefix, method, path, ip, user_agent,
 		  request_json, response_json, status_code, duration_ms, error_message)

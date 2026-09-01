@@ -2,7 +2,6 @@
 package agentapi
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"time"
@@ -128,7 +127,7 @@ func CreateAPIKey(c *gin.Context) (any, error) {
 
 	apiKey := auth.GenerateAgentApiKey()
 	scopesJSON := marshalJSONString(scopes)
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	rows, ierr := dbPool().Query(ctx,
 		`INSERT INTO petrichor_agent_api_key (user_id, name, key_hash, key_prefix, scopes_json, expires_at)
 		 VALUES ($1,$2,$3,$4,$5,$6) RETURNING `+apiKeyColumns,
@@ -152,7 +151,7 @@ func CreateAPIKey(c *gin.Context) (any, error) {
 // ListAPIKeys POST /api/agent/api-key/list。
 func ListAPIKeys(c *gin.Context) (any, error) {
 	user := auth.CurrentUser(c)
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	rows, err := dbPool().Query(ctx,
 		`SELECT `+apiKeyColumns+` FROM petrichor_agent_api_key
 		 WHERE user_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())
@@ -186,7 +185,7 @@ func RevokeAPIKey(c *gin.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	now := time.Now()
 	rows, uerr := dbPool().Query(ctx,
 		`UPDATE petrichor_agent_api_key SET revoked_at = $1, updated_at = $1
@@ -232,7 +231,7 @@ func ListCallLogs(c *gin.Context) (any, error) {
 		ErrorMsg    *string
 		CreatedAt   time.Time
 	}
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	rows, qerr := dbPool().Query(ctx,
 		`SELECT id, api_key_id, api_key_prefix, method, path, ip, user_agent,
 		        request_json, response_json, status_code, duration_ms, error_message, created_at

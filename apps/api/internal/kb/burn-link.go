@@ -15,8 +15,8 @@ import (
 // BurnMaxViewsLimit 单个链接允许的最大访问次数上限。1 = 严格阅后即焚。
 const BurnMaxViewsLimit = 100
 
-func requireArticleOwner(q execQuerier, userID, articleID int64) (*ArticleRow, error) {
-	rows, err := q.Query(context.Background(),
+func requireArticleOwner(ctx context.Context, q execQuerier, userID, articleID int64) (*ArticleRow, error) {
+	rows, err := q.Query(ctx,
 		`SELECT `+articleColumns+` FROM petrichor_kb_article WHERE id = $1 LIMIT 1`, articleID)
 	if err != nil {
 		return nil, err
@@ -95,7 +95,7 @@ func CreateBurnLink(c *gin.Context) {
 			return nil, err
 		}
 		q := pool()
-		if _, err := requireArticleOwner(q, user.ID, articleID); err != nil {
+		if _, err := requireArticleOwner(c.Request.Context(), q, user.ID, articleID); err != nil {
 			return nil, err
 		}
 		var passwordHash *string
@@ -111,7 +111,7 @@ func CreateBurnLink(c *gin.Context) {
 		if cerr != nil {
 			return nil, cerr
 		}
-		link, err := queryBurnLink(q,
+		link, err := queryBurnLink(c.Request.Context(), q,
 			`INSERT INTO petrichor_kb_article_burn_link (user_id, article_id, link_code,
 			 max_views, view_count, password_hash, expires_at, status)
 			 VALUES ($1,$2,$3,$4,0,$5,$6,'ACTIVE') RETURNING `+burnLinkColumns,
@@ -123,8 +123,8 @@ func CreateBurnLink(c *gin.Context) {
 	})
 }
 
-func queryBurnLink(q execQuerier, sql string, args ...any) (*BurnLinkRow, error) {
-	rows, err := q.Query(context.Background(), sql, args...)
+func queryBurnLink(ctx context.Context, q execQuerier, sql string, args ...any) (*BurnLinkRow, error) {
+	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -154,10 +154,10 @@ func ListBurnLinks(c *gin.Context) {
 			return nil, err
 		}
 		q := pool()
-		if _, err := requireArticleOwner(q, user.ID, articleID); err != nil {
+		if _, err := requireArticleOwner(c.Request.Context(), q, user.ID, articleID); err != nil {
 			return nil, err
 		}
-		rows, err := q.Query(c,
+		rows, err := q.Query(c.Request.Context(),
 			`SELECT `+burnLinkColumns+` FROM petrichor_kb_article_burn_link
 			 WHERE user_id = $1 AND article_id = $2
 			 ORDER BY created_at DESC, id DESC`, user.ID, articleID)
@@ -196,7 +196,7 @@ func RevokeBurnLink(c *gin.Context) {
 			return nil, badReq("链接ID非法")
 		}
 		q := pool()
-		link, err := queryBurnLink(q,
+		link, err := queryBurnLink(c.Request.Context(), q,
 			`SELECT `+burnLinkColumns+` FROM petrichor_kb_article_burn_link
 			 WHERE id = $1 AND user_id = $2 LIMIT 1`, id, user.ID)
 		if err != nil {
@@ -209,7 +209,7 @@ func RevokeBurnLink(c *gin.Context) {
 			return buildBurnLinkResponse(link), nil
 		}
 		now := time.Now()
-		updated, err := queryBurnLink(q,
+		updated, err := queryBurnLink(c.Request.Context(), q,
 			`UPDATE petrichor_kb_article_burn_link SET status = 'REVOKED', revoked_at = $1, updated_at = $1
 			 WHERE id = $2 RETURNING `+burnLinkColumns, now, link.ID)
 		if err != nil {

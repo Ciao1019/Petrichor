@@ -113,22 +113,26 @@ describe("复杂 Agent Run 渲染", () => {
         const subagents = await screen.findByRole("region", { name: "子任务" })
         const items = within(subagents).getAllByRole("listitem")
         expect(items).toHaveLength(2)
-        expect(within(items[0]).getByLabelText("已完成")).toBeTruthy()
-        expect(within(items[1]).getByLabelText("进行中")).toBeTruthy()
+        expect(within(items[0]!).getByLabelText("已完成")).toBeTruthy()
+        expect(within(items[1]!).getByLabelText("进行中")).toBeTruthy()
     })
 
-    it("完成后折叠为一行摘要，且不展示 token", () => {
+    it("完成后折叠为一行摘要，步数与展开行数一致，且不展示 token", async () => {
         const run = drive([
             ...complexRunEvents(),
             event("final_answer_started"),
             event("final_answer_delta", { delta: "官方目前推荐 Streams [3]。" }),
             event("agent_completed", { status: "completed", metrics: { durationMs: 12_400, toolCalls: 8, evidenceCount: 3 } }),
         ])
-        render(<AgentRun run={run} />)
+        const { container } = render(<AgentRun run={run} />)
 
-        expect(screen.getByText(/已完成 · 8 个步骤 · 12.4s/)).toBeTruthy()
+        // 步数说的是展开后能数到的行数（聚合后的活动组），不是后端的原始调用次数
+        expect(screen.getByText(/已完成 · 3 个步骤 · 12.4s/)).toBeTruthy()
         expect(screen.queryByText(/token/i)).toBeNull()
         expect(screen.queryByRole("button", { name: "停止" })).toBeNull()
+        ;(container.querySelector("button[aria-expanded]") as HTMLButtonElement).click()
+        const activities = await screen.findByRole("list", { name: "执行步骤" })
+        expect(within(activities).getAllByRole("listitem")).toHaveLength(3)
     })
 
     it("简单请求不渲染执行面板", () => {
@@ -224,6 +228,59 @@ describe("复杂 Agent Run 渲染", () => {
         expect(within(activities).getByText(/深读了 2 个相关章节/)).toBeTruthy()
         expect(within(activities).getByText(/语义 \+ 关键词/)).toBeTruthy()
         expect(within(activities).getByText(/Wiki 目录导航未参与/)).toBeTruthy()
+    })
+
+    it("工具完成后该步骤不再闪，闪的是当前这一拍", async () => {
+        // 工具已收尾、整轮还没结束：这正是"模型在想"的窗口
+        const run = drive([
+            event("agent_started", { goal: "Mole 是什么" }),
+            event("complexity_detected", { complexity: "simple" }),
+            event("tool_started", { callId: "c1", toolId: "knowledge.lookup", title: "正在检索并阅读知识库" }),
+            event("tool_completed", {
+                callId: "c1",
+                toolId: "knowledge.lookup",
+                summary: "找到 6 个相关章节并深读 2 个（语义 + 关键词；本地重排）",
+                durationMs: 1_400,
+                evidenceIds: ["e1", "e2"],
+            }),
+        ])
+        const { container } = render(<AgentRun run={run} />)
+        ;(container.querySelector("button[aria-expanded]") as HTMLButtonElement).click()
+
+        const activities = await screen.findByRole("list", { name: "执行步骤" })
+        // 已完成的检索不该继续闪：上游"最后一个可见步骤 + streaming 就闪"的规则不适用
+        expect(within(activities).getByText("检索并阅读知识库").className).not.toContain("shimmer")
+        // 少了这一拍，shimmer 只能错落在已经完成的步骤上，看起来像检索一直没做完
+        expect(within(activities).getByText("正在分析…").className).toContain("shimmer")
+        // 做了什么 / 怎么做到的 分栏展示
+        expect(within(activities).getByText("检索 1 次，深读了 2 个相关章节")).toBeTruthy()
+        expect(within(activities).getByText("语义 + 关键词；本地重排")).toBeTruthy()
+        expect(within(activities).getByText("1.4s")).toBeTruthy()
+    })
+
+    it("还有活动在跑时不补分析这一拍", async () => {
+        const run = drive(complexRunEvents())
+        const { container } = render(<AgentRun run={run} />)
+        ;(container.querySelector("button[aria-expanded]") as HTMLButtonElement).click()
+
+        // 夹具里还有一个子任务在跑，当前这一拍就是它，不该再叠一条"正在分析…"
+        const activities = await screen.findByRole("list", { name: "执行步骤" })
+        expect(within(activities).queryByText("正在分析…")).toBeNull()
+    })
+
+    it("完成后按后端耗时展示每步用时，且不再有进行中的一拍", async () => {
+        const run = drive([
+            ...complexRunEvents(),
+            event("agent_completed", { status: "completed", metrics: { durationMs: 12_400, toolCalls: 8 } }),
+        ])
+        const { container } = render(<AgentRun run={run} />)
+        ;(container.querySelector("button[aria-expanded]") as HTMLButtonElement).click()
+
+        const activities = await screen.findByRole("list", { name: "执行步骤" })
+        // 120 + 90 + 80ms 三次 knowledge 调用取自事件里的 durationMs，不是时间戳相减
+        expect(within(activities).getByText("0.3s")).toBeTruthy()
+        expect(within(activities).queryByText("正在分析…")).toBeNull()
+        expect(container.querySelector(".shimmer")).toBeNull()
     })
 
     it("状态变化经 aria-live 播报，不只依赖颜色", () => {

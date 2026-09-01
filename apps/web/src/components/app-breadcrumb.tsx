@@ -86,7 +86,7 @@ function resolveBreadcrumbItems(pathname: string): BreadcrumbItem[] | undefined 
   }
 
   const knowledgeBaseMatch = pathname.match(new RegExp(`^${dashboardRoutes.knowledge}/([^/]+)$`))
-  if (knowledgeBaseMatch) {
+  if (knowledgeBaseMatch?.[1]) {
     const kbId = knowledgeBaseMatch[1]
     const kbName = getKnowledgeBaseCrumbName(kbId)
     return [
@@ -108,8 +108,10 @@ export function AppBreadcrumb() {
     window.addEventListener("petrichor:kb-crumb", onCrumb)
     return () => window.removeEventListener("petrichor:kb-crumb", onCrumb)
   }, [])
-  const items = React.useMemo(
-    () => resolveBreadcrumbItems(location.pathname) || [{ label: "首页" }],
+  const items = React.useMemo(() => {
+    void kbCrumbTick // 事件只负责让 localStorage 中的知识库名称重新参与计算。
+    return resolveBreadcrumbItems(location.pathname) || [{ label: "首页" }]
+  },
     [location.pathname, kbCrumbTick],
   )
   const {

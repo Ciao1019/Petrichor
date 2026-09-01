@@ -78,6 +78,9 @@ cd apps/api && go run ./cmd/migrate status
 - 业务逻辑应清晰命名、保持小函数，必要时添加中文注释说明关键流程或边界。
 - 删除真正无用的旧代码；不要为了兼容已废弃实现保留平行分支。
 - 不新增占位实现、TODO 或未接线的“半成品”入口。
+- 单个源文件不超过 800 行，由 `scripts/check-file-size.sh` 在 CI 强制。
+  历史超长文件记在 `scripts/file-size-baseline.txt`，只能变小不能变大；
+  生成式 UI 组件（`components/ui`、`extend`、`assistant-ui`、`tool-ui`）不参与检查。
 
 ## API 与服务端约定
 
@@ -88,6 +91,8 @@ cd apps/api && go run ./cmd/migrate status
 - 列表接口沿用 `pageNum`、`pageSize`、`isAsc`、`orderByColumn` 等现有约定，
   并复用 Go HTTP 契约工具。
 - 前端 API client 位于 `apps/web/src/lib/api.ts`，新增接口时同步补充请求/响应类型。
+- Wiki 页面、链接、来源引用、补丁和审计事件的写操作统一走
+  `apps/api/internal/kb/wikimutation.go` 的入口，不要在业务文件里直接拼这些表的写 SQL。
 - 错误响应保持 `{ code, msg, path, timestamp }` 结构，避免泄露内部错误详情。
 
 ## 数据库与迁移
@@ -120,9 +125,14 @@ bun run test
 bun run typecheck
 bun run lint
 bun run build
+./scripts/check-file-size.sh
 cd apps/api && go test ./... && go vet ./...
 ```
 
+- 需要真实数据库的只读集成测试默认跳过，按需用环境变量开启：
+  `PETRICHOR_WIKI_EXPORT_LIVE_TEST=1`（Wiki 导出与 Skill 包）、
+  `PETRICHOR_OUTLINE_LIVE_TEST=1`（文档目录）、
+  `PETRICHOR_RECALL_LIVE_TEST=1`（检索召回）。它们只读，但会连本机 `config.toml` 的库。
 - 后台执行单元测试时注意控制时长，避免超过 60 秒卡住当前任务。
 - 若未能运行某项验证，需要在交付说明中明确原因和剩余风险。
 

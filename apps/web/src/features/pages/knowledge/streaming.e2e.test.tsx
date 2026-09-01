@@ -178,10 +178,10 @@ function measure({ chunk, gapMs, paced, answer: source = ANSWER }: { chunk: numb
     const activeBins = [...bins.keys()].sort((a, b) => a - b)
     let worstGapMs = 0
     for (let i = 1; i < activeBins.length; i += 1) {
-        worstGapMs = Math.max(worstGapMs, (activeBins[i] - activeBins[i - 1]) * FRAME)
+        worstGapMs = Math.max(worstGapMs, ((activeBins[i] ?? 0) - (activeBins[i - 1] ?? 0)) * FRAME)
     }
     const gaps = activeBins
-        .map((b, i) => (i === 0 ? null : { at: b * FRAME, gap: (b - activeBins[i - 1]) * FRAME }))
+        .map((b, i) => (i === 0 ? null : { at: b * FRAME, gap: (b - (activeBins[i - 1] ?? b)) * FRAME }))
         .filter((g): g is { at: number; gap: number } => g != null && g.gap >= 96)
         .map((g) => `${g.at}ms(+${g.gap})`)
         .join(" ")

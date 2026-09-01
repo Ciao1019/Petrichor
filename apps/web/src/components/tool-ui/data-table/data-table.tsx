@@ -278,7 +278,7 @@ function DataTableLayout({
         ) : (
           <div className="bg-card flex flex-col overflow-hidden rounded-2xl border shadow-xs">
             {data.map((row, i) => {
-              const rowKey = rowKeys[i];
+              const rowKey = rowKeys[i] ?? `row-${i}`;
               return (
                 <DataTableAccordionCard
                   key={rowKey}
@@ -603,7 +603,7 @@ function DataTableRow({ row, className }: DataTableRowProps) {
       {columns.map((column, columnIndex) => (
         <DataTableCell
           key={column.key}
-          value={row[column.key]}
+          value={row[column.key] ?? null}
           column={column}
           row={row}
           columnIndex={columnIndex}
@@ -757,7 +757,7 @@ function DataTableAccordionCard({
                 aria-label={`${primaryColumn.label}: ${row[primaryColumn.key]}`}
               >
                 {renderFormattedValue({
-                  value: row[primaryColumn.key],
+                  value: row[primaryColumn.key] ?? null,
                   column: primaryColumn,
                   row,
                   locale,
@@ -783,7 +783,7 @@ function DataTableAccordionCard({
                     <span aria-hidden="true">{col.label}:</span>
                     <span className="truncate">
                       {renderFormattedValue({
-                        value: row[col.key],
+                        value: row[col.key] ?? null,
                         column: col,
                         row,
                         locale,
@@ -837,7 +837,7 @@ function DataTableAccordionCard({
                     aria-labelledby={`row-${stableRowId}-${String(col.key)}-label`}
                   >
                     {renderFormattedValue({
-                      value: row[col.key],
+                      value: row[col.key] ?? null,
                       column: col,
                       row,
                       locale,
@@ -893,7 +893,7 @@ function SimpleCard({
           aria-label={`${primaryColumn.label}: ${row[primaryColumn.key]}`}
         >
           {renderFormattedValue({
-            value: row[primaryColumn.key],
+            value: row[primaryColumn.key] ?? null,
             column: primaryColumn,
             row,
             locale,
@@ -923,7 +923,7 @@ function SimpleCard({
             aria-labelledby={`row-${stableRowId}-${String(col.key)}-label`}
           >
             {renderFormattedValue({
-              value: row[col.key],
+              value: row[col.key] ?? null,
               column: col,
               row,
               locale,

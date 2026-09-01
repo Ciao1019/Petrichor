@@ -252,7 +252,8 @@ function NavButton({ label, onClick, children }: { label: string; onClick: () =>
 
 function buildYearLabel(cursors: MonthCursor[]): string {
   const first = cursors[0]
-  const last = cursors[cursors.length - 1]
+  const last = cursors.at(-1)
+  if (!first || !last) return ""
   return first.year === last.year ? `${first.year} 年` : `${first.year} - ${last.year} 年`
 }
 

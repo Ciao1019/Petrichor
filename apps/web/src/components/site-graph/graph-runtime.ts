@@ -1,67 +1,9 @@
-import type { SiteGraphPayload, SiteGraphPayloadLink, SiteGraphPayloadNode } from "@/lib/api"
+import type { SiteGraphPayload, SiteGraphPayloadNode } from "@/lib/api"
+import { loadForceModule } from "./graph-force-loader"
+import type { RuntimeLink, RuntimeNode, SiteGraphRuntime, SiteGraphRuntimeOptions } from "./graph-runtime-types"
 
-/**
- * 全站星图运行时。
- *
- * 技术选型对齐 newechoes：d3-force-3d 的力导求解器（固定 2 维）+ Canvas 2D 绘制 + HTML 标签层。
- * 与其不同的是我们的节点带「属性」和「关系名称」，因此悬停面板展示的是结构化信息而非纯标题。
- */
-
-type ForceModule = typeof import("d3-force-3d")
-
-export interface RuntimeNode extends SiteGraphPayloadNode {
-    degree: number
-    neighbors: Set<string>
-    radius: number
-    labelElement: HTMLDivElement
-    /** 递归布局给出的理想位置，聚簇力会把节点往这里拉 */
-    anchorX: number
-    anchorY: number
-    depth: number
-    siblingIndex: number
-    siblingCount: number
-    x?: number
-    y?: number
-    vx?: number
-    vy?: number
-    fx?: number | null
-    fy?: number | null
-    index?: number
-}
-
-export interface RuntimeLink extends Omit<SiteGraphPayloadLink, "source" | "target"> {
-    source: RuntimeNode
-    target: RuntimeNode
-}
-
-export interface SiteGraphRuntime {
-    start: () => void
-    stop: () => void
-    resize: () => void
-    dispose: () => void
-    setFocusNode: (nodeId: string | null) => void
-    setPreviewNode: (nodeId: string | null) => void
-    focusAndCenter: (nodeId: string) => void
-    fit: () => void
-    updateTheme: () => void
-}
-
-export interface SiteGraphRuntimeOptions {
-    stage: HTMLElement
-    mount: HTMLElement
-    payload: SiteGraphPayload
-    /** 悬停/选中节点变化时回调，宿主组件用它渲染详情面板 */
-    onHoverNode: (node: SiteGraphPayloadNode | null) => void
-    onSelectNode: (node: SiteGraphPayloadNode | null) => void
-    /**
-     * 画布上发生了一次真实点击（已排除拖拽与平移）时触发。
-     * 与 onSelectNode 分开是因为后者也会被左侧树的聚焦调用，
-     * 用它做「点画布收起目录」会导致点树即收起自己。
-     */
-    onCanvasClick?: () => void
-    /** 双击节点触发跳转 */
-    onNavigate: (route: string) => void
-}
+export { preloadSiteGraphRuntime } from "./graph-force-loader"
+export type { RuntimeLink, RuntimeNode, SiteGraphRuntime, SiteGraphRuntimeOptions } from "./graph-runtime-types"
 
 const CLICK_THRESHOLD_PX = 3
 const DRAG_THRESHOLD_PX = 5
@@ -107,23 +49,6 @@ interface ViewState {
     zoom: number
     offsetX: number
     offsetY: number
-}
-
-let forceModulePromise: Promise<ForceModule> | null = null
-
-/** 力导库按需加载：点群页面是低频入口，不占首屏体积 */
-function loadForceModule() {
-    if (!forceModulePromise) {
-        forceModulePromise = import("d3-force-3d").catch((error: unknown) => {
-            forceModulePromise = null
-            throw error
-        })
-    }
-    return forceModulePromise
-}
-
-export function preloadSiteGraphRuntime() {
-    return loadForceModule()
 }
 
 /** 稳定伪随机：同一个节点每次渲染抖动一致，避免刷新后点群跳位 */

@@ -40,6 +40,9 @@ func TestRunAgentSegmentStreamsFinalAnswerThroughEino(t *testing.T) {
 		if call != 1 {
 			t.Fatalf("unexpected model call: %d", call)
 		}
+		if temperature, ok := request["temperature"].(float64); !ok || temperature != 0.2 {
+			t.Fatalf("temperature 精度被 float32 污染: %#v", request["temperature"])
+		}
 		return []string{
 			`{"choices":[{"delta":{"content":"你"}}]}`,
 			`{"choices":[{"delta":{"content":"好"}}]}`,
@@ -66,8 +69,24 @@ func TestRunAgentSegmentStreamsFinalAnswerThroughEino(t *testing.T) {
 	if strings.Join(deltas, "") != "你好" {
 		t.Fatalf("unexpected deltas: %#v", deltas)
 	}
+	// 无工具的段每个字都是答案：必须逐块直发，不能为了防旁白攒着不发。
+	if len(deltas) != 2 {
+		t.Fatalf("tool-less segment must stream every delta live: %#v", deltas)
+	}
 	if result.Usage.Input != 7 || result.Usage.Output != 2 || result.Usage.Total != 9 {
 		t.Fatalf("unexpected usage: %+v", result.Usage)
+	}
+}
+
+func TestCleanFloat32UsesShortestDecimalRepresentation(t *testing.T) {
+	for input, want := range map[float32]float64{
+		0.2:   0.2,
+		0.4:   0.4,
+		0.123: 0.123,
+	} {
+		if got := cleanFloat32(input); got != want {
+			t.Fatalf("cleanFloat32(%v)=%v want=%v", input, got, want)
+		}
 	}
 }
 
@@ -125,14 +144,60 @@ func TestRunAgentSegmentUsesEinoToolLoopAndDropsNarration(t *testing.T) {
 	if result.Text != "最终答案" {
 		t.Fatalf("narration leaked into final answer: %q", result.Text)
 	}
-	if result.ToolCallCount != 1 || resetCount != 1 {
+	// 旁白在本轮确认调用工具时被丢弃，从未流出，因此前端也不需要换段。
+	if result.ToolCallCount != 1 || resetCount != 0 {
 		t.Fatalf("unexpected tool/reset count: tool=%d reset=%d", result.ToolCallCount, resetCount)
 	}
-	if strings.Join(deltas, "") != "我先查一下。最终答案" {
-		t.Fatalf("stream should expose both live segments: %#v", deltas)
+	if strings.Join(deltas, "") != "最终答案" {
+		t.Fatalf("narration must never reach the stream: %#v", deltas)
 	}
 	if result.Usage.Input != 25 || result.Usage.Output != 8 {
 		t.Fatalf("usage should aggregate model rounds: %+v", result.Usage)
+	}
+}
+
+func TestRunAgentSegmentReleasesOverlongNarrationAndAsksForReset(t *testing.T) {
+	narration := strings.Repeat("越", answerHoldRunes+10)
+	server := newOpenAIStreamServer(t, func(call int, request map[string]any) []string {
+		switch call {
+		case 1:
+			return []string{
+				`{"choices":[{"delta":{"content":"` + narration + `"}}]}`,
+				`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"echo_tool","arguments":"{\"value\":\"x\"}"}}]}}]}`,
+				`{"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":4}}`,
+			}
+		case 2:
+			return []string{
+				`{"choices":[{"delta":{"content":"最终答案"}}]}`,
+				`{"choices":[],"usage":{"prompt_tokens":15,"completion_tokens":4}}`,
+			}
+		default:
+			t.Fatalf("unexpected model call: %d", call)
+			return nil
+		}
+	})
+	defer server.Close()
+
+	definition, executor, executionCtx := testEchoExecutor()
+	resetCount := 0
+	deltas := []string{}
+	result, err := RunAgentSegment(context.Background(), &SegmentRequest{
+		AgentID: "test-long-narration", Model: testResolvedModel(server.URL),
+		Instructions: "需要时调用工具", Prompt: "查询 x",
+		Tools: []*AgentToolDefinition{definition}, Ctx: executionCtx, Executor: executor,
+		MaxSteps:      2,
+		OnTextDelta:   func(delta string) { deltas = append(deltas, delta) },
+		OnAnswerReset: func() { resetCount++ },
+	}, NewSegmentController())
+	if err != nil {
+		t.Fatalf("RunAgentSegment error: %v", err)
+	}
+	// 扣留量是防线不是保证：超长旁白仍会流出，此时必须请求前端换段丢弃它。
+	if result.Text != "最终答案" || resetCount != 1 {
+		t.Fatalf("unexpected text/reset: text=%q reset=%d", result.Text, resetCount)
+	}
+	if !strings.HasPrefix(strings.Join(deltas, ""), narration) {
+		t.Fatalf("released narration should reach the stream once: %#v", deltas)
 	}
 }
 

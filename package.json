@@ -11,8 +11,13 @@
     "start": "bun run --cwd apps/web start",
     "lint": "bun run --cwd apps/web lint",
     "test": "bun run --cwd apps/web test",
+    "test:coverage": "bun run --cwd apps/web test:coverage",
     "test:api": "cd apps/api && go test ./...",
-    "typecheck": "bun run --cwd apps/web typecheck"
+    "audit:web": "bun run --cwd apps/web audit",
+    "check:bundle": "bun run --cwd apps/web check:bundle",
+    "check:size": "./scripts/check-file-size.sh",
+    "typecheck": "bun run --cwd apps/web typecheck",
+    "typecheck:api-strict": "bun run --cwd apps/web typecheck:api-strict"
   },
   "engines": {
     "bun": ">=1.3.14"

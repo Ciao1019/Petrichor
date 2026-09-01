@@ -98,7 +98,11 @@ export function ProjectsConfigPage() {
       const target = index + direction
       if (target < 0 || target >= current.length) return current
       const next = [...current]
-      ;[next[index], next[target]] = [next[target], next[index]]
+      const item = next[index]
+      const targetItem = next[target]
+      if (!item || !targetItem) return current
+      next[index] = targetItem
+      next[target] = item
       return next
     })
   }, [])

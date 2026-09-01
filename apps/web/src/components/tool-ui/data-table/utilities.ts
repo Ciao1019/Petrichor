@@ -152,7 +152,7 @@ export function createDataTableRowKeys(
       return `id:${identifier}`;
     }
 
-    return `row:${hashString(canonicalRows[index])}`;
+    return `row:${hashString(canonicalRows[index] ?? stableStringify(row))}`;
   });
 
   const baseCounts = new Map<string, number>();
@@ -163,12 +163,12 @@ export function createDataTableRowKeys(
   const usedKeys = new Map<string, number>();
 
   return rows.map((row, index) => {
-    const baseKey = baseKeys[index];
+    const baseKey = baseKeys[index] ?? `row:${hashString(stableStringify(row))}`;
     if ((baseCounts.get(baseKey) ?? 0) === 1) {
       return baseKey;
     }
 
-    const rowFingerprint = hashString(canonicalRows[index]);
+    const rowFingerprint = hashString(canonicalRows[index] ?? stableStringify(row));
     let disambiguatedKey = `${baseKey}::${rowFingerprint}`;
 
     const seenCount = usedKeys.get(disambiguatedKey) ?? 0;
@@ -226,8 +226,9 @@ export function parseNumericLike(input: string): number | null {
     const parts = unsigned.split(sep);
     if (parts.length < 2) return false;
     if (parts.some((part) => part.length === 0)) return false;
-    if (!/^\d{1,3}$/.test(parts[0])) return false;
-    if (parts[0] === "0") return false;
+    const firstPart = parts[0];
+    if (!firstPart || !/^\d{1,3}$/.test(firstPart)) return false;
+    if (firstPart === "0") return false;
     return parts.slice(1).every((part) => /^\d{3}$/.test(part));
   }
 
@@ -260,10 +261,13 @@ export function parseNumericLike(input: string): number | null {
   // Handle compact notation (K, M, B, T, P, G) and byte suffixes (KB, MB, GB, TB, PB)
   const compactMatch = s.match(/^([+-]?\d+\.?\d*|\d*\.\d+)([KMBTPG]B?|B)$/i);
   if (compactMatch) {
-    const baseNum = Number(compactMatch[1]);
+    const numericPart = compactMatch[1];
+    const suffixPart = compactMatch[2];
+    if (!numericPart || !suffixPart) return null;
+    const baseNum = Number(numericPart);
     if (Number.isNaN(baseNum)) return null;
 
-    const suffix = compactMatch[2].toUpperCase();
+    const suffix = suffixPart.toUpperCase();
 
     // Disambiguate single "B" (bytes vs billions)
     // If whole number < 1024, treat as bytes. Otherwise, billions.

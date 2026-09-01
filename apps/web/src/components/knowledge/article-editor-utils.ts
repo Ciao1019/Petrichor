@@ -188,20 +188,21 @@ function findFirstLevelOneHeading(markdown: string): string {
   for (const line of lines) {
     const trimmedRight = line.replace(/\s+$/, "")
     const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(trimmedRight)
+    const fenceToken = fenceMatch?.[1]
     if (fence) {
       if (
-        fenceMatch &&
-        fenceMatch[1][0] === fence.marker &&
-        fenceMatch[1].length >= fence.length
+        fenceToken &&
+        fenceToken[0] === fence.marker &&
+        fenceToken.length >= fence.length
       ) {
         fence = null
       }
       continue
     }
-    if (fenceMatch) {
+    if (fenceToken) {
       fence = {
-        marker: fenceMatch[1][0] as "`" | "~",
-        length: fenceMatch[1].length,
+        marker: fenceToken[0] as "`" | "~",
+        length: fenceToken.length,
       }
       previousTextLine = ""
       continue
@@ -209,7 +210,7 @@ function findFirstLevelOneHeading(markdown: string): string {
 
     const atxMatch = /^ {0,3}#(?!#)(?:\s+|$)(.*)$/.exec(trimmedRight)
     if (atxMatch) {
-      const title = cleanMarkdownHeadingText(atxMatch[1])
+      const title = cleanMarkdownHeadingText(atxMatch[1] ?? "")
       if (title) return title
     }
 
@@ -240,6 +241,8 @@ export function resolveMarkdownImportTitle(markdown: string, fileName: string): 
 export function buildMarkdownExportFileName(title: string): string {
   const safeBaseName = title
     .trim()
+    // 文件名必须剔除 Windows 保留字符及 ASCII 控制字符。
+    // eslint-disable-next-line no-control-regex -- 有意匹配 U+0000–U+001F
     .replace(/[<>:"/\\|?*\x00-\x1f]/g, " ")
     .replace(/\s+/g, " ")
     .replace(/[. ]+$/g, "")

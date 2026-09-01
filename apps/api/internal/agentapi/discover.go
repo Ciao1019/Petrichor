@@ -150,7 +150,7 @@ func getRequestBaseUrl(c *gin.Context) string {
 // AgentCapabilities GET /api/agent/capabilities（任意有效 Key，不限 scope，照 TS 语义）。
 func AgentCapabilities(c *gin.Context, actx *authContext) (any, error) {
 	baseUrl := getRequestBaseUrl(c)
-	kbItems, err := listUserKnowledgeBases(dbPool(), actx.UserID)
+	kbItems, err := listUserKnowledgeBases(c.Request.Context(), dbPool(), actx.UserID)
 	if err != nil {
 		return nil, err
 	}

@@ -87,6 +87,12 @@ function detectDark(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches
 }
 
+function itemAt<T>(items: readonly T[], index: number): T {
+  const item = items[index]
+  if (item === undefined) throw new RangeError(`索引越界：${index}`)
+  return item
+}
+
 /* ───────────────────────── Data parsing ───────────────────────── */
 
 function parseGraphData(data: MindElixirData, dark: boolean) {
@@ -105,10 +111,10 @@ function parseGraphData(data: MindElixirData, dark: boolean) {
     } else if (node.branchColor) {
       color = node.branchColor
     } else {
-      color = palette[colorIdx++ % palette.length]
+      color = itemAt(palette, colorIdx++ % palette.length)
     }
 
-    const r = RADIUS[Math.min(level, RADIUS.length - 1)]
+    const r = itemAt(RADIUS, Math.min(level, RADIUS.length - 1))
     nodes.push({ id, topic: node.topic || "", level, parentId, color, radius: r, x: 0, y: 0, vx: 0, vy: 0, fx: null, fy: null })
 
     if (parentId) {
@@ -167,7 +173,7 @@ function buildAdjacency(nodes: GNode[], resolved: ResolvedEdge[]) {
 
 function initPositions(nodes: GNode[]) {
   for (let i = 0; i < nodes.length; i++) {
-    const n = nodes[i]
+    const n = itemAt(nodes, i)
     if (n.level === 0) {
       n.x = 0; n.y = 0
     } else {
@@ -189,7 +195,7 @@ function runSimulation(nodes: GNode[], resolved: ResolvedEdge[], iterations: num
     // Repulsion (many-body)
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
-        const a = nodes[i], b = nodes[j]
+        const a = itemAt(nodes, i), b = itemAt(nodes, j)
         let dx = b.x - a.x, dy = b.y - a.y
         const dist2 = dx * dx + dy * dy || 1
         const dist = Math.sqrt(dist2)
@@ -206,7 +212,7 @@ function runSimulation(nodes: GNode[], resolved: ResolvedEdge[], iterations: num
       const s = e.source, t = e.target
       let dx = t.x - s.x, dy = t.y - s.y
       const dist = Math.sqrt(dx * dx + dy * dy) || 1
-      const ideal = LINK_DIST[Math.min(s.level, LINK_DIST.length - 1)]
+      const ideal = itemAt(LINK_DIST, Math.min(s.level, LINK_DIST.length - 1))
       const f = (dist - ideal) * LINK_STRENGTH * alpha
       const fx = (dx / dist) * f
       const fy = (dy / dist) * f
@@ -223,7 +229,7 @@ function runSimulation(nodes: GNode[], resolved: ResolvedEdge[], iterations: num
     // Collision
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
-        const a = nodes[i], b = nodes[j]
+        const a = itemAt(nodes, i), b = itemAt(nodes, j)
         let dx = b.x - a.x, dy = b.y - a.y
         const dist = Math.sqrt(dx * dx + dy * dy) || 1
         const minDist = a.radius + b.radius + COLLISION_PAD
@@ -253,7 +259,7 @@ function tickOnce(nodes: GNode[], resolved: ResolvedEdge[], alpha: number): numb
 
   for (let i = 0; i < nodes.length; i++) {
     for (let j = i + 1; j < nodes.length; j++) {
-      const a = nodes[i], b = nodes[j]
+      const a = itemAt(nodes, i), b = itemAt(nodes, j)
       let dx = b.x - a.x, dy = b.y - a.y
       const dist2 = dx * dx + dy * dy || 1
       const dist = Math.sqrt(dist2)
@@ -268,7 +274,7 @@ function tickOnce(nodes: GNode[], resolved: ResolvedEdge[], alpha: number): numb
     const s = e.source, t = e.target
     let dx = t.x - s.x, dy = t.y - s.y
     const dist = Math.sqrt(dx * dx + dy * dy) || 1
-    const ideal = LINK_DIST[Math.min(s.level, LINK_DIST.length - 1)]
+    const ideal = itemAt(LINK_DIST, Math.min(s.level, LINK_DIST.length - 1))
     const f = (dist - ideal) * LINK_STRENGTH * alpha
     const fx = (dx / dist) * f, fy = (dy / dist) * f
     s.vx += fx; s.vy += fy; t.vx -= fx; t.vy -= fy
@@ -281,7 +287,7 @@ function tickOnce(nodes: GNode[], resolved: ResolvedEdge[], alpha: number): numb
 
   for (let i = 0; i < nodes.length; i++) {
     for (let j = i + 1; j < nodes.length; j++) {
-      const a = nodes[i], b = nodes[j]
+      const a = itemAt(nodes, i), b = itemAt(nodes, j)
       let dx = b.x - a.x, dy = b.y - a.y
       const dist = Math.sqrt(dx * dx + dy * dy) || 1
       const minDist = a.radius + b.radius + COLLISION_PAD
@@ -544,7 +550,7 @@ function drawGraph(
     ctx.stroke()
 
     // Label
-    const fontSize = FONT_SIZE[Math.min(n.level, FONT_SIZE.length - 1)]
+    const fontSize = itemAt(FONT_SIZE, Math.min(n.level, FONT_SIZE.length - 1))
     const fontWeight = n.level <= 1 ? "600" : "400"
     ctx.font = `${fontWeight} ${fontSize}px ${FONT}`
     ctx.textAlign = "center"
@@ -723,7 +729,7 @@ export function KnowledgeGraph({ data, className, children }: KnowledgeGraphProp
     const size = resizeCanvas()
     if (size) {
       const targetTransform = fitToView(
-        nodes.map((n, i) => ({ ...n, x: finalPos[i].x, y: finalPos[i].y })),
+        nodes.map((n, i) => ({ ...n, x: itemAt(finalPos, i).x, y: itemAt(finalPos, i).y })),
         size.w,
         size.h,
       )
@@ -742,8 +748,10 @@ export function KnowledgeGraph({ data, className, children }: KnowledgeGraphProp
       const ease = 1 - Math.pow(1 - t, 3) // easeOutCubic
 
       for (let i = 0; i < nodes.length; i++) {
-        nodes[i].x = finalPos[i].x * ease
-        nodes[i].y = finalPos[i].y * ease
+        const node = itemAt(nodes, i)
+        const position = itemAt(finalPos, i)
+        node.x = position.x * ease
+        node.y = position.y * ease
       }
 
       requestRender()
@@ -795,7 +803,7 @@ export function KnowledgeGraph({ data, className, children }: KnowledgeGraphProp
     const gx = (screenX - tf.x) / tf.k
     const gy = (screenY - tf.y) / tf.k
     for (let i = nodesRef.current.length - 1; i >= 0; i--) {
-      const n = nodesRef.current[i]
+      const n = itemAt(nodesRef.current, i)
       const dx = gx - n.x, dy = gy - n.y
       if (dx * dx + dy * dy <= (n.radius + 4) * (n.radius + 4)) return n
     }

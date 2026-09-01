@@ -38,6 +38,9 @@ export function toDayKey(date: Date): DayKey {
 
 export function fromDayKey(key: DayKey): Date {
   const [year, month, day] = key.split("-").map(Number)
+  if (year === undefined || month === undefined || day === undefined) {
+    throw new RangeError(`无效日期键：${key}`)
+  }
   return new Date(year, month - 1, day)
 }
 

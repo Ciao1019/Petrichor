@@ -29,7 +29,7 @@ export function BlockGapInsert({
     const readOnly = useReadOnly()
 
     const insertEmptyLine = React.useCallback(
-        (event: React.MouseEvent) => {
+        (event: React.SyntheticEvent) => {
             // 用 mousedown + preventDefault 避免编辑器先失焦 / 改变选区
             event.preventDefault()
             event.stopPropagation()
@@ -58,8 +58,12 @@ export function BlockGapInsert({
                 className
             )}
             contentEditable={false}
+            onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") insertEmptyLine(event)
+            }}
             onMouseDown={insertEmptyLine}
             role="button"
+            tabIndex={0}
         >
             <span className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-brand/40" />
             <span className="pointer-events-none relative flex size-5 items-center justify-center rounded-full border border-brand/40 bg-background text-brand shadow-sm">

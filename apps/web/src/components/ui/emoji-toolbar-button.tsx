@@ -179,7 +179,7 @@ const EmojiButton = React.memo(function EmojiButton({
       onClick={() => onSelect(emoji)}
       onMouseEnter={() => onMouseOver(emoji)}
       onMouseLeave={() => onMouseOver()}
-      aria-label={emoji.skins[0].native}
+      aria-label={emoji.skins[0]?.native ?? ''}
       data-index={index}
       tabIndex={-1}
       type="button"
@@ -196,7 +196,7 @@ const EmojiButton = React.memo(function EmojiButton({
         }}
         data-emoji-set="native"
       >
-        {emoji.skins[0].native}
+        {emoji.skins[0]?.native ?? ''}
       </span>
     </button>
   );
@@ -422,7 +422,7 @@ function EmojiPreview({ emoji }: Pick<UseEmojiPickerType, 'emoji'>) {
   return (
     <div className="flex h-14 max-h-14 min-h-14 items-center border-muted border-t p-2">
       <div className="flex items-center justify-center text-2xl">
-        {emoji?.skins[0].native}
+        {emoji?.skins[0]?.native}
       </div>
       <div className="overflow-hidden pl-2">
         <div className="truncate font-semibold text-sm">{emoji?.name}</div>

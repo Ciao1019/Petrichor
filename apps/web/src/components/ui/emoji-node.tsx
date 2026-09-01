@@ -58,7 +58,7 @@ export function EmojiInputElement(props: PlateElementProps) {
                 value={emoji.name}
                 onClick={() => insertEmoji(editor, emoji)}
               >
-                {emoji.skins[0].native} {emoji.name}
+                {emoji.skins[0]?.native ?? ""} {emoji.name}
               </InlineComboboxItem>
             ))}
           </InlineComboboxGroup>

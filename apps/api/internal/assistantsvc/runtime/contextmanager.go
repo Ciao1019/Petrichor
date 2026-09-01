@@ -24,12 +24,22 @@ const baseAgentPrompt = `你是 Petrichor 站内的主 Agent，负责完成用�
 - 加载技能后会得到该技能的操作说明与工具，可以直接使用。
 - 任何"意图分类"结果都只是提示，不限制你能加载哪些技能：即使系统提示只识别到知识库场景，你依然可以加载 research 去查外部资料。
 
+## 知识检索策略
+
+知识库有两层内容：**源文档分片**是原文，**Wiki 页面**（概念 / 实体 / 对比 / 答案页）是从原文整理出的二手结论。两层各有用处，按问题选，不要固定只用一层。
+
+- 默认从 lookup_knowledge 开始：它一次完成检索与深读，返回里同时带分片正文和命中的 Wiki 页面，多数问题到这一步证据就够了。
+- 概念性问题（这是什么、和谁有关、几个东西怎么比），或需要顺着关联往下追时，用 Wiki 页面这一层：search_wiki_pages 定位（queries 一次传多个同义概念与别名，不要只用一个宽泛词），read_wiki_page_detail 读全文，再沿返回里的 links / inLinks 继续读，形成多跳推理。完全不了解知识库结构时可以先 wiki_overview 看全貌，但它不是每次必走的第一步。
+- 精确事实（默认值、参数、版本、条款原文、数字）以源文档为准。Wiki 页面是转述，可能已经丢掉细节；页面和分片对不上时信分片，并说明差异。
+- 判断证据够不够，看的是问题被覆盖了几个角度（是什么、怎么用、限制、边界、来源），不是检索了几次。有角度没覆盖就补一次针对性检索，不要用不完整的证据凑答案。
+
 ## 执行纪律
 
 - 不要为了用工具而用工具。能直接回答的问题直接回答。
 - 简单任务不要制定计划、不要委派子代理。
 - 不要重复调用同样参数的工具；同一检索换个说法反复查也是浪费。
 - 连续多次工具调用都没有新增有效信息时，停下来说明现状，而不是继续盲搜。
+- 决定调用工具就直接调用，不要先写"我先查一下…""我再补一次检索…"这类过程旁白；解释只出现在最终回答里，中间过程由系统展示给用户。
 - 证据足够回答时就停止；不影响核心结论的缺失，直接说明不确定性即可。
 
 ## 证据与结论
@@ -66,8 +76,6 @@ type ContextBuildInput struct {
 	ConversationSummary    *ConversationSummary
 	ConversationBackground string
 	RoutingHint            *RoutingHint
-	ModeGuidance           string
-	QaMode                 string
 	RemainingToolCalls     int
 	Budget                 *ContextBudgetConfig
 }
@@ -122,9 +130,6 @@ func (m *ContextManager) Build(input ContextBuildInput) BuiltContext {
 		sections = append(sections, "## 可加载能力\n"+catalog)
 	}
 
-	if trimSpace(input.ModeGuidance) != "" {
-		sections = append(sections, trimSpace(input.ModeGuidance))
-	}
 	sections = append(sections, "## 当前目标\n"+input.State.Goal)
 	sections = append(sections, "## 回答质量要求\n"+BuildAnswerQualityGuidance(input.State.Goal))
 
@@ -171,15 +176,10 @@ func (m *ContextManager) Build(input ContextBuildInput) BuiltContext {
 		for i := range usedEvidence {
 			lines = append(lines, renderEvidence(&usedEvidence[i], input.Evidence.CitationIndex(usedEvidence[i].ID)))
 		}
-		var header string
-		if input.QaMode == "wiki" {
-			header = "## 已获取证据\n引用 Wiki 页面证据时，在正文中内联写成 [[pageKey|页面标题]]（每条证据的「Wiki 引用」提示里有现成格式）；不要输出 [n] 角标。\n"
-		} else {
-			header = "## 已获取证据\n" +
-				"引用 Wiki 页面证据（带「Wiki 引用」提示）时，必须内联引用：每条 Wiki 证据在其支撑的表述处写成 [[pageKey|页面标题]]（照抄提示里的现成格式）；" +
-				"检索结果里带 pageKey 的其他 Wiki 页面，正文明确提及时也可按此格式链接。" +
-				"不同页面要分别引用、不要只链其中一个；同一页面多次提及只在首次加链接。其他来源在句末标注 [n]，n 为证据编号。\n"
-		}
+		header := "## 已获取证据\n" +
+			"引用 Wiki 页面证据（带「Wiki 引用」提示）时，必须内联引用：每条 Wiki 证据在其支撑的表述处写成 [[pageKey|页面标题]]（照抄提示里的现成格式）；" +
+			"检索结果里带 pageKey 的其他 Wiki 页面，正文明确提及时也可按此格式链接。" +
+			"不同页面要分别引用、不要只链其中一个；同一页面多次提及只在首次加链接。其他来源在句末标注 [n]，n 为证据编号。\n"
 		sections = append(sections, header+joinStrings(lines, "\n\n"))
 	}
 
@@ -369,17 +369,11 @@ func BuildFinalAnswerContext(input struct {
 	CitationIdx  func(id string) int
 	Observations *ObservationStore
 	Limitations  []string
-	WikiMode     bool
 }) string {
 	sections := []string{"## 用户目标\n" + input.State.Goal}
 
 	if len(input.Evidence) > 0 {
-		var citationRule string
-		if input.WikiMode {
-			citationRule = "回答中引用 Wiki 页面证据时，必须在正文中内联写成 [[pageKey|页面标题]]（每条证据的「Wiki 引用」提示里有现成格式，照抄即可）；不要输出 [n] 数字角标。非Wiki 来源仍可用 [n] 标注。\n\n"
-		} else {
-			citationRule = "回答中引用证据时使用 [n] 标注，n 为下面的编号。来自 Wiki 页面的证据（带「Wiki 引用」提示）改为内联引用：每条 Wiki 证据在其支撑的表述处写成 [[pageKey|页面标题]]，不同页面分别引用、不要只链其中一个；这类来源不必再标 [n]。\n\n"
-		}
+		citationRule := "回答中引用证据时使用 [n] 标注，n 为下面的编号。来自 Wiki 页面的证据（带「Wiki 引用」提示）改为内联引用：每条 Wiki 证据在其支撑的表述处写成 [[pageKey|页面标题]]，不同页面分别引用、不要只链其中一个；这类来源不必再标 [n]。\n\n"
 		lines := make([]string, 0, len(input.Evidence))
 		for i, evidence := range input.Evidence {
 			idx := i + 1

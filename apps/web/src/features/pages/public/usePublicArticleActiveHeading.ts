@@ -17,8 +17,10 @@ export function usePublicArticleActiveHeading({ tab, navToc, scrollOffsetPx }: U
       return
     }
     setActiveHeadingId((prev) => {
-      if (!prev) return navToc[0].id
-      return navToc.some((item) => item.id === prev) ? prev : navToc[0].id
+      const firstItem = navToc[0]
+      if (!firstItem) return ""
+      if (!prev) return firstItem.id
+      return navToc.some((item) => item.id === prev) ? prev : firstItem.id
     })
   }, [navToc])
 
@@ -29,7 +31,7 @@ export function usePublicArticleActiveHeading({ tab, navToc, scrollOffsetPx }: U
 
     const updateActiveHeading = () => {
       const currentScrollTop = window.scrollY + scrollOffsetPx + 1
-      let nextId = ids[0]
+      let nextId = ids[0] ?? ""
       for (const id of ids) {
         const heading = document.getElementById(id)
         if (!heading) continue

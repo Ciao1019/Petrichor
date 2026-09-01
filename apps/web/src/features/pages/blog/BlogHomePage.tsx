@@ -334,8 +334,7 @@ function ArticleIndexSection({ initialDockVisible = false }: { initialDockVisibl
             setArticles([])
             setError(resolveArticleIndexError(e))
         } finally {
-            if (isCanceled()) return
-            setLoading(false)
+            if (!isCanceled()) setLoading(false)
         }
     }, [])
 

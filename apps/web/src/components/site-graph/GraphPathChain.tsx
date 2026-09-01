@@ -12,6 +12,8 @@ import { GraphRetrievalMiniMap, type MiniMapLink, type MiniMapNode } from "@/com
  * 这样在前台（retypeset 暗色）与后台（shadcn 暗色）两种外壳里都成立。
  */
 
+const FALLBACK_GRAPH_KIND_META = { label: "概念", colorVar: "--site-graph-concept" }
+
 const GRAPH_KIND_META: Record<string, { label: string; colorVar: string }> = {
     root: { label: "站点", colorVar: "--site-graph-root" },
     section: { label: "分类", colorVar: "--site-graph-section" },
@@ -28,7 +30,7 @@ export interface GraphChainNode {
 }
 
 export function GraphNodeChip({ label, kind }: { label: string; kind: string }) {
-    const meta = GRAPH_KIND_META[kind] ?? GRAPH_KIND_META.concept
+    const meta = GRAPH_KIND_META[kind] ?? FALLBACK_GRAPH_KIND_META
     return (
         <span
             className="inline-flex max-w-[12rem] items-center gap-1 rounded-md border border-foreground/15 bg-foreground/5 px-1.5 py-0.5"

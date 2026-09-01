@@ -27,7 +27,7 @@ func ReadAgentFeatureFlags() AgentFeatureFlags {
 
 var budgetByComplexity = map[TaskComplexity]AgentBudget{
 	ComplexityDirect:    {MaxIterations: 1, MaxToolCalls: 0, MaxExecutionMs: 60_000},
-	ComplexitySimple:    {MaxIterations: 4, MaxToolCalls: 4, MaxExecutionMs: 120_000},
+	ComplexitySimple:    {MaxIterations: 5, MaxToolCalls: 6, MaxExecutionMs: 120_000},
 	ComplexityMultiStep: {MaxIterations: 12, MaxToolCalls: 14, MaxExecutionMs: 240_000, MaxSubAgents: 2},
 	ComplexityComplex:   {MaxIterations: 24, MaxToolCalls: 32, MaxExecutionMs: 420_000, MaxSubAgents: 5},
 }

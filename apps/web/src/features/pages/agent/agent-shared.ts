@@ -161,5 +161,5 @@ export function buildGenericSkillSnippet() {
 // 从审计日志的 User-Agent 中识别 MCP 工具调用（服务端委托请求会带 petrichor-mcp/<toolName> 前缀）
 export function parseMcpToolFromUserAgent(userAgent?: string | null): string | null {
   const match = userAgent?.match(/^petrichor-mcp\/([a-z0-9_]+)/)
-  return match ? match[1] : null
+  return match?.[1] ?? null
 }

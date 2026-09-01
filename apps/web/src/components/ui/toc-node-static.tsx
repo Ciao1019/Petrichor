@@ -80,7 +80,7 @@ const getHeadingList = (editor?: SlateEditor) => {
   Array.from(values).forEach(([node, path]) => {
     const { type } = node;
     const title = NodeApi.string(node);
-    const depth = headingDepth[type];
+    const depth = headingDepth[type] ?? 1;
     const id = node.id as string;
 
     if (title) {

@@ -2,7 +2,9 @@
 package config
 
 import (
+	"encoding/hex"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,14 +16,22 @@ import (
 )
 
 const (
-	DefaultS3Region             = "us-east-1"
-	DefaultS3UploadExpireSecs   = 900
-	DefaultS3DownloadExpireSecs = 3600
-	DefaultSessionExpireSecs    = 60 * 60 * 24 * 2
-	DefaultAPIPort              = 8080
-	DefaultBaseURL              = "http://localhost:3000"
-	defaultEncryptKey           = "Ek4EhsOIVMQZ2gMAuJXJzUPjCZOjyKIt"
-	defaultEncryptSalt          = "57da7a247bba15d0"
+	DefaultS3Region                    = "us-east-1"
+	DefaultS3UploadExpireSecs          = 900
+	DefaultS3DownloadExpireSecs        = 3600
+	DefaultSessionExpireSecs           = 60 * 60 * 24 * 2
+	DefaultAPIPort                     = 8080
+	DefaultBaseURL                     = "http://localhost:3000"
+	DefaultReadHeaderTimeoutSecs       = 10
+	DefaultReadTimeoutSecs             = 30
+	DefaultIdleTimeoutSecs             = 120
+	DefaultShutdownTimeoutSecs         = 30
+	DefaultMaxJSONBodyBytes      int64 = 4 << 20
+	DefaultMaxUploadBytes        int64 = 128 << 20
+	DefaultDatabaseMaxConns            = 10
+	DefaultDatabaseMinConns            = 2
+	defaultEncryptKey                  = "Ek4EhsOIVMQZ2gMAuJXJzUPjCZOjyKIt"
+	defaultEncryptSalt                 = "57da7a247bba15d0"
 )
 
 // S3Config S3 兼容对象存储配置。
@@ -39,6 +49,27 @@ type S3Config struct {
 type EncryptionConfig struct {
 	Key  string
 	Salt string
+}
+
+type HTTPServerConfig struct {
+	ReadHeaderTimeout time.Duration
+	ReadTimeout       time.Duration
+	WriteTimeout      time.Duration
+	IdleTimeout       time.Duration
+	ShutdownTimeout   time.Duration
+}
+
+type RequestLimitConfig struct {
+	JSONBodyBytes int64
+	UploadBytes   int64
+}
+
+type DatabasePoolConfig struct {
+	MaxConns          int32
+	MinConns          int32
+	MaxConnLifetime   time.Duration
+	MaxConnIdleTime   time.Duration
+	HealthCheckPeriod time.Duration
 }
 
 type UpstashConfig struct {
@@ -108,8 +139,12 @@ type Config struct {
 	Host                 string
 	APIPort              string
 	BaseURL              string
+	TrustedProxies       []string
+	HTTPServer           HTTPServerConfig
+	RequestLimits        RequestLimitConfig
 	DatabaseURL          string
 	MigrationDatabaseURL string
+	DatabasePool         DatabasePoolConfig
 	LocalStorageDir      string
 	S3                   *S3Config
 	SessionExpire        time.Duration
@@ -133,15 +168,28 @@ type fileConfig struct {
 }
 
 type serverFileConfig struct {
-	Environment string `toml:"environment"`
-	Host        string `toml:"host"`
-	Port        int    `toml:"port"`
-	BaseURL     string `toml:"base_url"`
+	Environment              string   `toml:"environment"`
+	Host                     string   `toml:"host"`
+	Port                     int      `toml:"port"`
+	BaseURL                  string   `toml:"base_url"`
+	TrustedProxies           []string `toml:"trusted_proxies"`
+	ReadHeaderTimeoutSeconds int      `toml:"read_header_timeout_seconds"`
+	ReadTimeoutSeconds       int      `toml:"read_timeout_seconds"`
+	WriteTimeoutSeconds      int      `toml:"write_timeout_seconds"`
+	IdleTimeoutSeconds       int      `toml:"idle_timeout_seconds"`
+	ShutdownTimeoutSeconds   int      `toml:"shutdown_timeout_seconds"`
+	MaxJSONBodyBytes         int64    `toml:"max_json_body_bytes"`
+	MaxUploadBytes           int64    `toml:"max_upload_bytes"`
 }
 
 type databaseFileConfig struct {
-	URL          string `toml:"url"`
-	MigrationURL string `toml:"migration_url"`
+	URL                      string `toml:"url"`
+	MigrationURL             string `toml:"migration_url"`
+	MaxConns                 int32  `toml:"max_conns"`
+	MinConns                 int32  `toml:"min_conns"`
+	MaxConnLifetimeSeconds   int    `toml:"max_conn_lifetime_seconds"`
+	MaxConnIdleTimeSeconds   int    `toml:"max_conn_idle_time_seconds"`
+	HealthCheckPeriodSeconds int    `toml:"health_check_period_seconds"`
 }
 
 type authFileConfig struct {
@@ -321,10 +369,18 @@ func normalizeAndValidate(raw fileConfig, path string) (*Config, error) {
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
+	trustedProxies, httpServer, requestLimits, err := normalizeServerRuntime(raw.Server)
+	if err != nil {
+		return nil, err
+	}
 
 	databaseURL := strings.TrimSpace(raw.Database.URL)
 	if databaseURL == "" {
 		return nil, fmt.Errorf("database.url 不能为空")
+	}
+	databasePool, err := normalizeDatabasePool(raw.Database)
+	if err != nil {
+		return nil, err
 	}
 	sessionExpire := raw.Auth.SessionExpireSecond
 	if sessionExpire == 0 {
@@ -358,13 +414,9 @@ func normalizeAndValidate(raw fileConfig, path string) (*Config, error) {
 		return nil, err
 	}
 
-	encryptionKey := strings.TrimSpace(raw.Encryption.Key)
-	if encryptionKey == "" {
-		encryptionKey = defaultEncryptKey
-	}
-	encryptionSalt := strings.TrimSpace(raw.Encryption.Salt)
-	if encryptionSalt == "" {
-		encryptionSalt = defaultEncryptSalt
+	encryption, err := normalizeEncryption(raw.Encryption, environment)
+	if err != nil {
+		return nil, err
 	}
 
 	return &Config{
@@ -373,14 +425,18 @@ func normalizeAndValidate(raw fileConfig, path string) (*Config, error) {
 		Host:                 host,
 		APIPort:              strconv.Itoa(port),
 		BaseURL:              baseURL,
+		TrustedProxies:       trustedProxies,
+		HTTPServer:           httpServer,
+		RequestLimits:        requestLimits,
 		DatabaseURL:          databaseURL,
 		MigrationDatabaseURL: strings.TrimSpace(raw.Database.MigrationURL),
+		DatabasePool:         databasePool,
 		LocalStorageDir:      strings.TrimSpace(raw.Storage.LocalDirectory),
 		S3:                   s3,
 		SessionExpire:        time.Duration(sessionExpire) * time.Second,
 		RegisterEnabled:      raw.Auth.RegisterEnabled,
 		RegisterDefaultRole:  defaultRole,
-		Encryption:           EncryptionConfig{Key: encryptionKey, Salt: encryptionSalt},
+		Encryption:           encryption,
 		Upstash:              upstash,
 		LinuxDo: LinuxDoConfig{
 			ClientID:     strings.TrimSpace(raw.Auth.LinuxDo.ClientID),
@@ -393,6 +449,143 @@ func normalizeAndValidate(raw fileConfig, path string) (*Config, error) {
 		},
 		Agent: normalizeAgent(raw.Agent),
 	}, nil
+}
+
+func normalizeServerRuntime(raw serverFileConfig) ([]string, HTTPServerConfig, RequestLimitConfig, error) {
+	trusted := raw.TrustedProxies
+	if len(trusted) == 0 {
+		trusted = []string{"127.0.0.1/32", "::1/128"}
+	}
+	normalizedTrusted := make([]string, 0, len(trusted))
+	for _, value := range trusted {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if net.ParseIP(value) == nil {
+			if _, _, err := net.ParseCIDR(value); err != nil {
+				return nil, HTTPServerConfig{}, RequestLimitConfig{}, fmt.Errorf("server.trusted_proxies 包含非法 IP/CIDR: %s", value)
+			}
+		}
+		normalizedTrusted = append(normalizedTrusted, value)
+	}
+	if len(normalizedTrusted) == 0 {
+		return nil, HTTPServerConfig{}, RequestLimitConfig{}, fmt.Errorf("server.trusted_proxies 不能为空；不使用代理时请保留 loopback 默认值")
+	}
+
+	readHeader, err := durationSetting("server.read_header_timeout_seconds", raw.ReadHeaderTimeoutSeconds, DefaultReadHeaderTimeoutSecs, false)
+	if err != nil {
+		return nil, HTTPServerConfig{}, RequestLimitConfig{}, err
+	}
+	read, err := durationSetting("server.read_timeout_seconds", raw.ReadTimeoutSeconds, DefaultReadTimeoutSecs, false)
+	if err != nil {
+		return nil, HTTPServerConfig{}, RequestLimitConfig{}, err
+	}
+	write, err := durationSetting("server.write_timeout_seconds", raw.WriteTimeoutSeconds, 0, true)
+	if err != nil {
+		return nil, HTTPServerConfig{}, RequestLimitConfig{}, err
+	}
+	idle, err := durationSetting("server.idle_timeout_seconds", raw.IdleTimeoutSeconds, DefaultIdleTimeoutSecs, false)
+	if err != nil {
+		return nil, HTTPServerConfig{}, RequestLimitConfig{}, err
+	}
+	shutdown, err := durationSetting("server.shutdown_timeout_seconds", raw.ShutdownTimeoutSeconds, DefaultShutdownTimeoutSecs, false)
+	if err != nil {
+		return nil, HTTPServerConfig{}, RequestLimitConfig{}, err
+	}
+	jsonLimit := raw.MaxJSONBodyBytes
+	if jsonLimit == 0 {
+		jsonLimit = DefaultMaxJSONBodyBytes
+	}
+	uploadLimit := raw.MaxUploadBytes
+	if uploadLimit == 0 {
+		uploadLimit = DefaultMaxUploadBytes
+	}
+	if jsonLimit < 1 || uploadLimit < jsonLimit {
+		return nil, HTTPServerConfig{}, RequestLimitConfig{}, fmt.Errorf("server 请求体限制必须为正数，且 max_upload_bytes 不得小于 max_json_body_bytes")
+	}
+	return normalizedTrusted, HTTPServerConfig{
+		ReadHeaderTimeout: readHeader,
+		ReadTimeout:       read,
+		WriteTimeout:      write,
+		IdleTimeout:       idle,
+		ShutdownTimeout:   shutdown,
+	}, RequestLimitConfig{JSONBodyBytes: jsonLimit, UploadBytes: uploadLimit}, nil
+}
+
+func durationSetting(name string, seconds, fallback int, allowZero bool) (time.Duration, error) {
+	if seconds < 0 || (!allowZero && seconds == 0 && fallback == 0) {
+		return 0, fmt.Errorf("%s 必须是非负整数", name)
+	}
+	if seconds == 0 {
+		seconds = fallback
+	}
+	return time.Duration(seconds) * time.Second, nil
+}
+
+func normalizeDatabasePool(raw databaseFileConfig) (DatabasePoolConfig, error) {
+	maxConns := raw.MaxConns
+	if maxConns == 0 {
+		maxConns = DefaultDatabaseMaxConns
+	}
+	minConns := raw.MinConns
+	if minConns == 0 {
+		minConns = DefaultDatabaseMinConns
+	}
+	if maxConns < 6 || minConns < 0 || minConns > maxConns {
+		return DatabasePoolConfig{}, fmt.Errorf("database 连接池要求 max_conns >= 6 且 0 <= min_conns <= max_conns（后台 Worker 会保留最多 4 个全局锁连接）")
+	}
+	lifetime, err := durationSetting("database.max_conn_lifetime_seconds", raw.MaxConnLifetimeSeconds, 30*60, false)
+	if err != nil {
+		return DatabasePoolConfig{}, err
+	}
+	idle, err := durationSetting("database.max_conn_idle_time_seconds", raw.MaxConnIdleTimeSeconds, 5*60, false)
+	if err != nil {
+		return DatabasePoolConfig{}, err
+	}
+	health, err := durationSetting("database.health_check_period_seconds", raw.HealthCheckPeriodSeconds, 60, false)
+	if err != nil {
+		return DatabasePoolConfig{}, err
+	}
+	return DatabasePoolConfig{
+		MaxConns:          maxConns,
+		MinConns:          minConns,
+		MaxConnLifetime:   lifetime,
+		MaxConnIdleTime:   idle,
+		HealthCheckPeriod: health,
+	}, nil
+}
+
+func normalizeEncryption(raw encryptionFileConfig, environment string) (EncryptionConfig, error) {
+	key := strings.TrimSpace(raw.Key)
+	salt := strings.TrimSpace(raw.Salt)
+	if key == "" {
+		if environment == "production" {
+			return EncryptionConfig{}, fmt.Errorf("production 环境必须显式配置 encryption.key")
+		}
+		key = defaultEncryptKey
+	}
+	if salt == "" {
+		if environment == "production" {
+			return EncryptionConfig{}, fmt.Errorf("production 环境必须显式配置 encryption.salt")
+		}
+		salt = defaultEncryptSalt
+	}
+	if len(key) < 32 {
+		return EncryptionConfig{}, fmt.Errorf("encryption.key 至少需要 32 个字符")
+	}
+	saltBytes, err := hex.DecodeString(salt)
+	if err != nil || len(saltBytes) < 8 {
+		return EncryptionConfig{}, fmt.Errorf("encryption.salt 必须是至少 16 位的合法 hex 字符串")
+	}
+	if environment == "production" {
+		knownKey := key == defaultEncryptKey || strings.Contains(strings.ToLower(key), "replace-with") || strings.Contains(strings.ToLower(key), "change-me")
+		knownSalt := salt == defaultEncryptSalt || strings.Trim(salt, "0") == ""
+		if knownKey || knownSalt {
+			return EncryptionConfig{}, fmt.Errorf("production 环境禁止使用默认或示例 encryption.key/encryption.salt")
+		}
+	}
+	return EncryptionConfig{Key: key, Salt: salt}, nil
 }
 
 func normalizeS3(raw s3FileConfig) (*S3Config, error) {
@@ -525,10 +718,25 @@ func findConfigPath(name string) (string, error) {
 
 func testDefaults() *Config {
 	return &Config{
-		Environment:         "test",
-		Host:                "127.0.0.1",
-		APIPort:             strconv.Itoa(DefaultAPIPort),
-		BaseURL:             DefaultBaseURL,
+		Environment:    "test",
+		Host:           "127.0.0.1",
+		APIPort:        strconv.Itoa(DefaultAPIPort),
+		BaseURL:        DefaultBaseURL,
+		TrustedProxies: []string{"127.0.0.1/32", "::1/128"},
+		HTTPServer: HTTPServerConfig{
+			ReadHeaderTimeout: DefaultReadHeaderTimeoutSecs * time.Second,
+			ReadTimeout:       DefaultReadTimeoutSecs * time.Second,
+			IdleTimeout:       DefaultIdleTimeoutSecs * time.Second,
+			ShutdownTimeout:   DefaultShutdownTimeoutSecs * time.Second,
+		},
+		RequestLimits: RequestLimitConfig{JSONBodyBytes: DefaultMaxJSONBodyBytes, UploadBytes: DefaultMaxUploadBytes},
+		DatabasePool: DatabasePoolConfig{
+			MaxConns:          DefaultDatabaseMaxConns,
+			MinConns:          DefaultDatabaseMinConns,
+			MaxConnLifetime:   30 * time.Minute,
+			MaxConnIdleTime:   5 * time.Minute,
+			HealthCheckPeriod: time.Minute,
+		},
 		SessionExpire:       DefaultSessionExpireSecs * time.Second,
 		RegisterDefaultRole: "USER",
 		Encryption: EncryptionConfig{

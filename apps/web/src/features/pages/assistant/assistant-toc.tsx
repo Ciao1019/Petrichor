@@ -62,8 +62,10 @@ export function QaThreadToc() {
   React.useEffect(() => {
     if (!hasItems) { setActiveId(""); return }
     setActiveId((prev) => {
-      if (!prev) return items[0].id
-      return items.some((item) => item.id === prev) ? prev : items[0].id
+      const firstItem = items[0]
+      if (!firstItem) return ""
+      if (!prev) return firstItem.id
+      return items.some((item) => item.id === prev) ? prev : firstItem.id
     })
   }, [hasItems, items])
 
@@ -101,6 +103,7 @@ export function QaThreadToc() {
       if (!nodes.length) return
       const threshold = viewport.getBoundingClientRect().top + QA_TOC_ACTIVE_OFFSET
       let active = nodes[0]
+      if (!active) return
       for (const node of nodes) {
         if (node.getBoundingClientRect().top <= threshold) active = node
       }
@@ -191,7 +194,8 @@ export function QaTocOverlay({
         const active = activeId === item.id
         const w = active ? (QA_TOC_LINE_W_ACTIVE[item.level] ?? 18) : (QA_TOC_LINE_W[item.level] ?? 10)
         return (
-          <div
+          <button
+            type="button"
             key={item.id}
             data-toc-id={item.id}
             data-level={item.level}
@@ -200,7 +204,7 @@ export function QaTocOverlay({
           >
             <span className="ftoc-text">{item.text}</span>
             <span className="ftoc-line" style={{ width: w }} />
-          </div>
+          </button>
         )
       })}
     </nav>,

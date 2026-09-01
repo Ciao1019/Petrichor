@@ -43,21 +43,13 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// requestIP 取 X-Forwarded-For 首段，缺失时回退 RemoteAddr。
+// requestIP 仅通过 Gin 的可信代理链解析访客 IP；可信 CIDR 由 server.trusted_proxies 配置。
 func requestIP(c *gin.Context) string {
-	if xff := strings.TrimSpace(c.GetHeader("X-Forwarded-For")); xff != "" {
-		if idx := strings.IndexByte(xff, ','); idx >= 0 {
-			xff = xff[:idx]
-		}
-		if ip := strings.TrimSpace(xff); ip != "" {
-			return ip
-		}
-	}
-	return c.RemoteIP()
+	return strings.TrimSpace(c.ClientIP())
 }
 
-func findPetrichorUserByEmail(email string) (*User, error) {
-	row := db.Pool().QueryRow(ctx(),
+func findPetrichorUserByEmail(ctx context.Context, email string) (*User, error) {
+	row := db.Pool().QueryRow(ctx,
 		`SELECT `+UserColumns+` FROM petrichor_user WHERE lower(email) = $1 LIMIT 1`, normalizeEmail(email))
 	u, err := ScanUser(row)
 	if err != nil {
@@ -84,8 +76,13 @@ func Login(c *gin.Context) {
 		httpx.ErrorJSON(c, http.StatusBadRequest, "邮箱或密码错误")
 		return
 	}
+	requestCtx := c.Request.Context()
+	if err := enforceCredentialRateLimit(requestCtx, "login", email, requestIP(c)); err != nil {
+		httpx.HandleError(c, err)
+		return
+	}
 
-	u, uerr := findPetrichorUserByEmail(email)
+	u, uerr := findPetrichorUserByEmail(requestCtx, email)
 	if uerr != nil {
 		if errors.Is(uerr, pgx.ErrNoRows) {
 			httpx.ErrorJSON(c, http.StatusUnauthorized, "邮箱或密码错误")
@@ -106,6 +103,7 @@ func Login(c *gin.Context) {
 		httpx.HandleError(c, terr)
 		return
 	}
+	clearCredentialIdentityRateLimit(requestCtx, "login", email)
 	httpx.OK(c, gin.H{"token": token, "user": u.ToUserResponse()})
 }
 
@@ -117,12 +115,12 @@ type registerRequest struct {
 
 // resolveSystemRoleForNewUser 移植 register-policy.ts：
 // 请求 SUPER_ADMIN 直接给；否则无超管时首个用户 SUPER_ADMIN。
-func resolveSystemRoleForNewUser(requestedRole string) (string, error) {
+func resolveSystemRoleForNewUser(ctx context.Context, requestedRole string) (string, error) {
 	if requestedRole == "SUPER_ADMIN" {
 		return "SUPER_ADMIN", nil
 	}
 	var cnt int64
-	if err := db.Pool().QueryRow(ctx(),
+	if err := db.Pool().QueryRow(ctx,
 		`SELECT count(*) FROM petrichor_user WHERE system_role = 'SUPER_ADMIN'`).Scan(&cnt); err != nil {
 		return "", err
 	}
@@ -161,6 +159,11 @@ func Register(c *gin.Context) {
 		return
 	}
 
+	requestCtx := c.Request.Context()
+	if err := enforceCredentialRateLimit(requestCtx, "register", email, requestIP(c)); err != nil {
+		httpx.HandleError(c, err)
+		return
+	}
 	requestedRole := strings.ToUpper(strings.TrimSpace(cfg.RegisterDefaultRole))
 	if requestedRole != "USER" && requestedRole != "SUPER_ADMIN" {
 		httpx.ErrorJSON(c, http.StatusBadRequest, "PETRICHOR_REGISTER_DEFAULT_SYSTEM_ROLE 只支持 USER 或 SUPER_ADMIN")
@@ -168,10 +171,9 @@ func Register(c *gin.Context) {
 	}
 
 	pool := db.Pool()
-	bg := context.Background()
 
 	var exists bool
-	if err := pool.QueryRow(bg,
+	if err := pool.QueryRow(requestCtx,
 		`SELECT EXISTS(SELECT 1 FROM petrichor_user WHERE lower(email) = $1)`, email).Scan(&exists); err != nil {
 		httpx.HandleError(c, err)
 		return
@@ -181,7 +183,7 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	systemRole, rerr := resolveSystemRoleForNewUser(requestedRole)
+	systemRole, rerr := resolveSystemRoleForNewUser(requestCtx, requestedRole)
 	if rerr != nil {
 		httpx.HandleError(c, rerr)
 		return
@@ -199,7 +201,7 @@ func Register(c *gin.Context) {
 		username = name
 	}
 
-	u, ierr := ScanUser(pool.QueryRow(bg,
+	u, ierr := ScanUser(pool.QueryRow(requestCtx,
 		`INSERT INTO petrichor_user (email, password_hash, system_role, user_type, username, nickname)
 		 VALUES ($1, $2, $3, 'LOCAL', $4, $5) RETURNING `+UserColumns,
 		email, string(passwordHash), systemRole, username, name))
@@ -272,7 +274,7 @@ func ProfileUpdate(c *gin.Context) {
 	}
 	query += ` WHERE id = $` + strconv.Itoa(placeholder) + ` RETURNING ` + UserColumns
 
-	u, uerr := ScanUser(db.Pool().QueryRow(ctx(), query, args...))
+	u, uerr := ScanUser(db.Pool().QueryRow(c.Request.Context(), query, args...))
 	if uerr != nil {
 		httpx.HandleError(c, uerr)
 		return

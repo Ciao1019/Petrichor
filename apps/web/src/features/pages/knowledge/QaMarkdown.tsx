@@ -151,7 +151,7 @@ export function QaPreparing({
   state = "breathing",
 }: {
   label?: string
-  /** 见 thinking-orbs 九态；按当前阶段选：思考=working、检索=searching、整理=weaving… */
+  /** 见 thinking-orbs 九态；按当前阶段选：等待=listening、检索=connecting、整理=weaving… */
   state?: OrbState
 }) {
   const isDark = useIsDark()

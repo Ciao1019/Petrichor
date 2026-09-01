@@ -118,7 +118,7 @@ function createParticlesFromText(width: number, height: number, text: string, va
   for (let y = 0; y < height; y += gap) {
     for (let x = 0; x < width; x += gap) {
       const index = (y * width + x) * 4
-      const alpha = imageData.data[index + 3]
+      const alpha = imageData.data[index + 3] ?? 0
       if (alpha <= ALPHA_THRESHOLD) {
         continue
       }

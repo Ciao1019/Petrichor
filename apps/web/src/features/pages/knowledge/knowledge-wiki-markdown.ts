@@ -20,10 +20,12 @@ function escapeMarkdownLabel(value: string) {
 function readLinkedPageKeys(markdown: string) {
   const keys = new Set<string>()
   for (const match of markdown.matchAll(/\(#wiki-page=([^)]+)\)/g)) {
+    const encodedKey = match[1]
+    if (!encodedKey) continue
     try {
-      keys.add(decodeURIComponent(match[1]))
+      keys.add(decodeURIComponent(encodedKey))
     } catch {
-      keys.add(match[1])
+      keys.add(encodedKey)
     }
   }
   return keys
@@ -41,7 +43,8 @@ function replaceWikiLinks(markdown: string, resolveLabel: (pageKey: string) => s
   let result = ""
   let lastIndex = 0
   for (let match = pattern.exec(markdown); match != null; match = pattern.exec(markdown)) {
-    const pageKey = match[1].trim()
+    const pageKey = match[1]?.trim()
+    if (!pageKey) continue
     const alias = match[2]?.trim()
     const label = alias && alias !== pageKey ? alias : resolveLabel(pageKey)
     result += markdown.slice(lastIndex, match.index)

@@ -16,8 +16,8 @@ describe("splitCitations", () => {
     it("把 [1] 拆成独立引用节点", () => {
         const parts = splitCitations("结论是这样 [1]。")
         expect(parts.map((part) => part.type)).toEqual(["text", "citation", "text"])
-        expect(parts[1].value).toBe("1")
-        expect(parts[1].data?.hName).toBe("citation")
+        expect(parts[1]?.value).toBe("1")
+        expect(parts[1]?.data?.hName).toBe("citation")
     })
 
     it("支持一句里多个引用", () => {
@@ -37,14 +37,14 @@ describe("splitCitations", () => {
 
     it("引用编号写进 hProperties，供组件读取", () => {
         const [, citation] = splitCitations("x [7]")
-        expect((citation.data?.hProperties as Record<string, string>)["data-citation-index"]).toBe("7")
+        expect((citation?.data?.hProperties as Record<string, string>)["data-citation-index"]).toBe("7")
     })
 })
 
 describe("remarkCitations", () => {
     it("段落内的引用被转换", () => {
         const tree = run(paragraph("现有部署仍使用旧版本 [2]。"))
-        const children = tree.children![0].children!
+        const children = tree.children?.[0]?.children ?? []
         expect(children.map((child) => child.type)).toEqual(["text", "citation", "text"])
     })
 
@@ -53,8 +53,8 @@ describe("remarkCitations", () => {
             type: "root",
             children: [{ type: "paragraph", children: [{ type: "inlineCode", children: [{ type: "text", value: "arr[1]" }] }] }],
         })
-        const code = tree.children![0].children![0]
-        expect(code.children![0].type).toBe("text")
+        const code = tree.children?.[0]?.children?.[0]
+        expect(code?.children?.[0]?.type).toBe("text")
     })
 
     it("链接文本内的方括号不被转换", () => {
@@ -62,7 +62,7 @@ describe("remarkCitations", () => {
             type: "root",
             children: [{ type: "paragraph", children: [{ type: "link", children: [{ type: "text", value: "见 [1]" }] }] }],
         })
-        expect(tree.children![0].children![0].children![0].type).toBe("text")
+        expect(tree.children?.[0]?.children?.[0]?.children?.[0]?.type).toBe("text")
     })
 
     it("没有引用的文档结构不变", () => {
@@ -83,7 +83,7 @@ describe("remarkCitations", () => {
                 }],
             }],
         })
-        const inner = tree.children![0].children![0].children![0].children!
+        const inner = tree.children?.[0]?.children?.[0]?.children?.[0]?.children ?? []
         expect(inner.some((child) => child.type === "citation")).toBe(true)
     })
 })

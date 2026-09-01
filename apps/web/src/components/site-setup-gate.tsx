@@ -119,7 +119,6 @@ function SetupForm({ onInitialized }: { onInitialized: () => void }) {
                   value={username}
                   onChange={(event) => setUsername(event.target.value)}
                   disabled={loading}
-                  autoFocus
                   required
                 />
                 <FieldDescription>用于后台展示，长度为 2 到 50 个字符。</FieldDescription>

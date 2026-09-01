@@ -18,29 +18,55 @@ var (
 	poolErr  error
 )
 
-// Pool 返回全局连接池。
-func Pool() *pgxpool.Pool {
+// Initialize 在启动阶段创建并探测全局连接池，调用方可正常处理错误而不是依赖 panic。
+func Initialize(ctx context.Context) error {
 	poolOnce.Do(func() {
-		cfg, err := pgxpool.ParseConfig(config.Get().DatabaseURL)
+		appConfig := config.Get()
+		cfg, err := pgxpool.ParseConfig(appConfig.DatabaseURL)
 		if err != nil {
 			poolErr = err
 			return
 		}
 		// Supabase transaction pooler 下不能使用 prepared statement 缓存。
 		cfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
-		cfg.MaxConns = 10
-		ctx := context.Background()
+		cfg.MaxConns = appConfig.DatabasePool.MaxConns
+		cfg.MinConns = appConfig.DatabasePool.MinConns
+		cfg.MaxConnLifetime = appConfig.DatabasePool.MaxConnLifetime
+		cfg.MaxConnIdleTime = appConfig.DatabasePool.MaxConnIdleTime
+		cfg.HealthCheckPeriod = appConfig.DatabasePool.HealthCheckPeriod
 		poolIns, poolErr = pgxpool.NewWithConfig(ctx, cfg)
 		if poolErr != nil {
 			return
 		}
 		if err := poolIns.Ping(ctx); err != nil {
+			poolIns.Close()
+			poolIns = nil
 			poolErr = err
 		}
 	})
-	if poolErr != nil {
-		slog.Error("数据库连接失败", "err", poolErr)
-		panic(poolErr)
+	return poolErr
+}
+
+// Pool 返回已初始化的全局连接池。生产入口应先调用 Initialize。
+func Pool() *pgxpool.Pool {
+	if err := Initialize(context.Background()); err != nil {
+		slog.Error("数据库连接失败", "err", err)
+		panic(err)
 	}
 	return poolIns
+}
+
+// Ping 用于 readiness 探测。
+func Ping(ctx context.Context) error {
+	if err := Initialize(ctx); err != nil {
+		return err
+	}
+	return poolIns.Ping(ctx)
+}
+
+// Close 在服务优雅关闭时释放连接。
+func Close() {
+	if poolIns != nil {
+		poolIns.Close()
+	}
 }

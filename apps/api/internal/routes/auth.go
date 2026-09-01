@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 
 	"petrichor/api/internal/auth"
@@ -11,7 +13,7 @@ func registerAuthRoutes(rg *gin.RouterGroup) {
 
 	// 首次部署初始化：状态公开可读，初始化写入只允许成功一次。
 	g.GET("/setup/status", auth.SetupStatus)
-	g.POST("/setup", auth.Setup)
+	g.POST("/setup", auth.LimitSensitiveEndpoint("setup", 5, time.Hour), auth.Setup)
 	initialized := auth.RequireSiteInitialized()
 
 	// 登录态端点
@@ -29,7 +31,7 @@ func registerAuthRoutes(rg *gin.RouterGroup) {
 	g.POST("/sessions/revoke-others", initialized, auth.RequireUser(), auth.RevokeOtherSessions)
 
 	// LinuxDo OAuth
-	g.GET("/linuxdo/login/start", initialized, auth.LinuxDoLoginStart)
+	g.GET("/linuxdo/login/start", initialized, auth.LimitSensitiveEndpoint("oauth-start", 30, 15*time.Minute), auth.LinuxDoLoginStart)
 	g.GET("/linuxdo/bind/start", initialized, auth.RequireUser(), auth.LinuxDoBindStart)
 	g.POST("/linuxdo/callback", initialized, auth.LinuxDoCallbackPost)
 	g.GET("/callback", initialized, auth.LinuxDoCallbackGet)

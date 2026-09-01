@@ -3,6 +3,7 @@ import { aggregateActivities, currentActivityLabel } from "./activity-mapper"
 import { agentRunReducer, createEmptyRun, replayEvents } from "./reducer"
 import {
     selectCitedEvidenceSources,
+    selectActivityGroups,
     selectCompletionSummary,
     selectEvidenceBySource,
     shouldShowCitationSources,
@@ -40,9 +41,9 @@ describe("agentRunReducer", () => {
             event("tool_completed", { callId: "c1", toolId: "knowledge.search", summary: "找到 6 个节点", durationMs: 120, evidenceIds: [] }),
         ])
         expect(run.activities).toHaveLength(1)
-        expect(run.activities[0].status).toBe("completed")
-        expect(run.activities[0].description).toBe("找到 6 个节点")
-        expect(run.activities[0].type).toBe("knowledge_search")
+        expect(run.activities[0]?.status).toBe("completed")
+        expect(run.activities[0]?.description).toBe("找到 6 个节点")
+        expect(run.activities[0]?.type).toBe("knowledge_search")
     })
 
     it("旧 Go tool_started 缺少 title 时使用稳定文案而不是 undefined", () => {
@@ -50,7 +51,7 @@ describe("agentRunReducer", () => {
             event("agent_started", { goal: "小鼹鼠是什么" }),
             event("tool_started", { callId: "c1", toolId: "knowledge.lookup" }),
         ])
-        expect(run.activities[0].title).toBe("正在检索并阅读知识库")
+        expect(run.activities[0]?.title).toBe("正在检索并阅读知识库")
         expect(currentActivityLabel(run.activities)).toBe("正在检索并阅读知识库…")
         expect(currentActivityLabel(run.activities)).not.toContain("undefined")
     })
@@ -60,8 +61,8 @@ describe("agentRunReducer", () => {
             event("tool_started", { callId: "c1", toolId: "research.fetch", title: "正在阅读外部来源" }),
             event("tool_failed", { callId: "c1", toolId: "research.fetch", message: "该来源响应超时", willRetry: true }),
         ])
-        expect(run.activities[0].status).toBe("running")
-        expect(run.activities[0].title).toBe("正在尝试其它来源")
+        expect(run.activities[0]?.status).toBe("running")
+        expect(run.activities[0]?.title).toBe("正在尝试其它来源")
     })
 
     it("计划更新会实时替换步骤", () => {
@@ -75,7 +76,7 @@ describe("agentRunReducer", () => {
             }),
         ])
         expect(run.plan).toHaveLength(2)
-        expect(run.plan[1].status).toBe("running")
+        expect(run.plan[1]?.status).toBe("running")
     })
 
     it("证据按到达顺序分配稳定引用编号且不重复", () => {
@@ -135,19 +136,19 @@ describe("agentRunReducer", () => {
             event("delegation_completed", { taskId: "t1", status: "completed", summary: "完成", evidenceCount: 6, durationMs: 100 }),
         ])
         expect(run.subagents).toHaveLength(2)
-        expect(run.subagents[0].status).toBe("completed")
-        expect(run.subagents[0].evidenceCount).toBe(6)
-        expect(run.subagents[1].status).toBe("running")
+        expect(run.subagents[0]?.status).toBe("completed")
+        expect(run.subagents[0]?.evidenceCount).toBe(6)
+        expect(run.subagents[1]?.status).toBe("running")
     })
 
-    it("换段不丢弃已流出的内容，上一段作为段落保留", () => {
+    it("换段丢弃上一段过程旁白，只留正式作答", () => {
         const run = reduce([
             event("final_answer_started"),
             event("final_answer_delta", { delta: "我先查一下正文。" }),
             event("final_answer_started"),
             event("final_answer_delta", { delta: "正式答案" }),
         ])
-        expect(run.answer).toBe("我先查一下正文。\n\n正式答案")
+        expect(run.answer).toBe("正式答案")
     })
 
     it("整段重答（replace）才清空前文", () => {
@@ -160,7 +161,7 @@ describe("agentRunReducer", () => {
         expect(run.answer).toBe("重写后的答案")
     })
 
-    it("final_answer_completed 只覆盖当前段，已归档段落保留", () => {
+    it("final_answer_completed 覆盖当前段，被丢弃的旁白不会回来", () => {
         const run = reduce([
             event("final_answer_started"),
             event("final_answer_delta", { delta: "我先查一下正文。" }),
@@ -168,7 +169,7 @@ describe("agentRunReducer", () => {
             event("final_answer_delta", { delta: "残缺的最" }),
             event("final_answer_completed", { text: "完整的最终答案" }),
         ])
-        expect(run.answer).toBe("我先查一下正文。\n\n完整的最终答案")
+        expect(run.answer).toBe("完整的最终答案")
     })
 
     it("最终文本只是空白归一化时不替换，避免结尾整段重刷", () => {
@@ -223,7 +224,7 @@ describe("agentRunReducer", () => {
         ])
         expect(run.status).toBe("cancelled")
         expect(run.activities.every((item) => item.status === "cancelled")).toBe(true)
-        expect(run.subagents[0].status).toBe("cancelled")
+        expect(run.subagents[0]?.status).toBe("cancelled")
     })
 
     it("完成时把仍在运行的活动收尾", () => {
@@ -232,7 +233,7 @@ describe("agentRunReducer", () => {
             event("agent_completed", { status: "completed", metrics: { durationMs: 2_000, toolCalls: 1 } }),
         ])
         expect(run.status).toBe("completed")
-        expect(run.activities[0].status).toBe("completed")
+        expect(run.activities[0]?.status).toBe("completed")
     })
 
     it("重复事件幂等，乱序旧事件被忽略", () => {
@@ -271,8 +272,8 @@ describe("活动聚合", () => {
         ])
         const groups = aggregateActivities(run.activities)
         expect(groups).toHaveLength(1)
-        expect(groups[0].title).toBe("检索并阅读知识库")
-        expect(groups[0].detail).toBe("检索 1 次，深读了 2 个相关章节")
+        expect(groups[0]?.title).toBe("检索并阅读知识库")
+        expect(groups[0]?.detail).toBe("检索 1 次，深读了 2 个相关章节")
     })
 
     it("搜索动作不会被误算成已阅读章节", () => {
@@ -283,7 +284,7 @@ describe("活动聚合", () => {
             event("tool_completed", { callId: "c2", toolId: "knowledge.read", summary: "ok", durationMs: 1, evidenceIds: ["e1"] }),
         ])
 
-        expect(aggregateActivities(run.activities)[0].detail).toBe("检索 1 次，深读了 1 个相关章节")
+        expect(aggregateActivities(run.activities)[0]?.detail).toBe("检索 1 次，深读了 1 个相关章节")
     })
 
     it("复合检索按一次搜索和实际证据数展示深读章节", () => {
@@ -298,8 +299,12 @@ describe("活动聚合", () => {
             }),
         ])
 
-        expect(aggregateActivities(run.activities)[0].detail)
-            .toBe("检索 1 次，深读了 2 个相关章节 · 语义 + 关键词；Wiki 目录导航未参与；本地重排")
+        const group = aggregateActivities(run.activities)[0]
+        // 做了什么 / 怎么做到的 拆成两栏：时间线里前者是主文案，后者弱化在旁边
+        expect(group?.detail).toBe("检索 1 次，深读了 2 个相关章节")
+        expect(group?.note).toBe("语义 + 关键词；Wiki 目录导航未参与；本地重排")
+        // 耗时取后端 durationMs，不用两个事件时间戳相减
+        expect(group?.durationMs).toBe(40)
     })
 
     it("不同域不会被合并", () => {
@@ -316,7 +321,7 @@ describe("活动聚合", () => {
             event("tool_completed", { callId: "c1", toolId: "knowledge.search", summary: "ok", durationMs: 1, evidenceIds: [] }),
             event("tool_started", { callId: "c2", toolId: "knowledge.read", title: "阅读" }),
         ])
-        expect(aggregateActivities(run.activities)[0].status).toBe("running")
+        expect(aggregateActivities(run.activities)[0]?.status).toBe("running")
     })
 
     it("运行中标签取最近一条进行中的活动", () => {
@@ -347,9 +352,25 @@ describe("选择器", () => {
             event("agent_completed", { status: "completed", metrics: { durationMs: 12_400, toolCalls: 8 } }),
         ])
         const summary = selectCompletionSummary(run)
+        // 没有活动可聚合时退回后端的调用次数
         expect(summary).toContain("8 个步骤")
         expect(summary).toContain("12.4s")
         expect(summary).not.toMatch(/token/i)
+    })
+
+    it("步数按聚合后的活动组算，和展开能数到的行数一致", () => {
+        const run = reduce([
+            event("tool_started", { callId: "c1", toolId: "knowledge.search", title: "搜索" }),
+            event("tool_completed", { callId: "c1", toolId: "knowledge.search", summary: "ok", durationMs: 10, evidenceIds: [] }),
+            event("tool_started", { callId: "c2", toolId: "knowledge.read", title: "阅读" }),
+            event("tool_completed", { callId: "c2", toolId: "knowledge.read", summary: "ok", durationMs: 10, evidenceIds: ["e1"] }),
+            event("tool_started", { callId: "c3", toolId: "graph.search", title: "图谱" }),
+            event("tool_completed", { callId: "c3", toolId: "graph.search", summary: "ok", durationMs: 10, evidenceIds: [] }),
+            event("agent_completed", { status: "completed", metrics: { durationMs: 3_000, toolCalls: 3 } }),
+        ])
+        // 3 次调用聚合成 knowledge / graph 两组，头部就该说 2 个步骤
+        expect(selectActivityGroups(run)).toHaveLength(2)
+        expect(selectCompletionSummary(run)).toContain("2 个步骤")
     })
 })
 

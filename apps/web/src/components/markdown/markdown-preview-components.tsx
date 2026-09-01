@@ -88,7 +88,7 @@ function createHeadingComponents(variant: MarkdownPreviewVariant): Components {
 
 function createAnchorComponent(variant: MarkdownPreviewVariant): NonNullable<Components["a"]> {
   return (props) => {
-    const { className, href, ...rest } = withoutNode(props)
+    const { children, className, href, ...rest } = withoutNode(props)
     const isHashLink = typeof href === "string" && href.startsWith("#")
     const isWikiPageLink = typeof href === "string" && href.startsWith("#wiki-page=")
     const isHeadingAnchor = typeof className === "string" && className.includes("heading-anchor-link")
@@ -111,7 +111,9 @@ function createAnchorComponent(variant: MarkdownPreviewVariant): NonNullable<Com
         {...rest}
         // 内链不画系统下划线，改描一道手绘马克笔波浪（颜色按 href 稳定散开）
         style={isWikiPageLink ? wikiScribbleStyle(href as string) : rest.style}
-      />
+      >
+        {children}
+      </a>
     )
   }
 }
@@ -191,8 +193,8 @@ function applyTypographyComponents(components: Components) {
   }
   components.hr = () => <Separator className="my-6" />
   components.img = (props) => {
-    const { className, ...rest } = withoutNode(props)
-    return <img {...rest} {...protectedImageProps} className={cn("my-6 max-w-full rounded-xl border", className)} />
+    const { alt = "", className, ...rest } = withoutNode(props)
+    return <img alt={alt} {...rest} {...protectedImageProps} className={cn("my-6 max-w-full rounded-xl border", className)} />
   }
   components.pre = (props) => {
     const { className, ...rest } = withoutNode(props)
@@ -237,8 +239,8 @@ function applyDefaultComponents(components: Components) {
   }
   components.hr = () => <Separator className="my-6" />
   components.img = (props) => {
-    const { className, ...rest } = withoutNode(props)
-    return <img {...rest} {...protectedImageProps} className={cn("my-6 max-w-full rounded-xl border shadow-sm", className)} />
+    const { alt = "", className, ...rest } = withoutNode(props)
+    return <img alt={alt} {...rest} {...protectedImageProps} className={cn("my-6 max-w-full rounded-xl border shadow-sm", className)} />
   }
   components.pre = (props) => {
     const { className, ...rest } = withoutNode(props)

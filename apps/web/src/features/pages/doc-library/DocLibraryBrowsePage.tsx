@@ -1,25 +1,17 @@
 "use client"
 
+import { Loader2, Upload } from "@/components/iconimate"
 import * as React from "react"
-import { Folder, FolderOpen, Loader2, MoreHorizontal, Upload } from "@/components/iconimate"
 import { useLocation, useNavigate, useParams } from "react-router-dom"
 import { toast } from "sonner"
 
 import { AppPagination } from "@/components/app-pagination"
-import { FileIcon } from "@/components/kibo-ui/tree/file-icon"
+import { FileUpload } from "@/components/extend/ui/file-upload"
 import {
-  TreeExpander,
-  TreeIcon,
-  TreeLabel,
-  TreeNode,
-  TreeNodeContent,
-  TreeNodeTrigger,
   TreeProvider,
-  TreeView,
+  TreeView
 } from "@/components/kibo-ui/tree"
 import { ModalShell } from "@/components/petrichor-ui/modal-shell"
-import { ActionMenu } from "@/components/petrichor-ui/action-menu"
-import { notify } from "@/components/petrichor-ui/notify"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -27,243 +19,32 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { FileUpload } from "@/components/extend/ui/file-upload"
 import { DocViewerPanel, type DocViewerHighlight } from "@/features/pages/doc-library/DocViewerPanel"
 import { detectFileType, parseDocument } from "@/features/pages/doc-library/lib/parse"
 import {
   docLibraryApi,
   uploadApi,
-  type DocDeleteResponse,
   type DocDocument,
   type DocDocumentDetail,
   type DocFolderItem,
-  type DocLibrary,
+  type DocLibrary
 } from "@/lib/api"
 import { dashboardRoutes } from "@/lib/dashboard-routes"
+import {
+  TREE_NODE_INDENT_PX,
+  DocTreeNodeView,
+  buildDocTree,
+  filterDocTree,
+  getDocumentIdFromSearch,
+  getHighlightFromSearch,
+  resolveApiErrorMessage,
+  toastDeleteResult,
+  type DeleteTarget
+} from "./doc-library-tree-utils"
 
 const ACCEPT = ".pdf,.docx,.xlsx,.xls,.csv,.tsv"
-const TREE_NODE_INDENT_PX = 20
-
-type DocTreeNode =
-  | {
-    type: "FOLDER"
-    id: string
-    parentId: string | null
-    name: string
-    folder: DocFolderItem
-    children: DocTreeNode[]
-  }
-  | {
-    type: "DOCUMENT"
-    id: string
-    parentId: string | null
-    name: string
-    document: DocDocument
-    children: []
-  }
-
-type DeleteTarget =
-  | {
-    type: "folder"
-    id: string
-    parentId: string | null
-    name: string
-  }
-  | {
-    type: "document"
-    id: string
-    parentId: string | null
-    name: string
-  }
-
-function resolveApiErrorMessage(error: unknown, fallback: string): string {
-  if (typeof error === "object" && error && "response" in error) {
-    const response = (error as { response?: { data?: { msg?: unknown } } }).response
-    const apiMsg = response?.data?.msg
-    if (typeof apiMsg === "string" && apiMsg) {
-      return apiMsg
-    }
-  }
-  if (error instanceof Error && error.message) return error.message
-  return fallback
-}
-
-function toastDeleteResult(result: DocDeleteResponse, successMessage: string) {
-  const failedCount = result.storageCleanup.failedObjectKeys.length
-  if (failedCount > 0) {
-    toast.warning(`${successMessage}，但远程文件清理失败`)
-    return
-  }
-  toast.success(successMessage)
-}
-
-function compareDocTreeNodes(left: DocTreeNode, right: DocTreeNode) {
-  if (left.type !== right.type) {
-    return left.type === "FOLDER" ? -1 : 1
-  }
-
-  if (left.type === "FOLDER" && right.type === "FOLDER") {
-    return (left.folder.sortOrder - right.folder.sortOrder) ||
-      left.name.localeCompare(right.name, "zh-CN") ||
-      Number(left.id) - Number(right.id)
-  }
-
-  if (left.type === "DOCUMENT" && right.type === "DOCUMENT") {
-    return Date.parse(right.document.updatedAt) - Date.parse(left.document.updatedAt) ||
-      right.name.localeCompare(left.name, "zh-CN")
-  }
-
-  return 0
-}
-
-function sortDocTreeNodes(nodes: DocTreeNode[]) {
-  nodes.sort(compareDocTreeNodes)
-  for (const node of nodes) {
-    if (node.type === "FOLDER") {
-      sortDocTreeNodes(node.children)
-    }
-  }
-}
-
-function buildDocTree(folders: DocFolderItem[], documents: DocDocument[]) {
-  const folderNodes = new Map<string, Extract<DocTreeNode, { type: "FOLDER" }>>()
-  const roots: DocTreeNode[] = []
-
-  for (const folder of folders) {
-    folderNodes.set(folder.id, {
-      type: "FOLDER",
-      id: folder.id,
-      parentId: folder.parentId,
-      name: folder.name,
-      folder,
-      children: [],
-    })
-  }
-
-  for (const folder of folders) {
-    const node = folderNodes.get(folder.id)
-    if (!node) continue
-    const parent = folder.parentId ? folderNodes.get(folder.parentId) : null
-    if (parent && parent.id !== node.id) {
-      parent.children.push(node)
-    } else {
-      roots.push(node)
-    }
-  }
-
-  for (const document of documents) {
-    const node: DocTreeNode = {
-      type: "DOCUMENT",
-      id: `document-${document.id}`,
-      parentId: document.folderId,
-      name: document.title || document.fileName,
-      document,
-      children: [],
-    }
-    const parent = document.folderId ? folderNodes.get(document.folderId) : null
-    if (parent) {
-      parent.children.push(node)
-    } else {
-      roots.push(node)
-    }
-  }
-
-  sortDocTreeNodes(roots)
-  return roots
-}
-
-function collectFolderIds(node: DocTreeNode, target: Set<string>) {
-  if (node.type !== "FOLDER") return
-  target.add(node.id)
-  node.children.forEach((child) => collectFolderIds(child, target))
-}
-
-function filterDocTree(nodes: DocTreeNode[], keyword: string) {
-  const needle = keyword.trim().toLowerCase()
-  const expandedIds = new Set<string>()
-  if (!needle) {
-    return { roots: nodes, expandedIds }
-  }
-
-  const walk = (node: DocTreeNode): DocTreeNode | null => {
-    const selfMatch = node.name.toLowerCase().includes(needle)
-    if (node.type === "DOCUMENT") {
-      const fileNameMatch = node.document.fileName.toLowerCase().includes(needle)
-      return selfMatch || fileNameMatch ? node : null
-    }
-
-    const matchedChildren = node.children
-      .map((child) => walk(child))
-      .filter((child): child is DocTreeNode => Boolean(child))
-
-    if (selfMatch) {
-      collectFolderIds(node, expandedIds)
-      return node
-    }
-
-    if (matchedChildren.length > 0) {
-      expandedIds.add(node.id)
-      return {
-        ...node,
-        children: matchedChildren,
-      }
-    }
-
-    return null
-  }
-
-  return {
-    roots: nodes
-      .map((node) => walk(node))
-      .filter((node): node is DocTreeNode => Boolean(node)),
-    expandedIds,
-  }
-}
-
-function formatFileMeta(document: DocDocument) {
-  const parts = [document.fileType.toUpperCase()]
-  if (document.pageCount != null && document.pageCount > 0) {
-    parts.push(`${document.pageCount} 页`)
-  }
-  if (document.sizeBytes != null && document.sizeBytes > 0) {
-    parts.push(formatBytes(document.sizeBytes))
-  }
-  return parts.join(" · ")
-}
-
-function formatBytes(value: number) {
-  if (value < 1024) return `${value} B`
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
-  return `${(value / 1024 / 1024).toFixed(1)} MB`
-}
-
-function getDocumentIdFromSearch(search: string) {
-  const documentId = new URLSearchParams(search).get("documentId")?.trim()
-  return documentId && /^\d+$/.test(documentId) ? documentId : null
-}
-
-function getHighlightFromSearch(search: string): DocViewerHighlight | null {
-  const params = new URLSearchParams(search)
-  const pageRaw = params.get("hlPage")?.trim()
-  const text = params.get("hlText")?.trim()
-  if (!pageRaw || !text || !/^\d+$/.test(pageRaw)) return null
-  return { page: Number(pageRaw), text }
-}
-
-function FolderTreeIcon({ expanded }: { expanded: boolean }) {
-  return expanded ? (
-    <FolderOpen className="h-4 w-4" />
-  ) : (
-    <Folder className="h-4 w-4" />
-  )
-}
-
 export function DocLibraryBrowsePage() {
   const { libraryId } = useParams<{ libraryId: string }>()
   const location = useLocation()
@@ -623,150 +404,6 @@ export function DocLibraryBrowsePage() {
     [totalPages],
   )
 
-  function renderNode(
-    node: DocTreeNode,
-    level = 0,
-    isLast = false,
-    parentPath: boolean[] = [],
-  ): React.ReactNode {
-    const isFolder = node.type === "FOLDER"
-    const hasChildren = isFolder && node.children.length > 0
-    const isExpanded = treeExpandedIds.has(node.id)
-
-    return (
-      <TreeNode
-        key={node.id}
-        nodeId={node.id}
-        level={level}
-        isLast={isLast}
-        parentPath={parentPath}
-      >
-        <TreeNodeTrigger
-          className="w-full"
-          style={{ paddingLeft: 8 }}
-          onClick={() => {
-            if (isFolder) return
-            void openViewer(node.document.id)
-          }}
-        >
-          <div
-            aria-hidden="true"
-            className="shrink-0"
-            style={{ width: level * TREE_NODE_INDENT_PX }}
-          />
-
-          {isFolder ? (
-            <TreeExpander hasChildren={hasChildren} />
-          ) : (
-            <div className="mr-1 h-4 w-4" />
-          )}
-
-          {isFolder ? (
-            <TreeIcon
-              hasChildren={hasChildren}
-              icon={<FolderTreeIcon expanded={isExpanded} />}
-            />
-          ) : (
-            <div className="mr-2 flex h-4 w-4 items-center justify-center text-muted-foreground">
-              <FileIcon name={node.document.fileName} />
-            </div>
-          )}
-
-          <TreeLabel>{node.name}</TreeLabel>
-
-          {!isFolder ? (
-            <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
-              {formatFileMeta(node.document)}
-            </span>
-          ) : null}
-
-          <div className="ml-auto flex shrink-0 items-center gap-1">
-            <ActionMenu
-              trigger={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-9 md:size-6"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <MoreHorizontal className="size-4 md:size-3" />
-                </Button>
-              }
-              align="end"
-            >
-              {isFolder ? (
-                <>
-                  <DropdownMenuItem onClick={() => openCreateFolder({ id: node.id, name: node.name })}>
-                    新建文件夹
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openUpload({ id: node.id, name: node.name })}>
-                    上传文件
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => openRenameFolder(node.folder)}>
-                    重命名
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onClick={() => {
-                      setDeleteTarget({
-                        type: "folder",
-                        id: node.id,
-                        parentId: node.parentId,
-                        name: node.name,
-                      })
-                      setDeleteOpen(true)
-                    }}
-                  >
-                    删除
-                  </DropdownMenuItem>
-                </>
-              ) : (
-                <>
-                  <DropdownMenuItem onClick={() => void openViewer(node.document.id)}>
-                    打开
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => {
-                      void navigator.clipboard.writeText(node.document.id)
-                        .then(() => notify("已复制文件 ID"))
-                        .catch(() => toast.error("复制失败"))
-                    }}
-                  >
-                    复制文件 ID
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onClick={() => {
-                      setDeleteTarget({
-                        type: "document",
-                        id: node.document.id,
-                        parentId: node.document.folderId,
-                        name: node.name,
-                      })
-                      setDeleteOpen(true)
-                    }}
-                  >
-                    删除
-                  </DropdownMenuItem>
-                </>
-              )}
-            </ActionMenu>
-          </div>
-        </TreeNodeTrigger>
-
-        {isFolder && hasChildren ? (
-          <TreeNodeContent hasChildren={hasChildren}>
-            {node.children.map((child, index, children) => (
-              renderNode(child, level + 1, index === children.length - 1, [...parentPath, isLast])
-            ))}
-          </TreeNodeContent>
-        ) : null}
-      </TreeNode>
-    )
-  }
-
   return (
     <div className="w-full p-4 lg:p-6">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -830,7 +467,22 @@ export function DocLibraryBrowsePage() {
             onExpandedChange={setExpandedIds}
           >
             <TreeView>
-              {pagedRoots.map((root, index) => renderNode(root, 0, index === pagedRoots.length - 1))}
+              {pagedRoots.map((root, index) => (
+                <DocTreeNodeView
+                  key={root.id}
+                  node={root}
+                  expandedIds={treeExpandedIds}
+                  isLast={index === pagedRoots.length - 1}
+                  onOpenViewer={(documentId) => { void openViewer(documentId) }}
+                  onCreateFolder={openCreateFolder}
+                  onUpload={openUpload}
+                  onRenameFolder={openRenameFolder}
+                  onDelete={(target) => {
+                    setDeleteTarget(target)
+                    setDeleteOpen(true)
+                  }}
+                />
+              ))}
             </TreeView>
           </TreeProvider>
         )}

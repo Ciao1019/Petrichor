@@ -22,6 +22,24 @@ Agent 决定读哪几个
 knowledge.read → Evidence
 ```
 
+## 结构性检索
+
+相似度召回擅长「哪一段最像这个问题」，但对结构性问题很弱——「这份文档哪几章讲了
+某主题」「按章节顺序汇总」这类需求里，相似度会把文档结构打散。这类问题走一条正交
+路径：`knowledge.outline` 直接把整篇文档的目录摊给模型，由模型挑章节，再用返回的
+`nodeKey` / `chunkId` 走 `knowledge.read`。
+
+目录有两个来源，按优先级：
+
+1. `petrichor_kb_wiki_tree_node`：`/kb/wiki/ingest` 编译出的 PageIndex 目录树，带 LLM 章节摘要；
+2. `petrichor_kb_article_chunk` 的标题路径：每篇「构建知识」过的文章都有，
+   并带上该分片的推荐问题——比标题更能说明这一节回答了什么。
+
+注意「构建知识」会清掉该文章的目录树节点，所以实际部署里第二条往往才是主路径。
+实现见 `apps/api/internal/assistantsvc/outline_tools.go`。
+
+## Search / Outline / Read 的分工
+
 **Search ≠ Read**：`knowledge.search` 不返回全文，正文必须由 Agent 判断后显式 `read`。
 问题索引只是原文分片的“别名入口”，不会成为独立证据；问题命中后 `knowledge.read`
 仍按 `chunkId` 读取原始分片。Wiki 用来解释概念和发现关联，具体事实、步骤或冲突结论

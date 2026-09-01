@@ -134,6 +134,10 @@ func toOpenAIMessages(msgs []ChatMessage) []openAIMessage {
 				}
 			}
 			entry.Content = parts
+		} else if len(m.ToolCalls) > 0 && m.Content == "" {
+			// OpenAI 工具协议中，发起 tool_calls 的 assistant 消息允许 content=null。
+			// GLM 等严格兼容实现会拒绝空字符串，因此不要把缺失正文改写成 ""。
+			entry.Content = nil
 		} else {
 			entry.Content = m.Content
 		}
@@ -308,14 +312,22 @@ func doSSEWithHeaders(ctx context.Context, url string, body any, onDelta func(st
 	// 流式 tool_calls 按 index 聚合（OpenAI 规范：id/name 只在首帧出现，arguments 分帧追加）
 	callAcc := map[int]*toolCallAcc{}
 	callOrder := []int{}
+	sawResultFrame := false
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 1024*1024), 4*1024*1024)
 	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data:") {
+		line := strings.TrimSpace(scanner.Text())
+		payload := ""
+		switch {
+		case strings.HasPrefix(line, "data:"):
+			payload = strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		case strings.HasPrefix(line, "{"):
+			// 少数兼容网关在 stream=true 时仍返回 application/json。至少要识别
+			// 其中的 error，不能把它当作一个成功的空流。
+			payload = line
+		default:
 			continue
 		}
-		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if payload == "" || payload == "[DONE]" {
 			continue
 		}
@@ -340,15 +352,21 @@ func doSSEWithHeaders(ctx context.Context, url string, body any, onDelta func(st
 				PromptTokens     int64 `json:"prompt_tokens"`
 				CompletionTokens int64 `json:"completion_tokens"`
 			} `json:"usage"`
+			Error json.RawMessage `json:"error"`
 		}
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
-			continue
+			return res, fmt.Errorf("模型流式响应解析失败: %w", err)
+		}
+		if len(chunk.Error) > 0 && string(chunk.Error) != "null" {
+			return res, &httpx.HttpError{Status: http.StatusBadGateway, Message: "模型流式调用失败：" + openAIStreamErrorMessage(chunk.Error)}
 		}
 		if chunk.Usage != nil {
+			sawResultFrame = true
 			res.InputTokens = chunk.Usage.PromptTokens
 			res.OutputTokens = chunk.Usage.CompletionTokens
 		}
 		for _, choice := range chunk.Choices {
+			sawResultFrame = true
 			if choice.Delta.Content != nil && *choice.Delta.Content != "" {
 				res.Answer += *choice.Delta.Content
 				if onDelta != nil {
@@ -396,7 +414,29 @@ func doSSEWithHeaders(ctx context.Context, url string, body any, onDelta func(st
 	if len(res.ToolCalls) > 0 {
 		res.HasToolCalls = true
 	}
-	return res, scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return res, fmt.Errorf("读取模型流式响应失败: %w", err)
+	}
+	if !sawResultFrame {
+		return res, &httpx.HttpError{Status: http.StatusBadGateway, Message: "模型流式响应为空"}
+	}
+	return res, nil
+}
+
+func openAIStreamErrorMessage(raw json.RawMessage) string {
+	var message string
+	if json.Unmarshal(raw, &message) == nil && strings.TrimSpace(message) != "" {
+		return truncate(message, 300)
+	}
+	var detail struct {
+		Message string `json:"message"`
+		Type    string `json:"type"`
+		Code    any    `json:"code"`
+	}
+	if json.Unmarshal(raw, &detail) == nil && strings.TrimSpace(detail.Message) != "" {
+		return truncate(detail.Message, 300)
+	}
+	return truncate(string(raw), 300)
 }
 
 // applyQuirksToOpenAI 注入 thinking 开关（对应 provider-quirks.ts 的 injectThinkingFlag）。

@@ -22,6 +22,7 @@ function visitTextNodes(node: WikiAstNode | undefined) {
   const children = node.children
   for (let index = 0; index < children.length; index += 1) {
     const child = children[index]
+    if (!child) continue
     if (child.type === "text") {
       const replacement = splitWikiLinkText(child as WikiTextNode)
       if (replacement.length > 0) {
@@ -42,12 +43,12 @@ function splitWikiLinkText(node: WikiTextNode): Array<WikiAstNode> {
   const parts: Array<WikiAstNode> = []
   let lastIndex = 0
   for (const match of value.matchAll(WIKI_LINK_PATTERN)) {
-    const pageKey = match[1].trim()
+    const pageKey = (match[1] ?? "").trim()
     const alias = match[2]?.trim()
     if (!pageKey) continue
     const label = alias && alias !== pageKey ? alias : pageKey
     const matchStart = match.index ?? 0
-    const matchEnd = matchStart + match[0].length
+    const matchEnd = matchStart + (match[0]?.length ?? 0)
     if (matchStart > lastIndex) {
       parts.push({ type: "text", value: value.slice(lastIndex, matchStart) })
     }

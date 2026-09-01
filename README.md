@@ -31,6 +31,7 @@
 | --- | --- |
 | 富文本编辑器 | PlateJS、Markdown、代码块、表格、公式、白板、思维导图和媒体嵌入 |
 | 知识库 | 多级目录、标签、搜索、文章分享、RSS / Atom |
+| 知识可移植 | OKF / Obsidian 导出、Agent Skill 包蒸馏、知识库级编译说明书、陈旧检测 |
 | AI 助手 | 续写、改写、翻译、总结、文档问答和 Agent Runtime |
 | 认证 | Sa-Token-Go、邮箱密码、httpOnly Cookie、LinuxDo OAuth、会话管理 |
 | 对象存储 | S3 兼容上传和预签名 URL |
@@ -90,8 +91,8 @@ Go **不读取环境变量**。所有运行配置统一来自 `apps/api/config.t
 
 | TOML 区段 | 内容 |
 | --- | --- |
-| `[server]` | 运行环境、监听地址、端口、公开站点 URL |
-| `[database]` | PostgreSQL 运行连接和迁移连接 |
+| `[server]` | 运行环境、监听地址、可信代理、HTTP 超时和公开站点 URL |
+| `[database]` | PostgreSQL 运行/迁移连接与连接池生命周期参数 |
 | `[auth]` | Session、注册策略、LinuxDo、本地开发免登录 |
 | `[encryption]` | 数据库内 AI 凭证的加密密钥和盐 |
 | `[storage]` / `[storage.s3]` | 本地存储和 S3 兼容对象存储 |
@@ -101,7 +102,8 @@ Go **不读取环境变量**。所有运行配置统一来自 `apps/api/config.t
 | `[agent.research]` | 可选外部搜索供应商与超时 |
 
 `config.toml` 包含数据库连接串和密钥，已被 Git 与 Docker 忽略。不要提交或输出真实内容；
-`encryption.key` 和 `encryption.salt` 一旦用于真实数据，不要随意更换。
+`encryption.key` 和 `encryption.salt` 一旦用于真实数据，不要随意更换。生产环境会拒绝模板/弱加密值；
+`server.trusted_proxies` 只能配置真实入口代理，数据库连接池 `max_conns` 至少为 6。
 
 ### Web 前端
 
@@ -119,7 +121,9 @@ bun dev              # 启动 Bun/Vite Web
 bun run typecheck    # TypeScript 类型检查
 bun run lint         # ESLint
 bun run test         # Vitest
-bun run build        # Vite 生产构建
+bun run test:coverage # 覆盖率棘轮
+bun run build        # Vite 生产构建 + Brotli/Gzip 预压缩
+bun run check:bundle # 首屏与 chunk 传输体积预算
 bun run test:api     # Go 测试
 bun run build:api    # Go 构建
 cd apps/api && go run ./cmd/server  # 自动迁移并启动 Go API
@@ -131,8 +135,13 @@ cd apps/api && go run ./cmd/migrate status  # 查看 Goose 状态
 ```bash
 cd apps/api
 go test ./...
+go test -race ./...
 go vet ./...
+go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 ```
+
+探针、优雅关停、后台任务恢复、运行指标和发布检查见
+[`docs/operations.md`](docs/operations.md)，安全报告与部署基线见 [`SECURITY.md`](SECURITY.md)。
 
 ## 项目结构
 

@@ -36,12 +36,31 @@ export function selectStatusLabel(run: AgentRunViewModel): string {
 
 /** 完成摘要（§162.19）：步数 + 耗时，不默认展示 token / 成本 */
 export function selectCompletionSummary(run: AgentRunViewModel): string {
-    const steps = run.metrics?.toolCalls ?? run.activities.length
+    // 步数要和展开后能数到的行数一致。metrics.toolCalls 是后端的原始调用次数，
+    // 而时间线展示的是聚合后的活动组（3 次 knowledge.* 合成一行），直接用它会出现
+    // "已完成 · 8 个步骤" 点开却只有 3 行的矛盾。
+    const steps = selectActivityGroups(run).length || run.metrics?.toolCalls || run.activities.length
     const duration = run.metrics?.durationMs
         ?? (run.completedAt && run.startedAt ? run.completedAt - run.startedAt : undefined)
     const parts = [`${steps} 个步骤`]
     if (duration != null) parts.push(`${(duration / 1000).toFixed(1)}s`)
     return parts.join(" · ")
+}
+
+/** 收尾态的一行静态摘要；运行中交给 selectStatusLabel 输出当前活动 */
+export function selectSummaryLine(run: AgentRunViewModel): string {
+    switch (run.status) {
+        case "completed":
+            return `已完成 · ${selectCompletionSummary(run)}`
+        case "cancelled":
+            return "已停止"
+        case "stopped":
+            return "任务已停止"
+        case "failed":
+            return "执行失败"
+        default:
+            return selectStatusLabel(run)
+    }
 }
 
 export function selectEvidenceBySource(run: AgentRunViewModel): {
@@ -67,7 +86,9 @@ export function selectCitedEvidenceSources(run: AgentRunViewModel): EvidenceView
         (run.answer.match(/\[(\d{1,2})\]/g) ?? []).map((token) => Number(token.slice(1, -1))),
     )
     const groups = groupEvidenceBySource(run.evidence)
-    if (used.size === 0) return groups.map((group) => group.evidence[0])
+    if (used.size === 0) {
+        return groups.flatMap((group) => group.evidence[0] ? [group.evidence[0]] : [])
+    }
 
     return groups.flatMap((group) => {
         const cited = group.evidence.find((item) => used.has(item.citationIndex))

@@ -12,7 +12,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { MarkdownPreview } from "@/components/markdown/MarkdownPreview"
 import { wikiScribbleStyle } from "@/components/markdown/wiki-scribble"
 // 类型中文名与悬停预览小卡共用同一份定义，避免两处文案漂移
 import { WIKI_KIND_LABEL } from "@/components/markdown/wiki-link-context"
@@ -24,6 +23,14 @@ import {
 
 /** 页面详情加载器：公开问答用 publicWikiApi，后台助手传 assistantWikiApi 的包装。 */
 export type WikiPageDetailLoader = (pageKey: string) => Promise<PublicWikiPageDetail>
+
+const LazyMarkdownPreview = React.lazy(() => (
+  import("@/components/markdown/MarkdownPreview").then((module) => ({ default: module.MarkdownPreview }))
+))
+
+const defaultWikiPageDetailLoader: WikiPageDetailLoader = (pageKey) => (
+  publicWikiApi.detail(pageKey).then((response) => response.data)
+)
 
 function resolveApiErrorMessage(error: unknown, fallback: string) {
   const data = (error as { response?: { data?: { msg?: unknown } } })?.response?.data
@@ -44,7 +51,7 @@ export function WikiPagePreviewDialog({
   /** 缺省走公开接口；后台助手传 assistantWikiApi.detail。 */
   loadDetail?: WikiPageDetailLoader
 }) {
-  const loader = loadDetail ?? ((key: string) => publicWikiApi.detail(key).then((res) => res.data))
+  const loader = loadDetail ?? defaultWikiPageDetailLoader
   // 弹窗内部导航栈：点内链时压栈，支持逐级返回。
   const [history, setHistory] = React.useState<string[]>([])
   const [activePageKey, setActivePageKey] = React.useState<string | null>(null)
@@ -173,8 +180,12 @@ export function WikiPagePreviewDialog({
                   ))}
                 </div>
               </div>
+              {/* Markdown 内链本身是可聚焦的原生 <a>；这里只做事件委托，键盘 Enter 同样会冒泡 click。 */}
+              {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
               <div onClick={handleMarkdownClick} className="text-[15px]">
-                <MarkdownPreview value={markdownValue} variant="typography" />
+                <React.Suspense fallback={<div className="min-h-32 animate-pulse rounded-lg bg-muted/40" />}>
+                  <LazyMarkdownPreview value={markdownValue} variant="typography" />
+                </React.Suspense>
               </div>
               {(detail.links.length > 0 || detail.inLinks.length > 0) ? (
                 <section className="mt-8 space-y-4 border-t pt-4 text-sm">

@@ -488,14 +488,14 @@ func executeConfirmedDeleteArticle(ctx *rt.ToolExecutionContext, input any) (any
 		return nil, err
 	}
 	defer tx.Rollback(toolContext(ctx))
-	article, err := kb.QueryOwnedArticleForAgent(tx, ctx.UserID, articleID)
+	article, err := kb.QueryOwnedArticleForAgent(toolContext(ctx), tx, ctx.UserID, articleID)
 	if err != nil {
 		return nil, err
 	}
 	if article == nil {
 		return nil, rt.ValidationError("文章不存在或不属于当前用户")
 	}
-	if _, err := kb.DeleteArticleWikiPagesForAgent(tx, ctx.UserID, []kb.ArticleRow{*article}, true); err != nil {
+	if _, err := kb.DeleteArticleWikiPagesForAgent(toolContext(ctx), tx, ctx.UserID, []kb.ArticleRow{*article}, true); err != nil {
 		return nil, err
 	}
 	if _, err := tx.Exec(toolContext(ctx), `DELETE FROM petrichor_kb_article WHERE id=$1 AND user_id=$2`, article.ID, ctx.UserID); err != nil {

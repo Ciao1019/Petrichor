@@ -43,13 +43,13 @@ func CurrentUser(c *gin.Context) *User {
 	return u
 }
 
-func getCurrentUserViaLocalDevelopment() (*User, bool) {
+func getCurrentUserViaLocalDevelopment(ctx context.Context) (*User, bool) {
 	localAuth := config.Get().LocalDevelopmentAuth
 	if !localAuth.Enabled {
 		return nil, false
 	}
 	u, err := ScanUser(db.Pool().QueryRow(
-		context.Background(),
+		ctx,
 		`SELECT `+UserColumns+` FROM petrichor_user WHERE id = $1 LIMIT 1`,
 		localAuth.UserID,
 	))
@@ -87,7 +87,7 @@ func getCurrentUserViaSaToken(c *gin.Context) (*User, bool) {
 
 // GetCurrentUser 依次尝试本地开发免登录与 Sa-Token 登录。
 func GetCurrentUser(c *gin.Context) (*User, bool) {
-	if u, ok := getCurrentUserViaLocalDevelopment(); ok {
+	if u, ok := getCurrentUserViaLocalDevelopment(c.Request.Context()); ok {
 		return u, true
 	}
 	return getCurrentUserViaSaToken(c)

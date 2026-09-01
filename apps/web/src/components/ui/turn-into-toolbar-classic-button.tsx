@@ -57,7 +57,8 @@ export function TurnIntoToolbarButton(props: DropdownMenuProps) {
     getProp: (node) => getBlockType(node as TElement),
   });
   const selectedItem = React.useMemo(
-    () => turnIntoItems.find((item) => item.value === (value ?? KEYS.p)) ?? turnIntoItems[0],
+    () => turnIntoItems.find((item) => item.value === (value ?? KEYS.p))
+      ?? { icon: <PilcrowIcon />, label: '正文', value: KEYS.p },
     [value]
   );
 

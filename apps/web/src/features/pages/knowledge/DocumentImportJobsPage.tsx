@@ -276,7 +276,8 @@ export function DocumentImportJobsPage() {
                   {headerGroup.headers.map((header) => (
                     <TableHead key={header.id} style={{ width: header.getSize() ? `${header.getSize()}px` : undefined }} className="h-11">
                       {header.isPlaceholder ? null : header.column.getCanSort() ? (
-                        <div
+                        <button
+                          type="button"
                           className="flex h-full cursor-pointer items-center gap-2 select-none"
                           onClick={header.column.getToggleSortingHandler()}
                           onKeyDown={(e) => {
@@ -285,14 +286,13 @@ export function DocumentImportJobsPage() {
                               header.column.getToggleSortingHandler()?.(e)
                             }
                           }}
-                          tabIndex={0}
                         >
                           {flexRender(header.column.columnDef.header, header.getContext())}
                           {{
                             asc: <ChevronUpIcon className="shrink-0 opacity-60" size={16} aria-hidden="true" />,
                             desc: <ChevronDownIcon className="shrink-0 opacity-60" size={16} aria-hidden="true" />,
                           }[header.column.getIsSorted() as string] ?? null}
-                        </div>
+                        </button>
                       ) : (
                         flexRender(header.column.columnDef.header, header.getContext())
                       )}

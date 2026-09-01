@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
@@ -221,11 +223,25 @@ func withTruncationNotice(content string, take int) string {
 	return string(r[:take]) + "\n\n[正文过长，本次仅给出前 " + itoa(take) + " 字，共 " + itoa(total) + " 字]"
 }
 
+// answerHoldRunes 工具轮次里正文的扣留长度。
+//
+// 模型常在发出 tool_calls 之前先写一句"我再补一次检索"这样的过程旁白，而 tool_calls
+// 要等整轮结束才聚合出来——直接边收边发，旁白就已经落到用户屏幕上了。所以带工具的轮次
+// 先把正文扣在手里：本轮确认没有工具调用才放行，确认调用工具就整段丢弃。
+//
+// 全程扣到轮次结束会让真正的答案迟迟不出现，因此扣留量超过这个长度就判定为正式作答并
+// 转入直发。旁白通常只有一两句，正式答案则远长于此。
+const answerHoldRunes = 120
+
 // segmentTelemetry 汇总跨多轮模型调用的数据。Eino 的模型与工具节点在独立 goroutine
 // 中运行，因此这里显式加锁；工具节点配置为顺序执行，以保持 Petrichor Store 的顺序语义。
 type segmentTelemetry struct {
 	mu            sync.Mutex
 	answer        strings.Builder
+	held          strings.Builder
+	heldRunes     int
+	holdNarration bool
+	streamed      bool
 	usage         AgentTokenUsage
 	toolCallCount int
 	onTextDelta   func(string)
@@ -238,21 +254,54 @@ func (t *segmentTelemetry) addDelta(delta string) {
 	}
 	t.mu.Lock()
 	t.answer.WriteString(delta)
+	if t.holdNarration && !t.streamed {
+		t.held.WriteString(delta)
+		t.heldRunes += utf8.RuneCountInString(delta)
+		if t.heldRunes < answerHoldRunes {
+			t.mu.Unlock()
+			return
+		}
+		delta = t.held.String()
+		t.held.Reset()
+		t.heldRunes = 0
+	}
+	t.streamed = true
 	t.mu.Unlock()
 	if t.onTextDelta != nil {
 		t.onTextDelta(delta)
 	}
 }
 
+// releaseHeldText 本轮模型没有调用工具 → 扣住的正文就是正式回答，放行。
+func (t *segmentTelemetry) releaseHeldText() {
+	t.mu.Lock()
+	text := t.held.String()
+	t.held.Reset()
+	t.heldRunes = 0
+	if text != "" {
+		t.streamed = true
+	}
+	t.mu.Unlock()
+	if text != "" && t.onTextDelta != nil {
+		t.onTextDelta(text)
+	}
+}
+
 // markToolCalls 表示当前模型轮次最终选择了工具；此前输出的文本只是过程旁白。
+// 还扣在手里的直接丢弃，用户不会看见；已经流出去的（旁白超长时才会发生）
+// 只能靠前端换段丢弃。下一轮重新进入扣留状态。
 func (t *segmentTelemetry) markToolCalls() {
 	t.mu.Lock()
 	hadAnswer := t.answer.Len() > 0
 	if hadAnswer {
 		t.answer.Reset()
 	}
+	leaked := t.streamed
+	t.held.Reset()
+	t.heldRunes = 0
+	t.streamed = false
 	t.mu.Unlock()
-	if hadAnswer && t.onAnswerReset != nil {
+	if hadAnswer && leaked && t.onAnswerReset != nil {
 		t.onAnswerReset()
 	}
 }
@@ -332,6 +381,8 @@ func (m *einoChatModel) Stream(ctx context.Context, input []*schema.Message, opt
 		m.telemetry.addUsage(result.InputTokens, result.OutputTokens)
 		if len(result.ToolCalls) > 0 {
 			m.telemetry.markToolCalls()
+		} else {
+			m.telemetry.releaseHeldText()
 		}
 		// 文本已经逐块发送，末帧只携带工具调用与 usage，避免 ConcatMessages 重复正文。
 		writer.Send(toEinoMessage(result, false), nil)
@@ -345,7 +396,10 @@ func (m *einoChatModel) prepare(input []*schema.Message, opts ...model.Option) (
 	common := model.GetCommonOptions(base, opts...)
 	generation := m.handle.Options
 	if common.Temperature != nil {
-		value := float64(*common.Temperature)
+		// Eino 的公共 Option 使用 float32。直接转回 float64 会把 0.2 扩成
+		// 0.20000000298023224，GLM 等限制小数位数的兼容网关会因此拒绝请求。
+		// 先取 float32 的最短十进制表示，再交给 JSON 编码器，恢复调用方本意。
+		value := cleanFloat32(*common.Temperature)
 		generation.Temperature = &value
 	}
 	if common.MaxTokens != nil {
@@ -353,6 +407,15 @@ func (m *einoChatModel) prepare(input []*schema.Message, opts ...model.Option) (
 		generation.MaxTokens = &value
 	}
 	return fromEinoMessages(input), fromEinoToolInfos(common.Tools), generation
+}
+
+func cleanFloat32(value float32) float64 {
+	text := strconv.FormatFloat(float64(value), 'g', -1, 32)
+	normalized, err := strconv.ParseFloat(text, 64)
+	if err != nil {
+		return float64(value)
+	}
+	return normalized
 }
 
 func fromEinoMessages(messages []*schema.Message) []aicore.ChatMessage {
@@ -560,6 +623,9 @@ func RunAgentSegment(ctx context.Context, request *SegmentRequest, controller *S
 			controller: controller, telemetry: telemetry, onToolOutcome: request.OnToolOutcome,
 		})
 	}
+	// 只有能调用工具的段才可能产生过程旁白。无工具的段（简单问答快路径、最终作答合成）
+	// 输出的每个字都是答案，必须逐字直发，不引入首帧延迟。
+	telemetry.holdNarration = len(einoTools) > 0
 
 	maxModelSteps := request.MaxSteps
 	if maxModelSteps < 1 {

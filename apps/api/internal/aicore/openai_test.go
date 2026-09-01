@@ -2,9 +2,11 @@ package aicore
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -25,6 +27,70 @@ func TestOpenAIChatStreamCollectsAnswerWithoutDeltaCallback(t *testing.T) {
 	}
 	if result.Answer != "完整答案" {
 		t.Fatalf("nil callback must not discard answer, got %q", result.Answer)
+	}
+}
+
+func TestOpenAIChatStreamReturnsEmbeddedUpstreamError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(writer, `data: {"error":{"code":"model_error","message":"GLM tool message rejected"}}`+"\n\n")
+		_, _ = fmt.Fprint(writer, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	_, err := OpenAIChatStream(context.Background(), RuntimeConfig{
+		ProviderKey: "openai-compatible", BaseURL: server.URL,
+	}, "glm-test", []ChatMessage{{Role: "user", Content: "问题"}}, GenerationOptions{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "GLM tool message rejected") {
+		t.Fatalf("流内 upstream error 不应被吞掉: %v", err)
+	}
+}
+
+func TestOpenAIChatStreamRejectsEmptyStream(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(writer, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	_, err := OpenAIChatStream(context.Background(), RuntimeConfig{
+		ProviderKey: "openai-compatible", BaseURL: server.URL,
+	}, "glm-test", []ChatMessage{{Role: "user", Content: "问题"}}, GenerationOptions{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "响应为空") {
+		t.Fatalf("空流不应被当作成功: %v", err)
+	}
+}
+
+func TestOpenAIToolConversationUsesNullAssistantContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		defer request.Body.Close()
+		var body struct {
+			Messages []map[string]any `json:"messages"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if len(body.Messages) != 3 {
+			t.Fatalf("messages = %#v", body.Messages)
+		}
+		assistant := body.Messages[1]
+		if assistant["role"] != "assistant" || assistant["content"] != nil {
+			t.Fatalf("工具调用 assistant content 应为 null: %#v", assistant)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(writer, `{"choices":[{"message":{"content":"最终答案"}}]}`)
+	}))
+	defer server.Close()
+
+	result, err := OpenAIChatWithToolsOnce(context.Background(), RuntimeConfig{
+		ProviderKey: "openai-compatible", BaseURL: server.URL,
+	}, "glm-test", []ChatMessage{
+		{Role: "user", Content: "查资料"},
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "call-1", Name: "lookup", ArgsJSON: `{}`}}},
+		{Role: "tool", ToolCallID: "call-1", Content: `{"ok":true}`},
+	}, GenerationOptions{}, []ToolDefinition{{Name: "lookup", Parameters: json.RawMessage(`{"type":"object"}`)}})
+	if err != nil || result.Answer != "最终答案" {
+		t.Fatalf("tool conversation error=%v result=%#v", err, result)
 	}
 }
 

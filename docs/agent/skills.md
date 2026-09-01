@@ -10,7 +10,7 @@ Skill = 一组工具 + 一段操作说明。它是**动态能力**，不是意�
 
 | id | 说明 | 主要工具 |
 | --- | --- | --- |
-| `knowledge` | 站内知识库检索与深读 | `knowledge.search` / `knowledge.read` |
+| `knowledge` | 站内知识库检索与深读 | `knowledge.lookup` / `search` / `outline` / `read` |
 | `graph` | 实体关系与关联文章（依赖 knowledge） | `graph.*` |
 | `research` | 站外公开资料检索与阅读 | `research.search` / `fetch` / `extract` |
 | `memory` | 跨会话长期记忆 | `memory.search` / `memory.write` |

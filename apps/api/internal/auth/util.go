@@ -1,17 +1,12 @@
 package auth
 
-import (
-	"context"
-	"strings"
-)
+import "strings"
 
-func ctx() context.Context { return context.Background() }
-
-func deref(s *string) string {
-	if s == nil {
+func deref(value *string) string {
+	if value == nil {
 		return ""
 	}
-	return *s
+	return *value
 }
 
 func normalizeEmail(email string) string {

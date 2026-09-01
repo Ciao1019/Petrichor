@@ -37,7 +37,7 @@ export function ImageElementStatic(
             alt={alt}
             src={signedUrl ?? url}
           />
-          {caption && (
+          {caption?.[0] && (
             <figcaption
               className="mx-auto mt-2 h-[24px] max-w-full"
               style={{ textAlign: 'center' }}

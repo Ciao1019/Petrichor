@@ -5,7 +5,9 @@
 package aisvc
 
 import (
+	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -326,11 +328,25 @@ func StreamWrite(c *gin.Context) {
 
 	// TS 的 toTextStream 不做任何分帧包装，这里同样原样透传增量文本。
 	// 流开始后出错不再改写响应头，直接结束输出即可。
-	_, _ = aicore.ChatStream(ctx, rt, resolved.ModelRef, msgs, opts, func(delta string) error {
+	_, streamErr := aicore.ChatStream(ctx, rt, resolved.ModelRef, msgs, opts, func(delta string) error {
 		if _, werr := w.WriteString(delta); werr != nil {
 			return errWriteClientClosed
 		}
 		w.Flush()
 		return nil
 	})
+	if streamErr != nil {
+		fields := []any{
+			"userId", user.ID,
+			"provider", resolved.ProviderKey,
+			"model", resolved.ModelRef,
+			"action", payload.action,
+			"err", streamErr,
+		}
+		if errors.Is(streamErr, errWriteClientClosed) || errors.Is(ctx.Err(), context.Canceled) {
+			slog.Warn("AI 写作流输出中断", fields...)
+		} else {
+			slog.Error("AI 写作模型执行失败", fields...)
+		}
+	}
 }

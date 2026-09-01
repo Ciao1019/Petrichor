@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -119,7 +118,7 @@ func RequireAgentKey(requiredScope string) gin.HandlerFunc {
 			return
 		}
 		keyHash := HashAgentApiKey(apiKey)
-		ctx := context.Background()
+		ctx := c.Request.Context()
 		pool := db.Pool()
 		var (
 			id        int64

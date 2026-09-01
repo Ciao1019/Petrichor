@@ -385,14 +385,16 @@ export const useResolveSuggestion = (
             : undefined;
 
           if (lineBreakData?.id === keyId2SuggestionId(id)) {
+            const renderText = TYPE_TEXT_MAP[node.type];
+            const renderedText = renderText ? renderText(node) : '';
             if (lineBreakData.type === 'insert') {
               newText += lineBreakData.isLineBreak
                 ? BLOCK_SUGGESTION
-                : BLOCK_SUGGESTION + TYPE_TEXT_MAP[node.type](node);
+                : BLOCK_SUGGESTION + renderedText;
             } else if (lineBreakData.type === 'remove') {
               text += lineBreakData.isLineBreak
                 ? BLOCK_SUGGESTION
-                : BLOCK_SUGGESTION + TYPE_TEXT_MAP[node.type](node);
+                : BLOCK_SUGGESTION + renderedText;
             }
           }
         }
@@ -400,7 +402,9 @@ export const useResolveSuggestion = (
 
       if (entries.length === 0) return;
 
-      const nodeData = api.suggestion.suggestionData(entries[0][0]);
+      const firstEntry = entries[0];
+      if (!firstEntry) return;
+      const nodeData = api.suggestion.suggestionData(firstEntry[0]);
 
       if (!nodeData) return;
 

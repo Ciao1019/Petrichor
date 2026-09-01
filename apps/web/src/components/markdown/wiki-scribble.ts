@@ -27,6 +27,12 @@ const SCRIBBLE_PATHS = [
   "M2,7 C24,3 42,8 60,4 C80,1 96,8 118,5",
 ] as const
 
+function itemAt(items: readonly string[], index: number): string {
+  const item = items[index]
+  if (item === undefined) throw new RangeError(`索引越界：${index}`)
+  return item
+}
+
 function hashSeed(seed: string) {
   let hash = 0
   for (let index = 0; index < seed.length; index += 1) {
@@ -53,8 +59,8 @@ export function wikiScribbleStyle(seed: string): CSSProperties {
   const hash = hashSeed(seed)
   return {
     backgroundImage: scribbleImage(
-      SCRIBBLE_PATHS[hash % SCRIBBLE_PATHS.length],
-      SCRIBBLE_INKS[(hash >>> 3) % SCRIBBLE_INKS.length],
+      itemAt(SCRIBBLE_PATHS, hash % SCRIBBLE_PATHS.length),
+      itemAt(SCRIBBLE_INKS, (hash >>> 3) % SCRIBBLE_INKS.length),
     ),
     backgroundRepeat: "no-repeat",
     // 贴着 padding 底边铺一条 0.4em 高的墨带，让笔画落在文字下缘外侧

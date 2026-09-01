@@ -24,9 +24,7 @@
         "./src/*"
       ]
     },
-    // 🧪 质量优化：启用更严格的类型检查
-    // 注意：noUncheckedIndexedAccess 暂时禁用，因为现有代码需要逐步迁移
-    // "noUncheckedIndexedAccess": true,  // TODO: 启用后需要修复约 80 个类型错误
+    "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true

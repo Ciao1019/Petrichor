@@ -1,14 +1,57 @@
 package httpx
 
 import (
-	"time"
+	"bytes"
+	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+func TestErrorLoggerRecordsHandledServerError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var output bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&output, nil)))
+	defer slog.SetDefault(previous)
+
+	r := gin.New()
+	r.Use(ErrorLogger())
+	r.GET("/api/fail", func(c *gin.Context) {
+		HandleError(c, errors.New("database unavailable"))
+	})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/fail", nil))
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status=%d", w.Code)
+	}
+	logText := output.String()
+	for _, expected := range []string{"HTTP 请求处理失败", "method=GET", "path=/api/fail", "status=500", `err="database unavailable"`} {
+		if !strings.Contains(logText, expected) {
+			t.Fatalf("错误日志缺少 %q: %s", expected, logText)
+		}
+	}
+}
+
+func TestHandleErrorRecognizesWrappedHttpError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/api/wrapped", func(c *gin.Context) {
+		HandleError(c, fmt.Errorf("wrapped: %w", BadRequest("参数无效")))
+	})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/wrapped", nil))
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), `"msg":"参数无效"`) {
+		t.Fatalf("wrapped HttpError 未保留契约: status=%d body=%s", w.Code, w.Body.String())
+	}
+}
 
 func TestErrorJSONShape(t *testing.T) {
 	gin.SetMode(gin.TestMode)

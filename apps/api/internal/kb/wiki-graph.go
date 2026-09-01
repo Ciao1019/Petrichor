@@ -23,11 +23,12 @@ func WikiGraph(c *ginContext) {
 			return nil, err
 		}
 		q := pool()
-		kbRow, err := assertKnowledgeBaseOwner(q, user.ID, kbID)
+		ctx := c.Request.Context()
+		kbRow, err := assertKnowledgeBaseOwner(ctx, q, user.ID, kbID)
 		if err != nil {
 			return nil, err
 		}
-		pages, err := loadWikiPageRows(q, user.ID, kbID)
+		pages, err := loadWikiPageRows(ctx, q, user.ID, kbID)
 		if err != nil {
 			return nil, err
 		}
@@ -39,11 +40,11 @@ func WikiGraph(c *ginContext) {
 			pageByKey[pages[i].PageKey] = &pages[i]
 		}
 
-		sourceCounts, err := loadWikiSourceRefCounts(q, user.ID, kbID)
+		sourceCounts, err := loadWikiSourceRefCounts(ctx, q, user.ID, kbID)
 		if err != nil {
 			return nil, err
 		}
-		linkRows, err := queryLinks(q,
+		linkRows, err := queryLinks(ctx, q,
 			`SELECT `+wikiLinkColumns+` FROM petrichor_kb_wiki_link
 			 WHERE user_id = $1 AND knowledge_base_id = $2 ORDER BY id ASC`,
 			user.ID, kbID)
@@ -148,8 +149,8 @@ func WikiGraph(c *ginContext) {
 }
 
 // loadWikiSourceRefCounts 每个 Wiki 页面被多少条来源引用支撑，用来给点群节点定权重。
-func loadWikiSourceRefCounts(q execQuerier, userID, knowledgeBaseID int64) (map[int64]int, error) {
-	rows, err := q.Query(context.Background(),
+func loadWikiSourceRefCounts(ctx context.Context, q execQuerier, userID, knowledgeBaseID int64) (map[int64]int, error) {
+	rows, err := q.Query(ctx,
 		`SELECT r.page_id, COUNT(*) FROM petrichor_kb_wiki_source_ref r
 		 JOIN petrichor_kb_wiki_page p ON p.id = r.page_id
 		 WHERE p.user_id = $1 AND p.knowledge_base_id = $2

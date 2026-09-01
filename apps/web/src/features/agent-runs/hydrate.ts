@@ -17,8 +17,6 @@ export function toRunViewModel(response: AgentRunDetailResponse): AgentRunViewMo
         ...(response.complexity ? { complexity: response.complexity } : {}),
         goal: response.goal,
         answer: response.answer,
-        // 恢复态只有最终答案这一段
-        answerSegmentStart: 0,
         plan: response.plan,
         loadedSkills: response.loadedSkills,
         activities: response.activities.map((activity) => ({

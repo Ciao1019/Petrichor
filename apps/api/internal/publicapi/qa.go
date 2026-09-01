@@ -7,7 +7,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -29,28 +31,9 @@ const PublicQaIPHourlyLimit = 60
 
 var uuidPattern = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
-// ResolveClientIp 从常见反代头里取访客 IP（与 agent/handlers.ts 同款顺序）。
+// ResolveClientIp 只接受 Gin 根据 server.trusted_proxies 解析后的地址。
 func ResolveClientIp(c *gin.Context) string {
-	if v := firstHop(c.GetHeader("X-Forwarded-For")); v != "" {
-		return v
-	}
-	if v := strings.TrimSpace(c.GetHeader("X-Real-Ip")); v != "" {
-		return v
-	}
-	if v := strings.TrimSpace(c.GetHeader("Cf-Connecting-Ip")); v != "" {
-		return v
-	}
-	return ""
-}
-
-func firstHop(header string) string {
-	for _, part := range strings.Split(header, ",") {
-		trimmed := strings.TrimSpace(part)
-		if trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
+	return strings.TrimSpace(c.ClientIP())
 }
 
 // ResolveVisitorId 读取并校验客户端 visitor-id（localStorage 里的 UUID）；非法返回空串。
@@ -453,14 +436,19 @@ var (
 	publicQaChatStream    = aicore.ChatStream
 )
 
-type qaSseEmitter struct{ c *gin.Context }
+type qaSseEmitter struct {
+	c   *gin.Context
+	err error
+}
 
 func (s *qaSseEmitter) chunk(v any) bool {
 	raw, err := json.Marshal(v)
 	if err != nil {
-		return true
+		s.err = err
+		return false
 	}
 	if _, werr := s.c.Writer.Write(append([]byte("data: "), append(raw, '\n', '\n')...)); werr != nil {
+		s.err = werr
 		return false
 	}
 	s.c.Writer.Flush()
@@ -468,7 +456,9 @@ func (s *qaSseEmitter) chunk(v any) bool {
 }
 
 func (s *qaSseEmitter) done() {
-	_, _ = s.c.Writer.Write([]byte("data: [DONE]\n\n"))
+	if _, err := s.c.Writer.Write([]byte("data: [DONE]\n\n")); err != nil && s.err == nil {
+		s.err = err
+	}
 	s.c.Writer.Flush()
 }
 
@@ -504,8 +494,10 @@ func streamPublicQaAnswer(c *gin.Context, params streamPublicQaParams) {
 	definitions := params.tools.definitions()
 	completed := false
 	var runErr error
+	lastStep := 0
 
 	for step := 0; step < 8; step++ {
+		lastStep = step + 1
 		if !emitter.chunk(map[string]any{"type": "start-step"}) {
 			runErr = errQaStreamWriteFailed
 			break
@@ -593,6 +585,24 @@ func streamPublicQaAnswer(c *gin.Context, params streamPublicQaParams) {
 		emitter.chunk(map[string]any{"type": "error", "errorText": genericStreamErrorText})
 	}
 	emitter.done()
+	if runErr != nil || emitter.err != nil {
+		logErr := runErr
+		if logErr == nil {
+			logErr = emitter.err
+		}
+		fields := []any{
+			"path", c.Request.URL.Path,
+			"provider", params.resolved.ProviderKey,
+			"model", params.resolved.ModelRef,
+			"step", lastStep,
+			"err", logErr,
+		}
+		if errors.Is(runErr, errQaStreamWriteFailed) || errors.Is(ctx.Err(), context.Canceled) || emitter.err != nil {
+			slog.Warn("公开问答 SSE 输出中断", fields...)
+		} else {
+			slog.Error("公开问答模型执行失败", fields...)
+		}
+	}
 }
 
 func qaNewStreamID() string {

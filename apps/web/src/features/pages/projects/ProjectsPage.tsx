@@ -135,7 +135,6 @@ export function ProjectsPage() {
     const [loading, setLoading] = React.useState(() => !cachedShowcase)
     const [error, setError] = React.useState<string | null>(null)
     const [openName, setOpenName] = React.useState<string | null>(null)
-    const [parallax, setParallax] = React.useState({ x: 0, y: 0 })
 
     const fetchShowcase = React.useCallback(async (isCanceled: () => boolean = () => false) => {
         const cached = publicProjectShowcaseApi.getCachedDetail()
@@ -156,8 +155,7 @@ export function ProjectsPage() {
             if (isCanceled()) return
             setError(resolveApiError(e))
         } finally {
-            if (isCanceled()) return
-            setLoading(false)
+            if (!isCanceled()) setLoading(false)
         }
     }, [])
 
@@ -169,22 +167,9 @@ export function ProjectsPage() {
         }
     }, [fetchShowcase])
 
-    const handlePointerMove = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
-        if (event.pointerType === "touch") return
-        const rect = event.currentTarget.getBoundingClientRect()
-        setParallax({
-            x: (rect.width / 2 - (event.clientX - rect.left)) / 80,
-            y: (rect.height / 2 - (event.clientY - rect.top)) / 80,
-        })
-    }, [])
-
-    const resetParallax = React.useCallback(() => setParallax({ x: 0, y: 0 }), [])
-
     return (
         <main
             className="scrollbar-hide retypeset-home relative flex min-h-screen flex-col overflow-hidden bg-[#0044cc] font-mono text-white selection:bg-yellow-300 selection:text-blue-950"
-            onPointerMove={handlePointerMove}
-            onPointerLeave={resetParallax}
         >
             <div className="blog-home-grid pointer-events-none fixed inset-0 z-0" />
 

@@ -73,7 +73,7 @@ func AgentRetrieveDocumentTree(c *gin.Context, actx *authContext) (any, error) {
 	if hasArticle {
 		articleFilter = &articleID
 	}
-	items, err := retrieveTreeNodesForAgentCore(dbPool(), actx.UserID, kbID, query, limit, articleFilter)
+	items, err := retrieveTreeNodesForAgentCore(c.Request.Context(), dbPool(), actx.UserID, kbID, query, limit, articleFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func AgentSemanticSearchDocumentTree(c *gin.Context, actx *authContext) (any, er
 	if hasArticle {
 		articleFilter = &articleID
 	}
-	items, err := semanticSearchTreeNodesCore(dbPool(), actx.UserID, kbID, query, limit, articleFilter)
+	items, err := semanticSearchTreeNodesCore(c.Request.Context(), dbPool(), actx.UserID, kbID, query, limit, articleFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -299,6 +299,7 @@ var (
 
 // AgentViewDocument POST /api/agent/document/view（scope doc:read）。
 func AgentViewDocument(c *gin.Context, actx *authContext) (any, error) {
+	ctx := c.Request.Context()
 	if err := requireAgentScope(actx, "doc:read"); err != nil {
 		return nil, err
 	}
@@ -324,14 +325,14 @@ func AgentViewDocument(c *gin.Context, actx *authContext) (any, error) {
 
 	q := dbPool()
 	if hasArticle {
-		full, err := kb.QueryOwnedArticleForAgent(q, actx.UserID, articleID)
+		full, err := kb.QueryOwnedArticleForAgent(ctx, q, actx.UserID, articleID)
 		if err != nil {
 			return nil, err
 		}
 		if full == nil {
 			return nil, notFoundErr("文章不存在")
 		}
-		tags, terr := loadTags(q, full.ID)
+		tags, terr := loadTags(ctx, q, full.ID)
 		if terr != nil {
 			return nil, terr
 		}
@@ -349,7 +350,7 @@ func AgentViewDocument(c *gin.Context, actx *authContext) (any, error) {
 	}
 
 	// Wiki 页面分支（对照 readWikiPageForAgent）。
-	detail, err := kb.LoadWikiPageDetailForAgent(q, actx.UserID, kbID, pageKey)
+	detail, err := kb.LoadWikiPageDetailForAgent(c.Request.Context(), q, actx.UserID, kbID, pageKey)
 	if err != nil {
 		return nil, err
 	}
@@ -357,7 +358,7 @@ func AgentViewDocument(c *gin.Context, actx *authContext) (any, error) {
 	contentMd, _ := detail["contentMd"].(string)
 	sourceRefs, _ := detail["sourceRefs"].([]map[string]any)
 
-	mediaMaps := extractWikiPageMedia(actx.UserID, kbID, contentMd, sourceRefs)
+	mediaMaps := extractWikiPageMedia(ctx, actx.UserID, kbID, contentMd, sourceRefs)
 	links, _ := detail["links"]
 	return map[string]any{
 		"type":            "wiki",
@@ -381,7 +382,7 @@ func optionalValue(s *string) any {
 }
 
 // extractWikiPageMedia 页面正文 + 来源文章正文的媒体引用合并（对照 mergeAgentImageReferences）。
-func extractWikiPageMedia(userID, kbID int64, pageContentMd string, sourceRefs []map[string]any) []map[string]any {
+func extractWikiPageMedia(ctx context.Context, userID, kbID int64, pageContentMd string, sourceRefs []map[string]any) []map[string]any {
 	type mediaWithSource struct {
 		ref          mediaReference
 		articleID    *string
@@ -415,7 +416,7 @@ func extractWikiPageMedia(userID, kbID int64, pageContentMd string, sourceRefs [
 		if articleIDText == "" {
 			continue
 		}
-		rows, err := q.Query(context.Background(),
+		rows, err := q.Query(ctx,
 			`SELECT id, title, content_md FROM petrichor_kb_article
 			 WHERE user_id = $1 AND knowledge_base_id = $2 AND id = $3 LIMIT 1`,
 			userID, kbID, parseIDOrZero(articleIDText))
@@ -469,6 +470,7 @@ func parseIDOrZero(s string) int64 {
 
 // AgentAskDocument POST /api/agent/document/qa（scope qa:read，走 ChatInvoker）。
 func AgentAskDocument(c *gin.Context, actx *authContext) (any, error) {
+	ctx := c.Request.Context()
 	if err := requireAgentScope(actx, "qa:read"); err != nil {
 		return nil, err
 	}
@@ -490,7 +492,7 @@ func AgentAskDocument(c *gin.Context, actx *authContext) (any, error) {
 	if hasKB {
 		kbFilter = &kbID
 	}
-	hits, err := searchAgentDocuments(c.Request.Context(), actx.UserID, kbFilter, question, limit)
+	hits, err := searchAgentDocuments(ctx, actx.UserID, kbFilter, question, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -506,20 +508,20 @@ func AgentAskDocument(c *gin.Context, actx *authContext) (any, error) {
 		hit := &hits[i]
 		switch {
 		case hit.hitType == "chunk" && hit.chunkID != nil:
-			chunkContent, cerr := readChunkContent(q, actx.UserID, parseIDOrZero(hit.knowledgeBaseID), parseIDOrZero(*hit.chunkID))
+			chunkContent, cerr := readChunkContent(ctx, q, actx.UserID, parseIDOrZero(hit.knowledgeBaseID), parseIDOrZero(*hit.chunkID))
 			if cerr != nil {
 				continue
 			}
 			contexts = append(contexts, contextItem{hit: *hit, contentMd: chunkContent})
 		case hit.hitType == "wiki" && hit.pageKey != nil:
-			detail, derr := kb.LoadWikiPageDetailForAgent(q, actx.UserID, parseIDOrZero(hit.knowledgeBaseID), *hit.pageKey)
+			detail, derr := kb.LoadWikiPageDetailForAgent(c.Request.Context(), q, actx.UserID, parseIDOrZero(hit.knowledgeBaseID), *hit.pageKey)
 			if derr != nil {
 				continue
 			}
 			content, _ := detail["contentMd"].(string)
 			contexts = append(contexts, contextItem{hit: *hit, contentMd: content})
 		case hit.articleID != nil:
-			full, aerr := kb.QueryOwnedArticleForAgent(q, actx.UserID, parseIDOrZero(*hit.articleID))
+			full, aerr := kb.QueryOwnedArticleForAgent(ctx, q, actx.UserID, parseIDOrZero(*hit.articleID))
 			if aerr != nil || full == nil {
 				continue
 			}
@@ -570,7 +572,7 @@ func AgentAskDocument(c *gin.Context, actx *authContext) (any, error) {
 		strings.Join(parts, "\n\n---\n\n"),
 	}, "\n")
 
-	answer, err := kb.ChatInvoker(context.Background(), kb.ChatRequest{
+	answer, err := kb.ChatInvoker(ctx, kb.ChatRequest{
 		UserID:       actx.UserID,
 		SystemPrompt: systemPrompt,
 		Message:      message,
@@ -624,9 +626,9 @@ func filterEmpty(lines []string) []string {
 }
 
 // readChunkContent 对照 article-knowledge-index.ts readArticleKnowledgeChunkForAgent（仅取正文）。
-func readChunkContent(q *pgxpool.Pool, userID, knowledgeBaseID, chunkID int64) (string, error) {
+func readChunkContent(ctx context.Context, q *pgxpool.Pool, userID, knowledgeBaseID, chunkID int64) (string, error) {
 	var contentMd string
-	err := q.QueryRow(context.Background(),
+	err := q.QueryRow(ctx,
 		`SELECT c.content_md FROM petrichor_kb_article_chunk c
 		 JOIN petrichor_kb_article a ON a.id = c.article_id
 		 WHERE c.id = $1 AND c.user_id = $2 AND c.knowledge_base_id = $3 AND a.user_id = $2 LIMIT 1`,

@@ -36,13 +36,15 @@ function syncHeadingIds(root: HTMLElement | null, headings: PlateHeading[]) {
     let cursor = 0
     for (const node of nodes) {
         const level = Number.parseInt(node.tagName.slice(1), 10)
-        while (cursor < headings.length && headings[cursor].level !== level) {
+        while (cursor < headings.length && headings[cursor]?.level !== level) {
             cursor += 1
         }
         if (cursor >= headings.length) {
             break
         }
-        node.id = headings[cursor].id
+        const heading = headings[cursor]
+        if (!heading) break
+        node.id = heading.id
         cursor += 1
     }
 }

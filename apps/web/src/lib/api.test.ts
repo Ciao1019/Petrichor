@@ -27,7 +27,7 @@ vi.mock("axios", () => ({
   default: axiosMocks.axios,
 }))
 
-import { publicArticleShareApi } from "./api"
+import { publicArticleShareApi, publicProjectShowcaseApi } from "./api"
 
 function mockWindowLocation(pathname: string, search = "", hash = "") {
   const replace = vi.fn()
@@ -79,8 +79,8 @@ describe("publicArticleShareApi client cache", () => {
     const first = await publicArticleShareApi.list()
     const second = await publicArticleShareApi.list()
 
-    expect(first.data.items[0].title).toBe("公开文章")
-    expect(second.data.items[0].shareCode).toBe("shareCode123")
+    expect(first.data.items[0]?.title).toBe("公开文章")
+    expect(second.data.items[0]?.shareCode).toBe("shareCode123")
     expect(axiosMocks.instance.get).toHaveBeenCalledTimes(1)
     expect(axiosMocks.instance.get).toHaveBeenCalledWith("/public/article/list")
     expect(axiosMocks.instance.post).not.toHaveBeenCalled()
@@ -127,8 +127,8 @@ describe("publicArticleShareApi client cache", () => {
     publicArticleShareApi.invalidateClientCache()
     const refreshed = await publicArticleShareApi.list()
 
-    expect(cached.data.items[0].tags).toEqual(["旧标签"])
-    expect(refreshed.data.items[0].tags).toEqual(["新标签"])
+    expect(cached.data.items[0]?.tags).toEqual(["旧标签"])
+    expect(refreshed.data.items[0]?.tags).toEqual(["新标签"])
     expect(axiosMocks.instance.get).toHaveBeenCalledTimes(2)
     expect(axiosMocks.instance.get).toHaveBeenNthCalledWith(1, "/public/article/list")
     expect(axiosMocks.instance.get).toHaveBeenNthCalledWith(2, "/public/article/list")
@@ -170,6 +170,70 @@ describe("publicArticleShareApi client cache", () => {
       accessPassword: "123456",
       shareCode: "shareCode123",
     })
+  })
+
+  it("并发列表请求复用同一个在途 Promise，强制刷新会绕过缓存", async () => {
+    let resolveRequest!: (value: { data: { items: [] } }) => void
+    const pending = new Promise<{ data: { items: [] } }>((resolve) => {
+      resolveRequest = resolve
+    })
+    axiosMocks.instance.get.mockReturnValueOnce(pending)
+
+    const first = publicArticleShareApi.list()
+    const second = publicArticleShareApi.list()
+    resolveRequest({ data: { items: [] } })
+
+    await expect(first).resolves.toMatchObject({ data: { items: [] } })
+    await expect(second).resolves.toMatchObject({ data: { items: [] } })
+    expect(axiosMocks.instance.get).toHaveBeenCalledTimes(1)
+    expect(publicArticleShareApi.getCachedList()).toEqual({ items: [] })
+
+    axiosMocks.instance.get.mockResolvedValueOnce({ data: { items: [] } })
+    await publicArticleShareApi.list({ forceRefresh: true })
+    expect(axiosMocks.instance.get).toHaveBeenCalledTimes(2)
+  })
+
+  it("详情缓存读取、空分享码预取和搜索参数保持稳定", async () => {
+    axiosMocks.instance.get.mockResolvedValueOnce({
+      data: {
+        contentMd: "正文",
+        createdAt: "2026-04-28T00:00:00.000Z",
+        tags: [],
+        title: "公开文章",
+        updatedAt: "2026-04-28T01:00:00.000Z",
+      },
+    })
+
+    await publicArticleShareApi.detail(" shareCode123 ")
+    expect(publicArticleShareApi.getCachedDetail("shareCode123")?.title).toBe("公开文章")
+    await expect(publicArticleShareApi.prefetchDetail("  ")).resolves.toBeUndefined()
+
+    const signal = new AbortController().signal
+    axiosMocks.instance.get.mockResolvedValueOnce({ data: { items: [] } })
+    await publicArticleShareApi.search({ keyword: "缓存", limit: 8, offset: 2, signal })
+    expect(axiosMocks.instance.get).toHaveBeenLastCalledWith("/public/article/search", {
+      params: { q: "缓存", limit: 8, offset: 2 },
+      signal,
+    })
+  })
+
+  it("项目展示详情复用缓存并支持主动失效", async () => {
+    const firstPayload = { heading: "项目", intro: "第一版", items: [] }
+    const secondPayload = { heading: "项目", intro: "第二版", items: [] }
+    axiosMocks.instance.get
+      .mockResolvedValueOnce({ data: firstPayload })
+      .mockResolvedValueOnce({ data: secondPayload })
+
+    const first = await publicProjectShowcaseApi.detail()
+    const cached = await publicProjectShowcaseApi.detail()
+    expect(first.data).toEqual(firstPayload)
+    expect(cached.data).toEqual(firstPayload)
+    expect(publicProjectShowcaseApi.getCachedDetail()).toEqual(firstPayload)
+
+    publicProjectShowcaseApi.invalidateClientCache()
+    const refreshed = await publicProjectShowcaseApi.detail()
+    expect(refreshed.data).toEqual(secondPayload)
+    expect(axiosMocks.instance.get).toHaveBeenCalledTimes(2)
   })
 
   it("前台公开文章页遇到 401 不自动跳后台登录", async () => {

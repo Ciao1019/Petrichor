@@ -116,15 +116,15 @@ export function groupThreadsByRecency(threads: AssistantThreadSummary[]) {
     const reference = thread.updatedAt
     const ts = reference ? new Date(reference).getTime() : 0
     if (!ts || Number.isNaN(ts)) {
-      buckets[4].threads.push(thread)
+      buckets[4]?.threads.push(thread)
       continue
     }
     const diff = now - ts
-    if (diff < day && isSameLocalDay(ts, now)) buckets[0].threads.push(thread)
-    else if (diff < 2 * day && isSameLocalDay(ts, now - day)) buckets[1].threads.push(thread)
-    else if (diff < 7 * day) buckets[2].threads.push(thread)
-    else if (diff < 30 * day) buckets[3].threads.push(thread)
-    else buckets[4].threads.push(thread)
+    if (diff < day && isSameLocalDay(ts, now)) buckets[0]?.threads.push(thread)
+    else if (diff < 2 * day && isSameLocalDay(ts, now - day)) buckets[1]?.threads.push(thread)
+    else if (diff < 7 * day) buckets[2]?.threads.push(thread)
+    else if (diff < 30 * day) buckets[3]?.threads.push(thread)
+    else buckets[4]?.threads.push(thread)
   }
 
   const groups = buckets.filter((bucket) => bucket.threads.length > 0)

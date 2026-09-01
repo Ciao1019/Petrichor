@@ -92,8 +92,14 @@ func TestSSEErrorAndWriteFailurePaths(t *testing.T) {
 	if failing.chunk(map[string]any{"type": "start"}) {
 		t.Fatal("SSE write failure must be reported to cancel the runtime")
 	}
+	if failing.Err() == nil || !strings.Contains(failing.Err().Error(), "connection closed") {
+		t.Fatalf("SSE write failure cause was lost: %v", failing.Err())
+	}
 	if emitter.chunk(map[string]any{"unsupported": make(chan int)}) {
 		t.Fatal("SSE marshal failure must be reported to cancel the runtime")
+	}
+	if emitter.Err() == nil {
+		t.Fatal("SSE marshal failure cause was lost")
 	}
 }
 

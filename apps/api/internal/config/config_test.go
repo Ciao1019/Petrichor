@@ -115,6 +115,60 @@ user_id = 1
 	}
 }
 
+func TestLoadFileRejectsPoolTooSmallForWorkers(t *testing.T) {
+	path := writeTestConfig(t, `
+[database]
+url = "postgres://localhost/petrichor"
+max_conns = 4
+`)
+
+	_, err := LoadFile(path)
+	if err == nil || !strings.Contains(err.Error(), "max_conns >= 6") {
+		t.Fatalf("expected pool size error, got %v", err)
+	}
+}
+
+func TestLoadFileRejectsDefaultEncryptionInProduction(t *testing.T) {
+	path := writeTestConfig(t, `
+[server]
+environment = "production"
+
+[database]
+url = "postgres://localhost/petrichor"
+
+[encryption]
+key = "replace-with-a-stable-random-secret-of-at-least-32-chars"
+salt = "00000000000000000000000000000000"
+`)
+
+	_, err := LoadFile(path)
+	if err == nil || !strings.Contains(err.Error(), "禁止使用默认或示例") {
+		t.Fatalf("expected production encryption error, got %v", err)
+	}
+}
+
+func TestLoadFileAcceptsStrongProductionEncryption(t *testing.T) {
+	path := writeTestConfig(t, `
+[server]
+environment = "production"
+
+[database]
+url = "postgres://localhost/petrichor"
+
+[encryption]
+key = "r4ndom-production-key-with-more-than-32-characters"
+salt = "9e86d78a95084fca9be48739837d91b6"
+`)
+
+	cfg, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	if cfg.Encryption.Salt != "9e86d78a95084fca9be48739837d91b6" {
+		t.Fatalf("unexpected encryption config: %+v", cfg.Encryption)
+	}
+}
+
 func writeTestConfig(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.toml")

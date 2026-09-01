@@ -15,6 +15,7 @@ func TestEmbeddedMigrations(t *testing.T) {
 	want := []string{
 		"202608270002_init.sql",
 		"202608280001_knowledge_build_job.sql",
+		"202608280002_worker_retry_and_dead_letter.sql",
 	}
 	if !reflect.DeepEqual(entries, want) {
 		t.Fatalf("内嵌迁移不符合预期\n实际: %v\n期望: %v", entries, want)
@@ -58,6 +59,23 @@ func TestEmbeddedMigrations(t *testing.T) {
 	} {
 		if !strings.Contains(jobSQL, required) {
 			t.Fatalf("知识构建任务迁移缺少结构: %q", required)
+		}
+	}
+
+	data, err = fs.ReadFile(Files, want[2])
+	if err != nil {
+		t.Fatalf("读取 Worker 重试迁移失败: %v", err)
+	}
+	retrySQL := string(data)
+	for _, required := range []string{
+		"attempt_count integer DEFAULT 0 NOT NULL",
+		"next_attempt_at timestamp with time zone",
+		"lease_expires_at timestamp with time zone",
+		"dead_lettered_at timestamp with time zone",
+		"idx_petrichor_kb_import_job_page_runnable",
+	} {
+		if !strings.Contains(retrySQL, required) {
+			t.Fatalf("Worker 重试迁移缺少结构: %q", required)
 		}
 	}
 }

@@ -49,6 +49,7 @@ function parseDirectiveAttributes(raw: string): DirectiveAttributes {
     const attributes: DirectiveAttributes = {}
     for (const match of raw.matchAll(ATTRIBUTE_PATTERN)) {
         const [, name, doubleQuoted, singleQuoted, bare] = match
+        if (!name) continue
         attributes[name] = doubleQuoted ?? singleQuoted ?? bare ?? ""
     }
     return attributes
@@ -202,6 +203,7 @@ export function getSpotifyEmbedUrl(url: string): string | null {
     )
     if (spotifyUriMatch) {
         const [, type, id] = spotifyUriMatch
+        if (!type || !id) return null
         return `https://open.spotify.com/embed/${type.toLowerCase()}/${id}`
     }
 

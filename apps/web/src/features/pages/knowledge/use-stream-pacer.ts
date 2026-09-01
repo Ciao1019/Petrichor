@@ -152,6 +152,7 @@ export function useStreamPacer(
           continue
         }
         const ch = text[next]
+        if (ch === undefined) break
         next += 1
         if (costsBudget(ch)) {
           spent += 1

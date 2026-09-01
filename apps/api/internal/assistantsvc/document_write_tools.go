@@ -141,7 +141,7 @@ func executeCreateArticle(ctx *rt.ToolExecutionContext, input any) (any, error) 
 		return nil, err
 	}
 	defer tx.Rollback(toolContext(ctx))
-	if _, err := kb.AssertKnowledgeBaseOwnerForAgent(tx, ctx.UserID, knowledgeBaseID); err != nil {
+	if _, err := kb.AssertKnowledgeBaseOwnerForAgent(toolContext(ctx), tx, ctx.UserID, knowledgeBaseID); err != nil {
 		return nil, rt.ValidationError("知识库不存在或不属于当前用户")
 	}
 	if err := assertAssistantFolderParent(tx, ctx, knowledgeBaseID, parentID, hasParent); err != nil {
@@ -381,7 +381,7 @@ func executeMoveArticle(ctx *rt.ToolExecutionContext, input any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := kb.AssertKnowledgeBaseOwnerForAgent(tx, ctx.UserID, targetKnowledgeBaseID); err != nil {
+	if _, err := kb.AssertKnowledgeBaseOwnerForAgent(toolContext(ctx), tx, ctx.UserID, targetKnowledgeBaseID); err != nil {
 		return nil, rt.ValidationError("目标知识库不存在或不属于当前用户")
 	}
 	if err := assertAssistantFolderParent(tx, ctx, targetKnowledgeBaseID, parentID, hasParent); err != nil {

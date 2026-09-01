@@ -143,20 +143,20 @@ func CreateArticle(c *gin.Context) {
 		}
 
 		q := pool()
-		ctx := c
+		ctx := c.Request.Context()
 		tx, err := q.Begin(ctx)
 		if err != nil {
 			return nil, err
 		}
-		defer tx.Rollback(context.Background())
+		defer tx.Rollback(context.WithoutCancel(ctx))
 
-		if _, err := assertKnowledgeBaseOwner(tx, user.ID, kbID); err != nil {
+		if _, err := assertKnowledgeBaseOwner(ctx, tx, user.ID, kbID); err != nil {
 			return nil, err
 		}
-		if _, err := assertFolderParent(tx, user.ID, kbID, parentID); err != nil {
+		if _, err := assertFolderParent(ctx, tx, user.ID, kbID, parentID); err != nil {
 			return nil, err
 		}
-		sortOrder, err := nextSortOrder(tx, user.ID, kbID, parentID)
+		sortOrder, err := nextSortOrder(ctx, tx, user.ID, kbID, parentID)
 		if err != nil {
 			return nil, err
 		}
@@ -180,10 +180,10 @@ func CreateArticle(c *gin.Context) {
 			publicExcerpt, readingMinutes, tocJSON, contentHash).Scan(&articleID); err != nil {
 			return nil, err
 		}
-		if err := replaceArticleTags(tx, articleID, tags); err != nil {
+		if err := replaceArticleTags(ctx, tx, articleID, tags); err != nil {
 			return nil, err
 		}
-		if err := tx.Commit(context.Background()); err != nil {
+		if err := tx.Commit(ctx); err != nil {
 			return nil, err
 		}
 		return map[string]any{
@@ -197,6 +197,7 @@ func CreateArticle(c *gin.Context) {
 func DetailArticle(c *gin.Context) {
 	run(c, func(c *gin.Context) (any, error) {
 		user := currentUser(c)
+		ctx := c.Request.Context()
 		raw, err := readBody(c)
 		if err != nil {
 			return nil, err
@@ -206,7 +207,7 @@ func DetailArticle(c *gin.Context) {
 			return nil, err
 		}
 		q := pool()
-		article, err := queryArticle(q,
+		article, err := queryArticle(ctx, q,
 			`SELECT `+articleColumns+` FROM petrichor_kb_article WHERE id = $1 AND user_id = $2 LIMIT 1`,
 			articleID, user.ID)
 		if err != nil {
@@ -215,16 +216,16 @@ func DetailArticle(c *gin.Context) {
 		if article == nil {
 			return nil, notFoundErr("文章不存在")
 		}
-		node, err := assertNodeOwner(q, user.ID, article.NodeID)
+		node, err := assertNodeOwner(ctx, q, user.ID, article.NodeID)
 		if err != nil {
 			return nil, err
 		}
-		graph, err := loadKnowledgeBaseGraph(q, user.ID, article.KnowledgeBaseID)
+		graph, err := loadKnowledgeBaseGraph(ctx, q, user.ID, article.KnowledgeBaseID)
 		if err != nil {
 			return nil, err
 		}
 		idx := indexGraph(graph)
-		tags, err := loadTags(q, article.ID)
+		tags, err := loadTags(ctx, q, article.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -276,8 +277,8 @@ func resolveUsableAiSummary(summary, summaryHash, currentHash *string) string {
 	return trimmed
 }
 
-func queryArticle(q execQuerier, sql string, args ...any) (*ArticleRow, error) {
-	rows, err := q.Query(context.Background(), sql, args...)
+func queryArticle(ctx context.Context, q execQuerier, sql string, args ...any) (*ArticleRow, error) {
+	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -292,6 +293,7 @@ func queryArticle(q execQuerier, sql string, args ...any) (*ArticleRow, error) {
 func UpdateArticle(c *gin.Context) {
 	run(c, func(c *gin.Context) (any, error) {
 		user := currentUser(c)
+		ctx := c.Request.Context()
 		raw, err := readBody(c)
 		if err != nil {
 			return nil, err
@@ -310,7 +312,7 @@ func UpdateArticle(c *gin.Context) {
 			return nil, err
 		}
 		q := pool()
-		article, err := queryArticle(q,
+		article, err := queryArticle(ctx, q,
 			`SELECT `+articleColumns+` FROM petrichor_kb_article WHERE id = $1 AND user_id = $2 LIMIT 1`,
 			articleID, user.ID)
 		if err != nil {
@@ -326,7 +328,6 @@ func UpdateArticle(c *gin.Context) {
 		previousImageObjectKeys := ExtractS4ObjectKeysFromArticleContent(article.ContentJson, article.ContentMd, user.ID)
 		nextImageObjectKeys := ExtractS4ObjectKeysFromArticleContent(contentJson, contentMd, user.ID)
 		removedImageObjectKeys := RemovedS4ObjectKeys(previousImageObjectKeys, nextImageObjectKeys)
-		ctx := c
 		if _, err := q.Exec(ctx,
 			`UPDATE petrichor_kb_article SET title = $1, content_md = $2, content_json = $3,
 			 content_meta_json = $4, public_excerpt = $5, reading_minutes = $6, toc_json = $7,
@@ -341,7 +342,7 @@ func UpdateArticle(c *gin.Context) {
 			title, article.NodeID, user.ID); err != nil {
 			return nil, err
 		}
-		if err := replaceArticleTags(q, article.ID, tags); err != nil {
+		if err := replaceArticleTags(ctx, q, article.ID, tags); err != nil {
 			return nil, err
 		}
 		ScheduleUnreferencedS4Cleanup(user.ID, removedImageObjectKeys, "updateArticle")
@@ -359,6 +360,7 @@ func UpdateArticle(c *gin.Context) {
 func RefreshArticlePublicCache(c *gin.Context) {
 	run(c, func(c *gin.Context) (any, error) {
 		user := currentUser(c)
+		ctx := c.Request.Context()
 		raw, err := readBody(c)
 		if err != nil {
 			return nil, err
@@ -368,7 +370,7 @@ func RefreshArticlePublicCache(c *gin.Context) {
 			return nil, err
 		}
 		q := pool()
-		article, err := queryArticle(q,
+		article, err := queryArticle(ctx, q,
 			`SELECT `+articleColumns+` FROM petrichor_kb_article WHERE id = $1 AND user_id = $2 LIMIT 1`,
 			articleID, user.ID)
 		if err != nil {
@@ -390,6 +392,7 @@ func RefreshArticlePublicCache(c *gin.Context) {
 func DeleteArticle(c *gin.Context) {
 	run(c, func(c *gin.Context) (any, error) {
 		user := currentUser(c)
+		ctx := c.Request.Context()
 		raw, err := readBody(c)
 		if err != nil {
 			return nil, err
@@ -399,7 +402,7 @@ func DeleteArticle(c *gin.Context) {
 			return nil, err
 		}
 		q := pool()
-		article, err := queryArticle(q,
+		article, err := queryArticle(ctx, q,
 			`SELECT `+articleColumns+` FROM petrichor_kb_article WHERE id = $1 AND user_id = $2 LIMIT 1`,
 			articleID, user.ID)
 		if err != nil {
@@ -409,9 +412,8 @@ func DeleteArticle(c *gin.Context) {
 			return nil, notFoundErr("文章不存在")
 		}
 		imageObjectKeys := ExtractS4ObjectKeysFromArticleContent(article.ContentJson, article.ContentMd, user.ID)
-		ctx := context.Background()
 
-		if _, err := deleteArticleWikiPages(q, user.ID, []ArticleRow{*article}, true); err != nil {
+		if _, err := deleteArticleWikiPages(ctx, q, user.ID, []ArticleRow{*article}, true); err != nil {
 			return nil, err
 		}
 		if _, err := q.Exec(ctx,
@@ -441,6 +443,7 @@ func DeleteArticle(c *gin.Context) {
 func SearchArticles(c *gin.Context) {
 	run(c, func(c *gin.Context) (any, error) {
 		user := currentUser(c)
+		ctx := c.Request.Context()
 		raw, err := readBody(c)
 		if err != nil {
 			return nil, err
@@ -458,7 +461,7 @@ func SearchArticles(c *gin.Context) {
 			}
 		}
 		q := pool()
-		if _, err := assertKnowledgeBaseOwner(q, user.ID, kbID); err != nil {
+		if _, err := assertKnowledgeBaseOwner(ctx, q, user.ID, kbID); err != nil {
 			return nil, err
 		}
 
@@ -470,7 +473,7 @@ func SearchArticles(c *gin.Context) {
 			args = append(args, "%"+keyword+"%")
 		}
 		sql += ` ORDER BY updated_at DESC, id DESC`
-		articles, err := queryArticles(q, sql, args...)
+		articles, err := queryArticles(ctx, q, sql, args...)
 		if err != nil {
 			return nil, err
 		}
@@ -479,11 +482,11 @@ func SearchArticles(c *gin.Context) {
 		for i := range articles {
 			articleIDs = append(articleIDs, articles[i].ID)
 		}
-		tagsByArticle, err := loadTagsByArticleIDs(q, articleIDs)
+		tagsByArticle, err := loadTagsByArticleIDs(ctx, q, articleIDs)
 		if err != nil {
 			return nil, err
 		}
-		nodeMap, err := loadNodeMap(q, kbID)
+		nodeMap, err := loadNodeMap(ctx, q, kbID)
 		if err != nil {
 			return nil, err
 		}
@@ -535,12 +538,12 @@ func tagsOrEmpty(tagsByArticle map[int64][]string, articleID int64) []string {
 	return []string{}
 }
 
-func loadTagsByArticleIDs(q execQuerier, articleIDs []int64) (map[int64][]string, error) {
+func loadTagsByArticleIDs(ctx context.Context, q execQuerier, articleIDs []int64) (map[int64][]string, error) {
 	result := map[int64][]string{}
 	if len(articleIDs) == 0 {
 		return result, nil
 	}
-	rows, err := q.Query(context.Background(),
+	rows, err := q.Query(ctx,
 		`SELECT article_id, tag FROM petrichor_kb_article_tag
 		 WHERE article_id = ANY($1) ORDER BY tag ASC`, articleIDs)
 	if err != nil {
@@ -595,8 +598,8 @@ func buildArticlePath(nodeMap map[int64]*pathNode, nodeID int64) string {
 	return "/" + strings.Join(names, "/")
 }
 
-func loadNodeMap(q execQuerier, knowledgeBaseID int64) (map[int64]*pathNode, error) {
-	rows, err := q.Query(context.Background(),
+func loadNodeMap(ctx context.Context, q execQuerier, knowledgeBaseID int64) (map[int64]*pathNode, error) {
+	rows, err := q.Query(ctx,
 		`SELECT id, parent_id, name FROM petrichor_kb_node WHERE knowledge_base_id = $1`, knowledgeBaseID)
 	if err != nil {
 		return nil, err

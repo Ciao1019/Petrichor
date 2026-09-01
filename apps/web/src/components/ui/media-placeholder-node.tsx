@@ -60,7 +60,11 @@ export const PlaceholderElement = withHOC(
 
     const loading = isUploading && uploadingFile;
 
-    const currentContent = CONTENT[element.mediaType];
+    const currentContent = CONTENT[element.mediaType] ?? {
+      accept: ['*'],
+      content: 'Add a file',
+      icon: <FileUp />,
+    };
 
     const isImage = element.mediaType === KEYS.img;
 
@@ -72,6 +76,7 @@ export const PlaceholderElement = withHOC(
       onFilesSelected: ({ plainFiles: updatedFiles }) => {
         const firstFile = updatedFiles[0];
         const restFiles = updatedFiles.slice(1);
+        if (!firstFile) return;
 
         replaceCurrentPlaceholder(firstFile);
 

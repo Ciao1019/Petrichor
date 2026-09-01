@@ -12,8 +12,8 @@ import (
 )
 
 // listUserKnowledgeBases 对应 wiki-agent-logic.ts listUserKnowledgeBases。
-func listUserKnowledgeBases(q querierLike, userID int64) ([]map[string]any, error) {
-	rows, err := q.Query(context.Background(),
+func listUserKnowledgeBases(ctx context.Context, q querierLike, userID int64) ([]map[string]any, error) {
+	rows, err := q.Query(ctx,
 		`SELECT id, name, description FROM petrichor_kb_knowledge_base
 		 WHERE user_id = $1 ORDER BY name ASC`, userID)
 	if err != nil {
@@ -42,7 +42,7 @@ func AgentListKnowledgeBases(c *gin.Context, actx *authContext) (any, error) {
 	if err := requireAgentScope(actx, "doc:read"); err != nil {
 		return nil, err
 	}
-	items, err := listUserKnowledgeBases(dbPool(), actx.UserID)
+	items, err := listUserKnowledgeBases(c.Request.Context(), dbPool(), actx.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -98,8 +98,8 @@ func AgentKnowledgeBaseTree(c *gin.Context, actx *authContext) (any, error) {
 		return nil, err
 	}
 	q := dbPool()
-	ctx := context.Background()
-	kbRow, err := kb.AssertKnowledgeBaseOwnerForAgent(q, actx.UserID, kbID)
+	ctx := c.Request.Context()
+	kbRow, err := kb.AssertKnowledgeBaseOwnerForAgent(ctx, q, actx.UserID, kbID)
 	if err != nil {
 		return nil, err
 	}
@@ -218,14 +218,14 @@ func AgentCreateFolder(c *gin.Context, actx *authContext) (any, error) {
 		return nil, err
 	}
 	q := dbPool()
-	ctx := context.Background()
-	if _, err := kb.AssertKnowledgeBaseOwnerForAgent(q, actx.UserID, kbID); err != nil {
+	ctx := c.Request.Context()
+	if _, err := kb.AssertKnowledgeBaseOwnerForAgent(ctx, q, actx.UserID, kbID); err != nil {
 		return nil, err
 	}
-	if err := assertFolderParent(q, actx.UserID, kbID, parentID, hasParent); err != nil {
+	if err := assertFolderParent(ctx, q, actx.UserID, kbID, parentID, hasParent); err != nil {
 		return nil, err
 	}
-	sortOrder, err := nextSortOrder(q, actx.UserID, kbID, parentID, hasParent)
+	sortOrder, err := nextSortOrder(ctx, q, actx.UserID, kbID, parentID, hasParent)
 	if err != nil {
 		return nil, err
 	}
@@ -260,11 +260,11 @@ func optionalIDPtr(id int64, valid bool) *int64 {
 }
 
 // assertFolderParent 对照 handlers.ts：父节点必须是当前知识库下的 FOLDER。
-func assertFolderParent(q querierLike, userID, knowledgeBaseID, parentID int64, hasParent bool) error {
+func assertFolderParent(ctx context.Context, q querierLike, userID, knowledgeBaseID, parentID int64, hasParent bool) error {
 	if !hasParent {
 		return nil
 	}
-	row := q.QueryRow(context.Background(),
+	row := q.QueryRow(ctx,
 		`SELECT knowledge_base_id, type FROM petrichor_kb_node WHERE id = $1 AND user_id = $2 LIMIT 1`,
 		parentID, userID)
 	var nodeKbID int64
@@ -283,7 +283,7 @@ func assertFolderParent(q querierLike, userID, knowledgeBaseID, parentID int64, 
 }
 
 // nextSortOrder 取同级最大 sort_order + 1（对照 handlers.ts nextSortOrder）。
-func nextSortOrder(q querierLike, userID, knowledgeBaseID, parentID int64, hasParent bool) (int32, error) {
+func nextSortOrder(ctx context.Context, q querierLike, userID, knowledgeBaseID, parentID int64, hasParent bool) (int32, error) {
 	sqlText := `SELECT COALESCE(MAX(sort_order), 0) FROM petrichor_kb_node
 		WHERE user_id = $1 AND knowledge_base_id = $2`
 	args := []any{userID, knowledgeBaseID}
@@ -294,7 +294,7 @@ func nextSortOrder(q querierLike, userID, knowledgeBaseID, parentID int64, hasPa
 		sqlText += ` AND parent_id IS NULL`
 	}
 	var max int32
-	if err := q.QueryRow(context.Background(), sqlText, args...).Scan(&max); err != nil {
+	if err := q.QueryRow(ctx, sqlText, args...).Scan(&max); err != nil {
 		return 0, err
 	}
 	return max + 1, nil
