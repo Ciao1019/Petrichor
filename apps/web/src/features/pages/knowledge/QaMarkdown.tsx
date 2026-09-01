@@ -6,6 +6,7 @@ import Markdown from "@lobehub/ui/es/Markdown/index"
 import { remarkVideo } from "@lobehub/ui/es/Markdown/plugins/remarkVideo"
 import type { MarkdownProps } from "@lobehub/ui/es/Markdown/type"
 import ThemeProvider from "@lobehub/ui/es/ThemeProvider/index"
+import "katex/dist/katex.min.css"
 import { ThinkingOrb, type OrbState } from "thinking-orbs"
 
 import { useTheme } from "@/components/theme-provider"
@@ -127,6 +128,7 @@ function QaMarkdownThemeShell({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider
       themeMode={isDark ? "dark" : "light"}
+      enableCustomFonts={false}
       enableGlobalStyle={false}
       // ThemeProvider 内部的 antd <App> 包裹层默认只有 minHeight:inherit，
       // 会打断外层 h-full 高度链，这里补回 100% 高度。
