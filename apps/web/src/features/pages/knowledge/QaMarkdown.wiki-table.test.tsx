@@ -3,7 +3,11 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { WikiLinkClickProvider } from "@/components/markdown/wiki-link-context"
-import { QaStreamingMarkdown } from "./QaMarkdown"
+import { QaMarkdownScope, QaStreamingMarkdown } from "./QaMarkdown"
+
+vi.mock("@/components/theme-provider", () => ({
+  useTheme: () => ({ resolvedTheme: "light" }),
+}))
 
 globalThis.matchMedia ??= ((query: string) => ({
   matches: false,
@@ -22,6 +26,21 @@ globalThis.ResizeObserver ??= class {
 } as never
 
 afterEach(cleanup)
+
+describe("QaMarkdown 主题范围", () => {
+  it("不注入 CSP 禁止的外部字体与 KaTeX 样式", () => {
+    render(
+      <QaMarkdownScope>
+        <QaStreamingMarkdown text="正文" />
+      </QaMarkdownScope>,
+    )
+
+    const externalStyles = Array.from(
+      document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'),
+    ).filter((link) => new URL(link.href).origin !== window.location.origin)
+    expect(externalStyles).toEqual([])
+  })
+})
 
 describe("QaStreamingMarkdown Wiki 表格", () => {
   it("表格内链和正文内链使用同一波浪线样式与点击行为", () => {
