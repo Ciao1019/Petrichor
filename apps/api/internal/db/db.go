@@ -1,4 +1,4 @@
-// Package db 提供 pgx 连接池；沿用 transaction pooler 场景下禁用预编译语句的约束。
+// Package db 提供 pgx 连接池；兼容 transaction pooler 场景下禁用预编译语句的约束。
 package db
 
 import (
@@ -27,7 +27,7 @@ func Initialize(ctx context.Context) error {
 			poolErr = err
 			return
 		}
-		// Supabase transaction pooler 下不能使用 prepared statement 缓存。
+		// transaction pooler 下不能使用 prepared statement 缓存。
 		cfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
 		cfg.MaxConns = appConfig.DatabasePool.MaxConns
 		cfg.MinConns = appConfig.DatabasePool.MinConns

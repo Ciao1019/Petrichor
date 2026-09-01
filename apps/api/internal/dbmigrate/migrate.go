@@ -48,7 +48,7 @@ func Open(databaseURL string) (*goose.Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("解析数据库迁移连接失败: %w", err)
 	}
-	// 兼容 Supabase transaction pooler，不使用 prepared statement 缓存。
+	// 兼容 transaction pooler，不使用 prepared statement 缓存。
 	pgxConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
 	database := stdlib.OpenDB(*pgxConfig)
 

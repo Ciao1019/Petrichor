@@ -59,7 +59,7 @@
 git clone https://github.com/<你的用户名>/Petrichor.git petrichor
 cd petrichor
 
-# 2. 新建分支（不要在 main 上直接改）
+# 2. 新建分支（不要在 master 上直接改）
 git checkout -b feat/your-feature-name
 # 或修复类： fix/short-description
 # 或文档类： docs/update-readme
@@ -86,12 +86,12 @@ git push origin feat/your-feature-name
 
 ### 前置依赖
 
-| 工具 | 版本 |
+| 依赖 | 要求 |
 | --- | --- |
 | Bun | ≥ 1.3.14 |
 | Go | 以 `apps/api/go.mod` 声明为准 |
-| PostgreSQL | 16+（推荐直接用 Supabase 免费实例） |
-| S3 兼容存储 | Bitiful / S3 / MinIO 任选 |
+| PostgreSQL | 16+，并启用 `pg_trgm` 与 `vector`（pgvector）扩展 |
+| 对象存储 | 可使用本地目录，或选择 S3 兼容服务 |
 
 ### 启动
 
@@ -101,9 +101,14 @@ cp apps/web/.env.example apps/web/.env.local
 cp apps/api/config.example.toml apps/api/config.toml
 # Web 公开配置写入 .env.local；后端配置和密钥写入 config.toml
 
+docker compose up -d redis
+# 本地直连时，把 config.toml 的 cache.redis.url 改为 redis://127.0.0.1:6379/0
+
 # 终端 1：启动前由 Go 自动执行 Goose 初始化
 cd apps/api && go run ./cmd/server
-# 终端 2
+# 终端 2：视觉导入 Worker
+cd apps/api && go run ./cmd/worker
+# 终端 3：Bun / Vite Web
 bun dev
 ```
 

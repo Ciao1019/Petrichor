@@ -142,36 +142,36 @@ const AGENT_STEPS: { title: string; detail: string; ink: string }[] = [
 const STACK: { group: string; items: string[] }[] = [
     { group: "框架", items: ["Bun 1.3", "Vite 8", "React", "TypeScript 5.9", "React Router", "Go", "Gin", "Sa-Token"] },
     { group: "编辑器", items: ["PlateJS", "Slate", "Markdown", "KaTeX", "Mind Map", "Whiteboard"] },
-    { group: "数据层", items: ["PostgreSQL", "Supabase", "pgx", "S3 兼容存储"] },
+    { group: "数据层", items: ["PostgreSQL", "pgx", "Goose", "S3 兼容存储"] },
     { group: "AI", items: ["Vercel AI SDK", "OpenAI", "Gemini", "DeepSeek", "向量召回", "MCP"] },
     { group: "工程", items: ["Bun", "gofmt", "go vet", "Vitest", "ESLint"] },
 ]
 
 const SELF_HOST_STEPS: { title: string; detail: string; ink: string }[] = [
     {
-        title: "开一个 Supabase 项目",
+        title: "准备 PostgreSQL",
         ink: "green",
-        detail: "取 Transaction Pooler（6543 端口）连接串，写入 apps/api/config.toml 的 database.url。",
+        detail: "使用启用 pg_trgm 与 pgvector 的 PostgreSQL 16+，把直连或 Transaction Pooler 连接串写入 apps/api/config.toml。",
     },
     {
-        title: "准备 S3 兼容存储",
+        title: "选择对象存储",
         ink: "blue",
-        detail: "Bitiful / AWS S3 / MinIO 任选，建一个公开读的 Bucket，记下 endpoint、region、bucket 与密钥对。",
+        detail: "单机部署可使用 /data/uploads；也可配置 S3 兼容服务，文件通过站内地址或预签名 URL 读取。",
     },
     {
         title: "准备后端配置",
         ink: "orange",
-        detail: "从 config.example.toml 复制配置，填写 Session、加密、S3、LinuxDo、缓存和 Agent 选项。真实 TOML 不提交。",
+        detail: "从 apps/api/config.example.toml 复制配置，填写数据库、Session、加密、存储、缓存和 Agent 选项。真实 TOML 不提交。",
     },
     {
-        title: "准备前端配置",
+        title: "设置部署入口",
         ink: "pink",
-        detail: "从 apps/web/.env.example 复制 .env.local，只填写公开前端配置和 PETRICHOR_GO_API_URL。",
+        detail: "从根目录 .env.example 复制 .env，设置 PETRICHOR_DOMAIN 和公开端口，由 Caddy 负责 HTTPS 与同源反代。",
     },
     {
         title: "初始化表结构",
         ink: "teal",
-        detail: "启动 Go API 时会自动执行唯一的 Goose init，创建最终表结构，不写入默认账号，也不需要 Bun 执行数据库脚本。",
+        detail: "启动 Go API 时会自动执行尚未应用的 Goose 迁移，创建或升级最终表结构，不写入任何默认账号。",
     },
     {
         title: "启动并创建管理员",
@@ -185,6 +185,8 @@ const TERMINAL_LINES: { text: string; prompt?: boolean; muted?: boolean; caret?:
     { text: "cd petrichor && bun install --cwd apps/web", prompt: true },
     { text: "cp apps/web/.env.example apps/web/.env.local", prompt: true },
     { text: "cp apps/api/config.example.toml apps/api/config.toml", prompt: true },
+    { text: "# 配置 PostgreSQL、加密参数与本地 Redis 地址", muted: true },
+    { text: "docker compose up -d redis", prompt: true },
     { text: "# 终端 1：Go API", muted: true },
     { text: "cd apps/api && go run ./cmd/server", prompt: true },
     { text: "# 终端 2：Bun/Vite Web", muted: true },

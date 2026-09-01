@@ -79,7 +79,7 @@ body:
     id: env-version
     attributes:
       label: Petrichor 版本 / 提交 SHA
-      description: 例如 `main@c4d9c89` 或 release tag
+      description: 例如 `master@c4d9c89` 或 release tag
     validations:
       required: true
 

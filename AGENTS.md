@@ -18,8 +18,8 @@
   `apps/web/src/main.tsx`，页面路由由 `react-router-dom` 管理。
 - `apps/api` 是 Go + Gin API 服务，接管 `/api/*` 和 `/healthz`。
 - 生产环境由 `apps/web/Caddyfile` 托管 Vite 静态资源并反代 Go API；`apps/web/server.ts` 仅用于本地 Bun 运行。
-- 数据层使用 Supabase PostgreSQL，完整结构由 `apps/api/migrations/202608270002_init.sql`
-  定义，并由 Go 服务启动时自动执行。
+- 数据层使用启用 `pg_trgm` 与 `vector` 扩展的 PostgreSQL 16+，完整结构由
+  `apps/api/migrations/202608270002_init.sql` 定义，并由 Go 服务启动时自动执行。
 - 认证使用 Sa-Token-Go 的 Gin 集成，token 状态由 `sa_token_storage` 持久化到 PostgreSQL；
   业务用户只保存在 `petrichor_user`。
 - 上传和公开文件访问使用 S3 兼容对象存储。
@@ -106,8 +106,8 @@ cd apps/api && go run ./cmd/migrate status
 - 后续数据库变更放入 `apps/api/migrations/`，使用更高的纯数字版本前缀并添加
   `-- +goose Up`；已执行文件不可修改，应新增后续迁移。
 - Goose 使用 `goose_db_version` 管理版本，并以 PostgreSQL 表租约锁避免并发迁移。
-- Supabase transaction pooler 场景下保持 pgx `QueryExecModeExec`，不要启用 prepared
-  statement 缓存。
+- 经 transaction pooler 连接 PostgreSQL 时保持 pgx `QueryExecModeExec`，不要启用
+  prepared statement 缓存。
 - 涉及生产数据库删除、结构变更、批量更新前必须先说明影响范围并获得明确确认。
 
 ## 前端与 UI 约定
@@ -147,7 +147,8 @@ cd apps/api && go test ./... && go vet ./...
   `apps/api/config.toml`，模板为 `apps/api/config.example.toml`。
 - `config.toml` 含密钥且已忽略提交，不得输出或提交其真实内容。
 - `encryption.key`、`encryption.salt` 一旦用于真实数据，不要随意更换。
-- 生产环境建议在 `[database].url` 使用 Supabase transaction pooler 连接串。
+- 生产环境可使用自建或托管 PostgreSQL；通过 transaction pooler 接入时，应分别验证
+  `[database].url` 与可选的迁移连接。
 
 ## Git 与安全操作
 

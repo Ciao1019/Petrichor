@@ -6,7 +6,7 @@
 
 `apps/api/migrations/202608270002_init.sql` 是完整数据库基线，包含：
 
-- PostgreSQL 扩展和完整表结构；
+- PostgreSQL `pg_trgm`、`vector`（pgvector）扩展和完整表结构；
 - 当前索引、约束和最终字段；
 - 只面向全新数据库的最终结构，不包含历史迁移、兼容回填和废弃对象清理；
 - Sa-Token 所需的 `sa_token_storage` 持久化表；
@@ -27,7 +27,7 @@ Go API 在监听端口前自动执行 `provider.Up`。Goose 通过 `goose_db_ver
 ## 配置
 
 执行器读取 `apps/api/config.toml`，优先使用 `[database].migration_url`，留空时回退到
-`[database].url`。Supabase transaction pooler 下使用 pgx `QueryExecModeExec`。
+`[database].url`。经 transaction pooler 连接 PostgreSQL 时使用 pgx `QueryExecModeExec`。
 
 ## 手动诊断命令
 

@@ -15,7 +15,7 @@ React + Vite + TypeScript 前端，包管理与 Web 运行时统一使用 **Bun 
 | `src/styles` | 全局与专题样式 |
 | `public` | 不经过打包处理的静态资源 |
 | `scripts` | Web 开发和代码生成脚本 |
-| `server.ts` | 生产静态服务与 Go API 同源反代 |
+| `server.ts` | 本地静态服务与 Go API 同源反代 |
 | `patches` | 仅属于 Web 依赖的 Bun 补丁 |
 
 ## 本地开发
