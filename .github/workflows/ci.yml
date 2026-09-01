@@ -18,7 +18,7 @@ jobs:
     name: Web（typecheck / lint / test / build）
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
@@ -41,7 +41,7 @@ jobs:
       run:
         working-directory: apps/api
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version-file: apps/api/go.mod
@@ -66,6 +66,6 @@ jobs:
     name: 模块行数
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: ./scripts/check-file-size.sh
       - run: ./scripts/check-go-request-context.sh
