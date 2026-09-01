@@ -97,15 +97,15 @@ PageIndex 目录时再执行“更新 Wiki”；配置了 Embedding 模型后还
 任务的核心阶段如下：
 
 ```mermaid
-flowchart TD
+flowchart LR
   load["读取文章与编译说明书"] --> chunk["确定性结构切片"]
-  chunk --> questions["分片问题生成"]
-  chunk --> extract["整篇实体 / 概念 / 关系抽取"]
-  questions --> plan["全局目录规划"]
-  extract --> plan
-  plan --> pages["分批生成 Wiki 页面"]
+  chunk --> parallel{"并行"}
+  parallel --> questions["分片问题生成"]
+  parallel --> extract["整篇实体 / 概念 / 关系抽取"]
+  questions --> pages["全局目录规划<br/>分批生成 Wiki 页面"]
+  extract --> pages
   pages --> tx["事务提交<br/>分片 · 索引 · Wiki · 链接 · 来源"]
-  tx --> vectors["提交后补原文分片向量<br/>best-effort"]
+  tx --> vectors["补原文分片向量<br/>best-effort"]
 ```
 
 问题生成与整篇抽取并行执行；只有页面、链接和索引准备完整后，结果才会在同一事务中提交。
