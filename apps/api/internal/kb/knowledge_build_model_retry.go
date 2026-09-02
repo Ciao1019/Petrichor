@@ -170,6 +170,8 @@ func knowledgeBuildOperationLabel(operation string) string {
 		return "推荐问题生成"
 	case "kb.build.extraction":
 		return "知识候选分析"
+	case "kb.build.summary":
+		return "长文档摘要合并"
 	case "kb.build.taxonomy":
 		return "知识目录规划"
 	case "kb.build.pages":

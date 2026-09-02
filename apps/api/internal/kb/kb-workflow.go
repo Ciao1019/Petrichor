@@ -18,10 +18,8 @@ const (
 	knowledgeShortHeadingChars = 120
 	headingDominanceRatio      = 0.6
 	knowledgeChunkOverlapChars = 320
-	knowledgeChunkLimit        = 120
 	questionBatchMaxChars      = 4000
 	questionBatchMaxItems      = 4
-	wikiDocumentMaxChars       = 72000
 	wikiItemLimit              = 24
 	wikiPageBatchSize          = 4
 )
@@ -367,23 +365,19 @@ type wfChunk struct {
 	recommendedQuestions []string
 }
 
-// splitMarkdownForKnowledgeBuild 结构切片主入口。
-func splitMarkdownForKnowledgeBuild(markdown string, articleTitle string, maxChars int) ([]wfChunk, bool) {
+// splitMarkdownForKnowledgeBuild 结构切片主入口。所有正文都必须进入切片与检索索引；
+// 长文档的模型处理由后续阶段分批完成，不能在这里按切片数量丢弃尾部。
+func splitMarkdownForKnowledgeBuild(markdown string, articleTitle string, maxChars int) []wfChunk {
 	if maxChars <= 0 {
 		maxChars = knowledgeChunkMaxChars
 	}
 	sections := parseMarkdownSections(markdown, articleTitle)
 	if len(sections) == 0 {
-		return nil, false
+		return nil
 	}
 	chunks := []wfChunk{}
-	truncated := false
 	for _, merged := range mergeSections(sections, articleTitle) {
 		for _, piece := range splitLongSection(merged.text, maxChars, knowledgeChunkOverlapChars) {
-			if len(chunks) >= knowledgeChunkLimit {
-				truncated = true
-				return chunks, truncated
-			}
 			position := int32(len(chunks))
 			key := "chunk-" + padLeft(strconvItoa(int(position)+1), 3, '0')
 			chunks = append(chunks, wfChunk{
@@ -396,7 +390,7 @@ func splitMarkdownForKnowledgeBuild(markdown string, articleTitle string, maxCha
 			})
 		}
 	}
-	return chunks, truncated
+	return chunks
 }
 
 func strconvItoa(n int) string { return jsonNumber(n) }

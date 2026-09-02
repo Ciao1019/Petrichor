@@ -15,12 +15,13 @@ type chunkWithQuestions struct {
 
 // knowledgeCandidate 候选骨架。
 type knowledgeCandidate struct {
-	kind         string // entity | concept
-	name         string
-	pageKey      string
-	aliases      []string
-	summary      string
-	categoryPath []string
+	kind            string // entity | concept
+	name            string
+	pageKey         string
+	aliases         []string
+	summary         string
+	categoryPath    []string
+	sourceChunkKeys []string
 }
 
 // knowledgeRelation 关系。
@@ -220,19 +221,6 @@ func normalizeKnowledgeRelations(values any, candidateKeys map[string]struct{}) 
 	return out
 }
 
-func buildWholeDocumentContext(contentMd string) string {
-	normalized := trimSpace(regexp.MustCompile(`\r\n?`).ReplaceAllString(contentMd, "\n"))
-	if len([]rune(normalized)) <= wikiDocumentMaxChars {
-		return normalized
-	}
-	runes := []rune(normalized)
-	headLength := wikiDocumentMaxChars * 62 / 100
-	tailLength := wikiDocumentMaxChars - headLength
-	return string(runes[:headLength]) +
-		"\n\n<!-- 文档过长，中间内容已省略；以下继续保留文档末尾 -->\n\n" +
-		string(runes[len(runes)-tailLength:])
-}
-
 func renderExistingPageCatalog(pages []existingKnowledgePage) string {
 	if len(pages) == 0 {
 		return "（暂无既有页面）"
@@ -257,14 +245,14 @@ func renderExistingPageCatalog(pages []existingKnowledgePage) string {
 	return strings.Join(lines, "\n")
 }
 
-// extractDocumentCandidates 整文候选抽取；失败回落本地摘要 + 空候选。
-func extractDocumentCandidates(ctx context.Context, userID int64, profile compileProfile, articleTitle, contentMd string, existingPages []existingKnowledgePage) (string, []knowledgeCandidate, []knowledgeRelation, []string) {
+// extractDocumentCandidateBatch 从一个连续文档分段抽取候选；长文档由上层覆盖全部分段。
+func extractDocumentCandidateBatch(ctx context.Context, userID int64, profile compileProfile, articleTitle string, chunks []wfChunk, existingPages []existingKnowledgePage) (string, []knowledgeCandidate, []knowledgeRelation, []string) {
+	contentMd := joinKnowledgeChunkContent(chunks)
 	fallbackSummary := localDocumentSummary(contentMd)
-	defer reportKnowledgeBuildProgress(ctx, 36, knowledgeBuildPhaseAnalyzing, "整篇知识候选分析完成", 0, 0)
 	parsed, err := invokeKnowledgeBuildJSON(ctx, ChatRequest{
 		UserID: userID,
 		SystemPrompt: profile.systemPrompt(
-			"你是 Wiki 候选抽取器。必须从整篇 Markdown 识别被实质讨论的实体、概念及它们之间的关系；不要根据预先切片分别抽取。",
+			"你是 Wiki 候选抽取器。当前输入是长文档的一个连续分段；必须识别这个分段中被实质讨论的实体、概念及它们之间的关系，后续系统会跨分段合并。",
 			"实体（entity）是具有独立身份、可以被明确指代的具体对象：人物、组织、产品、应用/工具、平台、操作系统、地点、协议、具名技术/服务或事件。",
 			"概念（concept）是可以被解释、学习或复用的知识点：功能/能力、方法、流程、规则、原理、配置方式、安全机制、理论或抽象主题。",
 			"章节标题或聚合标签只适合作为目录，不得抽成页面；通用名词和一带而过的技术名也不要抽取。",
@@ -272,8 +260,9 @@ func extractDocumentCandidates(ctx context.Context, userID int64, profile compil
 			"若一个名称表示具体产品/工具本身，即使它属于某类技术，也只能放入 entities；只有抽象知识才放入 concepts。不得跨两类重复。",
 			"existing_pages 中若存在同一对象，必须复用其 pageKey。",
 			"relations 只描述本次 candidates 之间有原文依据的关系。",
+			"每个候选必须在 sourceChunkKeys 中列出直接支持它的 chunk id，不得引用输入之外的 id。",
 			"只输出 JSON，不要 Markdown 围栏。结构：",
-			"{\"documentSummary\":\"...\",\"entities\":[{\"name\":\"\",\"pageKey\":\"entity/...\",\"aliases\":[],\"summary\":\"\"}],\"concepts\":[同结构],\"relations\":[{\"fromPageKey\":\"...\",\"toPageKey\":\"...\",\"relationType\":\"实现\",\"description\":\"...\"}]}。",
+			"{\"documentSummary\":\"...\",\"entities\":[{\"name\":\"\",\"pageKey\":\"entity/...\",\"aliases\":[],\"summary\":\"\",\"sourceChunkKeys\":[\"chunk-001\"]}],\"concepts\":[同结构],\"relations\":[{\"fromPageKey\":\"...\",\"toPageKey\":\"...\",\"relationType\":\"实现\",\"description\":\"...\"}]}。",
 		),
 		Message: strings.Join([]string{
 			"知识库：" + profile.KnowledgeBaseName,
@@ -282,7 +271,7 @@ func extractDocumentCandidates(ctx context.Context, userID int64, profile compil
 			renderExistingPageCatalog(existingPages),
 			"</existing_pages>",
 			"<document_markdown>",
-			buildWholeDocumentContext(contentMd),
+			renderKnowledgeDocumentChunks(chunks),
 			"</document_markdown>",
 		}, "\n\n"),
 		Op: "kb.build.extraction",
@@ -297,6 +286,7 @@ func extractDocumentCandidates(ctx context.Context, userID int64, profile compil
 		normalizeKnowledgeCandidates(parsed["concepts"], "concept"),
 		wikiItemLimit,
 	)
+	candidates = attachKnowledgeCandidateSources(candidates, parsed, chunks)
 	keys := map[string]struct{}{}
 	for _, c := range candidates {
 		keys[c.pageKey] = struct{}{}
@@ -545,18 +535,11 @@ func normalizeGeneratedPageContent(value any, candidate knowledgeCandidate) stri
 }
 
 // materializeWikiPages 批量生成候选页面正文；单页失败回落候选摘要页。
-func materializeWikiPages(ctx context.Context, userID int64, profile compileProfile, articleTitle, contentMd string, candidates []knowledgeCandidate, relations []knowledgeRelation, warnings []string) ([]extractedItem, []string) {
+func materializeWikiPages(ctx context.Context, userID int64, profile compileProfile, articleTitle string, chunks []wfChunk, candidates []knowledgeCandidate, relations []knowledgeRelation, warnings []string) ([]extractedItem, []string) {
 	if len(candidates) == 0 {
 		return nil, warnings
 	}
-	batches := make([][]knowledgeCandidate, 0, (len(candidates)+wikiPageBatchSize-1)/wikiPageBatchSize)
-	for start := 0; start < len(candidates); start += wikiPageBatchSize {
-		end := start + wikiPageBatchSize
-		if end > len(candidates) {
-			end = len(candidates)
-		}
-		batches = append(batches, candidates[start:end])
-	}
+	batches := batchKnowledgeCandidatesByContext(candidates, chunks)
 	type batchResult struct {
 		pages    []genPage
 		warnings []string
@@ -599,7 +582,7 @@ func materializeWikiPages(ctx context.Context, userID int64, profile compileProf
 				renderWikiCandidateCatalog(batch),
 				"</requested_pages>",
 				"<document_markdown>",
-				buildWholeDocumentContext(contentMd),
+				buildKnowledgeCandidateContext(batch, chunks),
 				"</document_markdown>",
 			}, "\n\n"),
 			Op: "kb.build.pages",

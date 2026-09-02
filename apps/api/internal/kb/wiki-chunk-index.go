@@ -15,10 +15,12 @@ import (
 const ArticleKnowledgeIndexVersion = 1
 
 // ChunkAlgorithmVersion 对应 CHUNK_ALGORITHM_VERSION（切片算法版本，存量按 0 处理）。
-const ChunkAlgorithmVersion = 2
+// v3 移除 120 片硬上限，长文档尾部也会进入切片与检索索引。
+const ChunkAlgorithmVersion = 3
 
 // ArticleKnowledgeBuildVersion 对应 ARTICLE_KNOWLEDGE_BUILD_VERSION。
-const ArticleKnowledgeBuildVersion = 4
+// v5 对长文档执行全量分段候选抽取，不再省略超限正文的中间部分。
+const ArticleKnowledgeBuildVersion = 5
 
 const (
 	indexBatchSize    = 64

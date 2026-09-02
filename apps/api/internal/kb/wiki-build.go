@@ -67,11 +67,8 @@ func buildArticleKnowledgeCore(ctx context.Context, q txBeginner, userID, kbID, 
 		})
 	}
 
-	chunks, truncated := splitMarkdownForKnowledgeBuild(article.ContentMd, article.Title, 0)
+	chunks := splitMarkdownForKnowledgeBuild(article.ContentMd, article.Title, 0)
 	warnings := []string{}
-	if truncated {
-		warnings = append(warnings, "文档过长，仅前 "+jsonNumber(knowledgeChunkLimit)+" 个切片参与了知识构建，后续内容未生成推荐问题")
-	}
 	if len(chunks) == 0 {
 		return nil, badReq("文章没有可构建的 Markdown 切片")
 	}
@@ -104,7 +101,7 @@ func buildArticleKnowledgeCore(ctx context.Context, q txBeginner, userID, kbID, 
 			}
 		}()
 		documentSummary, candidates, relations, extractionWarnings = extractDocumentCandidates(
-			ctx, userID, profile, article.Title, article.ContentMd, existingPages)
+			ctx, userID, profile, article.Title, chunks, existingPages)
 	}()
 	parallel.Wait()
 	close(parallelErrors)
@@ -130,7 +127,7 @@ func buildArticleKnowledgeCore(ctx context.Context, q txBeginner, userID, kbID, 
 	candidates, warnings = planKnowledgeTaxonomy(ctx, userID, profile, article.Title, candidates, existingPages, warnings)
 	reportKnowledgeBuildProgress(ctx, 55, knowledgeBuildPhaseTaxonomy, "知识目录规划完成", 0, 0)
 	reportKnowledgeBuildProgress(ctx, 58, knowledgeBuildPhasePages, "正在生成 Wiki 页面", 0, 0)
-	items, warnings := materializeWikiPages(ctx, userID, profile, article.Title, article.ContentMd, candidates, relations, warnings)
+	items, warnings := materializeWikiPages(ctx, userID, profile, article.Title, chunks, candidates, relations, warnings)
 	reportKnowledgeBuildProgress(ctx, 88, knowledgeBuildPhasePersisting, "正在写入知识页面和检索索引", 0, 0)
 
 	sourcePage, entityCount, conceptCount, werr := persistKnowledgeBuild(
