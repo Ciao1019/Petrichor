@@ -56,9 +56,14 @@ bun dev
 | `[storage]` / `[storage.s3]` | 本地目录与 S3 兼容对象存储 |
 | `[cache.redis]` | 缓存与 Asynq 共用的 Redis TCP 连接、连接池和命令超时 |
 | `[knowledge_build]` | 知识构建 Asynq Worker 并发、队列软上限和模型批次并发 |
+| `[agent]` | 可选外部 Agent Skill 资源目录；留空时不提供 ZIP Skill 包 |
 | `[agent.features]` | Agent Runtime 功能开关 |
 | `[agent.budget]` | Agent 预算、超时、重试和上下文限制 |
 | `[agent.research]` | 可选外部搜索供应商与超时 |
+
+当前仓库和默认 API 镜像不内置外部 Agent Skill 资源目录，因此 `/api/agent/skill-pack` 默认返回
+404；无需 ZIP 时使用 `/api/agent/skill` 单文件或 MCP。若配置 `skills_directory`，Docker 部署还要
+把对应目录挂载到 API 容器可读路径。
 
 开发免登录只能在 `server.environment = "development"` 时启用：
 

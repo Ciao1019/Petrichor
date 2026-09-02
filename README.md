@@ -44,6 +44,18 @@
 
 ## 🚀 快速开始
 
+### Vercel 纯前端演示
+
+只需要展示产品、暂时不接后端时，可直接部署仓库内置的静态 Demo：
+
+```bash
+bun install --cwd apps/web
+bun run build:demo
+bunx vercel --prod
+```
+
+它覆盖前台文章与问答、后台知识库与编辑器、Wiki 知识空间和图谱；全部数据在浏览器内生成，刷新即重置，不需要数据库、Redis、S3 或模型密钥。详细说明见 [`docs/vercel-static-demo.md`](docs/vercel-static-demo.md)。
+
 ### Docker Compose 部署
 
 准备 Docker Engine、Compose v2，以及一套可从容器访问、已启用 `pg_trgm` 与 `vector`（pgvector）扩展的 **PostgreSQL 16+** 数据库：

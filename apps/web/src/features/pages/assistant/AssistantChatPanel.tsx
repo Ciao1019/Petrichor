@@ -168,25 +168,25 @@ export function QaChatPanel({
   const suggestions = React.useMemo(() => {
     if (focusSelection.kind === "none") {
       return [
-        { prompt: "我现在有多少个知识库和文档库？" },
-        { prompt: "用一段话总结所有知识库的核心主题。" },
-        { prompt: "在文档库里找找最近值得复习的内容。" },
-        { prompt: "把「盘点我的知识库现状」拆成可见计划，再逐步执行。" },
+        { prompt: "Mole 第一次清理前需要注意什么？" },
+        { prompt: "怎样定制 Fastfetch 的显示模块？" },
+        { prompt: "对比 Mole 和 Fastfetch 的用途与使用边界。" },
+        { prompt: "从现有资料中提炼可以长期复用的操作原则，并给出来源。" },
       ]
     }
     if (focusSelection.kind === "doc_library") {
       return [
-        { prompt: `请基于「${scopeName ?? "当前文档库"}」总结我可以问哪些问题。` },
-        { prompt: "找出这份资料里最值得记住的结论。" },
-        { prompt: "用表格对比文档中的关键概念。" },
-        { prompt: "帮我定位和「部署 / 回滚」相关的段落。" },
+        { prompt: `概括「${scopeName ?? "当前文档库"}」最近收录的核心内容。` },
+        { prompt: "这批资料里有哪些高风险操作需要提前确认？" },
+        { prompt: "整理一份可以直接照做的操作清单。" },
+        { prompt: "哪些结论有原文依据？请标明来源。" },
       ]
     }
     return [
-      { prompt: `请基于「${scopeName ?? "当前知识库"}」总结我可以问哪些问题。` },
-      { prompt: "对当前知识库做一次结构化对比分析，并用表格展示。" },
-      { prompt: "找出值得沉淀的结论，并给出引用。" },
-      { prompt: "搜索这个知识库里和「目标 / 原则」相关的内容。" },
+      { prompt: `概括「${scopeName ?? "当前知识库"}」的核心主题和内容边界。` },
+      { prompt: "找出几条可以直接用于实践的结论。" },
+      { prompt: "哪些内容之间存在关联？请结合原文说明。" },
+      { prompt: "给我一条从入门到深入的阅读路径。" },
     ]
   }, [focusSelection.kind, scopeName])
 

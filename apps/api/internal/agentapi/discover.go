@@ -187,12 +187,8 @@ description: Use this skill when an AI agent needs to call the Petrichor externa
 
 # Petrichor
 
-兼容旧入口的单文件 Skill。推荐改用完整 Skill 包，里面是一个 ` + "`petrichor/`" + ` 顶层 skill，
-内部按用户意图路由到 articles / docs / qa / share / ai / wiki / setup 子文档：
-
-` + "```bash" + `
-curl -L "` + normalizedBaseUrl + endpoints["skillPack"] + `" -o petrichor-skill.zip
-` + "```" + `
+使用 Petrichor 外部 Agent REST API 浏览知识库、检索与阅读文档、执行问答、管理文章与分享，
+以及生成摘要或思维导图。接口清单以 manifest 和 capabilities 的实时响应为准。
 
 ## 环境变量
 
@@ -203,15 +199,15 @@ export PETRICHOR_API_KEY="ptc_live_xxx"
 
 ## 通用规则
 
-- 推荐用 Skill 包内附带的 ` + "`scripts/petrichor`" + ` CLI（零依赖 Python 3.8+）代替裸 curl，错误信息更友好。
-- 不要输出完整 API Key。
+- 不要输出完整 API Key，也不要把它写入仓库、日志或对话正文。
 - 所有受保护接口带上 ` + "`Authorization: Bearer $PETRICHOR_API_KEY`" + `。
 - 删除文章前必须向用户复述文章 ID 和标题，并获得明确确认。
-- 启用分享密码、设置到期时间、撤销分享前，先用 ` + "`share info`" + ` 复述当前状态。
-- 触发 AI 生成（summary、mindmap）前，先告诉用户会调用模型可能产生费用。
+- 启用分享密码、设置到期时间、撤销分享前，先查询并复述当前分享状态。
+- 触发 AI 生成前，先说明会调用模型且可能产生费用。
 - 不确定知识库或文章 ID 时，先查 manifest、capabilities、知识库列表和文档搜索。
+- ` + "`401`" + ` 检查 Key，` + "`403`" + ` 检查 scope；不要假设服务端提供每 Key 限流或 ` + "`Retry-After`" + `。
 
-## 快速命令
+## 发现与自检
 
 ` + "```bash" + `
 curl -sS "$PETRICHOR_BASE_URL` + endpoints["manifest"] + `"
@@ -219,7 +215,7 @@ curl -sS "$PETRICHOR_BASE_URL` + endpoints["capabilities"] + `" \
   -H "Authorization: Bearer $PETRICHOR_API_KEY"
 ` + "```" + `
 
-文章：
+## 新建文章
 
 ` + "```bash" + `
 curl -sS -X POST "$PETRICHOR_BASE_URL` + endpoints["articleCreate"] + `" \
@@ -228,7 +224,7 @@ curl -sS -X POST "$PETRICHOR_BASE_URL` + endpoints["articleCreate"] + `" \
   -d '{"knowledgeBaseId":"1","title":"标题","contentMd":"# 标题\n\n正文","tags":["agent"]}'
 ` + "```" + `
 
-文档问答：
+## 文档问答
 
 ` + "```bash" + `
 curl -sS -X POST "$PETRICHOR_BASE_URL` + endpoints["documentQa"] + `" \

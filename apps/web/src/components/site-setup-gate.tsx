@@ -10,6 +10,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input"
 import { authApi } from "@/lib/api"
 import { dashboardRoutes } from "@/lib/dashboard-routes"
+import { isDemoMode, isDemoOnlyBuild } from "@/lib/demo/demo-mode"
 
 type SetupCheckState = "checking" | "required" | "complete" | "error"
 
@@ -185,6 +186,10 @@ function SetupForm({ onInitialized }: { onInitialized: () => void }) {
 
 export function SiteSetupGate({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
+  // /demo 要在路由组件渲染后才写 sessionStorage，因此入口路径也需直接放行。
+  const skipSetupCheck = isDemoOnlyBuild()
+    || isDemoMode()
+    || (typeof window !== "undefined" && window.location.pathname === "/demo")
   const [state, setState] = useState<SetupCheckState>("checking")
   const requestVersion = useRef(0)
 
@@ -203,12 +208,13 @@ export function SiteSetupGate({ children }: { children: React.ReactNode }) {
   }, [])
 
   useEffect(() => {
-    checkSetup()
+    if (!skipSetupCheck) checkSetup()
     return () => {
       requestVersion.current += 1
     }
-  }, [checkSetup])
+  }, [checkSetup, skipSetupCheck])
 
+  if (skipSetupCheck) return children
   if (state === "checking") return <SetupLoading />
   if (state === "error") return <SetupCheckError onRetry={checkSetup} />
   if (state === "required") {

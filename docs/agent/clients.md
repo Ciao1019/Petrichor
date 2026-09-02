@@ -1,191 +1,207 @@
-# 把 Petrichor 接入你的 Agent：MCP 与 Skill 包集成指南
+# 把 Petrichor 接入你的 Agent：MCP、REST 与 Skill
 
-Petrichor 提供两条把知识库能力接入外部 Agent（Claude Code、Codex、Cursor 等）的路径，
-共用同一套 API Key 与调用审计：
+Petrichor 对外提供三种入口，它们共用同一套 Agent API Key、scope 校验和调用审计：
 
-| | MCP Server | Skill 包 |
-| --- | --- | --- |
-| 形态 | 标准 Model Context Protocol 服务器（Streamable HTTP） | 按意图路由的 SKILL.md + 零依赖 CLI |
-| 适用客户端 | 原生支持 MCP 的工具（Claude Code / Codex / Cursor / Claude Desktop 等） | 任何能执行 shell 命令的 Agent |
-| 安装成本 | 一行配置，无需下载文件 | 下载 ZIP、解压、改包内 `config.json` |
-| 参数校验 | 工具入参带 JSON Schema，客户端调用前校验 | 由 CLI 的 argparse 校验 |
-| 能力范围 | 检索 / 阅读 / 问答 / 文章写操作 / Wiki / 分享（20 个工具） | 同 MCP，额外覆盖 AI 摘要 / 思维导图 / 知识图谱 |
-| 推荐场景 | 客户端支持 MCP 时的默认选择 | 客户端不支持 MCP，或需要 AI 生成能力 |
+| 形态 | MCP Server | REST API | 单文件 Skill |
+| --- | --- | --- | --- |
+| 入口 | `POST /api/mcp` | `/api/agent/**` | `GET /api/agent/skill` |
+| 能力范围 | 13 个核心文档工具 | 22 个能力端点 | 教 Agent 用 `curl` 调用 REST |
+| 适合 | Claude Code、Codex、Cursor 等支持 MCP 的客户端 | 自研客户端和自动化脚本 | 不支持 MCP、但能读取 Skill 并执行 shell 的 Agent |
+| 更新方式 | 服务端即时生效 | 服务端即时生效 | 重新下载 `SKILL.md` |
 
-两条路径能力保持一致（Skill 是能力超集），可以同时启用。
+> `/api/agent/skill-pack` 是可选的目录打包端点，不是默认内置能力。详见
+> [可选 ZIP Skill 包](#4-可选-zip-skill-包)。
 
-## 前置准备
+## 1. 前置准备
 
-1. 部署好 Petrichor（下文以 `https://your-petrichor.example.com` 代替你的站点地址）。
-2. 登录后台，在「Agent 集成 → API Key 管理」生成 API Key（形如 `ptc_live_xxx`）。
-   明文只展示一次；服务端只存 SHA-256 哈希，可随时撤销。
-3. 权限（scope）按需勾选：`doc:read`（检索/阅读）、`qa:read`（问答）、
-   `article:write` / `article:delete`（文章写操作）、`wiki:read` / `wiki:write`（Wiki）、
-   `share:write`（分享）、`ai:write`（AI 生成，仅 Skill 用到）。
+在 Petrichor 的 **设置 → Agent 接入 → API Key** 页面生成 Key。明文仅展示一次，请立即保存。
 
----
+常用 scope：
 
-## 一、MCP Server 集成
+| Scope | 用途 |
+| --- | --- |
+| `doc:read` | 知识库、目录树、搜索、正文与 Wiki 读取 |
+| `qa:read` | 文档问答 |
+| `article:write` | 新建文件夹、创建/更新/移动文章 |
+| `article:delete` | 删除文章 |
+| `share:write` | 查询、创建或撤销文章分享 |
+| `ai:write` | 摘要、思维导图、知识图谱生成 |
+| `wiki:read` | Wiki 页面读取与体检 |
+| `wiki:write` | Wiki 重建 |
 
-- 端点：`https://your-petrichor.example.com/api/mcp`
-- 传输：Streamable HTTP（POST），无状态，无需 Redis
-- 鉴权：请求头 `Authorization: Bearer ptc_live_xxx`（包括 `initialize` 在内所有请求都要求鉴权）
+权限应按最小集合授予。详细接口契约见 [REST / MCP 集成设计](./integration.md)。
 
-### Claude Code
+## 2. MCP Server
+
+MCP 地址：
+
+```text
+https://你的域名/api/mcp
+```
+
+服务端实现 Streamable HTTP 的 `initialize`、`tools/list` 和 `tools/call`，并要求每个请求携带：
+
+```http
+Authorization: Bearer ptc_live_xxx
+```
+
+### 2.1 Claude Code
 
 ```bash
-claude mcp add --transport http petrichor https://your-petrichor.example.com/api/mcp \
+claude mcp add --transport http petrichor https://你的域名/api/mcp \
   --header "Authorization: Bearer ptc_live_xxx"
 ```
 
-默认只对当前项目生效；加 `--scope user` 全局可用。安装后在 `/mcp` 面板里能看到
-petrichor 已连接，并列出全部工具。
+### 2.2 Codex CLI
 
-### Codex CLI
-
-`~/.codex/config.toml`（项目级放 `.codex/config.toml`）：
+编辑 `~/.codex/config.toml`：
 
 ```toml
 [mcp_servers.petrichor]
-url = "https://your-petrichor.example.com/api/mcp"
+url = "https://你的域名/api/mcp"
 http_headers = { Authorization = "Bearer ptc_live_xxx" }
 ```
 
-### Cursor / Claude Desktop 等 JSON 配置客户端
-
-Cursor 写入 `~/.cursor/mcp.json`（项目级 `.cursor/mcp.json`），其他客户端写入各自的
-MCP 配置文件，格式相同：
+### 2.3 Cursor 或其它 JSON 配置客户端
 
 ```json
 {
   "mcpServers": {
     "petrichor": {
-      "url": "https://your-petrichor.example.com/api/mcp",
-      "headers": { "Authorization": "Bearer ptc_live_xxx" }
+      "url": "https://你的域名/api/mcp",
+      "headers": {
+        "Authorization": "Bearer ptc_live_xxx"
+      }
     }
   }
 }
 ```
 
-### 验证与排障
-
-- 验证：让 Agent 调用 `list_knowledge_bases`，能列出知识库即接入成功。
-- `401`：API Key 缺失 / 无效 / 已撤销 / 已过期，重新生成并检查请求头。
-- `403`：Key 缺少对应 scope，重新生成时勾选所需权限。
-- 每次工具调用都会写入「调用日志」，User-Agent 以 `petrichor-mcp/<工具名>` 开头，
-  后台会以 MCP 徽标区分展示，可查看完整入参/出参排障。
-- `ask_documents`、`wiki_ingest` 会调用模型，耗时较长；自托管时应确保反向代理和负载均衡器
-  的请求超时足够长。
-
-### MCP 工具清单
-
-| 分组 | 工具 | scope |
-| --- | --- | --- |
-| 检索与阅读 | `list_knowledge_bases` `get_knowledge_base_tree` `search_documents` `search_document_tree` `semantic_search_document_tree` `view_document` `list_articles` | `doc:read` |
-| 文档问答 | `ask_documents` | `qa:read` |
-| 文章与文件夹 | `create_folder` `create_article` `update_article` `move_article` | `article:write` |
-| 文章删除 | `delete_article` | `article:delete` |
-| 知识 Wiki | `list_wiki_pages` `read_wiki_page` `wiki_lint` | `wiki:read` |
-| Wiki 编译 | `wiki_ingest` | `wiki:write` |
-| 文章分享 | `share_article` `get_article_share` `revoke_article_share` | `share:write` |
-
----
-
-## 二、Skill 包集成
-
-Skill 包是一个 ZIP（`GET /api/agent/skill-pack`），解压后是一个符合 Agent Skills
-规范的 `petrichor/` 目录：
+接入成功后，`tools/list` 当前返回以下 13 个工具：
 
 ```text
-petrichor/
-├── SKILL.md                 # 根入口：按用户意图路由到子文档
-├── config.json              # 站点地址与 Agent API Key
-├── skills/                  # setup / articles / docs / qa / share / ai / wiki 七个子能力
-├── scripts/petrichor        # 零依赖 Python CLI（所有能力的统一入口）
-├── scripts/petrichor-api.sh # curl 版回退脚本
-├── references/endpoints.md  # 全部 REST 端点字段与示例
-└── assets/manifest.json     # 接口清单快照
+list_knowledge_bases
+get_knowledge_base_tree
+search_documents
+search_document_tree
+semantic_search_document_tree
+view_document
+ask_documents
+list_articles
+create_folder
+create_article
+update_article
+delete_article
+move_article
 ```
 
-Agent 只加载根 SKILL.md，按需读取子文档，不会撑爆上下文。
+分享、AI 生成和 Wiki 写操作当前只在 REST 能力层提供，尚未映射为 MCP 工具。
 
-### Claude Code
+## 3. 单文件 Skill
+
+`GET /api/agent/skill` 会按当前请求域名生成一个可直接安装的 `SKILL.md`。下载文件本身不需要
+API Key；文件中的受保护 REST 调用需要 `PETRICHOR_API_KEY`。
+
+### 3.1 Claude Code
 
 ```bash
-curl -L "https://your-petrichor.example.com/api/agent/skill-pack" -o petrichor-skill.zip
-unzip -o petrichor-skill.zip -d ~/.claude/skills/        # 全局；项目级用 .claude/skills/
-$EDITOR ~/.claude/skills/petrichor/config.json           # 填入 apiKey
-chmod +x ~/.claude/skills/petrichor/scripts/petrichor
+mkdir -p ~/.claude/skills/petrichor
+curl -L "https://你的域名/api/agent/skill" \
+  -o ~/.claude/skills/petrichor/SKILL.md
+
+export PETRICHOR_BASE_URL="https://你的域名"
+export PETRICHOR_API_KEY="ptc_live_xxx"
 ```
 
-对话中提到知识库相关任务（「问问我的知识库」「把这篇总结存到 Petrichor」）时会自动触发。
+若只想让单个项目使用，可把文件放到项目的 `.claude/skills/petrichor/SKILL.md`。
 
-### Codex CLI
+### 3.2 Codex CLI
 
 ```bash
-unzip -o petrichor-skill.zip -d ~/.codex/skills/         # 或项目的 .codex/skills/
-$EDITOR ~/.codex/skills/petrichor/config.json            # 填入 apiKey
-chmod +x ~/.codex/skills/petrichor/scripts/petrichor
+mkdir -p ~/.codex/skills/petrichor
+curl -L "https://你的域名/api/agent/skill" \
+  -o ~/.codex/skills/petrichor/SKILL.md
+
+export PETRICHOR_BASE_URL="https://你的域名"
+export PETRICHOR_API_KEY="ptc_live_xxx"
 ```
 
-旧版本 Codex 不支持 skills 目录时：把包解压到仓库任意位置，在 `AGENTS.md` 中注明
-「Petrichor 相关任务请先阅读 `petrichor/SKILL.md`」。配置仍写 `petrichor/config.json`。
+旧版客户端不识别 skills 目录时，可以把 `SKILL.md` 放进项目，并在 `AGENTS.md` 中要求处理
+Petrichor 任务前先阅读该文件。
 
-### 其他任何能执行 shell 的 Agent
-
-不依赖 Skill 机制，直接用包内 CLI（仅需 Python 3.8+ 标准库）：
+### 3.3 自检
 
 ```bash
-$EDITOR petrichor/config.json                   # 填入 apiKey
-chmod +x petrichor/scripts/petrichor
-petrichor/scripts/petrichor capabilities        # 自检：返回权限列表即配置成功
-petrichor/scripts/petrichor kb list
-petrichor/scripts/petrichor doc tree --query "问题" --kb-id 1
+curl -sS "$PETRICHOR_BASE_URL/api/agent/capabilities" \
+  -H "Authorization: Bearer $PETRICHOR_API_KEY"
 ```
 
-没有 Python 的环境用 `scripts/petrichor-api.sh`（curl 版，功能等价）。
+响应会返回当前 Key 的 scopes、完整能力清单、MCP 信息以及当前用户的知识库列表。
 
-### 验证与排障
+## 4. 可选 ZIP Skill 包
 
-- 自检：`scripts/petrichor capabilities`。`401` 检查 `config.json` 里的 `apiKey`；`403` 说明缺 scope。
-- 所有命令支持 `--help`；错误信息会透传服务端的 `msg` 字段。
-- 调用同样记录在「调用日志」中。
+`GET /api/agent/skill-pack` 会递归读取 `[agent].skills_directory` 指向的目录，并按相对路径原样
+打包为 `petrichor-agent-skills.zip`。只有目录存在且至少包含一个文件时才返回 ZIP；否则返回 404：
 
----
+```json
+{
+  "code": 404,
+  "msg": "Skill 资源目录不存在",
+  "path": "/api/agent/skill-pack",
+  "timestamp": "..."
+}
+```
 
-## 三、能力对照表（MCP 工具 ↔ Skill CLI ↔ REST）
+当前仓库和默认 API 镜像不内置该目录，因此推荐直接使用 MCP 或上一节的单文件 Skill。部署者如需
+发布自定义多文件 Skill，必须让 API 进程可以读取该目录；Docker 部署还需要把目录挂载进容器。
 
-| 能力 | MCP 工具 | Skill CLI 命令 | REST 端点 |
-| --- | --- | --- | --- |
-| 列出知识库 | `list_knowledge_bases` | `kb list` | `POST /api/agent/knowledge-base/list` |
-| 知识库目录树 | `get_knowledge_base_tree` | `kb tree` | `POST /api/agent/knowledge-base/tree` |
-| 关键词搜索 | `search_documents` | `doc search` | `POST /api/agent/document/search` |
-| 目录树推理检索 | `search_document_tree` | `doc tree` | `POST /api/agent/document/tree` |
-| 向量语义检索 | `semantic_search_document_tree` | `doc semantic` | `POST /api/agent/document/semantic-search` |
-| 读取文档 / Wiki 页 | `view_document` | `doc view` | `POST /api/agent/document/view` |
-| 文档问答 | `ask_documents` | `doc ask` | `POST /api/agent/document/qa` |
-| 列出文章 | `list_articles` | `article list` | `POST /api/agent/article/list` |
-| 新建文件夹 | `create_folder` | `folder create` | `POST /api/agent/folder/create` |
-| 新建文章 | `create_article` | `article create` | `POST /api/agent/article/create` |
-| 更新文章 | `update_article` | `article update` | `POST /api/agent/article/update` |
-| 移动文章 | `move_article` | `article move` | `POST /api/agent/article/move` |
-| 删除文章 | `delete_article` | `article delete` | `POST /api/agent/article/delete` |
-| Wiki 页面列表 | `list_wiki_pages` | `wiki page list` | `POST /api/agent/wiki/page/list` |
-| 读取 Wiki 页面 | `read_wiki_page` | `wiki page detail` | `POST /api/agent/wiki/page/detail` |
-| Wiki 体检 | `wiki_lint` | `wiki lint` | `POST /api/agent/wiki/lint` |
-| Wiki 编译 | `wiki_ingest` | `wiki ingest` | `POST /api/agent/wiki/ingest` |
-| 创建/更新分享 | `share_article` | `share create` | `POST /api/agent/article/share/create` |
-| 查询分享状态 | `get_article_share` | `share info` | `POST /api/agent/article/share/info` |
-| 撤销分享 | `revoke_article_share` | `share revoke` | `POST /api/agent/article/share/revoke` |
-| AI 摘要 | —（仅 Skill） | `summary generate` | `POST /api/agent/article/summary/generate` |
-| 思维导图 / 知识图谱 | —（仅 Skill） | `mindmap generate` | `POST /api/agent/article/mindmap/generate` |
+配置示例：
 
-> 语义检索需要服务端使用 PostgreSQL 并配置向量模型，否则返回 400，请回退到 `doc tree` /
-> `search_document_tree`。
+```toml
+[agent]
+skills_directory = "/data/agent-skills"
+```
 
-## 四、安全建议
+服务端只负责打包，不约定目录中的 `config.json`、CLI 或子文档结构。
 
-- 按最小权限原则为不同 Agent 颁发不同 scope 的 Key；只读场景只给 `doc:read` + `qa:read`。
-- 不要把完整 API Key 写入代码仓库、日志或对话记录；泄露后立即在后台撤销。
-- 删除文章、撤销分享等危险操作，MCP 工具描述与 Skill 文档都要求 Agent 先向你复述并确认。
-- 定期在「调用日志」检查是否有异常来源（IP / User-Agent）的调用。
+## 5. REST 与 MCP 能力对照
+
+| 能力 | REST 端点 | MCP |
+| --- | --- | :---: |
+| 列知识库 | `/api/agent/knowledge-base/list` | ✓ |
+| 知识库目录树 | `/api/agent/knowledge-base/tree` | ✓ |
+| 关键词搜索 | `/api/agent/document/search` | ✓ |
+| 章节树推理检索 | `/api/agent/document/tree` | ✓ |
+| 章节树语义检索 | `/api/agent/document/semantic-search` | ✓ |
+| 读取文章或 Wiki 正文 | `/api/agent/document/view` | ✓ |
+| 文档问答 | `/api/agent/document/qa` | ✓ |
+| 列文章 | `/api/agent/article/list` | ✓ |
+| 新建文件夹 | `/api/agent/folder/create` | ✓ |
+| 新建文章 | `/api/agent/article/create` | ✓ |
+| 更新文章 | `/api/agent/article/update` | ✓ |
+| 删除文章 | `/api/agent/article/delete` | ✓ |
+| 移动文章 | `/api/agent/article/move` | ✓ |
+| 查询分享状态 | `/api/agent/article/share/info` | — |
+| 创建或更新分享 | `/api/agent/article/share/create` | — |
+| 撤销分享 | `/api/agent/article/share/revoke` | — |
+| AI 摘要 | `/api/agent/article/summary/generate` | — |
+| AI 思维导图 / 知识图谱 | `/api/agent/article/mindmap/generate` | — |
+| Wiki 页面列表 | `/api/agent/wiki/page/list` | — |
+| Wiki 页面详情 | `/api/agent/wiki/page/detail` | — |
+| Wiki 体检 | `/api/agent/wiki/lint` | — |
+| Wiki 重建 | `/api/agent/wiki/ingest` | — |
+
+## 6. 安全与排障
+
+- API Key 明文只在创建时返回，服务端只保存哈希；
+- 通过有效 Key 进入处理器的 `/api/agent/**` 调用都会写入 `petrichor_agent_call_log`；
+- `401`：检查 Key 是否正确、已撤销或过期；
+- `403`：检查当前 Key 是否包含端点要求的 scope；
+- `404`：检查知识库/文章归属；对 `/api/agent/skill-pack` 还要检查资源目录配置；
+- 当前外部 Agent API 没有独立的每 Key 限流器，不要依赖 429 或 `Retry-After` 契约；
+- 删除文章、撤销分享和模型调用应在客户端先向用户说明影响并取得确认；MCP 的
+  `delete_article` 描述也明确要求确认，但 REST 服务端不会替外部客户端弹确认框；
+- 不要把 API Key 写入仓库、日志、对话正文或截图；调用日志会保存截断后的请求/响应正文，
+  `contentMd`、分享密码等字段当前不会自动脱敏。
+
+下一步：[REST / MCP 集成设计](./integration.md)。

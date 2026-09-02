@@ -44,7 +44,7 @@ const routeMap: Record<string, BreadcrumbItem[]> = {
   [dashboardRoutes.agentKeys]: [{ label: "Agent 集成" }, { label: "API Key 管理" }],
   [dashboardRoutes.agentLogs]: [{ label: "Agent 集成" }, { label: "调用日志" }],
   [dashboardRoutes.agentMcp]: [{ label: "Agent 集成" }, { label: "MCP Server" }],
-  [dashboardRoutes.agentSkill]: [{ label: "Agent 集成" }, { label: "Skill 包" }],
+  [dashboardRoutes.agentSkill]: [{ label: "Agent 集成" }, { label: "Agent Skill" }],
   [dashboardRoutes.adminUsers]: [{ label: "系统管理" }, { label: "用户管理" }],
   [dashboardRoutes.adminAbout]: [{ label: "系统管理" }, { label: "关于我配置" }],
   [dashboardRoutes.adminProjects]: [{ label: "系统管理" }, { label: "开源项目" }],

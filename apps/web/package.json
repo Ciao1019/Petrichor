@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "bun scripts/dev.ts",
     "build": "bun --smol --bun vite build && bun scripts/compress-dist.ts",
+    "build:demo": "bun run typecheck:demo && VITE_DEMO_ONLY=1 bun --smol --bun vite build --mode demo && bun scripts/compress-dist.ts",
     "start": "bun server.ts",
     "lint": "bun --bun eslint .",
     "test": "vitest run",
@@ -17,6 +18,7 @@
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
     "typecheck": "bun --bun tsc --noEmit",
+    "typecheck:demo": "bun --bun tsc --noEmit -p tsconfig.demo.json",
     "typecheck:api-strict": "bun --bun tsc --project tsconfig.api-strict.json",
     "audit": "bun audit --ignore=GHSA-8fgx-wgvr-pcx8",
     "check:bundle": "bun scripts/check-bundle-budget.ts"

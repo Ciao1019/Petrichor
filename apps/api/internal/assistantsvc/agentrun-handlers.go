@@ -74,7 +74,7 @@ func AgentRunListHandler(c *gin.Context) {
 	httpx.OK(c, map[string]any{"runs": runs})
 }
 
-// AgentRunTraceHandler POST /api/assistant/agent-run/trace。Debug UI 用，需操作员或 AGENT_DEBUG。
+// AgentRunTraceHandler POST /api/assistant/agent-run/trace。Debug UI 用，需超级管理员或 agent.features.debug。
 func AgentRunTraceHandler(c *gin.Context) {
 	user := currentUserOf(c)
 	if !isAssistantOperator(user.SystemRole) && !readAgentDebugFlag() {

@@ -61,7 +61,8 @@ Markdown 链接；`obsidian` 原样保留 wikilink，解压后可直接当 Obsid
 <slug>/references/**/*.md    按引用度精选的页面正文（带 OKF frontmatter）
 ```
 
-和 `/api/agent/skill-pack` 的区别：那个装的是「怎么调 Petrichor 的 API」，这个装的是知识本身。
+和外部接入用的 `/api/agent/skill` 不同：前者说明「怎么调 Petrichor 的 API」，这里装的是知识本身。
+`/api/agent/skill-pack` 只是可选的自定义目录打包器；未配置 `[agent].skills_directory` 时返回 404。
 
 选页策略：编译说明书必选；其余按入链数降序、同分按标题排序，受页数（60）与
 正文字节（2 MiB）双重约束；源文档页默认不收，`includeSources: true` 时才带上。

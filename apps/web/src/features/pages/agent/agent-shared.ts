@@ -55,15 +55,11 @@ export function getBaseUrl() {
   return window.location.origin
 }
 
-export function buildSkillConfigSnippet(apiKey: string) {
-  return JSON.stringify(
-    {
-      baseUrl: getBaseUrl(),
-      apiKey,
-    },
-    null,
-    2,
-  )
+export function buildSkillEnvironmentSnippet(apiKey: string) {
+  return [
+    `export PETRICHOR_BASE_URL="${getBaseUrl()}"`,
+    `export PETRICHOR_API_KEY="${apiKey}"`,
+  ].join("\n")
 }
 
 export function getSkillUrl() {
@@ -124,37 +120,34 @@ export function buildJsonMcpSnippet() {
 
 export function buildClaudeCodeSkillSnippet() {
   return [
-    `# 下载 Skill 包并解压到 Claude Code 的个人 skills 目录`,
-    `curl -L "${getSkillPackUrl()}" -o petrichor-skill.zip`,
-    `unzip -o petrichor-skill.zip -d ~/.claude/skills/`,
+    `mkdir -p ~/.claude/skills/petrichor`,
+    `curl -L "${getSkillUrl()}" -o ~/.claude/skills/petrichor/SKILL.md`,
     ``,
-    `# 编辑包内配置，填入 Agent API Key`,
-    `$EDITOR ~/.claude/skills/petrichor/config.json`,
-    `chmod +x ~/.claude/skills/petrichor/scripts/petrichor`,
+    `export PETRICHOR_BASE_URL="${getBaseUrl()}"`,
+    `export PETRICHOR_API_KEY="ptc_live_xxx"`,
   ].join("\n")
 }
 
 export function buildCodexSkillSnippet() {
   return [
-    `# 下载 Skill 包并解压到项目（或 Codex 全局 skills 目录）`,
-    `curl -L "${getSkillPackUrl()}" -o petrichor-skill.zip`,
-    `unzip -o petrichor-skill.zip -d .codex/skills/   # 或 ~/.codex/skills/`,
+    `mkdir -p ~/.codex/skills/petrichor`,
+    `curl -L "${getSkillUrl()}" -o ~/.codex/skills/petrichor/SKILL.md`,
     ``,
-    `# 编辑包内配置，填入 Agent API Key`,
-    `$EDITOR .codex/skills/petrichor/config.json`,
-    `chmod +x .codex/skills/petrichor/scripts/petrichor`,
+    `export PETRICHOR_BASE_URL="${getBaseUrl()}"`,
+    `export PETRICHOR_API_KEY="ptc_live_xxx"`,
   ].join("\n")
 }
 
 export function buildGenericSkillSnippet() {
   return [
-    `# 任何能执行 shell 的 Agent 都可以直接使用包内 CLI`,
-    `curl -L "${getSkillPackUrl()}" -o petrichor-skill.zip`,
-    `unzip -o petrichor-skill.zip -d ./skills/`,
-    `$EDITOR ./skills/petrichor/config.json`,
-    `chmod +x ./skills/petrichor/scripts/petrichor`,
+    `mkdir -p ./skills/petrichor`,
+    `curl -L "${getSkillUrl()}" -o ./skills/petrichor/SKILL.md`,
     ``,
-    `./skills/petrichor/scripts/petrichor capabilities   # 自检`,
+    `export PETRICHOR_BASE_URL="${getBaseUrl()}"`,
+    `export PETRICHOR_API_KEY="ptc_live_xxx"`,
+    ``,
+    `curl -sS "$PETRICHOR_BASE_URL/api/agent/capabilities" \\`,
+    `  -H "Authorization: Bearer $PETRICHOR_API_KEY"`,
   ].join("\n")
 }
 

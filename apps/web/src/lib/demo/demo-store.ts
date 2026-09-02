@@ -9,6 +9,9 @@ import type {
     UserProfileResponse,
 } from "@/lib/api"
 
+import fastfetchMarkdown from "./articles/fastfetch.md?raw"
+import moleMarkdown from "./articles/mole.md?raw"
+
 /*
  * 演示模式的内存数据库。
  * 模块级单例：页面刷新即重建（= 数据重置），写操作只改这里，永不触网。
@@ -54,7 +57,7 @@ function daysAgo(days: number, hour = 10) {
 export const DEMO_USER: UserProfileResponse = {
     id: "demo-user",
     email: "demo@petrichor.app",
-    systemRole: "USER",
+    systemRole: "SUPER_ADMIN",
     userType: "LOCAL",
     linuxDoBound: false,
     linuxDoUsername: null,
@@ -76,8 +79,8 @@ const KB_READING = "demo-kb-reading"
 const knowledgeBases: KnowledgeBaseResponse[] = [
     {
         id: KB_PRODUCT,
-        name: "Petrichor 产品手记",
-        description: "这套系统本身的设计决策、路线图与踩坑记录。",
+        name: "开源命令行工具手册",
+        description: "Mole 与 Fastfetch 的完整安装、配置、安全实践和常见问题。",
         createdAt: daysAgo(28),
         updatedAt: daysAgo(0),
     },
@@ -109,99 +112,22 @@ interface ArticleSeed {
 
 const ARTICLE_SEEDS: ArticleSeed[] = [
     {
-        id: "demo-a-runtime",
+        id: "demo-a-mole",
         kb: KB_PRODUCT,
-        folder: "架构决策",
-        title: "为什么助手运行时要自己写",
-        tags: ["架构", "AI"],
+        folder: "macOS 工具",
+        title: "小鼹鼠 Mole：macOS 清理工具完整使用指南",
+        tags: ["Mole", "macOS", "开源工具", "系统清理"],
         day: 1,
-        md: `# 为什么助手运行时要自己写
-
-现成的 Agent 框架很多，但都不适合「长在知识库上」这个场景。
-
-## 核心诉求
-
-1. **写操作必须可控** —— 助手能改文章，就必须有确认层
-2. **上下文成本可控** —— 长对话要压缩历史 + 向量召回
-3. **记忆要跨会话** —— 操作员偏好、项目背景要沉淀
-
-## 取舍
-
-| 方案 | 优点 | 问题 |
-| --- | --- | --- |
-| LangChain | 生态大 | 抽象层太厚，确认流程难插 |
-| 裸 AI SDK | 轻、可控 | 要自己写循环 |
-| **自研运行时** | 完全贴合场景 | 维护成本 |
-
-最后选了基于 Vercel AI SDK 自己写循环：
-
-\`\`\`ts
-// 工具调用循环的核心骨架
-for await (const step of runAgentLoop(messages, tools)) {
-    if (step.type === "write-intent") {
-        await requireUserConfirmation(step)
-    }
-}
-\`\`\`
-
-> 教训：**确认层要做在运行时里，不要做在工具里**——工具应该保持纯粹。
-`,
+        md: moleMarkdown,
     },
     {
-        id: "demo-a-memory",
+        id: "demo-a-fastfetch",
         kb: KB_PRODUCT,
-        folder: "架构决策",
-        title: "操作员多层记忆的分区设计",
-        tags: ["架构", "记忆"],
-        day: 3,
-        md: `# 操作员多层记忆的分区设计
-
-记忆不是一个大 JSON，而是按稳定性分层：
-
-## 四层分区
-
-- **user_profile** —— 用户是谁、写作偏好（最稳定）
-- **agent_notes** —— 助手自己总结的工作方式
-- **skills** —— 固化的可复用流程
-- **session** —— 当前会话上下文（最易变）
-
-## 进化机制
-
-不自动写入长期记忆——由用户手动触发「进化」，
-系统给出 before/after diff，确认后才落库。
-
-\`\`\`text
-对话沉淀 → 进化提案（diff 预览） → 人工确认 → 写入分区
-\`\`\`
-
-自动沉淀试过一版，误写率太高，回滚了。
-`,
-    },
-    {
-        id: "demo-a-roadmap",
-        kb: KB_PRODUCT,
-        folder: null,
-        title: "2026 H2 路线图",
-        tags: ["路线图"],
-        day: 0,
-        md: `# 2026 H2 路线图
-
-## 进行中
-
-- [x] 操作员多层记忆
-- [x] 可写 Skills
-- [ ] 演示模式（就是你现在看到的这个）
-
-## 排队中
-
-- [ ] 知识图谱视图 v2
-- [ ] 移动端适配二轮
-- [ ] 导入器支持 EPUB
-
-## 原则
-
-> 每个迭代必须能独立上线，不留半成品分支。
-`,
+        folder: "系统信息",
+        title: "Fastfetch 使用说明：安装、配置与高级技巧",
+        tags: ["Fastfetch", "命令行", "系统信息", "JSONC"],
+        day: 2,
+        md: fastfetchMarkdown,
     },
     {
         id: "demo-a-rsc",
@@ -419,6 +345,7 @@ export function nodesOf(knowledgeBaseId: string, parentId: string | null) {
 
 export function toTreeNode(node: DemoNode, withChildren: boolean): KnowledgeBaseTreeNode {
     const children = nodesOf(node.knowledgeBaseId, node.id)
+    const seededArticle = node.articleId?.startsWith("demo-a-") ?? false
     return {
         id: node.id,
         parentId: node.parentId,
@@ -427,6 +354,13 @@ export function toTreeNode(node: DemoNode, withChildren: boolean): KnowledgeBase
         articleId: node.articleId,
         sortOrder: node.sortOrder,
         hasChildren: children.length > 0,
+        ...(node.type === "ARTICLE" ? {
+            status: {
+                hasMindmap: seededArticle,
+                shareStatus: seededArticle ? "public" as const : "none" as const,
+                wikiStatus: seededArticle ? "ready" as const : "none" as const,
+            },
+        } : {}),
         ...(withChildren ? { children: children.map((child) => toTreeNode(child, true)) } : {}),
     }
 }

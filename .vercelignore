@@ -1,0 +1,13 @@
+# Vercel 只部署静态 Web Demo，排除后端、私密配置与本地产物。
+.git
+.vercel
+.env
+.env.*
+apps/api
+apps/web/.env
+apps/web/.env.*
+!apps/web/.env.example
+apps/web/node_modules
+apps/web/dist
+coverage
+promo

@@ -33,7 +33,7 @@
 
 ### 🔌 我想接入外部客户端
 
-1. [Claude Code / Codex / Cursor 接入](./agent/clients.md)：MCP 与 Skill 安装步骤。
+1. [Claude Code / Codex / Cursor 接入](./agent/clients.md)：MCP、REST 与单文件 Skill 安装步骤。
 2. [REST / MCP 集成设计](./agent/integration.md)：API Key scope、能力层和调用审计。
 
 ## 系统一览

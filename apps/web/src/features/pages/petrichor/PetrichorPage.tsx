@@ -6,192 +6,193 @@ import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/fe
 
 import { BlueNote, DateTag, HandStamp, HandUnderline, MarkerHighlight, type MarkerColor } from "../about/DeskAccents"
 
-/* 项目宣传页（/petrichor）。
-   骨架与「关于我」保持一致：同一片暖纸背景 + 像素花、右侧固定站点 dock、同宽正文容器；
-   左侧正文完全采用 about-desk 的桌面注记语言——手绘下划线、荧光笔、便签、纸质清单卡。
-   本页是纯静态介绍，不走接口；内容源自仓库 README / docs，改文案直接改下面的常量。 */
+/*
+ * Petrichor 项目介绍页。
+ * 这里不复述后台菜单，而是沿着「源内容 → 知识结构 → 可追溯回答 → Agent 调用」讲清产品价值。
+ * 页面继续使用 About 同源的暖纸、手写注记和马克笔视觉语言，不依赖接口。
+ */
 
 const LINKS = {
     repo: "https://github.com/Ciao1019/Petrichor",
-    demo: "https://wl.do",
+    docs: "https://github.com/Ciao1019/Petrichor/tree/master/docs",
     license: "https://github.com/Ciao1019/Petrichor/blob/master/LICENSE",
 } as const
 
-/* 能力矩阵：对齐 README 的功能特性表，每条用桌面注记的语气写清「能干什么」，
-   少堆术语清单；dot 用马克笔色轮换，像清单前随手点的墨点。 */
-const CAPABILITIES: { title: string; tag: string; detail: string; dot: MarkerColor }[] = [
+const KNOWLEDGE_PIPELINE: { title: string; tag: string; detail: string; ink: MarkerColor }[] = [
     {
-        title: "富文本编辑器",
+        title: "写入与导入",
+        tag: "Source",
+        ink: "blue",
+        detail: "在 PlateJS 编辑器里写 Markdown，把文本型或扫描型 PDF 转成源文章；DOCX、XLSX 与 CSV 也能进入文档库供检索和深读。",
+    },
+    {
+        title: "理解文章结构",
+        tag: "Outline",
+        ink: "green",
+        detail: "按标题层级确定性切片，保存完整标题路径；再生成 PageIndex，让 Agent 能按章节顺序浏览，而不是只靠相似度猜。",
+    },
+    {
+        title: "建立多路索引",
+        tag: "Search",
+        ink: "orange",
+        detail: "原文分片、推荐问题、全文 BM25 与向量索引并存。推荐问题只补齐用户问法，事实仍然回到原文。",
+    },
+    {
+        title: "编译语义 Wiki",
+        tag: "Wiki",
+        ink: "purple",
+        detail: "从多篇文章提取实体、概念、比较与关系，汇成可链接的 Wiki 页面，同时记录来源引用、版本与内容指纹。",
+    },
+    {
+        title: "检索后再深读",
+        tag: "Evidence",
+        ink: "red",
+        detail: "Search 只负责定位候选，Agent 必须显式 Read / Read Many 才能把正文纳入 Evidence；回答附带引用与检索轨迹。",
+    },
+    {
+        title: "交给人与 Agent",
+        tag: "Deliver",
+        ink: "teal",
+        detail: "同一份知识可以发布为文章和公开问答，也能通过站内助手、MCP、REST、Agent Skill、OKF 或 Obsidian 继续使用。",
+    },
+]
+
+const KNOWLEDGE_FORMS: { title: string; role: string; detail: string; dot: MarkerColor }[] = [
+    {
+        title: "原文分片",
+        role: "事实",
+        dot: "blue",
+        detail: "保留标题路径与 Markdown 正文，回答具体步骤、代码、数字和引用。",
+    },
+    {
+        title: "推荐问题",
+        role: "问法",
+        dot: "orange",
+        detail: "连接用户语言与原文措辞；命中后仍回到同一原始分片，不把模型生成内容当事实。",
+    },
+    {
+        title: "语义 Wiki",
+        role: "关系",
+        dot: "purple",
+        detail: "聚合跨文章的实体、概念和比较，适合主题导航、多跳关联与知识复用。",
+    },
+    {
+        title: "PageIndex",
+        role: "结构",
+        dot: "green",
+        detail: "保存章节树与摘要，处理目录、顺序总结和长文定位，避免相似度打乱文章结构。",
+    },
+]
+
+const WIKI_NOTES: { title: string; detail: string; ink: MarkerColor }[] = [
+    {
+        title: "可编译",
+        ink: "blue",
+        detail: "一次知识构建会规划页面、生成正文、建立链接并写入来源；问题生成、候选抽取与页面生成支持局部重试和降级。",
+    },
+    {
+        title: "可约束",
+        ink: "orange",
+        detail: "每个知识库都能保存一份“编译说明书”，告诉系统领域、读者、抽取偏好与页面写法，然后增量更新或完全重建。",
+    },
+    {
+        title: "可维护",
+        ink: "green",
+        detail: "结构检查会发现断链、孤立页面和陈旧来源；人工补丁与审计事件保留对自动生成内容的修订过程。",
+    },
+    {
+        title: "可迁移",
+        ink: "purple",
+        detail: "Wiki 可以导出为 OKF bundle、Obsidian vault 或知识 Skill 包，不必永远锁在 Petrichor 的数据库里。",
+    },
+]
+
+const BUILT_IN_AGENT: { title: string; detail: string }[] = [
+    { title: "工具循环", detail: "搜索、深读、创建、修改、分享与知识构建都能成为可组合工具。" },
+    { title: "计划与子 Agent", detail: "复杂任务拆成可见步骤，并在预算和深度上限内并行委派。" },
+    { title: "记忆与 Skill", detail: "跨会话保存操作员偏好，按需加载可复用流程，而不是每次重写提示词。" },
+    { title: "可控写入", detail: "有副作用的操作先展示确认卡；取消、失败与重试都留在同一条执行轨迹中。" },
+]
+
+const EXTERNAL_AGENT: { title: string; detail: string }[] = [
+    { title: "22 项 REST 能力", detail: "覆盖文章、目录、检索、问答、分享、Wiki、文档与 AI 操作。" },
+    { title: "13 个 MCP 核心工具", detail: "Claude Code、Codex、Cursor 等客户端可通过 Streamable HTTP 直接连接。" },
+    { title: "单文件 Agent Skill", detail: "动态生成可安装的 SKILL.md，让客户端先发现能力，再按权限调用接口。" },
+    { title: "API Key 与审计", detail: "按作用域签发密钥，每次调用记录工具、状态码、耗时和请求轨迹。" },
+]
+
+const PRODUCT_SURFACES: { title: string; tag: string; detail: string; dot: MarkerColor }[] = [
+    {
+        title: "写作工作台",
         tag: "PlateJS",
         dot: "red",
-        detail: "Markdown 与所见即所得来回切；代码、表格、公式、白板、思维导图都能嵌进正文，拖进去的附件也会乖乖落位。",
+        detail: "Markdown 与所见即所得共存，支持代码、公式、表格、白板、思维导图、媒体和附件。",
     },
     {
-        title: "知识库",
-        tag: "Tree",
+        title: "公开阅读站",
+        tag: "Publish",
         dot: "orange",
-        detail: "目录树一层层长起来，标签、跨库搜索、Wiki 视图随手可用；想给人看就设个密码和过期时间，RSS 也会自己跟着走。",
+        detail: "文章发布、密码与有效期、短链接、标签、全文搜索、RSS / Atom、站点星图和公开问答。",
     },
     {
-        title: "AI 写作助手",
-        tag: "Multi-model",
+        title: "视觉文档导入",
+        tag: "Worker",
         dot: "green",
-        detail: "卡住了就让它续写、改写、翻译或换语气；总结、导图和知识图谱也一并包办，模型在后台配好即可。",
+        detail: "可提取页直接处理，扫描页进入独立视觉队列；页进度、重试和死信都能在后台查看。",
     },
     {
-        title: "站内对话助手",
-        tag: "Runtime",
+        title: "多模型配置",
+        tag: "Providers",
         dot: "teal",
-        detail: "不是挂在旁边的聊天窗——它能翻你的库、调工具、分派子代理，改东西前还会先问你一声。细节见下一节。",
+        detail: "按对话、知识构建、Embedding、图片等用途绑定模型，兼容多种 OpenAI 风格与原生供应商。",
     },
     {
-        title: "认证体系",
-        tag: "Cookie Session",
+        title: "身份与权限",
+        tag: "Access",
         dot: "blue",
-        detail: "首次打开站点必须自行初始化管理员名称、邮箱和密码；完成后支持邮箱密码与 LinuxDo 登录，会话保存在 httpOnly Cookie 中。",
+        detail: "首次部署自行初始化超级管理员，支持本地账号与 LinuxDo；业务用户和会话状态分开保存。",
     },
     {
-        title: "对象存储",
-        tag: "S3",
+        title: "运营与诊断",
+        tag: "Observe",
         dot: "purple",
-        detail: "封面、附件、头像、AI 配图都走签名过的预签名链接，过期时间你说了算；Bitiful、AWS S3、MinIO 都能接。",
-    },
-    {
-        title: "仪表盘",
-        tag: "Metrics",
-        dot: "pink",
-        detail: "一眼看清写了多少、哪天最勤快、知识库怎么铺开；导入卡住了也能翻回失败详情，不用猜。",
-    },
-    {
-        title: "公开站点",
-        tag: "SEO",
-        dot: "red",
-        detail: "文章可以正经发布，也可以短链或阅后即焚；SEO、sitemap、RSS 都齐，站点标题、图标和主题随你定。",
-    },
-    {
-        title: "Agent 开放层",
-        tag: "MCP / REST",
-        dot: "blue",
-        detail: "给外部 AI 一把钥匙：MCP、Skill 包、能力自发现都有，谁调了什么、调得怎样，审计日志里一清二楚。",
+        detail: "数据概览、构建进度、Agent 调用日志、导入任务与死信入口，把失败过程摆到台面上。",
     },
 ]
 
-/* 助手运行时：最近几轮迭代的重点，也是这个项目和普通博客系统拉开差距的地方。 */
-const RUNTIME_NOTES: { title: string; detail: string; ink: MarkerColor }[] = [
-    {
-        title: "工具调用与子代理",
-        ink: "blue",
-        detail: "助手可以直接读写你的知识库、检索文档、生成摘要；复杂任务会分发给子代理并行处理，子代理有深度上限，不会无限递归。",
-    },
-    {
-        title: "写操作先确认",
-        ink: "red",
-        detail: "任何会落库的动作（新建 / 更新 / 删除文章、移动目录）都会先弹出待确认卡片，展示改动预览，确认后才执行。",
-    },
-    {
-        title: "上下文窗口治理",
-        ink: "green",
-        detail: "长对话自动压缩历史、按需向量召回相关片段，配合 prompt 缓存，让长会话不至于越聊越贵、越聊越糊。",
-    },
-    {
-        title: "操作员多层记忆",
-        ink: "purple",
-        detail: "记忆按层分区存放，跨会话保留你的写作偏好与项目背景；对话里随时可以让助手记下一条，下个线程就生效。",
-    },
-    {
-        title: "Skill 目录",
-        ink: "orange",
-        detail: "把重复流程写成 Skill，助手按需加载全文再照着 playbook 调工具，而不是每次重新描述一遍要求。",
-    },
-    {
-        title: "Plan 侧栏",
-        ink: "teal",
-        detail: "多步骤任务会展开成可勾选的计划列表，执行到哪一步、哪一步失败了、要不要重试，全程可见可干预。",
-    },
+const ARCHITECTURE: { title: string; tag: string; detail: string }[] = [
+    { title: "Web", tag: "React · Vite · Caddy", detail: "负责编辑器、公开阅读站与管理后台；生产静态资源和 API 由 Caddy 同源托管。" },
+    { title: "API", tag: "Go · Gin", detail: "负责认证、业务、Agent Runtime、数据库与存储访问；启动监听前自动执行 Goose 迁移。" },
+    { title: "Worker", tag: "Asynq", detail: "独立消费知识构建和视觉导入队列，让耗时模型任务不阻塞在线 API。" },
+    { title: "Data", tag: "PostgreSQL · Redis · S3", detail: "PostgreSQL 保存最终知识，Redis 保存队列状态与进度，对象存储承载上传文件。" },
 ]
 
-/* Agent 开放层：外部工具（Claude Code / Codex / Cursor …）怎么接进来。 */
-const AGENT_STEPS: { title: string; detail: string; ink: string }[] = [
-    {
-        title: "签发 API Key",
-        ink: "blue",
-        detail: "仪表盘 → Agent 集成 → API Key 管理，按 article:write / doc:read / qa:read 等粒度勾权限。明文只展示一次，服务端仅存 sha256。",
-    },
-    {
-        title: "接入方式二选一",
-        ink: "green",
-        detail: "把站点注册成 MCP Server（Streamable HTTP，Claude Code / Codex / Cursor 通用），或下载 Skill 包放进工具的 Skills 目录。",
-    },
-    {
-        title: "按意图加载子文档",
-        ink: "orange",
-        detail: "Skill 包只有一个顶层 petrichor，根 SKILL.md 内置路由表，按意图按需读取 setup / articles / docs / qa / share / ai 子文档。",
-    },
-    {
-        title: "能力自发现",
-        ink: "teal",
-        detail: "GET /api/agent/manifest 免鉴权返回全部接口、参数与所需权限，Agent 可以自己探明能干什么，无需人工贴文档。",
-    },
-    {
-        title: "全量审计",
-        ink: "pink",
-        detail: "每次调用记录来源 Agent、工具名、IP、UA、入参、出参、状态码与耗时，登录后在「调用日志」逐条回看。",
-    },
+const STACK = [
+    "React 19",
+    "Vite 8",
+    "TypeScript",
+    "PlateJS",
+    "Go 1.26",
+    "Gin",
+    "PostgreSQL 16+",
+    "pg_trgm",
+    "pgvector",
+    "Redis 8",
+    "Asynq",
+    "S3",
+    "Caddy",
+    "Docker Compose",
 ]
 
-const STACK: { group: string; items: string[] }[] = [
-    { group: "框架", items: ["Bun 1.3", "Vite 8", "React", "TypeScript 5.9", "React Router", "Go", "Gin", "Sa-Token"] },
-    { group: "编辑器", items: ["PlateJS", "Slate", "Markdown", "KaTeX", "Mind Map", "Whiteboard"] },
-    { group: "数据层", items: ["PostgreSQL", "pgx", "Goose", "S3 兼容存储"] },
-    { group: "AI", items: ["Vercel AI SDK", "OpenAI", "Gemini", "DeepSeek", "向量召回", "MCP"] },
-    { group: "工程", items: ["Bun", "gofmt", "go vet", "Vitest", "ESLint"] },
-]
-
-const SELF_HOST_STEPS: { title: string; detail: string; ink: string }[] = [
-    {
-        title: "准备 PostgreSQL",
-        ink: "green",
-        detail: "使用启用 pg_trgm 与 pgvector 的 PostgreSQL 16+，把直连或 Transaction Pooler 连接串写入 apps/api/config.toml。",
-    },
-    {
-        title: "选择对象存储",
-        ink: "blue",
-        detail: "单机部署可使用 /data/uploads；也可配置 S3 兼容服务，文件通过站内地址或预签名 URL 读取。",
-    },
-    {
-        title: "准备后端配置",
-        ink: "orange",
-        detail: "从 apps/api/config.example.toml 复制配置，填写数据库、Session、加密、存储、缓存和 Agent 选项。真实 TOML 不提交。",
-    },
-    {
-        title: "设置部署入口",
-        ink: "pink",
-        detail: "从根目录 .env.example 复制 .env，设置 PETRICHOR_DOMAIN 和公开端口，由 Caddy 负责 HTTPS 与同源反代。",
-    },
-    {
-        title: "初始化表结构",
-        ink: "teal",
-        detail: "启动 Go API 时会自动执行尚未应用的 Goose 迁移，创建或升级最终表结构，不写入任何默认账号。",
-    },
-    {
-        title: "启动并创建管理员",
-        ink: "purple",
-        detail: "Docker Compose 会启动 Caddy、Go API、Go Worker 与本地 Redis。第一次打开站点会进入初始化页，由部署者创建唯一的初始超级管理员。",
-    },
-]
-
-const TERMINAL_LINES: { text: string; prompt?: boolean; muted?: boolean; caret?: boolean }[] = [
-    { text: "git clone https://github.com/Ciao1019/Petrichor.git petrichor", prompt: true },
-    { text: "cd petrichor && bun install --cwd apps/web", prompt: true },
-    { text: "cp apps/web/.env.example apps/web/.env.local", prompt: true },
+const DEPLOY_LINES: { text: string; prompt?: boolean; muted?: boolean; caret?: boolean }[] = [
+    { text: "git clone https://github.com/Ciao1019/Petrichor.git", prompt: true },
+    { text: "cd Petrichor", prompt: true },
+    { text: "cp .env.example .env", prompt: true },
     { text: "cp apps/api/config.example.toml apps/api/config.toml", prompt: true },
-    { text: "# 配置 PostgreSQL、加密参数与本地 Redis 地址", muted: true },
-    { text: "docker compose up -d redis", prompt: true },
-    { text: "# 终端 1：Go API", muted: true },
-    { text: "cd apps/api && go run ./cmd/server", prompt: true },
-    { text: "# 终端 2：Bun/Vite Web", muted: true },
-    { text: "bun dev", prompt: true, caret: true },
-    { text: "→ http://localhost:3000", muted: true },
+    { text: "# 填写数据库、加密、存储、Redis 与模型配置", muted: true },
+    { text: "docker compose up -d --build", prompt: true },
+    { text: "docker compose ps", prompt: true },
+    { text: "docker compose logs -f api worker", prompt: true, caret: true },
 ]
 
 const handwritingStyle: React.CSSProperties = {
@@ -211,11 +212,47 @@ function SectionHeading({ index, label, title }: { index: string; label: string;
     )
 }
 
+function AgentCard({
+    eyebrow,
+    title,
+    note,
+    items,
+}: {
+    eyebrow: string
+    title: string
+    note: string
+    items: { title: string; detail: string }[]
+}) {
+    return (
+        <article className="promo-sheet flex h-full flex-col p-5 md:p-6">
+            <p className="font-mono text-[0.62rem] font-bold uppercase tracking-[0.2em]" style={{ color: "var(--desk-marker-blue)" }}>
+                {eyebrow}
+            </p>
+            <h3 className="mt-2 font-serif text-2xl italic" style={{ color: "var(--desk-sheet-ink)" }}>
+                {title}
+            </h3>
+            <p className="mt-2 text-[0.78rem] leading-relaxed" style={{ color: "var(--desk-sheet-muted)" }}>
+                {note}
+            </p>
+            <div className="mt-5">
+                {items.map((item) => (
+                    <div key={item.title} className="promo-spec py-3.5">
+                        <p className="text-[0.82rem] font-bold" style={{ color: "var(--desk-sheet-ink)" }}>
+                            {item.title}
+                        </p>
+                        <p className="mt-1 text-[0.75rem] leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>
+                            {item.detail}
+                        </p>
+                    </div>
+                ))}
+            </div>
+        </article>
+    )
+}
+
 export function PetrichorPage() {
     return (
-        <main
-            className="scrollbar-hide retypeset-home relative flex min-h-screen flex-col overflow-hidden font-mono"
-        >
+        <main className="scrollbar-hide retypeset-home relative flex min-h-screen flex-col overflow-hidden font-mono">
             <div className="blog-home-grid pointer-events-none fixed inset-0 z-0" />
 
             <div className="relative z-30 mx-auto w-full max-w-6xl px-6 pt-8 md:px-24 lg:contents">
@@ -224,209 +261,226 @@ export function PetrichorPage() {
             </div>
 
             <section className="relative z-20 mx-auto flex w-full max-w-[51.462rem] flex-1 flex-col px-[min(7.25vw,3.731rem)] py-12 lg:mx-[max(5.75rem,calc(50vw-34.25rem))] lg:max-w-[min(calc(75vw-16rem),44rem)] lg:px-0">
-                {/* ——— Hero：大字标题 + 手写副题 + 注记正文 ——— */}
                 <header className="blog-home-fade-in">
-                    <div className="group flex flex-wrap items-center gap-3">
-                        <p className="promo-section-label">Current Project</p>
-                        <DateTag tilt="rotate-2">2024 → now</DateTag>
+                    <div className="flex flex-wrap items-center gap-3">
+                        <p className="promo-section-label">Self-hosted Knowledge System</p>
+                        <DateTag tilt="rotate-2">open source · 2024 → now</DateTag>
                     </div>
 
                     <div className="mt-4 flex flex-wrap items-end gap-x-5 gap-y-2">
-                        <h1
-                            className="font-serif text-6xl italic leading-none md:text-7xl"
-                            style={{ color: "var(--desk-sheet-ink)" }}
-                        >
+                        <h1 className="font-serif text-6xl italic leading-none md:text-7xl" style={{ color: "var(--desk-sheet-ink)" }}>
                             <HandUnderline color="blue" note="rain on dry earth ☔">
                                 Petrichor
                             </HandUnderline>
                         </h1>
-                        <HandStamp color="green">open source!</HandStamp>
+                        <HandStamp color="green">Apache-2.0</HandStamp>
                     </div>
 
-                    <p
-                        className="mt-5 text-2xl leading-snug md:text-3xl"
-                        style={{ ...handwritingStyle, color: "var(--desk-sheet-soft)" }}
-                    >
-                        Petrichor，雨后泥土的气息——知识攒得够久，会有自己的味道。
+                    <p className="mt-6 max-w-2xl font-serif text-2xl font-medium leading-snug md:text-3xl" style={{ color: "var(--desk-sheet-ink)" }}>
+                        让知识被人读懂，也被 AI Agent 正确调用。
                     </p>
 
-                    <div
-                        className="mt-8 max-w-2xl space-y-5 text-sm leading-relaxed md:text-[0.92rem]"
-                        style={{ color: "var(--desk-sheet-ink)" }}
-                    >
+                    <div className="mt-7 max-w-2xl space-y-5 text-sm leading-relaxed md:text-[0.92rem]" style={{ color: "var(--desk-sheet-ink)" }}>
                         <p>
-                            对读者，它是一个排版讲究、专注阅读的<HandUnderline color="green" note="就是本站">博客</HandUnderline>
-                            ；对你，它是一整套知识工作台——写作、整理、发布、问答，都发生在
-                            <HandUnderline color="red" note="不用再拼积木">同一个地方</HandUnderline>。
+                            Petrichor 是一套开源、自托管的知识平台。你用 Markdown 写作，系统把内容整理成
+                            <HandUnderline color="purple" note="不是一次性向量">可维护的语义 Wiki</HandUnderline>
+                            ，再通过 Agentic RAG 生成带来源、能复查的回答。
                         </p>
                         <p>
-                            AI 助手直接长在你的笔记上：检索、引用、改写、总结，还记得住你的偏好——
-                            <MarkerHighlight note="这是最好玩的部分">你写得越多，它越懂你</MarkerHighlight>。
+                            它不是给博客旁边挂一个聊天框，也不是把文档切碎后全部塞给模型。原文、问题、概念关系和章节目录会以
+                            <MarkerHighlight note="四种知识表示">不同结构各司其职</MarkerHighlight>
+                            ；Agent 先定位、再深读，只有读过的内容才能成为证据。
                         </p>
                         <p>
-                            运行边界很清楚：Bun/Vite 负责前端，Go 负责 API，PostgreSQL 与任意 S3 兼容存储负责数据。
-                            <HandUnderline color="purple" note="配置也分开">前后端配置互不混放</HandUnderline>
-                            ，数据始终在你自己手里。
+                            人可以在公开站阅读和提问，站内助手可以继续写作与整理，Claude Code、Codex、Cursor 等外部 Agent 也能通过 MCP、REST 或 Skill 使用同一份知识。
+                            <HandUnderline color="green" note="你掌握边界">应用、数据、模型和密钥都由你自己托管</HandUnderline>。
                         </p>
                     </div>
 
                     <div className="mt-9 flex flex-wrap items-center gap-3">
                         <a href="/demo" className="promo-cta promo-cta--ink">
-                            免登录体验工作台
+                            打开在线演示
                         </a>
                         <a href={LINKS.repo} target="_blank" rel="noopener noreferrer" className="promo-cta promo-cta--paper">
-                            GitHub 仓库
+                            查看 GitHub
+                        </a>
+                        <a href={LINKS.docs} target="_blank" rel="noopener noreferrer" className="promo-cta promo-cta--paper">
+                            阅读文档
                         </a>
                     </div>
                     <p className="mt-3 text-[0.72rem]" style={{ color: "var(--desk-sheet-muted)" }}>
-                        演示模式为纯前端沙盒：数据只在你的浏览器内存里，随便改，刷新即重置。
+                        当前在线演示不连接后端；所有交互由浏览器假数据驱动，刷新后重置。
                     </p>
                 </header>
 
                 <div className="mt-20 flex flex-col gap-20">
-                    {/* ——— 01 能力矩阵 ——— */}
-                    <section aria-labelledby="promo-capabilities" className="blog-home-fade-in blog-delay-300">
-                        <SectionHeading index="01" label="Capabilities" title="一个应用，九种能力" />
-                        <h3 id="promo-capabilities" className="sr-only">
-                            能力矩阵
-                        </h3>
+                    <section aria-labelledby="promo-pipeline" className="blog-home-fade-in blog-delay-300">
+                        <SectionHeading index="01" label="Knowledge Pipeline" title="一篇 Markdown，会经历什么" />
+                        <h3 id="promo-pipeline" className="sr-only">知识处理链路</h3>
+                        <p className="mb-8 max-w-2xl text-sm leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>
+                            Petrichor 不把“保存文章”和“知识已经可用”混为一谈。从源文档到最终回答，每一步都有明确产物，也能单独检查、重建或导出。
+                        </p>
+                        <ol className="promo-steps space-y-7">
+                            {KNOWLEDGE_PIPELINE.map((step, index) => (
+                                <li key={step.title} className="promo-step" data-ink={step.ink}>
+                                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                                        <span className="text-[0.66rem] font-bold" style={{ color: "var(--desk-sheet-muted)" }}>
+                                            {String(index + 1).padStart(2, "0")}
+                                        </span>
+                                        <h4 className="text-[0.9rem] font-bold" style={{ color: "var(--desk-sheet-ink)" }}>{step.title}</h4>
+                                        <span className="text-[0.6rem] font-bold uppercase tracking-[0.16em]" style={{ color: `var(--desk-marker-${step.ink})` }}>
+                                            {step.tag}
+                                        </span>
+                                    </div>
+                                    <p className="mt-1.5 max-w-2xl text-[0.8rem] leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>
+                                        {step.detail}
+                                    </p>
+                                </li>
+                            ))}
+                        </ol>
+                    </section>
+
+                    <section aria-labelledby="promo-rag" className="blog-home-fade-in">
+                        <SectionHeading index="02" label="Agentic RAG" title="检索负责找，阅读负责证明" />
+                        <h3 id="promo-rag" className="sr-only">Agentic RAG 的四种知识表示</h3>
+                        <p className="mb-7 max-w-2xl text-sm leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>
+                            普通 Top-K RAG 容易把“看起来相似”误当成“足以作答”。Petrichor 把定位和取证分开，并为不同问题保留四种互补表示。
+                        </p>
                         <div className="grid grid-cols-1 gap-x-10 sm:grid-cols-2">
-                            {CAPABILITIES.map((item) => (
+                            {KNOWLEDGE_FORMS.map((item) => (
                                 <article key={item.title} className="promo-cap flex gap-3 py-4">
-                                    <span
-                                        className="promo-cap-dot"
-                                        aria-hidden="true"
-                                        style={{ background: `var(--desk-marker-${item.dot})` }}
-                                    />
+                                    <span className="promo-cap-dot" aria-hidden="true" style={{ background: `var(--desk-marker-${item.dot})` }} />
                                     <div className="min-w-0">
                                         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                                            <h4 className="text-[0.95rem] font-bold" style={{ color: "var(--desk-sheet-ink)" }}>
-                                                {item.title}
-                                            </h4>
-                                            <span
-                                                className="font-mono text-[0.62rem] font-bold uppercase tracking-widest"
-                                                style={{ color: "var(--desk-sheet-muted)" }}
-                                            >
-                                                {item.tag}
-                                            </span>
+                                            <h4 className="text-[0.92rem] font-bold" style={{ color: "var(--desk-sheet-ink)" }}>{item.title}</h4>
+                                            <span className="text-[0.6rem] font-bold uppercase tracking-widest" style={{ color: "var(--desk-sheet-muted)" }}>{item.role}</span>
                                         </div>
-                                        <p className="mt-1.5 text-[0.8rem] leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>
-                                            {item.detail}
-                                        </p>
+                                        <p className="mt-1.5 text-[0.78rem] leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>{item.detail}</p>
+                                    </div>
+                                </article>
+                            ))}
+                        </div>
+                        <div className="promo-sheet mt-8 px-5 py-4 md:px-6">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-3 text-[0.68rem] font-bold uppercase tracking-[0.12em]" style={{ color: "var(--desk-sheet-soft)" }}>
+                                {[
+                                    ["Question", "blue"],
+                                    ["Search / Outline", "orange"],
+                                    ["Read", "purple"],
+                                    ["Evidence + Trace", "green"],
+                                    ["Answer", "red"],
+                                ].map(([label, color], index) => (
+                                    <React.Fragment key={label}>
+                                        {index > 0 ? <span aria-hidden="true" style={{ color: "var(--desk-sheet-muted)" }}>→</span> : null}
+                                        <span className="promo-chip px-2.5 py-1" style={{ borderColor: `color-mix(in srgb, var(--desk-marker-${color}) 55%, transparent)` }}>
+                                            {label}
+                                        </span>
+                                    </React.Fragment>
+                                ))}
+                            </div>
+                            <p className="mt-3 text-[0.74rem] leading-relaxed" style={{ color: "var(--desk-sheet-muted)" }}>
+                                Search 返回候选不等于引用。只有 Read 过的原文或 Wiki 页面才进入 Evidence，推荐问题本身永远不会成为事实来源。
+                            </p>
+                        </div>
+                    </section>
+
+                    <section aria-labelledby="promo-wiki" className="blog-home-fade-in">
+                        <SectionHeading index="03" label="Semantic Wiki" title="把文章编译成会生长的知识网络" />
+                        <h3 id="promo-wiki" className="sr-only">语义 Wiki</h3>
+                        <p className="mb-6 max-w-2xl text-sm leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>
+                            文章适合完整阅读，Wiki 适合跨文档组织。Petrichor 把源文档、概念、实体、比较、答案和日志组织到同一张关系网，同时保留每条结论来自哪里。
+                        </p>
+                        <div className="promo-sheet px-5 py-1.5 md:px-6">
+                            {WIKI_NOTES.map((note) => (
+                                <div key={note.title} className="promo-spec -mx-5 px-5 py-4 md:-mx-6 md:px-6">
+                                    <div className="flex flex-col gap-1.5 sm:flex-row sm:gap-5">
+                                        <span className="shrink-0 text-[0.82rem] font-bold sm:w-24" style={{ color: `var(--desk-marker-${note.ink})` }}>
+                                            {note.title}
+                                        </span>
+                                        <span className="text-[0.8rem] leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>{note.detail}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <p className="mt-4 text-xl" style={{ ...handwritingStyle, color: "var(--desk-sheet-soft)" }}>
+                            source → concept → relation → answer，全部还能回到 source。
+                        </p>
+                    </section>
+
+                    <section aria-labelledby="promo-agents" className="blog-home-fade-in">
+                        <SectionHeading index="04" label="Agent Interfaces" title="同一份知识，两种 Agent 入口" />
+                        <h3 id="promo-agents" className="sr-only">站内与外部 Agent</h3>
+                        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                            <AgentCard
+                                eyebrow="Inside Petrichor"
+                                title="站内助手"
+                                note="面向正在写作和维护知识的人，带 UI、计划、确认与执行过程。"
+                                items={BUILT_IN_AGENT}
+                            />
+                            <AgentCard
+                                eyebrow="Outside Petrichor"
+                                title="外部 Agent"
+                                note="面向已经在使用的编码助手和自动化系统，提供稳定协议与权限边界。"
+                                items={EXTERNAL_AGENT}
+                            />
+                        </div>
+                        <div className="mt-7 max-w-2xl">
+                            <BlueNote>
+                                <span className="block italic">“能调用”不等于“可以随便调用”。</span>
+                                <span className="mt-2 block not-italic">
+                                    写操作确认、细粒度权限、调用审计与自托管数据边界，会和能力一起交付。
+                                </span>
+                            </BlueNote>
+                        </div>
+                    </section>
+
+                    <section aria-labelledby="promo-product" className="blog-home-fade-in">
+                        <SectionHeading index="05" label="Product Surface" title="从写作到开放调用，是一套完整产品" />
+                        <h3 id="promo-product" className="sr-only">产品能力</h3>
+                        <div className="grid grid-cols-1 gap-x-10 sm:grid-cols-2">
+                            {PRODUCT_SURFACES.map((item) => (
+                                <article key={item.title} className="promo-cap flex gap-3 py-4">
+                                    <span className="promo-cap-dot" aria-hidden="true" style={{ background: `var(--desk-marker-${item.dot})` }} />
+                                    <div className="min-w-0">
+                                        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                                            <h4 className="text-[0.92rem] font-bold" style={{ color: "var(--desk-sheet-ink)" }}>{item.title}</h4>
+                                            <span className="text-[0.6rem] font-bold uppercase tracking-widest" style={{ color: "var(--desk-sheet-muted)" }}>{item.tag}</span>
+                                        </div>
+                                        <p className="mt-1.5 text-[0.78rem] leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>{item.detail}</p>
                                     </div>
                                 </article>
                             ))}
                         </div>
                     </section>
 
-                    {/* ——— 02 助手运行时 ——— */}
-                    <section aria-labelledby="promo-runtime" className="blog-home-fade-in">
-                        <SectionHeading index="02" label="Assistant Runtime" title="站内助手，不只是一个聊天框" />
-                        <h3 id="promo-runtime" className="sr-only">
-                            助手运行时
-                        </h3>
-                        <p className="mb-6 max-w-2xl text-sm leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>
-                            助手直接长在知识库上：它看得到你的目录树和正文，也<HandUnderline color="red" note="所以要管住它">能改</HandUnderline>
-                            。为了让「能改」这件事可控，运行时这一层做了不少约束。
+                    <section aria-labelledby="promo-deploy" className="blog-home-fade-in">
+                        <SectionHeading index="06" label="Self-host" title="应用归你，数据也归你" />
+                        <h3 id="promo-deploy" className="sr-only">自托管架构</h3>
+                        <p className="mb-7 max-w-2xl text-sm leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>
+                            正式版不是 Vercel 上的一张静态页面。它由 Web、API、Worker 和你自己的数据服务组成，Docker Compose 负责把运行边界固定下来。
                         </p>
                         <div className="promo-sheet px-5 py-1.5 md:px-6">
-                            {RUNTIME_NOTES.map((note) => (
-                                <div key={note.title} className="promo-spec -mx-5 px-5 py-4 md:-mx-6 md:px-6">
-                                    <div className="flex flex-col gap-1.5 sm:flex-row sm:gap-5">
-                                        <span
-                                            className="shrink-0 text-[0.82rem] font-bold sm:w-36"
-                                            style={{ color: `var(--desk-marker-${note.ink})` }}
-                                        >
-                                            {note.title}
-                                        </span>
-                                        <span className="text-[0.8rem] leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>
-                                            {note.detail}
-                                        </span>
+                            {ARCHITECTURE.map((item) => (
+                                <div key={item.title} className="promo-viz-row -mx-5 px-5 py-4 md:-mx-6 md:px-6">
+                                    <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-5">
+                                        <span className="shrink-0 text-[0.82rem] font-bold sm:w-16" style={{ color: "var(--desk-sheet-ink)" }}>{item.title}</span>
+                                        <div className="min-w-0 flex-1">
+                                            <span className="text-[0.62rem] font-bold uppercase tracking-[0.14em]" style={{ color: "var(--desk-marker-blue)" }}>{item.tag}</span>
+                                            <p className="mt-1 text-[0.78rem] leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>{item.detail}</p>
+                                        </div>
                                     </div>
                                 </div>
                             ))}
                         </div>
-                    </section>
 
-                    {/* ——— 03 Agent 开放层 ——— */}
-                    <section aria-labelledby="promo-agent" className="blog-home-fade-in">
-                        <SectionHeading index="03" label="Open Agent Layer" title="把知识库接进你现有的 AI 工具" />
-                        <h3 id="promo-agent" className="sr-only">
-                            Agent 开放层
-                        </h3>
-                        <p className="mb-7 max-w-2xl text-sm leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>
-                            Claude Code、Codex、Cursor、ChatGPT 桌面端都可以直接读写这套知识库——鉴权、审计、能力发现都在
-                            <code
-                                className="mx-1 rounded-sm px-1.5 py-0.5 text-[0.75rem]"
-                                style={{ background: "var(--desk-sticky)", color: "var(--desk-sticky-ink)" }}
-                            >
-                                /api/agent/**
-                            </code>
-                            统一收口。
-                        </p>
-                        <ol className="promo-steps space-y-6">
-                            {AGENT_STEPS.map((step) => (
-                                <li key={step.title} className="promo-step" data-ink={step.ink}>
-                                    <h4 className="text-[0.88rem] font-bold" style={{ color: "var(--desk-sheet-ink)" }}>
-                                        {step.title}
-                                    </h4>
-                                    <p className="mt-1.5 max-w-2xl text-[0.8rem] leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>
-                                        {step.detail}
-                                    </p>
-                                </li>
-                            ))}
-                        </ol>
-                    </section>
-
-                    {/* ——— 04 技术选型 ——— */}
-                    <section aria-labelledby="promo-stack" className="blog-home-fade-in">
-                        <SectionHeading index="04" label="Stack" title="技术选型" />
-                        <h3 id="promo-stack" className="sr-only">
-                            技术栈
-                        </h3>
-                        <div className="space-y-5">
-                            {STACK.map((group) => (
-                                <div key={group.group} className="flex flex-col gap-2.5 sm:flex-row sm:items-baseline sm:gap-6">
-                                    <span
-                                        className="shrink-0 font-mono text-[0.66rem] font-bold uppercase tracking-[0.18em] sm:w-16 sm:text-right"
-                                        style={{ color: "var(--desk-sheet-muted)" }}
-                                    >
-                                        {group.group}
-                                    </span>
-                                    <div className="flex flex-wrap gap-2">
-                                        {group.items.map((item) => (
-                                            <span key={item} className="promo-chip px-2.5 py-1 font-mono text-[0.7rem] font-medium">
-                                                {item}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </div>
+                        <div className="mt-7 flex flex-wrap gap-2">
+                            {STACK.map((item) => (
+                                <span key={item} className="promo-chip px-2.5 py-1 font-mono text-[0.68rem] font-medium">{item}</span>
                             ))}
                         </div>
-                    </section>
-
-                    {/* ——— 05 自托管 ——— */}
-                    <section aria-labelledby="promo-deploy" className="blog-home-fade-in">
-                        <SectionHeading index="05" label="Self-host" title="前后端分离，配置清清楚楚" />
-                        <h3 id="promo-deploy" className="sr-only">
-                            自托管流程
-                        </h3>
-                        <ol className="promo-steps space-y-6">
-                            {SELF_HOST_STEPS.map((step) => (
-                                <li key={step.title} className="promo-step" data-ink={step.ink}>
-                                    <h4 className="text-[0.88rem] font-bold" style={{ color: "var(--desk-sheet-ink)" }}>
-                                        {step.title}
-                                    </h4>
-                                    <p className="mt-1.5 max-w-2xl text-[0.8rem] leading-relaxed" style={{ color: "var(--desk-sheet-soft)" }}>
-                                        {step.detail}
-                                    </p>
-                                </li>
-                            ))}
-                        </ol>
 
                         <div className="mt-10">
                             <p className="mb-3 text-xl" style={{ ...handwritingStyle, color: "var(--desk-sheet-soft)" }}>
-                                本地启动 ↓
+                                从仓库到运行 ↓
                             </p>
                             <div className="promo-terminal p-4 font-mono text-[0.72rem] leading-[1.95] md:p-5">
                                 <div className="promo-terminal-dots mb-3" aria-hidden="true">
@@ -434,7 +488,7 @@ export function PetrichorPage() {
                                     <span style={{ background: "var(--desk-marker-orange)" }} />
                                     <span style={{ background: "var(--desk-marker-green)" }} />
                                 </div>
-                                {TERMINAL_LINES.map((line) => (
+                                {DEPLOY_LINES.map((line) => (
                                     <span
                                         key={line.text}
                                         data-prompt={line.prompt ? "true" : "false"}
@@ -447,37 +501,27 @@ export function PetrichorPage() {
                                 ))}
                             </div>
                             <p className="mt-3 text-[0.72rem] leading-relaxed" style={{ color: "var(--desk-sheet-muted)" }}>
-                                需要 Bun ≥ 1.3.14 与 Go。后端配置只从 apps/api/config.toml 读取。
+                                需要 Docker Compose 与启用 pg_trgm、pgvector 的 PostgreSQL 16+。API 启动时自动执行迁移；生产只公开 Caddy。
                             </p>
                         </div>
                     </section>
 
-                    {/* ——— 结尾便签 ——— */}
                     <section aria-labelledby="promo-cta" className="blog-home-fade-in">
-                        <h3 id="promo-cta" className="sr-only">
-                            开始使用
-                        </h3>
+                        <h3 id="promo-cta" className="sr-only">开始使用</h3>
                         <div className="max-w-xl">
                             <BlueNote>
                                 <span className="block break-words italic">
-                                    "知识不该是一堆散落的文件，而是能被检索、复述、再生长的结构。"
+                                    “知识不该只躺在文件夹里，也不该在进入向量库后失去出处。”
                                 </span>
                                 <span className="mt-2.5 block not-italic">
-                                    Apache-2.0 开源，允许自托管与商用改造。Fork 一份，填好 Web 配置和 Go TOML，它就是
-                                    <a href={LINKS.repo} target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2">
-                                        你自己的知识底座
-                                    </a>
-                                    。
+                                    Petrichor 保留原文、结构与证据，再让 Wiki 和 Agent 在它们之上生长。Apache-2.0 开源，你可以阅读、修改并部署成自己的知识基础设施。
                                 </span>
                             </BlueNote>
                         </div>
                         <div className="mt-8 flex flex-wrap items-center gap-3">
-                            <a href={LINKS.repo} target="_blank" rel="noopener noreferrer" className="promo-cta promo-cta--paper">
-                                阅读源码与自托管说明
-                            </a>
-                            <a href={LINKS.license} target="_blank" rel="noopener noreferrer" className="promo-cta promo-cta--paper">
-                                License
-                            </a>
+                            <a href="/demo" className="promo-cta promo-cta--ink">先体验完整界面</a>
+                            <a href={LINKS.repo} target="_blank" rel="noopener noreferrer" className="promo-cta promo-cta--paper">阅读源码</a>
+                            <a href={LINKS.license} target="_blank" rel="noopener noreferrer" className="promo-cta promo-cta--paper">License</a>
                         </div>
                     </section>
                 </div>

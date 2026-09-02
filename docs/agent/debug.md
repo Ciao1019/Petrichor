@@ -1,77 +1,159 @@
-# Agent Debug
+# Agent Runtime 调试指南
 
-## 三层信息分离
+Agent Runtime 会把一次执行拆成 Run、Trace、Evidence 和 Subtask 四层审计数据。运行失败或回答
+质量异常时，应先定位 `runId`，再沿事件序列检查路由、Skill、工具、证据和停止原因。
 
-| 层 | 看到什么 | 入口 |
-| --- | --- | --- |
-| 普通用户 | 一行状态 + 答案 + 来源 | 聊天页执行面板（折叠态） |
-| 高级用户 | 计划、聚合活动、子任务、来源 | 执行面板展开 |
-| 开发者 | 原始 Tool Call、完整事件、Trace、Token、延迟 | `/assistant/agent-run/trace` |
+## 1. 调试入口与访问控制
 
-普通 UI 永远不读 Raw Trace，也不展示模型隐藏推理。
-
-## 页面
-
-`/dashboard/agent/debug`（`dashboardRoutes.agentDebug`），按 Run ID 查询，支持 `?runId=` 直达。
-页面分四块：Run 概要（含 token 与各段延迟）、Timeline、Tool Calls 明细、Evidence 与检索诊断。
-访问受限：非操作员且未开启 `AGENT_DEBUG` 时接口返回 `agent_debug_disabled`。
-
-## 接口
-
-```http
-POST /api/assistant/agent-run/detail   { runId }   # 安全执行视图
-POST /api/assistant/agent-run/list     { conversationId, limit? }
-POST /api/assistant/agent-run/trace    { runId }   # 完整 Trace，需操作员或 AGENT_DEBUG=true
-```
-
-`detail` 返回：run 状态、复杂度、计划、聚合活动、子任务、证据、指标。
-其中不含 raw tool args、内部 prompt、隐藏推理与敏感 metadata。
-
-## Trace 内容
-
-`agent_trace_events` 按 `run_key + sequence` 有序存储，可按
-runId / conversationId / userId / 时间范围 / toolId / stopReason 查询。
-
-记录的事件类型：
+前端入口：
 
 ```text
-run_started  routing_hint  complexity_decided  plan_created  plan_updated
-skill_loaded tool_call     tool_result         observation   evidence
-delegation_started delegation_completed retrieval_diagnostics
-final_answer stop error
+/dashboard/agent/debug
 ```
 
-## 脱敏
-
-`trace.ts` 的 `redact` 在写入前处理：
-
-- key 命中 `password|secret|token|api_key|credential|authorization|cookie|private_key` → `[redacted]`；
-- 字符串超 4000 字截断，数组超 50 条截断，嵌套超 6 层截断。
-
-不得为了调试放开这些限制。
-
-## Eval
-
-每次 Run 结束后 `evaluateRun` 产出指标并随 Run 落库（`eval_json`）：
+相关 API：
 
 ```text
-taskSuccess  steps  toolCalls  failedToolCalls  duplicateToolCalls
-unproductiveToolCalls  evidenceCount  citationCoverage  skillLoads
-routerPrecision  routerPredictedDomains  actualNamespaces
-subAgentCount  subAgentUsefulCount  delegationSpeedup
-loopDetected  errorRate  tokenUsage  latency
+POST /api/assistant/agent-run/list      { conversationId, limit? }
+POST /api/assistant/agent-run/detail    { runId }
+POST /api/assistant/agent-run/evidence  { runId }
+POST /api/assistant/agent-run/trace     { runId }
 ```
 
-`routerPrecision`（预测域 vs 实际使用的工具 namespace）用于判断 Soft Router 是否还有价值。
-检索侧用 `evaluateRetrieval` 统计各路召回贡献；Recall@K / MRR 需要标注集才有值。
+- `list`、`detail`、`evidence` 只返回当前登录用户自己的 Run；
+- `trace` 同样校验 Run 归属，并额外要求当前用户是 `SUPER_ADMIN`，或服务端启用
+  `agent.features.debug`；
+- 不满足 Trace 条件时返回 `agent_debug_disabled`。
 
-## 前端事件流
+配置示例：
 
-聊天流里 `data-agent-event` part 携带结构化事件，`sequence` 单调递增，
-前端 reducer 幂等且可按 sequence 重放。刷新后通过 `agent-run/detail` 恢复。
+```toml
+[agent.features]
+debug = true
+```
 
-Debug 排查建议顺序：
+不要使用 `AGENT_DEBUG` 环境变量：Go 服务不从环境变量读取 Agent 配置。
 
-1. `agent-run/detail` 看执行视图对不对；
-2. `agent-run/trace` 看具体哪一步的参数与原始结果；
-3. `retrieval_diagnostics` 事件看三路召回各自命中了什么、rerank 是否生效。
+## 2. 持久化模型
+
+| 表 | 主要内容 |
+| --- | --- |
+| `petrichor_agent_run` | 目标、复杂度、状态、停止原因、计划、Skill、token、时延与 Evaluation |
+| `petrichor_agent_trace_event` | 同一 `run_key` 下按 `sequence` 排序的事件和工具结果 |
+| `petrichor_agent_evidence` | 标题、摘要/正文、来源、相关度、置信度与定位信息 |
+| `petrichor_agent_subtask` | 委派任务的目标、状态、深度、证据数与耗时 |
+
+Run、Trace、Evidence 和 Subtask 各自 best-effort 持久化；审计表故障会记录结构化错误，但不会让
+已经生成的回答失败。
+
+## 3. 当前可观测事件
+
+事件按单个 `runId` 的 `sequence` 单调递增。常见类型包括：
+
+| 阶段 | 事件示例 |
+| --- | --- |
+| 生命周期 | `run_started`、`agent_started`、`agent_completed`、`agent_stopped`、`agent_error`、`agent_cancelled` |
+| 路由与计划 | `complexity_detected`、`complexity_decided`、`routing_hint`、`plan_created`、`step_budget` |
+| Skill 与委派 | `skill_loaded`、`delegation_started`、`delegation_completed`、`delegation_failed` |
+| 工具 | `tool_started`、`tool_completed`、`tool_failed`、持久化后的 `tool_result` |
+| 检索与证据 | `retrieval_diagnostics`、`evidence_created`、`observation_created`、`wiki_mention_targets` |
+| 回答 | `final_answer_started`、`final_answer_delta`、`final_answer_completed`、`answer_quality_checked` |
+| 安全与错误 | `prompt_injection_blocked`、`error`、`stop` |
+
+普通聊天流只暴露公开 Observation、Evidence 和回答事件；完整 Trace 不进入模型上下文。
+
+## 4. Metrics 与 Evaluation
+
+Run 当前保存：
+
+- `tool_call_count`、`iteration_count`、`delegation_count`；
+- `input_tokens`、`output_tokens`、`total_tokens`；
+- `duration_ms`；
+- `metrics_json.latency`：TTFT、总耗时、LLM、工具、子 Agent、检索与重排的累计毫秒数。
+
+流式完成事件还包含 `durationMs`、`toolCalls`、`evidenceCount`、`subAgentCount`、`iterations`。
+
+当前 `eval_json` 是规则评估，不是模型评分，字段只有：
+
+```text
+score
+status
+stopReason
+toolCalls
+evidenceCount
+answerChars
+```
+
+评分基于回答是否非空、是否获得 Evidence、是否出现致命/循环/无进展停止，以及工具调用量是否
+过高。当前没有持久化 citation completeness、citation validity、no-tool-loop 等独立指标。
+
+## 5. 推荐排障顺序
+
+### 5.1 找到 Run
+
+先从 SSE 的 `runId` 或 `/agent-run/list` 定位 Run，检查：
+
+```text
+status
+stopReason
+complexity
+toolCallCount
+iterationCount
+delegationCount
+durationMs
+```
+
+常见停止原因包括：
+
+```text
+goal_completed
+enough_evidence
+max_iterations
+max_tool_calls
+max_execution_time
+no_progress
+repeated_action
+permission_denied
+cancelled
+fatal_error
+```
+
+### 5.2 检查路由与 Skill
+
+查看 `routingHint`、`loadedSkills`、`skill_loaded`：
+
+- 领域错误：检查 Soft Router 和路由置信度；
+- Skill 未加载：检查 `agent.features.dynamic_skills`、Skill ID 和 `agent.load_skill` 结果；
+- 工具不可见：检查 Skill 的 `ToolIDs` 是否已注册。
+
+### 5.3 检查工具链
+
+按 sequence 对照 `tool_started`、`tool_completed`、`tool_failed` 和持久化的 `tool_result`：
+
+- `TOOL_VALIDATION_ERROR`：模型参数不满足 JSON Schema；
+- `TOOL_PERMISSION_DENIED`：操作员、子 Agent 范围或业务资源权限不足；
+- `TOOL_TIMEOUT`：检查工具级和 `agent.budget.tool_timeout_ms`；
+- 重复参数调用：检查 `repeated_action` 与 `max_no_progress`。
+
+### 5.4 检查 Evidence 与回答
+
+- 工具成功但 Evidence 为 0：检查归一化器是否返回 Evidence；
+- Evidence 相关度低：查看 `retrieval_diagnostics`；
+- Evidence 正常但回答缺引用：检查最终合成提示和回答事件；
+- 回答为空或截断：检查模型错误、token 使用和停止原因。
+
+## 6. 日志与源码入口
+
+结构化存储错误使用 `agent-runtime.store.*` 日志前缀。关键实现：
+
+| 责任 | 文件 |
+| --- | --- |
+| Runtime 主循环 | `apps/api/internal/assistantsvc/runtime/runtime_run.go` |
+| 流式事件与脱敏 | `apps/api/internal/assistantsvc/runtime/events.go` |
+| 工具执行 | `apps/api/internal/assistantsvc/runtime/executor.go` |
+| Run 持久化 | `apps/api/internal/assistantsvc/agentrun-store.go` |
+| Debug 查询 | `apps/api/internal/assistantsvc/agentrun-view.go` |
+| Debug 路由 | `apps/api/internal/assistantsvc/agentrun-handlers.go` |
+
+生产环境不应仅为普通用户排障长期打开 `agent.features.debug`；优先由超级管理员查看 Trace，完成后
+恢复为 `false`。

@@ -389,7 +389,7 @@ export const agentRunApi = {
         completedAt: string | null
       }>
     }>("/assistant/agent-run/list", { conversationId, ...(limit ? { limit } : {}) }),
-  /** Debug 通道：完整 Trace，需操作员或开启 AGENT_DEBUG */
+  /** Debug 通道：完整 Trace，需超级管理员或开启 agent.features.debug */
   trace: (runId: string) =>
     api.post<{
       run: Record<string, unknown>

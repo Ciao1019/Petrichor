@@ -20,6 +20,7 @@ import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/fe
 import { QaMarkdownScope, QaMarkdownText, QaPreparing, WikiLinkClickProvider } from "@/features/pages/knowledge/QaMarkdown"
 import { SignedUrlPublicAccessProvider } from "@/hooks/use-signed-url"
 import { publicSiteAppearanceApi, publicWikiApi } from "@/lib/api"
+import { isDemoMode } from "@/lib/demo/demo-mode"
 import { PublicQaToolUIs } from "./public-qa-tool-ui"
 import { WikiPagePreviewDialog } from "@/components/knowledge/WikiPagePreviewDialog"
 
@@ -49,9 +50,9 @@ function ensureVisitorId(): string {
 
 const SUGGESTIONS = [
   { prompt: "这个站点有哪些公开文章？分别讲了什么？" },
-  { prompt: "用一段话总结本站公开内容的核心主题。" },
-  { prompt: "我想了解作者在某个主题上的观点，帮我找找相关文章。" },
-  { prompt: "把相关公开文章的要点整理成一个表格。" },
+  { prompt: "Mole 第一次清理应该怎么做才安全？" },
+  { prompt: "Fastfetch 的 JSONC 配置该从哪里开始？" },
+  { prompt: "对比 Mole 和 Fastfetch 分别适合什么场景。" },
 ]
 
 const QA_MODE_OPTIONS: Array<{ key: QaMode; label: string; icon: typeof MessageCircleQuestion }> = [
@@ -153,6 +154,10 @@ function PublicQaChat() {
           const headers = new Headers(init?.headers)
           if (visitorId) headers.set(VISITOR_ID_HEADER, visitorId)
           if (qaModeRef.current === "wiki") headers.set(QA_MODE_HEADER, "wiki")
+          if (isDemoMode()) {
+            const { demoPublicQaResponse } = await import("@/lib/demo/demo-public-chat")
+            return demoPublicQaResponse({ ...init, headers }, qaModeRef.current)
+          }
           const response = await fetch(input, { ...init, headers })
           if (response.ok) return response
           // 非流式错误（限流 / 关闭 / 异常）：后端返回的是 JSON 错误体，

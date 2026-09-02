@@ -378,8 +378,8 @@ export const knowledgeBaseWikiAgentApi = {
 export type KnowledgeBaseWikiExportFormat = "okf" | "obsidian"
 
 /**
- * 把知识库蒸馏成 Agent Skill 包（zip）。与 /api/agent/skill-pack 不同：
- * 那个装的是 API 用法，这个装的是知识本身。
+ * 把知识库蒸馏成 Agent Skill 包（zip）。与 /api/agent/skill 不同：
+ * 后者说明 API 用法，这里装的是知识本身。
  */
 export async function exportKnowledgeBaseSkillPack(params: {
   knowledgeBaseId: string

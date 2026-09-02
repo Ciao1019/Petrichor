@@ -1,4 +1,5 @@
 import type { DemoHandler, DemoHandlerResult } from "./demo-adapter"
+import { resolveLatestDemoHandler } from "./demo-latest-handlers"
 import {
     DEMO_USER,
     articleDetail,
@@ -13,6 +14,26 @@ import {
     touchKb,
 } from "./demo-store"
 import { demoThreadDelete, demoThreadDetail, demoThreadList, demoPlanPatch, ensureDemoThreads } from "./demo-assistant"
+import {
+    DEMO_ABOUT_PROFILE,
+    DEMO_PROJECT_SHOWCASE,
+    buildDemoPublicArticleList,
+    buildDemoSiteGraph,
+    findDemoPublicArticle,
+    searchDemoPublicArticles,
+} from "./demo-public-data"
+import {
+    demoPublicWikiPage,
+    demoWikiDashboard,
+    demoWikiEmbedding,
+    demoWikiGraph,
+    demoWikiGuide,
+    demoWikiIngest,
+    demoWikiLint,
+    demoWikiPageDetail,
+    demoWikiPages,
+    demoWikiTree,
+} from "./demo-wiki"
 
 /*
  * 演示模式的 mock 路由表：键为 "METHOD /path"（不含 /api 前缀）。
@@ -36,13 +57,47 @@ function str(value: unknown): string {
     return typeof value === "string" ? value : ""
 }
 
+function num(value: unknown, fallback: number): number {
+    const parsed = typeof value === "number" ? value : Number(value)
+    return Number.isFinite(parsed) ? parsed : fallback
+}
+
 const handlers: Record<string, DemoHandler> = {
     /* ---------- 会话 / 用户 ---------- */
+    "GET /auth/setup/status": () => ok({ required: false }),
     "GET /auth/me": () => ok(DEMO_USER),
     "GET /auth/profile": () => ok(DEMO_USER),
     "POST /auth/logout": () => ok({}),
     "GET /notification/summary": () => ok({ unreadCount: 0, latestUnreadId: null }),
     "POST /notification/list": () => ok({ total: 0, rows: [], code: 200, msg: "ok" }),
+
+    /* ---------- 公开站：文章、搜索、外观与展示页 ---------- */
+    "GET /public/article/list": () => ok({ items: buildDemoPublicArticleList() }),
+    "GET /public/article/share/detail": (body) => {
+        const article = findDemoPublicArticle(str(body.shareCode))
+        return article ? ok(article) : notFound("演示文章不存在")
+    },
+    "POST /public/article/share/detail": (body) => {
+        const article = findDemoPublicArticle(str(body.shareCode))
+        return article ? ok(article) : notFound("演示文章不存在")
+    },
+    "GET /public/article/search": (body) => ok(searchDemoPublicArticles(
+        str(body.q),
+        num(body.offset, 0),
+        num(body.limit, 20),
+    )),
+    "GET /public/appearance": () => ok({ publicQaEnabled: true }),
+    "GET /public/about/profile": () => ok(DEMO_ABOUT_PROFILE),
+    "GET /public/projects": () => ok(DEMO_PROJECT_SHOWCASE),
+    "GET /public/site-graph": () => ok(buildDemoSiteGraph()),
+    "GET /public/wiki/page": (body) => {
+        const page = demoPublicWikiPage(str(body.pageKey))
+        return page ? ok(page) : notFound("演示 Wiki 页面不存在")
+    },
+    "GET /assistant/wiki/page": (body) => {
+        const page = demoPublicWikiPage(str(body.pageKey))
+        return page ? ok(page) : notFound("演示 Wiki 页面不存在")
+    },
 
     /* ---------- 知识库 CRUD ---------- */
     "POST /kb/knowledge-base/list": () =>
@@ -269,6 +324,39 @@ const handlers: Record<string, DemoHandler> = {
     },
     "POST /kb/article/public-cache/refresh": (body) =>
         ok({ articleId: str(body.articleId), refreshedAt: new Date().toISOString() }),
+    "POST /kb/knowledge/build": (body) => {
+        const knowledgeBaseId = str(body.knowledgeBaseId)
+        const articleId = str(body.articleId)
+        const article = demoStore.articles.get(articleId)
+        if (!article || article.knowledgeBaseId !== knowledgeBaseId) return notFound("文章不存在")
+        const sourcePage = demoWikiPages(knowledgeBaseId).find((page) => page.kind === "source")
+        if (!sourcePage) return badRequest("演示知识库暂无 Wiki 数据")
+        const now = new Date().toISOString()
+        return ok({
+            id: `demo-build-${articleId}`,
+            userId: DEMO_USER.id,
+            knowledgeBaseId,
+            articleId,
+            status: "completed",
+            progress: { percent: 100, phase: "completed", message: "知识构建完成", updatedAt: now },
+            result: {
+                articleId,
+                knowledgeBaseId,
+                fromCache: true,
+                chunkCount: 6,
+                recommendedQuestionCount: 4,
+                entityCount: 2,
+                conceptCount: 3,
+                sourcePage,
+                warnings: [],
+            },
+            error: null,
+            startedAt: now,
+            completedAt: now,
+            createdAt: now,
+            updatedAt: now,
+        })
+    },
 
     /* ---------- 分享（演示模式仅展示关闭态） ---------- */
     "POST /kb/article/share/info": (body) =>
@@ -282,6 +370,29 @@ const handlers: Record<string, DemoHandler> = {
     "POST /kb/article/share/create": () => badRequest("演示模式不生成公开分享链接"),
     "POST /kb/article/share/revoke": (body) =>
         ok({ articleId: str(body.articleId), enabled: false, revokedAt: new Date().toISOString() }),
+
+    /* ---------- Wiki 知识空间 / 图谱 ---------- */
+    "POST /kb/wiki/page/list": (body) => {
+        const knowledgeBaseId = str(body.knowledgeBaseId)
+        return ok({ knowledgeBaseId, pages: demoWikiPages(knowledgeBaseId) })
+    },
+    "POST /kb/wiki/page/detail": (body) => {
+        const detail = demoWikiPageDetail(str(body.knowledgeBaseId), str(body.pageKey))
+        return detail ? ok(detail) : notFound("Wiki 页面不存在")
+    },
+    "POST /kb/wiki/dashboard": (body) => ok(demoWikiDashboard(str(body.knowledgeBaseId))),
+    "POST /kb/wiki/tree": (body) => ok(demoWikiTree(str(body.knowledgeBaseId), str(body.articleId))),
+    "POST /kb/wiki/graph": (body) => ok(demoWikiGraph(str(body.knowledgeBaseId))),
+    "POST /kb/wiki/lint": (body) => ok(demoWikiLint(str(body.knowledgeBaseId))),
+    "POST /kb/wiki/guide": (body) => ok(demoWikiGuide(str(body.knowledgeBaseId))),
+    "POST /kb/wiki/guide/save": (body) => ok(demoWikiGuide(str(body.knowledgeBaseId), str(body.contentMd))),
+    "POST /kb/wiki/ingest": (body) => {
+        const result = demoWikiIngest(str(body.knowledgeBaseId))
+        return result ? ok(result) : notFound("知识库暂无可编译内容")
+    },
+    "POST /kb/wiki/embedding/run": (body) => ok(demoWikiEmbedding(str(body.knowledgeBaseId))),
+    "POST /kb/wiki/export": () => ok(new Blob(["Petrichor 静态演示站：导出内容为示意数据。"], { type: "text/plain" })),
+    "POST /kb/wiki/skill-pack": () => ok(new Blob(["Petrichor Demo Skill Pack"], { type: "text/plain" })),
 
     /* ---------- 问答 / 模型信息 / 文档库 ---------- */
     "POST /kb/qa/knowledge-base/list": () =>
@@ -326,5 +437,5 @@ const handlers: Record<string, DemoHandler> = {
 }
 
 export function resolveDemoHandler(key: string): DemoHandler | undefined {
-    return handlers[key]
+    return resolveLatestDemoHandler(key) ?? handlers[key]
 }

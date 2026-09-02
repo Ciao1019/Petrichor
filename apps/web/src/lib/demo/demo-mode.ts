@@ -6,8 +6,15 @@
  */
 
 const DEMO_FLAG_KEY = "petrichor-demo-mode"
+const DEMO_ONLY_BUILD = import.meta.env.VITE_DEMO_ONLY === "1"
+
+/** Vercel 演示站使用的构建期开关；该构建永远不允许请求真实 API。 */
+export function isDemoOnlyBuild(): boolean {
+    return DEMO_ONLY_BUILD
+}
 
 export function isDemoMode(): boolean {
+    if (DEMO_ONLY_BUILD) return true
     if (typeof window === "undefined") return false
     try {
         return window.sessionStorage.getItem(DEMO_FLAG_KEY) === "1"
@@ -26,6 +33,10 @@ export function enterDemoMode() {
 
 /** 退出演示：清标记并整页跳走，顺带丢弃内存 mock store。 */
 export function exitDemoMode(target = "/petrichor") {
+    if (DEMO_ONLY_BUILD) {
+        window.location.href = "/"
+        return
+    }
     try {
         window.sessionStorage.removeItem(DEMO_FLAG_KEY)
     } catch {

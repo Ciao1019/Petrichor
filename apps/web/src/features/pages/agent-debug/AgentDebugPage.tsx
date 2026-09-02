@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils"
  * Agent Debug 页面（§68~§71/§162.38）。
  *
  * 与普通 Chat UI 严格分离：这里读的是完整 Trace（含原始工具参数与结果），
- * 因此入口受限——需要操作员身份或显式开启 AGENT_DEBUG。
+ * 因此入口受限——需要超级管理员身份或在 config.toml 显式开启 agent.features.debug。
  * 页面只展示执行事实，不展示模型隐藏推理（后端也不会返回）。
  */
 
@@ -85,7 +85,7 @@ export function AgentDebugPage() {
             <header className="flex flex-col gap-1">
                 <h1 className="text-lg font-semibold">Agent Debug</h1>
                 <p className="text-sm text-muted-foreground">
-                    查看单次 Agent Run 的完整执行轨迹。仅操作员或开启 AGENT_DEBUG 时可访问。
+                    查看单次 Agent Run 的完整执行轨迹。仅超级管理员或开启 agent.features.debug 时可访问。
                 </p>
             </header>
 
@@ -376,7 +376,7 @@ function formatMs(value: number | null | undefined): string {
 
 function readErrorMessage(error: unknown): string {
     const message = (error as { response?: { data?: { msg?: string } } })?.response?.data?.msg
-    if (message === "agent_debug_disabled") return "当前账号无权访问调试信息（需要操作员身份或开启 AGENT_DEBUG）。"
+    if (message === "agent_debug_disabled") return "当前账号无权访问调试信息（需要超级管理员身份或开启 agent.features.debug）。"
     if (message) return message
     return "加载失败，请确认 Run ID 是否正确。"
 }

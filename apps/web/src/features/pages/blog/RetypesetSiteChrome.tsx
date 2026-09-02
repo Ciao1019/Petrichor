@@ -6,6 +6,7 @@ import { Link } from "react-router-dom"
 
 import { BlogSearchDialog, useBlogSearchHotkey } from "@/components/blog-search-dialog"
 import { StaticNoise } from "@/cuicui/other/creative-effects/animated-noise/static-noise"
+import { isDemoOnlyBuild } from "@/lib/demo/demo-mode"
 
 export type RetypesetSiteActiveSection = "articles" | "tags" | "graph" | "ask" | "projects" | "petrichor" | "about"
 type RetypesetSiteNavSection = RetypesetSiteActiveSection
@@ -149,6 +150,16 @@ export function RetypesetSiteNav({
                             </li>
                         )
                     })}
+                    {isDemoOnlyBuild() ? (
+                        <li className="mt-1">
+                            <Link
+                                className="retypeset-highlight-static retypeset-c-primary inline-flex font-bold"
+                                to="/dashboard/knowledge"
+                            >
+                                进入后台演示 →
+                            </Link>
+                        </li>
+                    ) : null}
                 </ul>
                 <div className="mt-3 flex items-center gap-3 lg:mt-4">
                     <button

@@ -1,7 +1,7 @@
 // wiki-skillpack.go POST /api/kb/wiki/skill-pack：把一个知识库蒸馏成可分发的
 // Agent Skill 包（zip），解压后放进 Claude Code / Codex 的 skills 目录即可使用。
 //
-// 和 /api/agent/skill-pack 的区别：那个装的是「怎么调 Petrichor 的 API」，
+// 和 /api/agent/skill 的区别：那个说明「怎么调 Petrichor 的 API」，
 // 这个装的是知识本身——SKILL.md 给出领域说明与目录，references/ 是按引用度
 // 挑出来的 Wiki 页面正文，带 OKF frontmatter，sources 指回源文档。
 package kb

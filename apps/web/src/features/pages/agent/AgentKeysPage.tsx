@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 import {
   DEFAULT_AGENT_SCOPES,
-  buildSkillConfigSnippet,
+  buildSkillEnvironmentSnippet,
   copyToClipboard,
   formatDateTime,
   normalizeAxiosErrorMessage,
@@ -89,7 +89,7 @@ export function AgentKeysPage() {
       <AgentPageHeader
         icon={KeyRound}
         title="API Key 管理"
-        description="为 Claude Code、Codex、Cursor 等 Agent 工具颁发密钥。MCP Server、Skill 包与 REST 接口共用同一套 Key，明文仅生成时展示一次。"
+        description="为 Claude Code、Codex、Cursor 等 Agent 工具颁发密钥。MCP Server、Agent Skill 与 REST 接口共用同一套 Key，明文仅生成时展示一次。"
         actions={
           <>
             <Button type="button" variant="outline" size="sm" onClick={() => void fetchKeys()} disabled={loading}>
@@ -118,9 +118,9 @@ export function AgentKeysPage() {
               </Button>
             </div>
             <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Skill config.json</Label>
+              <Label className="text-xs text-muted-foreground">Agent Skill 环境变量</Label>
               <pre className="overflow-x-auto rounded-md bg-muted px-3 py-2 text-xs">
-                {buildSkillConfigSnippet(createdApiKey)}
+                {buildSkillEnvironmentSnippet(createdApiKey)}
               </pre>
             </div>
           </AlertDescription>
@@ -160,7 +160,7 @@ export function AgentKeysPage() {
                 <div className="space-y-1">
                   <div className="text-sm font-medium">还没有 API Key</div>
                   <div className="text-xs text-muted-foreground">
-                    生成后即可接入 MCP Server 或安装 Skill 包，调用文档能力。
+                    生成后即可接入 MCP Server、Agent Skill 或 REST API，调用文档能力。
                   </div>
                 </div>
                 <Button type="button" size="sm" onClick={() => void createKey()} disabled={creating}>

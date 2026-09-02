@@ -1,6 +1,6 @@
 import axios, { type AxiosAdapter, type AxiosError, type AxiosInstance, type AxiosResponse, type InternalAxiosRequestConfig } from "axios"
 
-import { isDemoMode } from "./demo-mode"
+import { isDemoMode, isDemoOnlyBuild } from "./demo-mode"
 
 /*
  * 演示模式的 axios 适配层。
@@ -28,6 +28,14 @@ function parseBody(config: InternalAxiosRequestConfig): Record<string, unknown> 
         }
     }
     return typeof raw === "object" ? (raw as Record<string, unknown>) : {}
+}
+
+/** GET 的筛选值位于 config.params；统一合并后 handler 无需关心请求方法。 */
+function parseInput(config: InternalAxiosRequestConfig): Record<string, unknown> {
+    const params = config.params && typeof config.params === "object"
+        ? (config.params as Record<string, unknown>)
+        : {}
+    return { ...params, ...parseBody(config) }
 }
 
 /** 去掉 baseURL 前缀与 query，得到 handlers 表用的路由键，如 "POST /kb/node/tree"。 */
@@ -58,6 +66,8 @@ function demoLatency() {
 /* 演示标记开着时，公开站接口与真实登录动作仍然直通网络：
    访客可能从演示模式切回博客 / 关于页，甚至直接去登录，这些都不该被 mock 挡住。 */
 function isPassthroughRoute(config: InternalAxiosRequestConfig): boolean {
+    // 独立演示构建严禁触网，公开页、初始化状态和登录入口也全部走假数据。
+    if (isDemoOnlyBuild()) return false
     let url = config.url || ""
     if (url.startsWith("/api/")) url = url.slice(4)
     return (
@@ -95,7 +105,7 @@ export function installDemoAdapter(instance: AxiosInstance) {
             throw error
         }
 
-        const result = handler(parseBody(config))
+        const result = handler(parseInput(config))
         const status = result.status ?? 200
         const response = buildResponse(config, status, result.data)
         if (status >= 400) {

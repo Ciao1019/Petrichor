@@ -43,16 +43,6 @@ const MCP_TOOL_GROUPS: Array<{ title: string; scopes: string[]; tools: string[] 
     scopes: ["article:write", "article:delete"],
     tools: ["create_folder", "create_article", "update_article", "move_article", "delete_article"],
   },
-  {
-    title: "知识 Wiki",
-    scopes: ["wiki:read", "wiki:write"],
-    tools: ["list_wiki_pages", "read_wiki_page", "wiki_lint", "wiki_ingest"],
-  },
-  {
-    title: "文章分享",
-    scopes: ["share:write"],
-    tools: ["share_article", "get_article_share", "revoke_article_share"],
-  },
 ]
 
 const MCP_TOOL_COUNT = MCP_TOOL_GROUPS.reduce((total, group) => total + group.tools.length, 0)
@@ -224,7 +214,7 @@ export function AgentMcpPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Package className="size-4 text-muted-foreground" />
-                MCP 还是 Skill 包？
+                MCP 还是 Agent Skill？
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-xs leading-relaxed text-muted-foreground">
@@ -233,13 +223,12 @@ export function AgentMcpPage() {
                 ：客户端原生支持、工具带结构化参数校验，推荐 Claude Code / Codex / Cursor 优先使用。
               </p>
               <p>
-                <span className="font-medium text-foreground">Skill 包</span>
-                ：不依赖 MCP 支持，任何能执行 shell 的 Agent 都能用（内置零依赖 CLI），
-                还额外覆盖 AI 摘要 / 思维导图生成。
+                <span className="font-medium text-foreground">Agent Skill</span>
+                ：不依赖 MCP 支持，任何能读取 Skill 并执行 shell 的 Agent 都能通过 REST 使用完整能力层。
               </p>
               <Button asChild variant="outline" size="sm" className="w-full">
                 <Link to={dashboardRoutes.agentSkill}>
-                  前往 Skill 包
+                  前往 Agent Skill
                   <ArrowRight className="ml-2 size-4" />
                 </Link>
               </Button>
@@ -255,7 +244,7 @@ export function AgentMcpPage() {
             </CardHeader>
             <CardContent className="space-y-2 text-xs leading-relaxed text-muted-foreground">
               <p>服务端只存 API Key 的 SHA-256 哈希，可随时在 API Key 管理中撤销。</p>
-              <p>删除文章、撤销分享等危险操作已在工具描述中要求 Agent 先向你确认。</p>
+              <p>删除文章等危险操作已在工具描述中要求 Agent 先向你确认。</p>
               <p>按最小权限原则为不同 Agent 颁发不同 scope 的 Key。</p>
             </CardContent>
           </Card>
