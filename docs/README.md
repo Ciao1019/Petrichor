@@ -44,16 +44,17 @@ flowchart TB
   caddy --> web["React + Vite SPA"]
   caddy --> api["Go + Gin API"]
 
-  api --> postgres["PostgreSQL<br/>用户 · 文章 · 分片 · Wiki · 向量 · 任务事实"]
-  api --> redis["Redis<br/>热点缓存"]
+  api --> postgres["PostgreSQL<br/>用户 · 文章 · 分片 · Wiki"]
+  api --> redis["Redis + Asynq<br/>缓存 · 持久任务 · 导入页状态"]
   api --> storage["S3 / 本地卷<br/>上传文件"]
-  api --> queue["API 内存队列<br/>知识构建"]
-  worker["独立视觉导入 Worker"] --> postgres
+  worker["Asynq Worker<br/>知识构建 · 视觉导入"] --> redis
+  worker --> postgres
   worker --> storage
 ```
 
-生产部署只公开 Caddy。Go API 在监听前执行 Goose 迁移；视觉导入以 PostgreSQL 任务表为事实
-来源，知识构建在 API 进程内的有界队列中运行。完整边界见 [运维手册](./operations.md)。
+生产部署只公开 Caddy。Go API 在监听前执行 Goose 迁移并向 Redis 写入任务；Asynq Worker 消费
+知识构建与视觉导入两个队列，视觉导入的任务、页进度和死信也统一以 Redis 为事实来源。完整边界见
+[运维手册](./operations.md)。
 
 ## 核心知识链路
 

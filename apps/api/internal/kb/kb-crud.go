@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	httpx "petrichor/api/internal/httpx"
+	"petrichor/api/internal/taskqueue"
 )
 
 // run 统一出口：业务函数返回 data 即 OK 输出；data 为 nil 表示响应已直接写出
@@ -192,6 +193,17 @@ func DeleteKnowledgeBase(c *gin.Context) {
 			return nil, err
 		}
 		imageObjectKeys := collectArticleS4ObjectKeys(articles, user.ID)
+		importStore, err := taskqueue.DocumentImports()
+		if err != nil {
+			return nil, err
+		}
+		importJobIDs, err := importStore.DeleteKnowledgeBase(c.Request.Context(), user.ID, kbID)
+		if err != nil {
+			return nil, err
+		}
+		for _, jobID := range importJobIDs {
+			_ = taskqueue.RemoveDocumentImportTask(jobID)
+		}
 		if _, err := q.Exec(c.Request.Context(),
 			`DELETE FROM petrichor_kb_knowledge_base WHERE id = $1 AND user_id = $2`, kbID, user.ID); err != nil {
 			return nil, err

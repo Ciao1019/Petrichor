@@ -23,7 +23,7 @@
 - 认证使用 Sa-Token-Go 的 Gin 集成，token 状态由 `sa_token_storage` 持久化到 PostgreSQL；
   业务用户只保存在 `petrichor_user`。
 - 上传和公开文件访问使用 S3 兼容对象存储。
-- 生产部署统一使用根目录 `compose.yaml`：Caddy、Go API、独立视觉导入 Worker 与本地 Redis；Redis 使用 `go-redis/v9`。知识构建由 API 内存队列执行，视觉导入任务以 PostgreSQL 为事实来源。
+- 生产部署统一使用根目录 `compose.yaml`：Caddy、Go API、统一 Asynq Worker、本地 Redis 与仅回环地址开放的 asynqmon；Redis 使用 `go-redis/v9`，通过 Asynq 承载知识构建和视觉导入队列，并保存视觉导入任务、页进度和死信状态。
 
 ## 常用命令
 
@@ -60,7 +60,7 @@ cd apps/api && go run ./cmd/migrate status
 
 - `apps/api/cmd/server/`：Go API 生产入口。
 - `apps/api/cmd/migrate/`：Goose 数据库迁移命令入口。
-- `apps/api/cmd/worker/`：视觉文档导入常驻 Worker 入口；知识构建 Worker 位于 API 进程内。
+- `apps/api/cmd/worker/`：统一 Asynq Worker 入口，分别消费知识构建与视觉文档导入队列。
 - `apps/api/internal/`：Go 鉴权、业务、数据库、存储、缓存和 Agent 实现。
 - `apps/api/migrations/`：随 Go 二进制内嵌的 Goose 初始化 SQL。
 - `apps/api/config.example.toml`：Go 运行配置模板；本地真实配置为忽略提交的 `config.toml`。

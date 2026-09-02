@@ -106,7 +106,7 @@ docker compose up -d redis
 
 # 终端 1：启动前由 Go 自动执行 Goose 初始化
 cd apps/api && go run ./cmd/server
-# 终端 2：视觉导入 Worker
+# 终端 2：Asynq 知识构建与视觉导入 Worker
 cd apps/api && go run ./cmd/worker
 # 终端 3：Bun / Vite Web
 bun dev

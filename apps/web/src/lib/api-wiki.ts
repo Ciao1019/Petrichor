@@ -219,12 +219,34 @@ export interface ArticleKnowledgeBuildResponse {
 
 export type ArticleKnowledgeBuildJobStatus = "pending" | "processing" | "completed" | "failed"
 
+export type ArticleKnowledgeBuildPhase =
+  | "queued"
+  | "preparing"
+  | "analyzing"
+  | "taxonomy"
+  | "pages"
+  | "persisting"
+  | "embedding"
+  | "retrying"
+  | "completed"
+  | "failed"
+
+export interface ArticleKnowledgeBuildProgress {
+  percent: number
+  phase: ArticleKnowledgeBuildPhase
+  message: string
+  completed?: number
+  total?: number
+  updatedAt: string
+}
+
 export interface ArticleKnowledgeBuildJobResponse {
   id: string
   userId: string
   knowledgeBaseId: string
   articleId: string
   status: ArticleKnowledgeBuildJobStatus
+  progress: ArticleKnowledgeBuildProgress
   result: ArticleKnowledgeBuildResponse | null
   error: string | null
   startedAt: string | null
@@ -419,14 +441,23 @@ async function restoreBlobErrorBody(error: unknown): Promise<unknown> {
 // 服务端单任务最长 15 分钟，额外预留一轮排队和最终状态返回时间。
 const ARTICLE_KNOWLEDGE_BUILD_POLL_TIMEOUT_MS = 30 * 60 * 1_000
 
+export interface BuildArticleKnowledgeWaitOptions {
+  onProgress?: (
+    progress: ArticleKnowledgeBuildProgress,
+    job: ArticleKnowledgeBuildJobResponse,
+  ) => void
+}
+
 /** 创建异步构建任务并等待最终结果；页面请求不会占用一个长连接。 */
 export async function buildArticleKnowledgeAndWait(
   data: ArticleKnowledgeBuildInput,
+  options: BuildArticleKnowledgeWaitOptions = {},
 ): Promise<ArticleKnowledgeBuildResponse> {
   const started = await knowledgeBaseWikiAgentApi.buildArticleKnowledge(data)
   const deadline = Date.now() + ARTICLE_KNOWLEDGE_BUILD_POLL_TIMEOUT_MS
   let job = started.data
   let pollIntervalMs = 750
+  options.onProgress?.(job.progress, job)
 
   while (job.status === "pending" || job.status === "processing") {
     if (Date.now() >= deadline) {
@@ -435,6 +466,7 @@ export async function buildArticleKnowledgeAndWait(
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
     const response = await knowledgeBaseWikiAgentApi.articleKnowledgeBuildStatus(job.id)
     job = response.data
+    options.onProgress?.(job.progress, job)
     pollIntervalMs = Math.min(2_500, Math.round(pollIntervalMs * 1.35))
   }
 

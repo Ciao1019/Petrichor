@@ -118,8 +118,10 @@ const SiteAppearanceConfigPage = lazy(() =>
 const SiteGraphConfigPage = lazy(() =>
   import('@/features/pages/admin/SiteGraphConfigPage').then((module) => ({ default: module.SiteGraphConfigPage }))
 )
-const WorkerDeadLettersPage = lazy(() =>
-  import('@/features/pages/admin/WorkerDeadLettersPage').then((module) => ({ default: module.WorkerDeadLettersPage }))
+const DocumentImportDeadLettersPage = lazy(() =>
+  import('@/features/pages/admin/DocumentImportDeadLettersPage').then((module) => ({
+    default: module.DocumentImportDeadLettersPage,
+  }))
 )
 
 function RouteLoadingFallback() {
@@ -328,7 +330,7 @@ function AppThemeScope() {
                 <Route path="admin/projects" element={<ProjectsConfigPage />} />
                 <Route path="admin/appearance" element={<SiteAppearanceConfigPage />} />
                 <Route path="admin/site-graph" element={<SiteGraphConfigPage />} />
-                <Route path="admin/worker-dead-letters" element={<WorkerDeadLettersPage />} />
+                <Route path="admin/document-import-dead-letters" element={<DocumentImportDeadLettersPage />} />
                 <Route path="ai/config" element={<AiModelConfigPage />} />
                 <Route path="agent" element={<AgentKeysPage />} />
                 <Route path="agent/keys" element={<AgentKeysPage />} />

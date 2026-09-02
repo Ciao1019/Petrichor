@@ -33,6 +33,7 @@ func buildArticleKnowledgeCore(ctx context.Context, q txBeginner, userID, kbID, 
 	if trimSpace(article.ContentMd) == "" {
 		return nil, badReq("文章没有可构建的 Markdown 内容")
 	}
+	reportKnowledgeBuildProgress(ctx, 5, knowledgeBuildPhasePreparing, "正在加载知识编译上下文", 0, 0)
 
 	// 编译上下文：知识库名 + 该库自定义的编译说明书（没保存过就是空的）。
 	profile := loadCompileProfile(ctx, q, userID, kb)
@@ -74,6 +75,8 @@ func buildArticleKnowledgeCore(ctx context.Context, q txBeginner, userID, kbID, 
 	if len(chunks) == 0 {
 		return nil, badReq("文章没有可构建的 Markdown 切片")
 	}
+	reportKnowledgeBuildProgress(ctx, 10, knowledgeBuildPhaseAnalyzing,
+		"正在分析正文并生成推荐问题", 0, 0)
 
 	var chunksWithQuestions []chunkWithQuestions
 	var questionWarnings []string
@@ -110,6 +113,7 @@ func buildArticleKnowledgeCore(ctx context.Context, q txBeginner, userID, kbID, 
 	}
 	warnings = append(warnings, questionWarnings...)
 	warnings = append(warnings, extractionWarnings...)
+	reportKnowledgeBuildProgress(ctx, 45, knowledgeBuildPhaseAnalyzing, "文档分析完成", 0, 0)
 
 	questionsByKey := map[string][]string{}
 	for _, cqw := range chunksWithQuestions {
@@ -122,14 +126,19 @@ func buildArticleKnowledgeCore(ctx context.Context, q txBeginner, userID, kbID, 
 			chunks[index].recommendedQuestions = normalizeRecommendedQuestions(nil, chunks[index].heading)
 		}
 	}
+	reportKnowledgeBuildProgress(ctx, 48, knowledgeBuildPhaseTaxonomy, "正在规划知识目录", 0, 0)
 	candidates, warnings = planKnowledgeTaxonomy(ctx, userID, profile, article.Title, candidates, existingPages, warnings)
+	reportKnowledgeBuildProgress(ctx, 55, knowledgeBuildPhaseTaxonomy, "知识目录规划完成", 0, 0)
+	reportKnowledgeBuildProgress(ctx, 58, knowledgeBuildPhasePages, "正在生成 Wiki 页面", 0, 0)
 	items, warnings := materializeWikiPages(ctx, userID, profile, article.Title, article.ContentMd, candidates, relations, warnings)
+	reportKnowledgeBuildProgress(ctx, 88, knowledgeBuildPhasePersisting, "正在写入知识页面和检索索引", 0, 0)
 
 	sourcePage, entityCount, conceptCount, werr := persistKnowledgeBuild(
 		ctx, q, userID, kbID, kb.Name, article, chunksWithQuestions, documentSummary, items, relations, warnings)
 	if werr != nil {
 		return nil, werr
 	}
+	reportKnowledgeBuildProgress(ctx, 95, knowledgeBuildPhaseEmbedding, "知识页面已保存，正在补充向量索引", 0, 0)
 
 	// 提交后 best-effort 补向量；EmbedInvoker 未注入时静默跳过。
 	if EmbedInvoker != nil {
@@ -140,6 +149,7 @@ func buildArticleKnowledgeCore(ctx context.Context, q txBeginner, userID, kbID, 
 			}
 		}
 	}
+	reportKnowledgeBuildProgress(ctx, 99, knowledgeBuildPhaseEmbedding, "正在整理构建结果", 0, 0)
 
 	return map[string]any{
 		"articleId":                strconv.FormatInt(article.ID, 10),

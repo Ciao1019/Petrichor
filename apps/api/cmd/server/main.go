@@ -22,8 +22,8 @@ import (
 	"petrichor/api/internal/db"
 	"petrichor/api/internal/dbmigrate"
 	httpx "petrichor/api/internal/httpx"
-	"petrichor/api/internal/kb"
 	"petrichor/api/internal/routes"
+	"petrichor/api/internal/taskqueue"
 )
 
 func main() {
@@ -51,6 +51,10 @@ func run() error {
 		return fmt.Errorf("初始化 Redis 缓存失败: %w", err)
 	}
 	defer cache.Close()
+	if err := taskqueue.Initialize(startupCtx); err != nil {
+		return fmt.Errorf("初始化 Asynq 任务队列失败: %w", err)
+	}
+	defer taskqueue.Close()
 	if err := auth.InitializeSaToken(); err != nil {
 		return err
 	}
@@ -78,7 +82,7 @@ func run() error {
 	r.Use(auth.SaTokenInterceptor())
 	r.MaxMultipartMemory = 64 << 20
 
-	// liveness 只证明进程可响应；readiness 同时验证数据库连接。
+	// liveness 只证明进程可响应；readiness 同时验证 PostgreSQL、缓存与 Asynq Redis。
 	r.GET("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
@@ -90,6 +94,10 @@ func run() error {
 			return
 		}
 		if err := cache.Ping(ctx); err != nil {
+			httpx.ErrorJSON(c, http.StatusServiceUnavailable, "服务尚未就绪")
+			return
+		}
+		if err := taskqueue.Ping(ctx); err != nil {
 			httpx.ErrorJSON(c, http.StatusServiceUnavailable, "服务尚未就绪")
 			return
 		}
@@ -130,8 +138,6 @@ func run() error {
 
 	signalCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
-	waitKnowledgeBuilds := kb.StartArticleKnowledgeBuildScheduler(signalCtx, cfg.KnowledgeBuild)
-	defer waitKnowledgeBuilds()
 	serveErr := make(chan error, 1)
 	go func() {
 		log.Printf("Petrichor Go API listening on %s", addr)
@@ -157,8 +163,7 @@ func run() error {
 	if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("Go API 关闭时监听异常: %w", err)
 	}
-	waitKnowledgeBuilds()
-	log.Print("Petrichor Go API 与知识构建队列已安全关闭")
+	log.Print("Petrichor Go API 已安全关闭")
 	return nil
 }
 

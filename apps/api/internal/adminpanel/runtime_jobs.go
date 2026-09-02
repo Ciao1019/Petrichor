@@ -7,10 +7,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5"
 
-	"petrichor/api/internal/db"
 	"petrichor/api/internal/httpx"
+	"petrichor/api/internal/taskqueue"
 )
 
 type deadLetterJob struct {
@@ -28,7 +27,7 @@ type deadLetterJob struct {
 	UpdatedAt       time.Time  `json:"updatedAt"`
 }
 
-// AdminDeadLetterJobs 返回视觉导入 Worker 的死信，不暴露正文、模型输入或密钥。
+// AdminDeadLetterJobs 从 Redis 返回视觉导入业务死信，不暴露 Markdown、图片地址或模型输入。
 func AdminDeadLetterJobs(c *gin.Context) {
 	limit := 100
 	if raw := c.Query("limit"); raw != "" {
@@ -45,45 +44,45 @@ func AdminDeadLetterJobs(c *gin.Context) {
 }
 
 func loadDeadLetterJobs(ctx context.Context, limit int) ([]deadLetterJob, error) {
-	rows, err := db.Pool().Query(ctx, `
-		SELECT 'document_import'::text, job.id::text, job.user_id,
-		       job.knowledge_base_id, job.article_id, job.title,
-		       COALESCE(MAX(page.attempt_count), 0)::integer,
-		       COALESCE(MAX(page.max_attempts), 5)::integer, job.replay_count,
-		       COALESCE(
-		         (array_agg(page.last_error ORDER BY page.updated_at DESC)
-		           FILTER (WHERE page.last_error IS NOT NULL))[1],
-		         job.error
-		       ), job.dead_lettered_at, job.updated_at
-		FROM petrichor_kb_import_job AS job
-		LEFT JOIN petrichor_kb_import_job_page AS page ON page.job_id = job.id
-		WHERE job.status = 'dead_letter'
-		GROUP BY job.id
-		ORDER BY job.dead_lettered_at DESC NULLS LAST, job.updated_at DESC
-		LIMIT $1`, limit)
+	store, err := taskqueue.DocumentImports()
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	items := make([]deadLetterJob, 0)
-	for rows.Next() {
-		var item deadLetterJob
-		var userID, knowledgeBaseID int64
-		var articleID *int64
-		if err := rows.Scan(&item.Kind, &item.ID, &userID, &knowledgeBaseID, &articleID,
-			&item.Title, &item.AttemptCount, &item.MaxAttempts, &item.ReplayCount,
-			&item.LastError, &item.DeadLetteredAt, &item.UpdatedAt); err != nil {
+	jobs, err := store.ListByStatus(ctx, "dead_letter", int64(limit))
+	if err != nil {
+		return nil, err
+	}
+	items := make([]deadLetterJob, 0, len(jobs))
+	for i := range jobs {
+		job := jobs[i]
+		pages, err := store.Pages(ctx, job.ID)
+		if err != nil {
 			return nil, err
 		}
-		item.UserID = strconv.FormatInt(userID, 10)
-		item.KnowledgeBaseID = strconv.FormatInt(knowledgeBaseID, 10)
-		if articleID != nil {
-			value := strconv.FormatInt(*articleID, 10)
+		item := deadLetterJob{
+			Kind: "document_import", ID: strconv.FormatInt(job.ID, 10),
+			UserID:          strconv.FormatInt(job.UserID, 10),
+			KnowledgeBaseID: strconv.FormatInt(job.KnowledgeBaseID, 10),
+			Title:           job.Title, ReplayCount: job.ReplayCount,
+			LastError: job.Error, DeadLetteredAt: job.DeadLetteredAt, UpdatedAt: job.UpdatedAt,
+			MaxAttempts: 5,
+		}
+		if job.ArticleID != nil {
+			value := strconv.FormatInt(*job.ArticleID, 10)
 			item.ArticleID = &value
+		}
+		for pageIndex := range pages {
+			page := pages[pageIndex]
+			item.AttemptCount = max(item.AttemptCount, page.AttemptCount)
+			item.MaxAttempts = max(item.MaxAttempts, page.MaxAttempts)
+			if page.LastError != nil && page.UpdatedAt.After(item.UpdatedAt) {
+				item.LastError = page.LastError
+				item.UpdatedAt = page.UpdatedAt
+			}
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	return items, nil
 }
 
 type replayDeadLetterRequest struct {
@@ -91,7 +90,6 @@ type replayDeadLetterRequest struct {
 	ID   string `json:"id" binding:"required"`
 }
 
-// AdminReplayDeadLetter 原子重置死信的尝试次数和调度时间；Worker 下个轮询周期自动领取。
 func AdminReplayDeadLetter(c *gin.Context) {
 	var request replayDeadLetterRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -116,38 +114,56 @@ func replayDocumentImportDeadLetter(ctx context.Context, rawID string) error {
 	if err != nil || id <= 0 {
 		return &httpx.HttpError{Status: 400, Message: "id 必须是正整数"}
 	}
-	tx, err := db.Pool().Begin(ctx)
+	store, err := taskqueue.DocumentImports()
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-	var status string
-	if err := tx.QueryRow(ctx,
-		`SELECT status FROM petrichor_kb_import_job WHERE id = $1 FOR UPDATE`, id).Scan(&status); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return &httpx.HttpError{Status: 404, Message: "死信任务不存在"}
-		}
+	job, err := store.Get(ctx, id)
+	if errors.Is(err, taskqueue.ErrDocumentImportNotFound) {
+		return &httpx.HttpError{Status: 404, Message: "死信任务不存在"}
+	}
+	if err != nil {
 		return err
 	}
-	if status != "dead_letter" {
+	if job.Status != "dead_letter" {
 		return &httpx.HttpError{Status: 409, Message: "任务不在死信状态"}
 	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE petrichor_kb_import_job_page
-		SET status = 'pending', attempt_count = 0, next_attempt_at = now(),
-		    error = NULL, last_error = NULL, dead_lettered_at = NULL, updated_at = now()
-		WHERE job_id = $1 AND status IN ('dead_letter', 'failed', 'processing')`, id); err != nil {
+	now := time.Now().UTC()
+	_, err = store.UpdatePages(ctx, id, func(pages []*taskqueue.DocumentImportPage) error {
+		for _, page := range pages {
+			if page.Status != "dead_letter" && page.Status != "failed" && page.Status != "processing" {
+				continue
+			}
+			page.Status = "pending"
+			page.AttemptCount = 0
+			page.NextAttemptAt = now
+			page.Error = nil
+			page.LastError = nil
+			page.DeadLetteredAt = nil
+		}
+		return nil
+	})
+	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE petrichor_kb_import_job
-		SET status = 'processing', error = NULL, dead_lettered_at = NULL,
-		    processed_pages = (SELECT COUNT(*)::integer FROM petrichor_kb_import_job_page
-		                       WHERE job_id = $1 AND status = 'done'),
-		    lease_owner = NULL, lease_expires_at = NULL, heartbeat_at = NULL,
-		    replay_count = replay_count + 1, updated_at = now()
-		WHERE id = $1`, id); err != nil {
+	_, err = store.UpdateJob(ctx, id, func(current *taskqueue.DocumentImportJob) error {
+		if current.Status != "dead_letter" {
+			return &httpx.HttpError{Status: 409, Message: "任务不在死信状态"}
+		}
+		current.Status = "processing"
+		current.Error = nil
+		current.DeadLetteredAt = nil
+		current.ReplayCount++
+		return nil
+	})
+	if err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err := store.SetRunnable(ctx, id, true); err != nil {
+		return err
+	}
+	if err := taskqueue.EnqueueDocumentImport(ctx, id); err != nil {
+		return &httpx.HttpError{Status: 503, Message: "视觉导入队列暂不可用；Redis 补偿任务会自动重试入队"}
+	}
+	return nil
 }

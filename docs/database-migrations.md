@@ -18,8 +18,9 @@ Go API 在监听端口前自动执行 `provider.Up`。Goose 通过 `goose_db_ver
 当前迁移目录还包含两份已经执行过、不可修改的 Worker 历史迁移：
 `202608280001_knowledge_build_job.sql` 曾把知识构建任务状态持久化到 PostgreSQL，
 `202608280002_worker_retry_and_dead_letter.sql` 为知识构建和视觉导入增加租约、重试与死信。
-服务器常驻部署改用 Go 内存队列后，`202608280003_drop_knowledge_build_job.sql` 删除旧知识构建
-任务表及其运行历史；文章、切片、Wiki 页面、关系和向量索引不受影响。视觉导入仍保留持久任务表。
+服务器后来迁移到 Asynq Redis 队列；`202608280003_drop_knowledge_build_job.sql` 删除旧知识构建
+任务表，`202609020001_drop_document_import_jobs.sql` 删除旧视觉导入任务与页表。两个后台任务流的
+运行态、重试和死信现在都只写 Redis；文章、切片、Wiki 页面、关系和向量索引不受影响。
 第一次打开 Web 时必须自行设置管理员名称、登录邮箱和密码；初始化完成前，普通登录和受保护接口
 都不会放行。初始化
 接口使用 PostgreSQL 事务级 advisory lock，多个并发请求中最多只有一个能够创建首位超级管理员。

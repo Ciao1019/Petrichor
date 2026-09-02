@@ -1,16 +1,9 @@
-// import_vision.go 对照 import-handlers.ts 的多模态 OCR 部分（callVisionCompletion +
-// fetchS3ObjectBytes + scheduleImportJobProcessing 后台循环）：
-//
-//   - RunVisionPageConversion：单页整图 → VISION 模型 → Markdown，接 VisionPageConverter；
-//   - StartImportJobWorkers：后台任务池（并发 ≤ 2）逐页处理 PENDING 页，
-//     全部成功后自动合并生成文章，语义对照 TS processImportJobInBackground。
-//
-// 模型调用经由本文件声明的 VisionChatInvoker 注入点：kb 包不能直接 import aicore
-// （aicore.WireInvokers 反向依赖 kb 会构成环），由 internal/bootstrap 在启动时接线。
+// import_vision.go 实现 Redis/Asynq 驱动的视觉文档导入。
 package kb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,28 +11,25 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
 
 	"petrichor/api/internal/config"
 	httpx "petrichor/api/internal/httpx"
 	"petrichor/api/internal/storage"
+	"petrichor/api/internal/taskqueue"
 )
 
-// VisionImageInput 待识别的页面图片。
 type VisionImageInput struct {
 	Data     []byte
 	MIMEType string
 }
 
-// VisionChatInvoker 多模态补全注入点：按 VISION 用途解析模型（modelRefID 非空时优先钉定），
-// 以 system + [图片, userPrompt] 单轮补全返回文本。nil 时页面转写报「AI 服务未就绪」。
 var VisionChatInvoker func(ctx context.Context, userID int64, modelRefID *int64,
 	systemPrompt, userPrompt string, image VisionImageInput) (string, error)
 
-// 文档页转写提示词，逐条对照 vision-prompt.ts 的 DOCUMENT_VISION_SYSTEM_PROMPT。
 const documentVisionSystemPrompt = `你是一个把文档页面图片转写为 Markdown 的引擎。
 你会收到文档「某一页」的整页图片，请把该页全部可见内容忠实转写为 GitHub Flavored Markdown。
 
@@ -56,32 +46,23 @@ const documentVisionSystemPrompt = `你是一个把文档页面图片转写为 M
 
 const documentVisionUserPrompt = "请把这一页转写为 Markdown。"
 
-// 全局两个任务槽，每个任务串行处理页面，保证所有实例合计最多两个视觉模型调用。
-const (
-	visionImportWorkerConcurrency = 2
-	visionImportPageConcurrency   = 1
-	importJobPollInterval         = time.Second
-	importGlobalLockKey           = int32(0x494D5054) // "IMPT"
-	importJobLockBase             = int64(0x494D500000000000)
+const VisionImportWorkerConcurrency = 2
+
+var (
+	s3DownloadClient   = &http.Client{Timeout: 120 * time.Second}
+	mdFenceWrapRe      = regexp.MustCompile("(?is)^```(?:markdown|md)?\\s*\\n([\\s\\S]*?)\\n```$")
+	errPageNotRunnable = errors.New("视觉导入页当前不可运行")
 )
 
-// s3DownloadClient 页面图片下载客户端；预签名 URL 本身带时效，超时只防悬挂。
-var s3DownloadClient = &http.Client{Timeout: 120 * time.Second}
-
-var mdFenceWrapRe = regexp.MustCompile("(?is)^```(?:markdown|md)?\\s*\\n([\\s\\S]*?)\\n```$")
-
-// RunVisionPageConversion 单页转写：加载任务与页 → 拉取整图字节 → VISION 补全 → 规范化 Markdown。
-// 对应 TS convertSinglePage 内联的 fetchS3ObjectBytes + callVisionCompletion。
 func RunVisionPageConversion(ctx context.Context, userID, jobID, pageNo int64) (string, error) {
 	if VisionChatInvoker == nil {
 		return "", &httpx.HttpError{Status: 503, Message: "AI 服务未就绪"}
 	}
-	q := pool()
-	job, err := loadJobOwned(ctx, q, userID, jobID)
+	job, err := loadJobOwned(ctx, userID, jobID)
 	if err != nil {
 		return "", err
 	}
-	page, err := loadJobPage(ctx, q, job.ID, pageNo)
+	page, err := loadJobPage(ctx, job.ID, pageNo)
 	if err != nil {
 		return "", err
 	}
@@ -92,21 +73,9 @@ func RunVisionPageConversion(ctx context.Context, userID, jobID, pageNo int64) (
 	if imageKey == "" {
 		return "", badReq("该页尚未上传整页图片")
 	}
-
-	data, mime, err := fetchObjectBytes(ctx, imageKey)
-	if err != nil {
-		return "", fmt.Errorf("读取页面图片失败：%w", err)
-	}
-	answer, cerr := VisionChatInvoker(ctx, userID, job.ModelConfigID,
-		documentVisionSystemPrompt, documentVisionUserPrompt,
-		VisionImageInput{Data: data, MIMEType: mime})
-	if cerr != nil {
-		return "", cerr
-	}
-	return normalizeVisionMarkdown(answer), nil
+	return convertVisionPage(ctx, job, pageNo, imageKey)
 }
 
-// fetchObjectBytes 读取对象字节：本地存储直接读文件；S3 走 GET 预签名下载。
 func fetchObjectBytes(ctx context.Context, objectKey string) ([]byte, string, error) {
 	key := storage.StripS4KeyPrefix(objectKey)
 	var data []byte
@@ -135,15 +104,15 @@ func downloadPresignedObject(ctx context.Context, key string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := s3DownloadClient.Do(req)
+	response, err := s3DownloadClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("对象下载失败(HTTP %d)", resp.StatusCode)
+	defer response.Body.Close()
+	if response.StatusCode >= 400 {
+		return nil, fmt.Errorf("对象下载失败(HTTP %d)", response.StatusCode)
 	}
-	data, err := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +122,6 @@ func downloadPresignedObject(ctx context.Context, key string) ([]byte, error) {
 	return data, nil
 }
 
-// detectImageMIME 优先按魔数嗅探，退化按扩展名，默认 PNG。
 func detectImageMIME(data []byte, objectKey string) string {
 	sniffed := http.DetectContentType(data)
 	switch sniffed {
@@ -169,389 +137,332 @@ func detectImageMIME(data []byte, objectKey string) string {
 		return "image/gif"
 	case ".webp":
 		return "image/webp"
+	default:
+		return "image/png"
 	}
-	return "image/png"
 }
 
-// normalizeVisionMarkdown 去掉模型偶尔包裹整体的 ```markdown 围栏（对照 vision.ts normalizeMarkdown）。
 func normalizeVisionMarkdown(raw string) string {
 	text := strings.TrimSpace(raw)
 	if text == "" {
 		return ""
 	}
-	if m := mdFenceWrapRe.FindStringSubmatch(text); m != nil {
-		return strings.TrimSpace(m[1])
+	if match := mdFenceWrapRe.FindStringSubmatch(text); match != nil {
+		return strings.TrimSpace(match[1])
 	}
 	return text
 }
 
-// ===== 后台任务循环 =====
-
-// StartImportJobWorkers 启动跨实例全局并发为 2 的导入 Worker，并返回等待函数。
-func StartImportJobWorkers(ctx context.Context) func() {
-	var workers sync.WaitGroup
-	for slot := 0; slot < visionImportWorkerConcurrency; slot++ {
-		workers.Add(1)
-		go func(slot int) {
-			defer workers.Done()
-			runImportJobSlot(ctx, slot)
-		}(slot)
-	}
-	return workers.Wait
-}
-
-func runImportJobSlot(ctx context.Context, slot int) {
-	for ctx.Err() == nil {
-		connection, err := pool().Acquire(ctx)
-		if err != nil {
-			return
-		}
-		var locked bool
-		err = connection.QueryRow(ctx, `SELECT pg_try_advisory_lock($1, $2)`, importGlobalLockKey, slot).Scan(&locked)
-		if err != nil || !locked {
-			connection.Release()
-			if !waitImportJobPoll(ctx) {
-				return
-			}
-			continue
-		}
-		leaseOwner := fmt.Sprintf("import-%d-%d", slot, time.Now().UnixNano())
-		runOwnedImportJobSlot(ctx, connection, leaseOwner)
-		unlockImportAdvisory(connection, `SELECT pg_advisory_unlock($1, $2)`, importGlobalLockKey, slot)
-		connection.Release()
-		return
-	}
-}
-
-func runOwnedImportJobSlot(ctx context.Context, connection *pgxpool.Conn, leaseOwner string) {
-	for ctx.Err() == nil {
-		jobIDs, err := listRunnableImportJobIDs(ctx, 16)
-		if err != nil {
-			if !waitImportJobPoll(ctx) {
-				return
-			}
-			continue
-		}
-		claimed := false
-		for _, jobID := range jobIDs {
-			lockKey := importJobLockBase ^ jobID
-			var locked bool
-			if err := connection.QueryRow(ctx, `SELECT pg_try_advisory_lock($1::bigint)`, lockKey).Scan(&locked); err != nil || !locked {
-				continue
-			}
-			leaseClaimed, claimErr := claimImportJobLease(ctx, jobID, leaseOwner, time.Now())
-			if claimErr != nil || !leaseClaimed {
-				unlockImportAdvisory(connection, `SELECT pg_advisory_unlock($1::bigint)`, lockKey)
-				continue
-			}
-			claimed = true
-			processImportJobSafely(ctx, jobID, leaseOwner)
-			unlockImportAdvisory(connection, `SELECT pg_advisory_unlock($1::bigint)`, lockKey)
-			break
-		}
-		if !claimed && !waitImportJobPoll(ctx) {
-			return
-		}
-	}
-}
-
-func listRunnableImportJobIDs(ctx context.Context, limit int) ([]int64, error) {
-	rows, err := pool().Query(ctx, `
-		SELECT job.id
-		FROM petrichor_kb_import_job AS job
-		WHERE job.status IN ('pending', 'processing') AND job.article_id IS NULL
-		  AND (job.lease_expires_at IS NULL OR job.lease_expires_at < now())
-		  AND (
-		    EXISTS (
-		      SELECT 1 FROM petrichor_kb_import_job_page AS page
-		      WHERE page.job_id = job.id AND page.status = 'pending'
-		        AND page.next_attempt_at <= now() AND page.attempt_count < page.max_attempts
-		        AND page.extracted_by = 'vision' AND page.image_key IS NOT NULL AND btrim(page.image_key) <> ''
-		    )
-		    OR EXISTS (
-		      SELECT 1 FROM petrichor_kb_import_job_page AS page
-		      WHERE page.job_id = job.id AND page.status IN ('processing', 'dead_letter')
-		    )
-		    OR (
-		      EXISTS (SELECT 1 FROM petrichor_kb_import_job_page AS page WHERE page.job_id = job.id)
-		      AND NOT EXISTS (SELECT 1 FROM petrichor_kb_import_job_page AS page WHERE page.job_id = job.id AND page.status <> 'done')
-		    )
-		  )
-		ORDER BY job.updated_at, job.id
-		LIMIT $1`, limit)
+// HandleDocumentImportTask 只读写 Redis 任务状态；PostgreSQL 仅在最终生成业务文章时参与事务。
+func HandleDocumentImportTask(ctx context.Context, task *asynq.Task) error {
+	payload, err := taskqueue.DecodeDocumentImportPayload(task)
 	if err != nil {
-		return nil, err
+		return &skipTaskRetryError{message: "视觉导入任务负载无效"}
 	}
-	defer rows.Close()
-	ids := make([]int64, 0, limit)
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
+	job, err := loadJobByID(ctx, payload.JobID)
+	if errors.Is(err, taskqueue.ErrDocumentImportNotFound) {
+		return nil
 	}
-	return ids, rows.Err()
-}
-
-func claimImportJobLease(ctx context.Context, jobID int64, leaseOwner string, now time.Time) (bool, error) {
-	tx, err := pool().Begin(ctx)
 	if err != nil {
-		return false, err
+		return errors.New("读取视觉导入 Redis 状态失败")
 	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-	tag, err := tx.Exec(ctx,
-		`UPDATE petrichor_kb_import_job
-		 SET lease_owner = $2, lease_expires_at = $3, heartbeat_at = $1, updated_at = $1
-		 WHERE id = $4 AND status IN ('pending', 'processing')
-		   AND article_id IS NULL AND (lease_expires_at IS NULL OR lease_expires_at < $1)`,
-		now, leaseOwner, now.Add(workerLeaseDuration), jobID)
-	if err != nil || tag.RowsAffected() == 0 {
-		return false, err
+	// asynqmon 对归档任务执行 Run/Retry 时自动恢复 Redis 业务死信。
+	if job.Status == "failed" || job.Status == "dead_letter" {
+		if err := resetDocumentImportForReplay(ctx, job.ID); err != nil {
+			return errors.New("恢复视觉导入死信失败")
+		}
 	}
-	// 上一个 Worker 若在模型调用中失联，页面会停在 processing；新租约领取时按已用次数恢复。
-	if _, err := tx.Exec(ctx,
-		`UPDATE petrichor_kb_import_job_page
-		 SET status = CASE WHEN attempt_count >= max_attempts THEN 'dead_letter' ELSE 'pending' END,
-		     error = CASE WHEN attempt_count >= max_attempts THEN '页面多次处理中断，已进入死信队列' ELSE NULL END,
-		     last_error = COALESCE(last_error, 'Worker 租约过期'), next_attempt_at = $1,
-		     dead_lettered_at = CASE WHEN attempt_count >= max_attempts THEN $1 ELSE NULL END,
-		     updated_at = $1
-		 WHERE job_id = $2 AND status = 'processing'`, now, jobID); err != nil {
-		return false, err
+	if err := recoverInterruptedImportPages(ctx, payload.JobID); err != nil {
+		return errors.New("恢复中断的视觉导入页面失败")
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-func processImportJobSafely(parent context.Context, jobID int64, leaseOwner string) {
 	startedAt := time.Now()
-	ctx, stopHeartbeat := maintainImportJobLease(parent, jobID, leaseOwner)
-	defer stopHeartbeat()
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			slog.Error("文档导入任务发生 panic", "jobId", jobID, "durationMs", time.Since(startedAt).Milliseconds(), "panic", recovered)
+	if err := processImportJobBackground(ctx, payload.JobID); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
-		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(parent), 5*time.Second)
-		defer cancel()
-		if _, err := pool().Exec(releaseCtx,
-			`UPDATE petrichor_kb_import_job
-			 SET lease_owner = NULL, lease_expires_at = NULL, heartbeat_at = NULL, updated_at = now()
-			 WHERE id = $1 AND lease_owner = $2`, jobID, leaseOwner); err != nil {
-			slog.Warn("文档导入任务租约释放失败", "jobId", jobID, "err", err)
+		slog.Error("视觉导入 Asynq 处理失败", "jobId", payload.JobID, "err", err)
+		message := documentImportTaskErrorMessage(err)
+		if !workerErrorRetryable(err) {
+			failImportJobWithContext(ctx, payload.JobID, message)
+			return &skipTaskRetryError{message: message}
 		}
-	}()
-	processImportJobBackground(ctx, jobID)
-	stopHeartbeat()
-	statusCtx, cancel := context.WithTimeout(context.WithoutCancel(parent), 3*time.Second)
-	defer cancel()
-	var status string
-	if err := pool().QueryRow(statusCtx, `SELECT status FROM petrichor_kb_import_job WHERE id = $1`, jobID).Scan(&status); err != nil {
-		slog.Warn("文档导入任务状态读取失败", "jobId", jobID, "err", err)
-		return
+		return errors.New(message)
 	}
-	slog.Info("文档导入任务处理结束", "jobId", jobID, "status", status, "durationMs", time.Since(startedAt).Milliseconds())
+	job, err = loadJobByID(ctx, payload.JobID)
+	if errors.Is(err, taskqueue.ErrDocumentImportNotFound) {
+		return nil
+	}
+	if err != nil {
+		return errors.New("读取视觉导入 Redis 状态失败")
+	}
+	slog.Info("视觉导入 Asynq 任务结束",
+		"jobId", payload.JobID, "status", job.Status,
+		"durationMs", time.Since(startedAt).Milliseconds())
+	switch job.Status {
+	case "completed", "canceled":
+		return nil
+	case "failed", "dead_letter":
+		message := "视觉导入失败"
+		if job.Error != nil && strings.TrimSpace(*job.Error) != "" {
+			message = truncateRunes(*job.Error, 500)
+		}
+		return &skipTaskRetryError{message: message}
+	}
+	pages, err := loadJobPages(ctx, job.ID)
+	if err != nil {
+		return errors.New("读取视觉导入页状态失败")
+	}
+	if hasRunnableImportPage(pages) {
+		return errors.New("视觉导入仍有页面等待重试")
+	}
+	return nil
 }
 
-func maintainImportJobLease(parent context.Context, jobID int64, leaseOwner string) (context.Context, func()) {
-	ctx, cancel := context.WithCancel(parent)
-	var once sync.Once
-	var worker sync.WaitGroup
-	worker.Add(1)
-	go func() {
-		defer worker.Done()
-		ticker := time.NewTicker(workerHeartbeatEvery)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case now := <-ticker.C:
-				heartbeatCtx, heartbeatCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-				tag, err := pool().Exec(heartbeatCtx,
-					`UPDATE petrichor_kb_import_job
-					 SET heartbeat_at = $3, lease_expires_at = $4, updated_at = $3
-					 WHERE id = $1 AND lease_owner = $2 AND status IN ('pending', 'processing')`,
-					jobID, leaseOwner, now, now.Add(workerLeaseDuration))
-				heartbeatCancel()
-				if err != nil || tag.RowsAffected() == 0 {
-					slog.Error("文档导入任务租约心跳失败", "jobId", jobID, "err", err)
-					cancel()
-					return
-				}
+func documentImportTaskErrorMessage(err error) string {
+	message := "视觉导入处理失败，请稍后重试"
+	var httpErr *httpx.HttpError
+	switch {
+	case errors.As(err, &httpErr):
+		message = httpErr.Message
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		message = "视觉导入执行超时或中断"
+	}
+	return truncateRunes(message, 500)
+}
+
+func HandleDocumentImportReconcileTask(ctx context.Context, _ *asynq.Task) error {
+	return EnqueueRunnableDocumentImports(ctx)
+}
+
+// EnqueueRunnableDocumentImports 从 Redis runnable 索引补偿 API 与 Asynq 入队之间的极小失败窗口。
+func EnqueueRunnableDocumentImports(ctx context.Context) error {
+	store, err := taskqueue.DocumentImports()
+	if err != nil {
+		return err
+	}
+	ids, err := store.RunnableJobIDs(ctx)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		job, err := store.Get(ctx, id)
+		if errors.Is(err, taskqueue.ErrDocumentImportNotFound) {
+			_ = store.SetRunnable(ctx, id, false)
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if documentImportJobTerminal(job) {
+			_ = store.SetRunnable(ctx, id, false)
+			continue
+		}
+		if err := taskqueue.EnqueueDocumentImport(ctx, id); err != nil {
+			return fmt.Errorf("补偿入队视觉导入任务 %d 失败: %w", id, err)
+		}
+	}
+	return nil
+}
+
+func recoverInterruptedImportPages(ctx context.Context, jobID int64) error {
+	store, err := taskqueue.DocumentImports()
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	_, err = store.UpdatePages(ctx, jobID, func(pages []*JobPageRow) error {
+		for _, page := range pages {
+			if page.Status != "processing" {
+				continue
+			}
+			message := "Asynq Worker 中断"
+			page.LastError = &message
+			page.NextAttemptAt = now
+			if page.AttemptCount >= page.MaxAttempts {
+				deadMessage := "页面多次处理中断，已进入死信队列"
+				page.Status = "dead_letter"
+				page.Error = &deadMessage
+				page.DeadLetteredAt = &now
+			} else {
+				page.Status = "pending"
+				page.Error = nil
+				page.DeadLetteredAt = nil
 			}
 		}
-	}()
-	stop := func() {
-		once.Do(func() {
-			cancel()
-			worker.Wait()
-		})
-	}
-	return ctx, stop
+		return nil
+	})
+	return err
 }
 
-func unlockImportAdvisory(connection *pgxpool.Conn, query string, args ...any) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	var unlocked bool
-	_ = connection.QueryRow(ctx, query, args...).Scan(&unlocked)
-}
-
-func waitImportJobPoll(ctx context.Context) bool {
-	timer := time.NewTimer(importJobPollInterval)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
-	}
-}
-
-type importWorkItem struct {
-	pageNo   int64
-	imageKey string
-}
-
-// processImportJobBackground 对照 TS processImportJobInBackground：
-// 只处理已拿到整图的 PENDING 页 → 任务池并发转写 → 收敛任务状态 / 自动成文。
-func processImportJobBackground(ctx context.Context, jobID int64) {
-	q := pool()
-	job, err := loadJobByID(ctx, q, jobID)
-	if err != nil || job.Status == "canceled" || job.ArticleID != nil {
-		return
-	}
-	if _, err := q.Exec(ctx,
-		`UPDATE petrichor_kb_import_job SET status = 'processing', error = NULL, updated_at = now()
-		 WHERE id = $1`, job.ID); err != nil {
-		if ctx.Err() == nil {
-			failImportJobWithContext(ctx, jobID, err.Error())
-		}
-		return
-	}
-
-	pages, err := loadPendingVisionPages(ctx, q, job.ID)
+func processImportJobBackground(ctx context.Context, jobID int64) error {
+	store, err := taskqueue.DocumentImports()
 	if err != nil {
-		if ctx.Err() == nil {
-			failImportJobWithContext(ctx, jobID, err.Error())
-		}
-		return
+		return err
 	}
-	runImportWorkerPool(ctx, job, pages)
+	job, err := store.Get(ctx, jobID)
+	if errors.Is(err, taskqueue.ErrDocumentImportNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if documentImportJobTerminal(job) {
+		_ = store.SetRunnable(ctx, job.ID, false)
+		return nil
+	}
+	job, err = store.UpdateJob(ctx, job.ID, func(current *JobRow) error {
+		current.Status = "processing"
+		current.Error = nil
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	pages, err := loadJobPages(ctx, job.ID)
+	if err != nil {
+		return err
+	}
+	if err := runImportWorkerPool(ctx, job, pages); err != nil {
+		return err
+	}
 	if ctx.Err() != nil {
-		return // 关停时保留 processing/pending，下一实例会自动恢复。
+		return ctx.Err()
 	}
-
-	job, err = loadJobByID(ctx, q, jobID)
-	if err != nil || job.Status == "canceled" || job.ArticleID != nil {
-		return
+	job, err = store.Get(ctx, jobID)
+	if errors.Is(err, taskqueue.ErrDocumentImportNotFound) {
+		return nil
 	}
-	latestPages, err := loadJobPages(ctx, q, job.ID)
+	if err != nil || documentImportJobTerminal(job) {
+		return err
+	}
+	pages, err = store.Pages(ctx, job.ID)
 	if err != nil {
-		failImportJobWithContext(ctx, jobID, err.Error())
-		return
+		return err
 	}
-	stats := buildPageStats(latestPages)
+	stats := buildPageStats(pages)
 	switch {
 	case stats.deadLetterPages > 0:
-		message := fmt.Sprintf("有 %d 页连续失败，任务已进入死信队列，可由管理员重放。", stats.deadLetterPages)
-		_, _ = q.Exec(ctx,
-			`UPDATE petrichor_kb_import_job
-			 SET status = 'dead_letter', error = $1, dead_lettered_at = now(), updated_at = now()
-			 WHERE id = $2`, message, job.ID)
+		message := fmt.Sprintf("有 %d 页连续失败，任务已进入死信队列，可由管理员或 asynqmon 重放。", stats.deadLetterPages)
+		now := time.Now().UTC()
+		_, err = store.UpdateJob(ctx, job.ID, func(current *JobRow) error {
+			current.Status = "dead_letter"
+			current.Error = &message
+			current.DeadLetteredAt = &now
+			current.ProcessedPages = countProcessedPages(pages)
+			return nil
+		})
+		return err
 	case stats.failedPages > 0:
-		message := fmt.Sprintf("有 %d 页转 Markdown 失败，请在导入任务详情中重试。", stats.failedPages)
-		_, _ = q.Exec(ctx,
-			`UPDATE petrichor_kb_import_job SET status = 'failed', error = $1, updated_at = now() WHERE id = $2`,
-			message, job.ID)
+		message := fmt.Sprintf("有 %d 页转 Markdown 失败，请重试失败页。", stats.failedPages)
+		_, err = store.UpdateJob(ctx, job.ID, func(current *JobRow) error {
+			current.Status = "failed"
+			current.Error = &message
+			current.ProcessedPages = countProcessedPages(pages)
+			return nil
+		})
+		return err
 	case stats.pendingPages > 0:
-		_, _ = q.Exec(ctx,
-			`UPDATE petrichor_kb_import_job SET status = 'processing', error = NULL, updated_at = now() WHERE id = $1`,
-			job.ID)
+		_, err = store.UpdateJob(ctx, job.ID, func(current *JobRow) error {
+			current.Status = "processing"
+			current.ProcessedPages = countProcessedPages(pages)
+			return nil
+		})
+		if err == nil {
+			err = store.SetRunnable(ctx, job.ID, hasRunnableImportPage(pages))
+		}
+		return err
 	default:
-		finalizeImportJobBackground(ctx, q, job)
+		return finalizeImportJobToArticle(ctx, job.ID)
 	}
 }
 
-// runImportWorkerPool 固定并发度的任务池：cursor 经 channel 分发，worker 逐页转写。
-func runImportWorkerPool(ctx context.Context, job *JobRow, pages []importWorkItem) {
-	if len(pages) == 0 {
-		return
-	}
-	queue := make(chan importWorkItem)
-	var wg sync.WaitGroup
-	for i := 0; i < visionImportPageConcurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for item := range queue {
-				latest, err := loadJobByID(ctx, pool(), job.ID)
-				if err != nil || latest.Status == "canceled" || latest.ArticleID != nil {
-					continue
-				}
-				transcribePageBackground(ctx, latest, item.pageNo, item.imageKey)
-			}
-		}()
-	}
-	for _, item := range pages {
-		queue <- item
-	}
-	close(queue)
-	wg.Wait()
-}
-
-// transcribePageBackground 后台版 convertSinglePage：DONE/FAILED 落库并刷新任务进度。
-func transcribePageBackground(ctx context.Context, job *JobRow, pageNo int64, imageKey string) {
-	q := pool()
-	var attemptCount, maxAttempts int32
-	now := time.Now()
-	if err := q.QueryRow(ctx,
-		`UPDATE petrichor_kb_import_job_page
-		 SET status = 'processing', attempt_count = attempt_count + 1, error = NULL,
-		     dead_lettered_at = NULL, updated_at = $3
-		 WHERE job_id = $1 AND page_no = $2 AND status = 'pending'
-		   AND next_attempt_at <= $3 AND attempt_count < max_attempts
-		 RETURNING attempt_count, max_attempts`, job.ID, pageNo, now).Scan(&attemptCount, &maxAttempts); err != nil {
-		return
-	}
-	markdown, convErr := convertVisionPage(ctx, job, pageNo, imageKey)
-	if convErr != nil {
+func runImportWorkerPool(ctx context.Context, job *JobRow, pages []JobPageRow) error {
+	for i := range pages {
 		if ctx.Err() != nil {
-			return
+			return ctx.Err()
 		}
-		message := truncateRunes(convErr.Error(), 500)
-		status := workerFailureStatus(convErr, attemptCount, maxAttempts)
-		nextAttemptAt := now
-		var deadLetteredAt *time.Time
-		switch status {
-		case "pending":
-			nextAttemptAt = time.Now().Add(workerRetryDelay(int(attemptCount), fmt.Sprintf("import-%d-%d", job.ID, pageNo)))
-		case "dead_letter":
-			deadAt := time.Now()
-			deadLetteredAt = &deadAt
+		page := pages[i]
+		if page.Status != "pending" || page.ExtractedBy != "vision" || page.ImageKey == nil || derefStr(page.ImageKey) == "" {
+			continue
 		}
-		_, _ = q.Exec(ctx,
-			`UPDATE petrichor_kb_import_job_page
-			 SET status = $1, error = $2, last_error = $2, next_attempt_at = $3,
-			     dead_lettered_at = $4, updated_at = now()
-			 WHERE job_id = $5 AND page_no = $6 AND status = 'processing'`,
-			status, message, nextAttemptAt, deadLetteredAt, job.ID, pageNo)
-	} else {
-		_, _ = q.Exec(ctx,
-			`UPDATE petrichor_kb_import_job_page
-			 SET status = 'done', markdown = $1, error = NULL, last_error = NULL,
-			     dead_lettered_at = NULL, updated_at = now()
-			 WHERE job_id = $2 AND page_no = $3 AND status = 'processing'`, markdown, job.ID, pageNo)
+		latest, err := loadJobByID(ctx, job.ID)
+		if errors.Is(err, taskqueue.ErrDocumentImportNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if documentImportJobTerminal(latest) {
+			return nil
+		}
+		if err := transcribePageBackground(ctx, latest, int64(page.PageNo), *page.ImageKey); err != nil {
+			return err
+		}
 	}
-	_, _, _ = refreshJobProgress(ctx, q, job.ID)
+	return nil
 }
 
-// convertVisionPage 取图 + 调 VISION 模型（复用 RunVisionPageConversion 的取数与规范化逻辑，
-// 但跳过归属/状态校验——调用方已保证页可用且持最新任务行）。
-func convertVisionPage(ctx context.Context, job *JobRow, pageNo int64, imageKey string) (string, error) {
+func transcribePageBackground(ctx context.Context, job *JobRow, pageNo int64, imageKey string) error {
+	store, err := taskqueue.DocumentImports()
+	if err != nil {
+		return err
+	}
+	page, err := store.UpdatePage(ctx, job.ID, pageNo, func(current *JobPageRow) error {
+		if current.Status != "pending" || current.AttemptCount >= current.MaxAttempts {
+			return errPageNotRunnable
+		}
+		current.Status = "processing"
+		current.AttemptCount++
+		current.Error = nil
+		current.DeadLetteredAt = nil
+		return nil
+	})
+	if errors.Is(err, errPageNotRunnable) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	markdown, conversionErr := convertVisionPage(ctx, job, pageNo, imageKey)
+	if conversionErr != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		message := truncateRunes(conversionErr.Error(), 500)
+		_, err = store.UpdatePage(ctx, job.ID, pageNo, func(current *JobPageRow) error {
+			status := workerFailureStatus(conversionErr, page.AttemptCount, page.MaxAttempts)
+			current.Status = status
+			current.Error = &message
+			current.LastError = &message
+			current.NextAttemptAt = time.Now().UTC()
+			if status == "pending" {
+				current.NextAttemptAt = time.Now().Add(workerRetryDelay(int(page.AttemptCount),
+					fmt.Sprintf("import-%d-%d", job.ID, pageNo))).UTC()
+			}
+			if status == "dead_letter" {
+				now := time.Now().UTC()
+				current.DeadLetteredAt = &now
+			}
+			return nil
+		})
+	} else {
+		_, err = store.UpdatePage(ctx, job.ID, pageNo, func(current *JobPageRow) error {
+			current.Status = "done"
+			current.Markdown = &markdown
+			current.Error = nil
+			current.LastError = nil
+			current.DeadLetteredAt = nil
+			return nil
+		})
+	}
+	if err != nil {
+		return err
+	}
+	_, _, err = refreshJobProgress(ctx, job.ID)
+	return err
+}
+
+func convertVisionPage(ctx context.Context, job *JobRow, _ int64, imageKey string) (string, error) {
 	if VisionChatInvoker == nil {
 		return "", &httpx.HttpError{Status: 503, Message: "AI 服务未就绪"}
 	}
@@ -559,122 +470,173 @@ func convertVisionPage(ctx context.Context, job *JobRow, pageNo int64, imageKey 
 	if err != nil {
 		return "", fmt.Errorf("读取页面图片失败：%w", err)
 	}
-	answer, cerr := VisionChatInvoker(ctx, job.UserID, job.ModelConfigID,
+	answer, err := VisionChatInvoker(ctx, job.UserID, job.ModelConfigID,
 		documentVisionSystemPrompt, documentVisionUserPrompt,
 		VisionImageInput{Data: data, MIMEType: mime})
-	if cerr != nil {
-		return "", cerr
+	if err != nil {
+		return "", err
 	}
 	return normalizeVisionMarkdown(answer), nil
 }
 
-// finalizeImportJobBackground 全部页 DONE 后自动合并生成文章（对照 finalizeJobToArticle 的 DB 部分；
-// 与同步端点版本的差异仅在显式 ctx，SQL 保持一致）。
-func finalizeImportJobBackground(ctx context.Context, q execQuerier, job *JobRow) {
-	if job.ArticleID != nil {
-		_, _ = q.Exec(ctx,
-			`UPDATE petrichor_kb_import_job SET status = 'completed', error = NULL, updated_at = now() WHERE id = $1`,
-			job.ID)
-		return
-	}
-	pages, err := loadJobPages(ctx, q, job.ID)
+// finalizeImportJobToArticle 用 Redis 锁和预留文章 ID 跨系统幂等成文，不依赖 PostgreSQL 任务表。
+func finalizeImportJobToArticle(ctx context.Context, jobID int64) error {
+	store, err := taskqueue.DocumentImports()
 	if err != nil {
-		failImportJob(job.ID, err.Error())
-		return
+		return err
+	}
+	release, err := store.AcquireJobLock(ctx, jobID, 10*time.Minute)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = release(context.WithoutCancel(ctx)) }()
+
+	job, err := store.Get(ctx, jobID)
+	if errors.Is(err, taskqueue.ErrDocumentImportNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if job.Status == "canceled" {
+		return badReq("任务已取消")
+	}
+	if job.ArticleID != nil {
+		return completeDocumentImport(ctx, store, job.ID, *job.ArticleID)
+	}
+	pages, err := store.Pages(ctx, job.ID)
+	if err != nil {
+		return err
 	}
 	if len(pages) == 0 {
-		failImportJob(job.ID, "任务没有可合并的页面")
-		return
+		return badReq("任务没有可合并的页面")
 	}
-	notDone := countNotDonePages(pages)
-	if notDone > 0 {
-		failImportJob(job.ID, fmt.Sprintf("仍有 %d 页未成功转换，请先重试失败页", notDone))
-		return
+	if notDone := countNotDonePages(pages); notDone > 0 {
+		return badReq(fmt.Sprintf("仍有 %d 页未成功转换，请先重试失败页", notDone))
 	}
+	q := pool()
 	if _, err := assertKnowledgeBaseOwner(ctx, q, job.UserID, job.KnowledgeBaseID); err != nil {
-		failImportJob(job.ID, err.Error())
-		return
+		return err
 	}
 	if _, err := assertFolderParent(ctx, q, job.UserID, job.KnowledgeBaseID, job.ParentNodeID); err != nil {
-		failImportJob(job.ID, err.Error())
-		return
+		return err
+	}
+	if job.PendingArticleID == nil {
+		var reservedID int64
+		if err := q.QueryRow(ctx,
+			`SELECT nextval(pg_get_serial_sequence('petrichor_kb_article', 'id'))`).Scan(&reservedID); err != nil {
+			return err
+		}
+		job, err = store.UpdateJob(ctx, job.ID, func(current *JobRow) error {
+			if current.PendingArticleID == nil {
+				current.PendingArticleID = &reservedID
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+	articleID := *job.PendingArticleID
+	var existingID int64
+	if err := q.QueryRow(ctx,
+		`SELECT id FROM petrichor_kb_article WHERE id = $1 AND user_id = $2`, articleID, job.UserID).
+		Scan(&existingID); err == nil {
+		return completeDocumentImport(ctx, store, job.ID, existingID)
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return err
 	}
 
-	contentMd := mergePageMarkdown(pages)
-	sortOrder, err := nextSortOrder(ctx, q, job.UserID, job.KnowledgeBaseID, job.ParentNodeID)
+	tx, err := q.Begin(ctx)
 	if err != nil {
-		failImportJob(job.ID, err.Error())
-		return
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	contentMD := mergePageMarkdown(pages)
+	sortOrder, err := nextSortOrder(ctx, tx, job.UserID, job.KnowledgeBaseID, job.ParentNodeID)
+	if err != nil {
+		return err
 	}
 	var nodeID int64
-	if err := q.QueryRow(ctx,
+	if err := tx.QueryRow(ctx,
 		`INSERT INTO petrichor_kb_node (user_id, knowledge_base_id, parent_id, type, name, sort_order)
 		 VALUES ($1,$2,$3,'ARTICLE',$4,$5) RETURNING id`,
 		job.UserID, job.KnowledgeBaseID, job.ParentNodeID, job.Title, sortOrder).Scan(&nodeID); err != nil {
-		failImportJob(job.ID, err.Error())
-		return
+		return err
 	}
-	publicExcerpt, readingMinutes, tocJSON, contentHash := buildPublicArticleMetadata(contentMd)
-	var articleID int64
-	if err := q.QueryRow(ctx,
-		`INSERT INTO petrichor_kb_article (user_id, knowledge_base_id, node_id, title, content_md,
+	publicExcerpt, readingMinutes, tocJSON, contentHash := buildPublicArticleMetadata(contentMD)
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO petrichor_kb_article (id, user_id, knowledge_base_id, node_id, title, content_md,
 		 public_excerpt, reading_minutes, toc_json, public_content_hash)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
-		job.UserID, job.KnowledgeBaseID, nodeID, job.Title, contentMd,
-		publicExcerpt, readingMinutes, tocJSON, contentHash).Scan(&articleID); err != nil {
-		failImportJob(job.ID, err.Error())
-		return
+		 OVERRIDING SYSTEM VALUE VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		articleID, job.UserID, job.KnowledgeBaseID, nodeID, job.Title, contentMD,
+		publicExcerpt, readingMinutes, tocJSON, contentHash); err != nil {
+		return err
 	}
-	if _, err := q.Exec(ctx,
-		`UPDATE petrichor_kb_import_job SET article_id = $1, status = 'completed', error = NULL, updated_at = now()
-		 WHERE id = $2`, articleID, job.ID); err != nil {
-		failImportJob(job.ID, err.Error())
+	if err := tx.Commit(ctx); err != nil {
+		return err
 	}
+	return completeDocumentImport(ctx, store, job.ID, articleID)
 }
 
-// ===== 小工具 =====
-
-func loadJobByID(ctx context.Context, q execQuerier, jobID int64) (*JobRow, error) {
-	rows, err := q.Query(ctx,
-		`SELECT `+jobColumns+` FROM petrichor_kb_import_job WHERE id = $1 LIMIT 1`, jobID)
-	if err != nil {
-		return nil, err
+func completeDocumentImport(ctx context.Context, store *taskqueue.DocumentImportStore, jobID, articleID int64) error {
+	_, err := store.UpdateJob(ctx, jobID, func(job *JobRow) error {
+		job.ArticleID = &articleID
+		job.PendingArticleID = nil
+		job.Status = "completed"
+		job.Error = nil
+		job.DeadLetteredAt = nil
+		job.ProcessedPages = job.TotalPages
+		return nil
+	})
+	if err == nil {
+		err = store.SetRunnable(ctx, jobID, false)
 	}
-	defer rows.Close()
-	if !rows.Next() {
-		return nil, rows.Err()
-	}
-	var r JobRow
-	if err := rows.Scan(&r.ID, &r.UserID, &r.KnowledgeBaseID, &r.ParentNodeID, &r.SourceType,
-		&r.FileName, &r.SourceKey, &r.Title, &r.TotalPages, &r.ProcessedPages, &r.Status,
-		&r.ModelConfigID, &r.ArticleID, &r.Error, &r.LeaseOwner, &r.LeaseExpiresAt,
-		&r.HeartbeatAt, &r.DeadLetteredAt, &r.ReplayCount, &r.CreatedAt, &r.UpdatedAt); err != nil {
-		return nil, err
-	}
-	return &r, nil
+	return err
 }
 
-// loadPendingVisionPages 已拿到整图的待识别页（对照 TS pending + imageKey is not null）。
-func loadPendingVisionPages(ctx context.Context, q execQuerier, jobID int64) ([]importWorkItem, error) {
-	rows, err := q.Query(ctx,
-		`SELECT page_no, image_key FROM petrichor_kb_import_job_page
-		 WHERE job_id = $1 AND status = 'pending' AND extracted_by = 'vision'
-		   AND next_attempt_at <= now() AND attempt_count < max_attempts
-		   AND image_key IS NOT NULL AND btrim(image_key) <> ''
-		 ORDER BY page_no ASC`, jobID)
+func resetDocumentImportForReplay(ctx context.Context, jobID int64) error {
+	store, err := taskqueue.DocumentImports()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	defer rows.Close()
-	items := []importWorkItem{}
-	for rows.Next() {
-		var item importWorkItem
-		if err := rows.Scan(&item.pageNo, &item.imageKey); err != nil {
-			return nil, err
+	_, err = store.UpdatePages(ctx, jobID, func(pages []*JobPageRow) error {
+		for _, page := range pages {
+			if page.Status == "failed" || page.Status == "dead_letter" || page.Status == "processing" {
+				resetDocumentImportPage(page)
+			}
 		}
-		items = append(items, item)
+		return nil
+	})
+	if err != nil {
+		return err
 	}
-	return items, rows.Err()
+	_, err = store.UpdateJob(ctx, jobID, func(job *JobRow) error {
+		job.Status = "processing"
+		job.Error = nil
+		job.DeadLetteredAt = nil
+		job.ReplayCount++
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return store.SetRunnable(ctx, jobID, true)
+}
+
+func hasRunnableImportPage(pages []JobPageRow) bool {
+	for i := range pages {
+		page := pages[i]
+		if page.Status == "pending" && page.AttemptCount < page.MaxAttempts &&
+			page.ExtractedBy == "vision" && page.ImageKey != nil && strings.TrimSpace(*page.ImageKey) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func documentImportJobTerminal(job *JobRow) bool {
+	return job.Status == "completed" || job.Status == "canceled" || job.ArticleID != nil
 }
 
 func countNotDonePages(pages []JobPageRow) int {
@@ -687,15 +649,16 @@ func countNotDonePages(pages []JobPageRow) int {
 	return count
 }
 
-// failImportJob 兜底收敛：整个后台流程异常时把任务置 failed（信息截断 500 字）。
-func failImportJob(jobID int64, message string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	failImportJobWithContext(ctx, jobID, message)
-}
-
 func failImportJobWithContext(ctx context.Context, jobID int64, message string) {
-	_, _ = pool().Exec(ctx,
-		`UPDATE petrichor_kb_import_job SET status = 'failed', error = $1, updated_at = now() WHERE id = $2`,
-		truncateRunes(message, 500), jobID)
+	store, err := taskqueue.DocumentImports()
+	if err != nil {
+		return
+	}
+	_, _ = store.UpdateJob(ctx, jobID, func(job *JobRow) error {
+		value := truncateRunes(message, 500)
+		job.Status = "failed"
+		job.Error = &value
+		return nil
+	})
+	_ = store.SetRunnable(ctx, jobID, false)
 }

@@ -526,7 +526,7 @@ func normalizeDatabasePool(raw databaseFileConfig) (DatabasePoolConfig, error) {
 		minConns = DefaultDatabaseMinConns
 	}
 	if maxConns < 6 || minConns < 0 || minConns > maxConns {
-		return DatabasePoolConfig{}, fmt.Errorf("database 连接池要求 max_conns >= 6 且 0 <= min_conns <= max_conns（后台 Worker 会保留最多 4 个全局锁连接）")
+		return DatabasePoolConfig{}, fmt.Errorf("database 连接池要求 max_conns >= 6 且 0 <= min_conns <= max_conns（API 与 Asynq Worker 均需要后台数据库连接）")
 	}
 	lifetime, err := durationSetting("database.max_conn_lifetime_seconds", raw.MaxConnLifetimeSeconds, 30*60, false)
 	if err != nil {

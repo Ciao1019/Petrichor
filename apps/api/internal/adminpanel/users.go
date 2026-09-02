@@ -15,6 +15,7 @@ import (
 	"petrichor/api/internal/auth"
 	"petrichor/api/internal/db"
 	httpx "petrichor/api/internal/httpx"
+	"petrichor/api/internal/taskqueue"
 )
 
 var emailPattern = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
@@ -443,6 +444,19 @@ func UserDelete(c *gin.Context) {
 		}
 	}
 
+	importStore, derr := taskqueue.DocumentImports()
+	if derr != nil {
+		httpx.HandleError(c, derr)
+		return
+	}
+	importJobIDs, derr := importStore.DeleteUser(ctx, target.ID)
+	if derr != nil {
+		httpx.HandleError(c, derr)
+		return
+	}
+	for _, jobID := range importJobIDs {
+		_ = taskqueue.RemoveDocumentImportTask(jobID)
+	}
 	if _, derr := pool.Exec(ctx, `DELETE FROM petrichor_user WHERE id = $1`, target.ID); derr != nil {
 		httpx.HandleError(c, derr)
 		return

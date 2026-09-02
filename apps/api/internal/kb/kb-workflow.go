@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 const (
@@ -526,7 +527,14 @@ func generateChunkQuestions(ctx context.Context, userID int64, profile compilePr
 		warnings []string
 	}
 	batches := batchChunksByBudget(chunks, questionBatchMaxChars, questionBatchMaxItems)
+	var completedBatches atomic.Int32
 	outputs := mapWithConcurrency(batches, questionBatchConcurrency, func(batch []wfChunk) batchResult {
+		defer func() {
+			completed := int(completedBatches.Add(1))
+			percent := 10 + completed*22/len(batches)
+			reportKnowledgeBuildProgress(ctx, percent, knowledgeBuildPhaseAnalyzing,
+				"正在生成切片推荐问题", completed, len(batches))
+		}()
 		fallback := make([]chunkWithQuestions, 0, len(batch))
 		for _, chunk := range batch {
 			fallback = append(fallback, chunkWithQuestions{chunk: chunk,
@@ -538,7 +546,7 @@ func generateChunkQuestions(ctx context.Context, userID int64, profile compilePr
 				"<chunk id=\""+chunk.chunkKey+"\" heading=\""+renderHeadingTrail(chunk)+"\">\n"+
 					chunk.contentMd+"\n</chunk>")
 		}
-		answer, err := invokeKnowledgeBuildChat(ctx, ChatRequest{
+		parsed, err := invokeKnowledgeBuildJSON(ctx, ChatRequest{
 			UserID: userID,
 			SystemPrompt: profile.systemPrompt(
 				"你是知识库问题生成器。为每个 Markdown 切片生成恰好 3 个用户可能提出的推荐问题。",
@@ -550,15 +558,15 @@ func generateChunkQuestions(ctx context.Context, userID int64, profile compilePr
 			Op:      "kb.build.questions",
 		})
 		if err != nil {
-			return batchResult{chunks: fallback, warnings: []string{"推荐问题生成失败：" + err.Error()}}
-		}
-		parsed := extractJSONObjects(answer)
-		if parsed == nil {
-			return batchResult{chunks: fallback}
+			return batchResult{chunks: fallback, warnings: []string{
+				knowledgeBuildFallbackWarning("推荐问题生成", "已使用模板问题", err),
+			}}
 		}
 		questionsMap, ok := parsed["questions"].(map[string]any)
 		if !ok {
-			return batchResult{chunks: fallback}
+			return batchResult{chunks: fallback, warnings: []string{
+				"推荐问题结果缺少 questions，已使用模板问题",
+			}}
 		}
 		out := make([]chunkWithQuestions, 0, len(batch))
 		missing := 0

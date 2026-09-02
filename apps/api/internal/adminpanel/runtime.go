@@ -1,26 +1,32 @@
 package adminpanel
 
 import (
-	"context"
-
 	"github.com/gin-gonic/gin"
 
 	"petrichor/api/internal/db"
 	"petrichor/api/internal/httpx"
-	"petrichor/api/internal/kb"
+	"petrichor/api/internal/taskqueue"
 )
 
-type jobStatusCount struct {
-	Status string `json:"status"`
-	Count  int64  `json:"count"`
-}
-
 // AdminRuntimeMetrics GET /api/admin/runtime/metrics。
-// 仅返回进程、连接池、内存知识构建与持久视觉导入的聚合值，不包含用户输入与敏感配置。
+// 仅返回进程、连接池、Asynq 队列与 Redis 视觉导入状态聚合，不包含用户输入与敏感配置。
 func AdminRuntimeMetrics(c *gin.Context) {
-	ctx := c.Request.Context()
-	knowledgeJobs := kb.ArticleKnowledgeBuildStatusCounts()
-	importJobs, err := loadJobStatusCounts(ctx, "petrichor_kb_import_job")
+	knowledgeJobs, err := taskqueue.QueueStatusCounts(taskqueue.QueueKnowledgeBuild)
+	if err != nil {
+		httpx.HandleError(c, err)
+		return
+	}
+	importQueueJobs, err := taskqueue.QueueStatusCounts(taskqueue.QueueDocumentImport)
+	if err != nil {
+		httpx.HandleError(c, err)
+		return
+	}
+	store, err := taskqueue.DocumentImports()
+	if err != nil {
+		httpx.HandleError(c, err)
+		return
+	}
+	importJobs, err := store.StatusCounts(c.Request.Context())
 	if err != nil {
 		httpx.HandleError(c, err)
 		return
@@ -39,26 +45,9 @@ func AdminRuntimeMetrics(c *gin.Context) {
 			"emptyAcquireCount":       poolStats.EmptyAcquireCount(),
 		},
 		"workers": map[string]any{
-			"knowledgeBuildJobs": knowledgeJobs,
-			"documentImportJobs": importJobs,
+			"knowledgeBuildJobs":       knowledgeJobs,
+			"documentImportQueueJobs":  importQueueJobs,
+			"documentImportDomainJobs": importJobs,
 		},
 	})
-}
-
-func loadJobStatusCounts(ctx context.Context, table string) ([]jobStatusCount, error) {
-	// table 只能来自本文件内的常量调用，不接受 HTTP 输入。
-	rows, err := db.Pool().Query(ctx, `SELECT status, count(*)::bigint FROM `+table+` GROUP BY status ORDER BY status`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	counts := []jobStatusCount{}
-	for rows.Next() {
-		var item jobStatusCount
-		if err := rows.Scan(&item.Status, &item.Count); err != nil {
-			return nil, err
-		}
-		counts = append(counts, item)
-	}
-	return counts, rows.Err()
 }

@@ -1,5 +1,4 @@
-// import.go 对照 import-handlers.ts：导入任务登记类逻辑完整移植；
-// 多模态 OCR 单页转换通过 VisionPageConverter 注入，批量调度由独立 Go Worker 完成。
+// import.go 提供视觉导入的输入解析、Redis 状态组装与模型选择逻辑。
 package kb
 
 import (
@@ -8,23 +7,15 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 
-	httpx "petrichor/api/internal/httpx"
+	"petrichor/api/internal/taskqueue"
 )
 
 const (
 	defaultImportConcurrency = 4
 	maxImportConcurrency     = 8
 )
-
-// VisionPageConverter 单页多模态识别钩子（对应 convertSinglePage 内的
-// fetchS3ObjectBytes + callVisionCompletion）。nil 时相关端点返回 503「AI 服务未就绪」；
-// 返回错误时页面标记 failed 并写入截断后的错误信息。
-var VisionPageConverter func(ctx context.Context, userID, jobID, pageNo int64) (string, error)
-
-// ===== 输入解析 =====
 
 func parseCreateJobInput(raw map[string]any) (kbID int64, parentID *int64, fileName, title, sourceKey string, modelConfigID *int64, err error) {
 	kbID, err = reqID(raw["knowledgeBaseId"], "ID 必须是正整数")
@@ -37,9 +28,8 @@ func parseCreateJobInput(raw map[string]any) (kbID int64, parentID *int64, fileN
 		err = badReq("fileName 必须在 1 到 500 个字符之间")
 		return
 	}
-	title, err2 := parseTitleField(raw, 200)
-	if err2 != nil {
-		err = err2
+	title, err = parseTitleField(raw, 200)
+	if err != nil {
 		return
 	}
 	sourceKey = trimmedString(raw, "sourceKey")
@@ -83,16 +73,16 @@ func parseAttachOcrPagesInput(raw map[string]any) (jobID int64, pages []map[stri
 }
 
 func parsePositiveInt(raw any) (int64, error) {
-	switch v := raw.(type) {
+	switch value := raw.(type) {
 	case string:
-		n, err := strconv.ParseInt(trimSpace(v), 10, 64)
+		n, err := strconv.ParseInt(trimSpace(value), 10, 64)
 		if err != nil || n <= 0 {
 			return 0, badReq("必须是正整数")
 		}
 		return n, nil
 	case float64:
-		n := int64(v)
-		if v <= 0 || float64(n) != v {
+		n := int64(value)
+		if value <= 0 || float64(n) != value {
 			return 0, badReq("必须是正整数")
 		}
 		return n, nil
@@ -102,65 +92,59 @@ func parsePositiveInt(raw any) (int64, error) {
 }
 
 func resolveImportConcurrency(raw map[string]any) int32 {
-	v, ok := raw["concurrency"].(float64)
-	if !ok || v <= 0 {
+	value, ok := raw["concurrency"].(float64)
+	if !ok || value <= 0 {
 		return defaultImportConcurrency
 	}
-	value := int(v)
-	if value > maxImportConcurrency {
-		value = maxImportConcurrency
+	resolved := int(value)
+	if resolved > maxImportConcurrency {
+		resolved = maxImportConcurrency
 	}
-	if value < 1 {
-		value = 1
+	if resolved < 1 {
+		resolved = 1
 	}
-	return int32(value)
+	return int32(resolved)
 }
 
-// ===== 行加载 =====
-
-func loadJobOwned(ctx context.Context, q execQuerier, userID, jobID int64) (*JobRow, error) {
-	rows, err := q.Query(ctx,
-		`SELECT `+jobColumns+` FROM petrichor_kb_import_job WHERE id = $1 AND user_id = $2 LIMIT 1`,
-		jobID, userID)
+func loadJobOwned(ctx context.Context, userID, jobID int64) (*JobRow, error) {
+	store, err := taskqueue.DocumentImports()
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	if !rows.Next() {
+	job, err := store.GetOwned(ctx, userID, jobID)
+	if errors.Is(err, taskqueue.ErrDocumentImportNotFound) {
 		return nil, notFoundErr("导入任务不存在")
 	}
-	var r JobRow
-	if err := rows.Scan(&r.ID, &r.UserID, &r.KnowledgeBaseID, &r.ParentNodeID, &r.SourceType,
-		&r.FileName, &r.SourceKey, &r.Title, &r.TotalPages, &r.ProcessedPages, &r.Status,
-		&r.ModelConfigID, &r.ArticleID, &r.Error, &r.LeaseOwner, &r.LeaseExpiresAt,
-		&r.HeartbeatAt, &r.DeadLetteredAt, &r.ReplayCount, &r.CreatedAt, &r.UpdatedAt); err != nil {
-		return nil, err
-	}
-	return &r, nil
+	return job, err
 }
 
-func loadJobPages(ctx context.Context, q execQuerier, jobID int64) ([]JobPageRow, error) {
-	rows, err := q.Query(ctx,
-		`SELECT `+jobPageColumns+` FROM petrichor_kb_import_job_page WHERE job_id = $1 ORDER BY page_no ASC`,
-		jobID)
+func loadJobByID(ctx context.Context, jobID int64) (*JobRow, error) {
+	store, err := taskqueue.DocumentImports()
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []JobPageRow
-	for rows.Next() {
-		var r JobPageRow
-		if err := rows.Scan(&r.ID, &r.JobID, &r.PageNo, &r.ImageKey, &r.ExtractedBy, &r.Status,
-			&r.Markdown, &r.Error, &r.AttemptCount, &r.MaxAttempts, &r.NextAttemptAt,
-			&r.LastError, &r.DeadLetteredAt, &r.CreatedAt, &r.UpdatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
+	return store.Get(ctx, jobID)
 }
 
-// ===== 响应组装 =====
+func loadJobPages(ctx context.Context, jobID int64) ([]JobPageRow, error) {
+	store, err := taskqueue.DocumentImports()
+	if err != nil {
+		return nil, err
+	}
+	return store.Pages(ctx, jobID)
+}
+
+func loadJobPage(ctx context.Context, jobID, pageNo int64) (*JobPageRow, error) {
+	store, err := taskqueue.DocumentImports()
+	if err != nil {
+		return nil, err
+	}
+	page, err := store.Page(ctx, jobID, pageNo)
+	if errors.Is(err, taskqueue.ErrDocumentImportNotFound) {
+		return nil, notFoundErr("导入任务页不存在")
+	}
+	return page, err
+}
 
 type importPageStats struct {
 	donePages       int32
@@ -214,8 +198,6 @@ func toJobResponse(job *JobRow, extraKBName, extraFolderName *string, stats *imp
 		"modelConfigId":     nullableIDString(job.ModelConfigID),
 		"articleId":         nullableIDString(job.ArticleID),
 		"error":             job.Error,
-		"leaseExpiresAt":    isoPtr(job.LeaseExpiresAt),
-		"heartbeatAt":       isoPtr(job.HeartbeatAt),
 		"deadLetteredAt":    isoPtr(job.DeadLetteredAt),
 		"replayCount":       job.ReplayCount,
 		"createdAt":         iso(job.CreatedAt),
@@ -239,7 +221,7 @@ func toPageResponse(page *JobPageRow) map[string]any {
 	}
 }
 
-// loadJobDecorations 对应同名函数：批量补齐知识库名、父文件夹名与页级统计。
+// loadJobDecorations 只从 PostgreSQL 读取知识库/目录业务名称；任务和页状态来自 Redis。
 func loadJobDecorations(ctx context.Context, q execQuerier, userID int64, jobs []*JobRow) (map[int64]struct {
 	kbName     *string
 	folderName *string
@@ -253,46 +235,6 @@ func loadJobDecorations(ctx context.Context, q execQuerier, userID int64, jobs [
 	if len(jobs) == 0 {
 		return result, nil
 	}
-	jobIDs := make([]int64, 0, len(jobs))
-	for _, job := range jobs {
-		jobIDs = append(jobIDs, job.ID)
-	}
-
-	type statAcc struct {
-		done, failed, pending int32
-	}
-	statsByJob := map[int64]*statAcc{}
-	rows, err := q.Query(ctx,
-		`SELECT job_id, status FROM petrichor_kb_import_job_page WHERE job_id = ANY($1)`, jobIDs)
-	if err != nil {
-		return nil, err
-	}
-	for rows.Next() {
-		var jobID int64
-		var status string
-		if err := rows.Scan(&jobID, &status); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		acc, ok := statsByJob[jobID]
-		if !ok {
-			acc = &statAcc{}
-			statsByJob[jobID] = acc
-		}
-		switch status {
-		case "done":
-			acc.done++
-		case "failed", "dead_letter":
-			acc.failed++
-		default:
-			acc.pending++
-		}
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
 	kbIDs := map[int64]struct{}{}
 	for _, job := range jobs {
 		kbIDs[job.KnowledgeBaseID] = struct{}{}
@@ -303,7 +245,6 @@ func loadJobDecorations(ctx context.Context, q execQuerier, userID int64, jobs [
 	if err != nil {
 		return nil, err
 	}
-
 	var parentNodeIDs []int64
 	for _, job := range jobs {
 		if job.ParentNodeID != nil {
@@ -319,7 +260,6 @@ func loadJobDecorations(ctx context.Context, q execQuerier, userID int64, jobs [
 			return nil, err
 		}
 	}
-
 	for _, job := range jobs {
 		entry := struct {
 			kbName     *string
@@ -327,18 +267,20 @@ func loadJobDecorations(ctx context.Context, q execQuerier, userID int64, jobs [
 			stats      importPageStats
 		}{stats: emptyPageStats(job.TotalPages)}
 		if name, ok := kbNames[job.KnowledgeBaseID]; ok {
-			s := name
-			entry.kbName = &s
+			value := name
+			entry.kbName = &value
 		}
 		if job.ParentNodeID != nil {
 			if name, ok := folderNames[*job.ParentNodeID]; ok {
-				s := name
-				entry.folderName = &s
+				value := name
+				entry.folderName = &value
 			}
 		}
-		if acc, ok := statsByJob[job.ID]; ok {
-			entry.stats = importPageStats{donePages: acc.done, failedPages: acc.failed, pendingPages: acc.pending}
+		pages, err := loadJobPages(ctx, job.ID)
+		if err != nil {
+			return nil, err
 		}
+		entry.stats = buildPageStats(pages)
 		result[job.ID] = entry
 	}
 	return result, nil
@@ -362,9 +304,6 @@ func loadIDNameMap(ctx context.Context, q execQuerier, sql string, args ...any) 
 	return result, rows.Err()
 }
 
-// ===== 进度推导（对应 import-logic.ts） =====
-
-// deriveJobStatus 有待处理页 → processing；耗尽重试 → dead_letter；业务失败 → failed；全 done → completed。
 func deriveJobStatus(pages []JobPageRow) string {
 	if len(pages) == 0 {
 		return "pending"
@@ -402,22 +341,28 @@ func countProcessedPages(pages []JobPageRow) int32 {
 	return count
 }
 
-func refreshJobProgress(ctx context.Context, q execQuerier, jobID int64) (int32, string, error) {
-	pages, err := loadJobPages(ctx, q, jobID)
+func refreshJobProgress(ctx context.Context, jobID int64) (int32, string, error) {
+	pages, err := loadJobPages(ctx, jobID)
 	if err != nil {
 		return 0, "", err
 	}
 	processed := countProcessedPages(pages)
 	status := deriveJobStatus(pages)
-	if _, err := q.Exec(ctx,
-		`UPDATE petrichor_kb_import_job SET processed_pages = $1, status = $2, updated_at = now() WHERE id = $3`,
-		processed, status, jobID); err != nil {
+	store, err := taskqueue.DocumentImports()
+	if err != nil {
 		return 0, "", err
 	}
-	return processed, status, nil
+	_, err = store.UpdateJob(ctx, jobID, func(job *JobRow) error {
+		if job.Status == "canceled" || job.ArticleID != nil {
+			return nil
+		}
+		job.ProcessedPages = processed
+		job.Status = status
+		return nil
+	})
+	return processed, status, err
 }
 
-// mergePageMarkdown 按页码顺序合并非空 Markdown，页间以空行分隔。
 func mergePageMarkdown(pages []JobPageRow) string {
 	parts := make([]string, 0, len(pages))
 	for i := range pages {
@@ -429,93 +374,24 @@ func mergePageMarkdown(pages []JobPageRow) string {
 	return strings.Join(parts, "\n\n")
 }
 
-// ===== 核心流程 =====
-
-// finalizeJobToArticle 校验任务可合并后创建节点与文章（对应同名函数）。
-func finalizeJobToArticle(c *gin.Context, q execQuerier, userID int64, job *JobRow) (int64, *int64, error) {
-	ctx := c.Request.Context()
-	if job.Status == "canceled" {
-		return 0, nil, badReq("任务已取消")
-	}
-	if job.ArticleID != nil {
-		return *job.ArticleID, nil, nil
-	}
-	pages, err := loadJobPages(ctx, q, job.ID)
-	if err != nil {
-		return 0, nil, err
-	}
-	if len(pages) == 0 {
-		return 0, nil, badReq("任务没有可合并的页面")
-	}
-	notDone := 0
-	for i := range pages {
-		if pages[i].Status != "done" {
-			notDone++
-		}
-	}
-	if notDone > 0 {
-		return 0, nil, badReq("仍有 " + strconv.Itoa(notDone) + " 页未成功转换，请先重试失败页")
-	}
-
-	if _, err := assertKnowledgeBaseOwner(ctx, q, userID, job.KnowledgeBaseID); err != nil {
-		return 0, nil, err
-	}
-	if _, err := assertFolderParent(ctx, q, userID, job.KnowledgeBaseID, job.ParentNodeID); err != nil {
-		return 0, nil, err
-	}
-
-	contentMd := mergePageMarkdown(pages)
-	sortOrder, err := nextSortOrder(ctx, q, userID, job.KnowledgeBaseID, job.ParentNodeID)
-	if err != nil {
-		return 0, nil, err
-	}
-	var nodeID int64
-	if err := q.QueryRow(c.Request.Context(),
-		`INSERT INTO petrichor_kb_node (user_id, knowledge_base_id, parent_id, type, name, sort_order)
-		 VALUES ($1,$2,$3,'ARTICLE',$4,$5) RETURNING id`,
-		userID, job.KnowledgeBaseID, job.ParentNodeID, job.Title, sortOrder).Scan(&nodeID); err != nil {
-		return 0, nil, err
-	}
-	publicExcerpt, readingMinutes, tocJSON, contentHash := buildPublicArticleMetadata(contentMd)
-	var articleID int64
-	if err := q.QueryRow(c.Request.Context(),
-		`INSERT INTO petrichor_kb_article (user_id, knowledge_base_id, node_id, title, content_md,
-		 public_excerpt, reading_minutes, toc_json, public_content_hash)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
-		userID, job.KnowledgeBaseID, nodeID, job.Title, contentMd,
-		publicExcerpt, readingMinutes, tocJSON, contentHash).Scan(&articleID); err != nil {
-		return 0, nil, err
-	}
-	if _, err := q.Exec(c.Request.Context(),
-		`UPDATE petrichor_kb_import_job SET article_id = $1, status = 'completed', error = NULL, updated_at = now()
-		 WHERE id = $2`, articleID, job.ID); err != nil {
-		return 0, nil, err
-	}
-	return articleID, &nodeID, nil
-}
-
-// switchJobToDefaultVisionModel 手动重试改用当前默认多模态模型（对应同名函数的 DB 部分）。
 func switchJobToDefaultVisionModel(ctx context.Context, q execQuerier, userID int64, job *JobRow) (*JobRow, error) {
 	resolved, err := resolveVisionModelRefID(ctx, q, userID, job.ModelConfigID)
 	if err != nil {
 		return nil, err
 	}
-	current := job.ModelConfigID
-	if resolved != nil && current != nil && *resolved == *current {
+	if resolved != nil && job.ModelConfigID != nil && *resolved == *job.ModelConfigID {
 		return job, nil
 	}
-	if _, err := q.Exec(ctx,
-		`UPDATE petrichor_kb_import_job SET model_config_id = $1, updated_at = now() WHERE id = $2`,
-		resolved, job.ID); err != nil {
+	store, err := taskqueue.DocumentImports()
+	if err != nil {
 		return nil, err
 	}
-	updated := *job
-	updated.ModelConfigID = resolved
-	return &updated, nil
+	return store.UpdateJob(ctx, job.ID, func(current *JobRow) error {
+		current.ModelConfigID = resolved
+		return nil
+	})
 }
 
-// resolveVisionModelRefID 对应 resolveModelForPurpose(userId,"VISION",pinned)：
-// 固定模型仍有效则用之，否则取用途绑定，均不可用报 400。
 func resolveVisionModelRefID(ctx context.Context, q execQuerier, userID int64, pinned *int64) (*int64, error) {
 	if pinned != nil {
 		var kind string
@@ -536,80 +412,11 @@ func resolveVisionModelRefID(ctx context.Context, q execQuerier, userID int64, p
 	err := q.QueryRow(ctx,
 		`SELECT model_ref_id FROM petrichor_ai_binding WHERE user_id = $1 AND purpose = 'VISION' LIMIT 1`,
 		userID).Scan(&modelRefID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, badReq("未配置多模态模型，请前往「模型配置 → 用途绑定」为多模态选择一个模型")
-		}
-		return nil, err
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, badReq("未配置多模态模型，请前往「模型配置 → 用途绑定」为多模态选择一个模型")
 	}
-	id := modelRefID
-	return &id, nil
-}
-
-// convertSinglePage 同步转写单页；转换器未注入时 503。
-func convertSinglePage(c *gin.Context, q execQuerier, userID int64, job *JobRow, pageNo int64) (*JobPageRow, int32, string, error) {
-	ctx := c.Request.Context()
-	if VisionPageConverter == nil {
-		return nil, 0, "", &httpx.HttpError{Status: 503, Message: "AI 服务未就绪"}
-	}
-	page, err := loadJobPage(ctx, q, job.ID, pageNo)
-	if err != nil {
-		return nil, 0, "", err
-	}
-	if page.ExtractedBy != "vision" {
-		return nil, 0, "", badReq("该页由 PDF 本地抽取，无需模型识别")
-	}
-	if page.ImageKey == nil || derefStr(page.ImageKey) == "" {
-		return nil, 0, "", badReq("该页尚未上传整页图片")
-	}
-
-	markdown, convErr := VisionPageConverter(c.Request.Context(), userID, job.ID, pageNo)
-	if convErr != nil {
-		message := convErr.Error()
-		runes := []rune(message)
-		if len(runes) > 500 {
-			message = string(runes[:500])
-		}
-		if _, uerr := q.Exec(c.Request.Context(),
-			`UPDATE petrichor_kb_import_job_page SET status = 'failed', error = $1, updated_at = now()
-			 WHERE id = $2`, message, page.ID); uerr != nil {
-			return nil, 0, "", uerr
-		}
-	} else {
-		if _, uerr := q.Exec(c.Request.Context(),
-			`UPDATE petrichor_kb_import_job_page SET status = 'done', markdown = $1, error = NULL, updated_at = now()
-			 WHERE id = $2`, markdown, page.ID); uerr != nil {
-			return nil, 0, "", uerr
-		}
-	}
-
-	processed, status, err := refreshJobProgress(ctx, q, job.ID)
-	if err != nil {
-		return nil, 0, "", err
-	}
-	updatedPage, err := loadJobPage(ctx, q, job.ID, pageNo)
-	if err != nil {
-		return nil, 0, "", err
-	}
-	return updatedPage, processed, status, nil
-}
-
-func loadJobPage(ctx context.Context, q execQuerier, jobID, pageNo int64) (*JobPageRow, error) {
-	rows, err := q.Query(ctx,
-		`SELECT `+jobPageColumns+` FROM petrichor_kb_import_job_page
-		 WHERE job_id = $1 AND page_no = $2 LIMIT 1`, jobID, pageNo)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	if !rows.Next() {
-		return nil, notFoundErr("导入任务页不存在")
-	}
-	var r JobPageRow
-	if err := rows.Scan(&r.ID, &r.JobID, &r.PageNo, &r.ImageKey, &r.ExtractedBy, &r.Status,
-		&r.Markdown, &r.Error, &r.AttemptCount, &r.MaxAttempts, &r.NextAttemptAt,
-		&r.LastError, &r.DeadLetteredAt, &r.CreatedAt, &r.UpdatedAt); err != nil {
-		return nil, err
-	}
-	return &r, nil
+	return &modelRefID, nil
 }

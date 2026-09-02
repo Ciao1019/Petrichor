@@ -15,6 +15,7 @@ import {
   knowledgeBaseApi,
   knowledgeBaseArticleApi,
   knowledgeBaseNodeApi,
+  type ArticleKnowledgeBuildProgress,
   type KnowledgeBaseResponse,
   type KnowledgeBaseTreeNode,
 } from "@/lib/api"
@@ -79,6 +80,9 @@ export function KnowledgeBaseTreePage() {
   }, [])
   const prefersReducedMotion = useReducedMotion()
   const [buildingArticleIds, setBuildingArticleIds] = React.useState<Set<string>>(new Set())
+  const [buildProgressByArticleId, setBuildProgressByArticleId] = React.useState<
+    Record<string, ArticleKnowledgeBuildProgress>
+  >({})
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleteTarget, setDeleteTarget] = React.useState<DeleteTarget | null>(null)
   // 行元素本体（不含展开的子树），命中测试要按行高算，sortable 包裹层的矩形是整棵子树。
@@ -159,6 +163,7 @@ export function KnowledgeBaseTreePage() {
     setImportDialogOpen(false)
     setActiveView("documents")
     setBuildingArticleIds(new Set())
+    setBuildProgressByArticleId({})
     setDeleteOpen(false)
     setDeleteTarget(null)
   }, [knowledgeBaseId])
@@ -245,10 +250,23 @@ export function KnowledgeBaseTreePage() {
   const buildArticleKnowledge = React.useCallback(async (articleId: string) => {
     if (!knowledgeBaseId || buildingArticleIds.has(articleId)) return
     setBuildingArticleIds((current) => new Set(current).add(articleId))
+    setBuildProgressByArticleId((current) => ({
+      ...current,
+      [articleId]: {
+        percent: 0,
+        phase: "queued",
+        message: "正在提交知识构建任务",
+        updatedAt: new Date().toISOString(),
+      },
+    }))
     try {
       const result = await buildArticleKnowledgeAndWait({
         knowledgeBaseId,
         articleId,
+      }, {
+        onProgress: (progress) => {
+          setBuildProgressByArticleId((current) => ({ ...current, [articleId]: progress }))
+        },
       })
       toast.success(
         `知识构建完成：${result.chunkCount} 个切片、${result.entityCount} 个实体、${result.conceptCount} 个概念${result.fromCache ? "（已复用）" : ""}`
@@ -577,6 +595,8 @@ export function KnowledgeBaseTreePage() {
           {!isFolder && node.articleId ? (
             <KnowledgeBaseBuildButton
               building={buildingArticleIds.has(node.articleId)}
+              progress={buildProgressByArticleId[node.articleId]?.percent}
+              progressMessage={buildProgressByArticleId[node.articleId]?.message}
               onBuild={() => void buildArticleKnowledge(node.articleId!)}
             />
           ) : null}
@@ -647,7 +667,7 @@ export function KnowledgeBaseTreePage() {
       ),
       children: node.children?.length ? node.children.map(buildTreeItem) : undefined,
     }
-  }, [activeDragNode, activeDragNodeId, buildArticleKnowledge, buildingArticleIds, dragDisabled, dropIntent, expandedIds, getRowRef, knowledgeBaseId, loadChildren, movingNodeId, navigate, nodeLoadErrorById, nodeLoadingById, roots])
+  }, [activeDragNode, activeDragNodeId, buildArticleKnowledge, buildProgressByArticleId, buildingArticleIds, dragDisabled, dropIntent, expandedIds, getRowRef, knowledgeBaseId, loadChildren, movingNodeId, navigate, nodeLoadErrorById, nodeLoadingById, roots])
 
   const treeItems = React.useMemo(() => roots.map(buildTreeItem), [buildTreeItem, roots])
 

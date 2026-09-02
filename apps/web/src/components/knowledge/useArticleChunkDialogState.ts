@@ -5,6 +5,7 @@ import { resolveAxiosErrorMessage } from "@/components/knowledge/article-share-u
 import {
   buildArticleKnowledgeAndWait,
   knowledgeBaseWikiAgentApi,
+  type ArticleKnowledgeBuildProgress,
   type ArticleKnowledgeChunkListResponse,
   type ArticleKnowledgeChunkResponse,
 } from "@/lib/api"
@@ -35,6 +36,7 @@ export function useArticleChunkDialogState({
   const [building, setBuilding] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [data, setData] = React.useState<ArticleKnowledgeChunkListResponse | null>(null)
+  const [buildProgress, setBuildProgress] = React.useState<ArticleKnowledgeBuildProgress | null>(null)
   const [keyword, setKeyword] = React.useState("")
 
   const load = React.useCallback(async () => {
@@ -54,17 +56,27 @@ export function useArticleChunkDialogState({
   React.useEffect(() => {
     if (!open) return
     setKeyword("")
+    setBuildProgress(null)
     void load()
   }, [load, open])
 
   const rebuild = React.useCallback(async () => {
     if (!knowledgeBaseId || !articleId || building) return
     setBuilding(true)
+    setError(null)
+    setBuildProgress({
+      percent: 0,
+      phase: "queued",
+      message: "正在提交知识构建任务",
+      updatedAt: new Date().toISOString(),
+    })
     try {
       const result = await buildArticleKnowledgeAndWait({
         knowledgeBaseId,
         articleId,
         forceRebuild: true,
+      }, {
+        onProgress: setBuildProgress,
       })
       for (const warning of result.warnings) toast.warning(warning)
       toast.success(`已生成 ${result.chunkCount} 个分片、${result.recommendedQuestionCount} 个推荐问题`)
@@ -86,6 +98,7 @@ export function useArticleChunkDialogState({
   return {
     loading,
     building,
+    buildProgress,
     error,
     data,
     keyword,

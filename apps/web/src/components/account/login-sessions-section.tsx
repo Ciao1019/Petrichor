@@ -70,6 +70,9 @@ export function LoginSessionsSection() {
     setLoading(true)
     try {
       const res = await authSessionApi.list()
+      if (!Array.isArray(res.data?.sessions)) {
+        throw new Error("登录会话响应格式异常")
+      }
       setSessions(res.data.sessions)
     } catch (e) {
       toast.error(normalizeAxiosError(e, "加载登录设备失败"))

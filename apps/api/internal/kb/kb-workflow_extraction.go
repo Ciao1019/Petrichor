@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync/atomic"
 )
 
 type chunkWithQuestions struct {
@@ -259,7 +260,8 @@ func renderExistingPageCatalog(pages []existingKnowledgePage) string {
 // extractDocumentCandidates 整文候选抽取；失败回落本地摘要 + 空候选。
 func extractDocumentCandidates(ctx context.Context, userID int64, profile compileProfile, articleTitle, contentMd string, existingPages []existingKnowledgePage) (string, []knowledgeCandidate, []knowledgeRelation, []string) {
 	fallbackSummary := localDocumentSummary(contentMd)
-	answer, err := invokeKnowledgeBuildChat(ctx, ChatRequest{
+	defer reportKnowledgeBuildProgress(ctx, 36, knowledgeBuildPhaseAnalyzing, "整篇知识候选分析完成", 0, 0)
+	parsed, err := invokeKnowledgeBuildJSON(ctx, ChatRequest{
 		UserID: userID,
 		SystemPrompt: profile.systemPrompt(
 			"你是 Wiki 候选抽取器。必须从整篇 Markdown 识别被实质讨论的实体、概念及它们之间的关系；不要根据预先切片分别抽取。",
@@ -286,11 +288,9 @@ func extractDocumentCandidates(ctx context.Context, userID int64, profile compil
 		Op: "kb.build.extraction",
 	})
 	if err != nil {
-		return fallbackSummary, nil, nil, []string{"Wiki 候选抽取失败：" + err.Error()}
-	}
-	parsed := extractJSONObjects(answer)
-	if parsed == nil {
-		return fallbackSummary, nil, nil, []string{"Wiki 候选抽取结果不是有效 JSON"}
+		return fallbackSummary, nil, nil, []string{
+			knowledgeBuildFallbackWarning("Wiki 候选抽取", "本次仅生成分片与推荐问题", err),
+		}
 	}
 	candidates := limitKnowledgeCandidates(
 		normalizeKnowledgeCandidates(parsed["entities"], "entity"),
@@ -344,8 +344,7 @@ func planKnowledgeTaxonomy(ctx context.Context, userID int64, profile compilePro
 		}
 		itemsText += item + "\n"
 	}
-	parsedAny := false
-	answer, err := invokeKnowledgeBuildChat(ctx, ChatRequest{
+	parsed, err := invokeKnowledgeBuildJSON(ctx, ChatRequest{
 		UserID: userID,
 		SystemPrompt: profile.systemPrompt(
 			"你是 Wiki 导航目录规划器。候选实体和概念已经抽取完成，请一次性为整批候选规划一棵统一、浅层、可复用的中文目录树。",
@@ -369,48 +368,47 @@ func planKnowledgeTaxonomy(ctx context.Context, userID int64, profile compilePro
 	})
 	assignments := map[string][]string{}
 	if err == nil {
-		if parsed := extractJSONObjects(answer); parsed != nil {
-			parsedAny = true
-			if list, ok := parsed["assignments"].([]any); ok {
-				candidateByKey := map[string]struct{}{}
-				for _, c := range candidates {
-					candidateByKey[c.pageKey] = struct{}{}
+		list, ok := parsed["assignments"].([]any)
+		if !ok {
+			warnings = append(warnings, "知识目录规划结果缺少 assignments，已使用既有目录")
+		} else {
+			candidateByKey := map[string]struct{}{}
+			for _, c := range candidates {
+				candidateByKey[c.pageKey] = struct{}{}
+			}
+			for _, raw := range list {
+				entry, ok := raw.(map[string]any)
+				if !ok {
+					continue
 				}
-				for _, raw := range list {
-					entry, ok := raw.(map[string]any)
-					if !ok {
-						continue
-					}
-					rawPageKey := trimSpace(optString(entry["pageKey"]))
-					if rawPageKey == "" {
-						rawPageKey = trimSpace(optString(entry["slug"]))
-					}
-					if rawPageKey == "" {
-						continue
-					}
-					pageKey := rawPageKey
-					if _, exists := candidateByKey[pageKey]; !exists {
-						pageKey = normalizePageKeyForKind(rawPageKey, inferPageKind(rawPageKey), rawPageKey)
-					}
-					if _, exists := candidateByKey[pageKey]; !exists {
-						continue
-					}
-					if _, dup := assignments[pageKey]; dup {
-						continue
-					}
-					pathValue := entry["path"]
-					if pathValue == nil {
-						pathValue = entry["categoryPath"]
-					}
-					assignments[pageKey] = normalizeKnowledgeCategoryPath(pathValue)
+				rawPageKey := trimSpace(optString(entry["pageKey"]))
+				if rawPageKey == "" {
+					rawPageKey = trimSpace(optString(entry["slug"]))
 				}
+				if rawPageKey == "" {
+					continue
+				}
+				pageKey := rawPageKey
+				if _, exists := candidateByKey[pageKey]; !exists {
+					pageKey = normalizePageKeyForKind(rawPageKey, inferPageKind(rawPageKey), rawPageKey)
+				}
+				if _, exists := candidateByKey[pageKey]; !exists {
+					continue
+				}
+				if _, dup := assignments[pageKey]; dup {
+					continue
+				}
+				pathValue := entry["path"]
+				if pathValue == nil {
+					pathValue = entry["categoryPath"]
+				}
+				assignments[pageKey] = normalizeKnowledgeCategoryPath(pathValue)
 			}
 		}
 	} else {
-		warnings = append(warnings, "知识目录规划失败："+err.Error())
-	}
-	if err == nil && !parsedAny {
-		warnings = append(warnings, "知识目录规划结果不是有效 JSON")
+		warnings = append(warnings, knowledgeBuildFallbackWarning(
+			"知识目录规划", "已使用既有目录", err,
+		))
 	}
 	out := make([]knowledgeCandidate, 0, len(candidates))
 	for _, candidate := range candidates {
@@ -564,7 +562,14 @@ func materializeWikiPages(ctx context.Context, userID int64, profile compileProf
 		warnings []string
 	}
 	generatedByKey := map[string]genPage{}
+	var completedBatches atomic.Int32
 	outputs := mapWithConcurrency(batches, wikiPageBatchConcurrency, func(batch []knowledgeCandidate) batchResult {
+		defer func() {
+			completed := int(completedBatches.Add(1))
+			percent := 58 + completed*28/len(batches)
+			reportKnowledgeBuildProgress(ctx, percent, knowledgeBuildPhasePages,
+				"正在生成 Wiki 页面", completed, len(batches))
+		}()
 		fallback := make([]genPage, 0, len(batch))
 		for _, candidate := range batch {
 			fallback = append(fallback, genPage{
@@ -573,7 +578,7 @@ func materializeWikiPages(ctx context.Context, userID int64, profile compileProf
 				contentMd: buildFallbackWikiPage(candidate, relations),
 			})
 		}
-		answer, err := invokeKnowledgeBuildChat(ctx, ChatRequest{
+		parsed, err := invokeKnowledgeBuildJSON(ctx, ChatRequest{
 			UserID: userID,
 			SystemPrompt: profile.systemPrompt(
 				"你是 Wiki 页面编译器。候选已经由整篇文档抽取完成，现在为每个候选生成一篇独立、完整、可直接阅读的 Markdown 页面。",
@@ -600,13 +605,16 @@ func materializeWikiPages(ctx context.Context, userID int64, profile compileProf
 			Op: "kb.build.pages",
 		})
 		if err != nil {
-			return batchResult{pages: fallback, warnings: []string{"Wiki 页面生成失败：" + err.Error()}}
+			return batchResult{pages: fallback, warnings: []string{
+				knowledgeBuildFallbackWarning("Wiki 页面生成", "已使用摘要页降级", err),
+			}}
 		}
-		parsed := extractJSONObjects(answer)
-		if parsed == nil {
-			return batchResult{pages: fallback}
+		rawPages, ok := parsed["pages"].([]any)
+		if !ok {
+			return batchResult{pages: fallback, warnings: []string{
+				"Wiki 页面生成结果缺少 pages，已使用摘要页降级",
+			}}
 		}
-		rawPages, _ := parsed["pages"].([]any)
 		pageByKey := map[string]map[string]any{}
 		for _, raw := range rawPages {
 			entry, ok := raw.(map[string]any)
@@ -618,9 +626,11 @@ func materializeWikiPages(ctx context.Context, userID int64, profile compileProf
 			pageByKey[key] = entry
 		}
 		out := make([]genPage, 0, len(batch))
+		missing := 0
 		for index, candidate := range batch {
 			value, ok := pageByKey[candidate.pageKey]
 			if !ok {
+				missing++
 				out = append(out, fallback[index])
 				continue
 			}
@@ -634,7 +644,11 @@ func materializeWikiPages(ctx context.Context, userID int64, profile compileProf
 				contentMd: normalizeGeneratedPageContent(value["contentMd"], candidate),
 			})
 		}
-		return batchResult{pages: out}
+		result := batchResult{pages: out}
+		if missing > 0 {
+			result.warnings = []string{jsonInt(missing) + " 个 Wiki 页面未返回，已使用摘要页降级"}
+		}
+		return result
 	})
 	for _, batchOut := range outputs {
 		warnings = append(warnings, batchOut.warnings...)

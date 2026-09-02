@@ -11,9 +11,9 @@ services:
       - --appendfsync
       - everysec
       - --maxmemory
-      - 256mb
+      - ${PETRICHOR_REDIS_MAXMEMORY:-1gb}
       - --maxmemory-policy
-      - allkeys-lru
+      - noeviction
       - --loglevel
       - warning
     ports:
@@ -25,6 +25,20 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    networks:
+      - backend
+
+  asynqmon:
+    image: hibiken/asynqmon:0.7.1
+    restart: unless-stopped
+    command:
+      - --redis-addr=redis:6379
+      - --port=8080
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${PETRICHOR_ASYNQMON_PORT:-8081}:8080"
     networks:
       - backend
 

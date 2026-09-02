@@ -10,6 +10,7 @@ import (
 	httpx "petrichor/api/internal/httpx"
 
 	"petrichor/api/internal/db"
+	"petrichor/api/internal/taskqueue"
 )
 
 // formatUtcDay 对应 formatUtcDay：UTC YYYY-MM-DD。
@@ -277,11 +278,6 @@ SELECT t.bucket, t.label, t.c1, t.c2, t.c3 FROM (
 		WHERE user_id = $1
 		GROUP BY status
 	UNION ALL
-	SELECT 'import', status, count(*)::int, 0, 0
-		FROM petrichor_kb_import_job
-		WHERE user_id = $1
-		GROUP BY status
-	UNION ALL
 	SELECT 'graph_node', kind, count(*)::int,
 	       coalesce(sum(CASE WHEN status = 'PUBLISHED' THEN 1 ELSE 0 END), 0)::int, 0
 		FROM petrichor_site_graph_node
@@ -294,6 +290,17 @@ SELECT t.bucket, t.label, t.c1, t.c2, t.c3 FROM (
 		return r, err
 	}); err != nil {
 		return nil, err
+	}
+	importStore, err := taskqueue.DocumentImports()
+	if err != nil {
+		return nil, err
+	}
+	importCounts, err := importStore.UserStatusCounts(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range importCounts {
+		groupRows = append(groupRows, labelRow{bucket: "import", label: item.Status, c1: item.Count})
 	}
 
 	// 5) Agent 高频路径 Top 6。

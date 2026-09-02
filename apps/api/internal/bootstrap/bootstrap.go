@@ -1,8 +1,7 @@
 // Package bootstrap 启动期的 LLM 注入点接线：
 //
 //   - site-graph 生成器：adminpanel.SiteGraphGeneratorFn（实现见 adminpanel/sitegraph_llm.go）；
-//   - KB 导入视觉 OCR：kb.VisionPageConverter（实现见 kb/import_vision.go），
-//     其模型调用经由 kb.VisionChatInvoker 在本包接入 aicore——
+//   - KB 导入视觉 OCR 的模型调用经由 kb.VisionChatInvoker 在本包接入 aicore——
 //     kb 不能直接 import aicore（WireInvokers 反向依赖 kb 构成环）。
 package bootstrap
 
@@ -19,9 +18,6 @@ import (
 func WireLLM() {
 	if adminpanel.SiteGraphGeneratorFn == nil {
 		adminpanel.SiteGraphGeneratorFn = adminpanel.SiteGraphLLMGenerator
-	}
-	if kb.VisionPageConverter == nil {
-		kb.VisionPageConverter = kb.RunVisionPageConversion
 	}
 	if kb.VisionChatInvoker == nil {
 		kb.VisionChatInvoker = visionChatInvoker

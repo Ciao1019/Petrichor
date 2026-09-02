@@ -40,7 +40,7 @@
 - **语义 Wiki** — 实体与概念抽取、多文章聚合、关系图谱、来源引用、补丁审计与结构检查。
 - **Agent Runtime** — ReAct 工具循环、计划、子 Agent、动态 Skill、预算控制和外部研究。
 - **开放集成** — API Key、MCP、REST、知识 Skill 包、能力清单与完整调用审计。
-- **自托管基础设施** — Go + Gin、Goose、Sa-Token-Go、PostgreSQL、Redis、S3 兼容存储和 Caddy。
+- **自托管基础设施** — Go + Gin、Goose、Sa-Token-Go、PostgreSQL、Redis + Asynq、S3 兼容存储和 Caddy。
 
 ## 🚀 快速开始
 
@@ -70,7 +70,8 @@ docker compose ps
 docker compose logs -f api worker
 ```
 
-打开配置的域名，首次访问会进入管理员初始化页。Petrichor 不写入默认账号，初始化只能成功执行一次。
+打开配置的域名，首次访问会进入管理员初始化页。官方 Asynq 可视化管理器 asynqmon 默认同时启动，
+仅监听宿主机 `http://127.0.0.1:8081`，可查看、重试、归档或删除两个队列中的任务。Petrichor 不写入默认账号，初始化只能成功执行一次。
 
 > [!IMPORTANT]
 > `compose.yaml` 不内置 PostgreSQL，请连接本地、自建或托管的 PostgreSQL 实例，并确认可以创建 `pg_trgm` 与 `vector` 扩展。不要把数据库连接串、Cookie、Token、API Key 或真实 `config.toml` 提交到仓库。
@@ -96,7 +97,7 @@ docker compose up -d redis
 # 终端 1：Go API，默认 http://127.0.0.1:8080
 cd apps/api && go run ./cmd/server
 
-# 终端 2：视觉导入 Worker
+# 终端 2：Asynq Worker（知识构建 + 视觉导入）
 cd apps/api && go run ./cmd/worker
 
 # 终端 3：Bun / Vite Web，默认 http://127.0.0.1:3000
@@ -134,21 +135,23 @@ flowchart TB
   clients["Browser · MCP · REST"] --> caddy["Caddy<br/>HTTPS · 静态资源 · API 反代"]
   caddy --> web["React + Vite SPA"]
   caddy --> api["Go + Gin API"]
-  api --> postgres["PostgreSQL<br/>业务数据 · Wiki · 索引 · 任务事实"]
-  api --> redis["Redis<br/>热点缓存"]
+  api --> postgres["PostgreSQL<br/>业务数据 · Wiki · 索引"]
+  api --> redis["Redis + Asynq<br/>热点缓存 · 持久任务 · 导入页状态"]
   api --> storage["S3 / 本地卷<br/>上传文件"]
-  worker["视觉导入 Worker"] --> postgres
+  worker["Asynq Worker<br/>知识构建 · 视觉导入"] --> redis
+  worker --> postgres
   worker --> storage
 ```
 
 - **Web**：`apps/web` 是 React + Vite + TypeScript SPA；Bun 负责依赖、测试和构建，生产静态资源由 Caddy 提供。
-- **API**：`apps/api` 是 Go + Gin 服务，负责认证、数据库、对象存储、Agent Runtime 和知识构建；监听前自动执行 Goose 迁移。
-- **Worker**：`apps/api/cmd/worker` 只处理视觉文档导入，以 PostgreSQL 任务表为事实来源，支持租约、心跳、重试和死信。
-- **缓存**：Redis 只保存热点缓存；Redis 重启不会丢失视觉导入任务或已提交的知识数据。
+- **API**：`apps/api` 是 Go + Gin 服务，负责认证、数据库、对象存储和 Agent Runtime；监听前自动执行 Goose 迁移，并把后台任务写入 Asynq。
+- **Worker**：`apps/api/cmd/worker` 分别以 8 路和 2 路并发消费知识构建、视觉导入队列；视觉导入任务、页面进度、重试和业务死信也统一保存在 Redis。
+- **Redis / Asynq**：Redis 同时保存热点缓存、排队/重试任务、视觉导入状态和知识构建的一小时轮询结果；Compose 启用 AOF 与 `noeviction`，不得把任务 Redis 当作可随时清空的缓存。
+- **asynqmon**：Compose 默认启动官方 Web UI，端口只绑定宿主机回环地址；不经 Caddy 暴露到公网。
 - **入口**：生产环境只公开 Caddy，API、Worker 与 Redis 均位于 Compose 内部网络。
 
 > [!NOTE]
-> 知识构建使用 API 进程内的有界队列，当前生产环境应保持单 API 副本。API 重启会丢失排队或执行中的知识构建，但不会影响已经提交的文章、分片、Wiki 页面和向量。
+> API 与 Worker 已通过 Redis 解耦，API 重启不会丢失已排队任务。Asynq 采用至少一次执行语义；知识构建和视觉导入都使用稳定 TaskID 去重，视觉导入通过 Redis 页状态和文章 ID 预留实现幂等恢复。
 
 ## 📚 文档导航
 
@@ -217,7 +220,7 @@ go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 ├── apps/
 │   ├── api/
 │   │   ├── cmd/server/             # Go API 入口
-│   │   ├── cmd/worker/             # 视觉导入 Worker
+│   │   ├── cmd/worker/             # Asynq 知识构建与视觉导入 Worker
 │   │   ├── cmd/migrate/            # Goose 迁移命令
 │   │   ├── internal/               # 鉴权、业务、存储、检索与 Agent
 │   │   ├── migrations/             # 数据库迁移
@@ -231,7 +234,7 @@ go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 │       └── bun.lock                 # Web 独立锁文件
 ├── docs/                            # 可版本化的完整文档
 ├── wiki/                            # GitHub Wiki 发布源
-├── compose.yaml                    # Caddy、Go API、Worker、Redis
+├── compose.yaml                    # Caddy、Go API、Worker、Redis、asynqmon
 ├── package.json                    # 根命令入口
 └── CONTRIBUTING.md                 # 贡献流程
 ```

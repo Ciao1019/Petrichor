@@ -24,8 +24,8 @@ max_conn_lifetime_seconds = 1800
 max_conn_idle_time_seconds = 300
 health_check_period_seconds = 60
 
-# 单 API 实例的知识构建内存队列。文章和阶段任务池共享全局模型信号量，
-# 默认最多同时执行 8 篇文章、发出 64 个模型请求。
+# Asynq 知识构建队列。queue_size 是 Redis 待处理任务的软上限；Worker 默认最多
+# 同时执行 8 篇文章，文章和阶段任务池共享 64 路全局模型信号量。
 [knowledge_build]
 concurrency = 8
 queue_size = 128
@@ -65,6 +65,7 @@ upload_expire_seconds = 900
 download_expire_seconds = 3600
 use_ssl = true
 
+# 缓存与 Asynq 共用这套 Redis 连接参数；任务队列不支持进程内降级。
 # Docker Compose 使用服务名 redis；本机直接运行 Go 时改为 127.0.0.1。
 [cache.redis]
 url = "redis://redis:6379/0"

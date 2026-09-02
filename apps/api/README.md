@@ -6,8 +6,8 @@ Go API 接管 `/api/*`；生产环境由 Caddy 托管 Vite SPA 并同源反向�
 
 | 路径 | 职责 |
 | --- | --- |
-| `cmd/server` | API 服务进程入口，自动迁移并运行知识构建内存队列 |
-| `cmd/worker` | 视觉导入常驻 Worker 入口 |
+| `cmd/server` | API 服务进程入口，自动迁移并向 Asynq 写入后台任务 |
+| `cmd/worker` | 知识构建与视觉导入 Asynq Worker 入口 |
 | `cmd/migrate` | Goose 状态查看与手动执行入口 |
 | `internal/routes` | Gin 路由集中注册 |
 | `internal/auth` | Sa-Token 登录、会话、OAuth 和 API Key 鉴权 |
@@ -18,6 +18,7 @@ Go API 接管 `/api/*`；生产环境由 Caddy 托管 Vite SPA 并同源反向�
 | `internal/publicapi` / `internal/sitecontent` | 公开站点接口和展示内容 |
 | `internal/db` / `internal/dbmigrate` | 数据库连接和 Goose 装配 |
 | `internal/storage` / `internal/cache` | 对象存储和缓存基础设施 |
+| `internal/taskqueue` | Asynq 任务协议、入队去重、状态与 Redis 装配 |
 | `migrations` | 内嵌到 Go 产物的 Goose 初始化基线与后续迁移 |
 
 ## 本地配置
@@ -35,7 +36,7 @@ cp apps/api/config.example.toml apps/api/config.toml
 # 终端 1：Go API（默认 http://127.0.0.1:8080）
 cd apps/api && go run ./cmd/server
 
-# 终端 2：常驻视觉导入任务
+# 终端 2：Asynq 知识构建与视觉导入任务
 cd apps/api && go run ./cmd/worker
 
 # 终端 3：Bun/Vite Web（默认 http://127.0.0.1:3000）
@@ -53,8 +54,8 @@ bun dev
 | `[auth]` | Session、注册策略、LinuxDo、本地开发免登录 |
 | `[encryption]` | AI 凭证加密密钥与盐 |
 | `[storage]` / `[storage.s3]` | 本地目录与 S3 兼容对象存储 |
-| `[cache.redis]` | go-redis TCP 连接、连接池和命令超时 |
-| `[knowledge_build]` | 知识构建文章并发、内存队列和模型批次并发 |
+| `[cache.redis]` | 缓存与 Asynq 共用的 Redis TCP 连接、连接池和命令超时 |
+| `[knowledge_build]` | 知识构建 Asynq Worker 并发、队列软上限和模型批次并发 |
 | `[agent.features]` | Agent Runtime 功能开关 |
 | `[agent.budget]` | Agent 预算、超时、重试和上下文限制 |
 | `[agent.research]` | 可选外部搜索供应商与超时 |
@@ -92,9 +93,12 @@ go run ./cmd/migrate up
 产物，由入口脚本按 Compose command 选择。真实 `config.toml` 通过 Compose secret 挂载，
 不会复制到构建上下文或镜像层；容器全程以非 root 的 `petrichor` 用户运行。
 
-知识构建由 API 进程中的 Go channel 和固定 worker goroutine 调度，状态及中间结果只保存在内存，
-最终切片、Wiki 页面、关系和向量索引事务写入 PostgreSQL。视觉导入仍使用 PostgreSQL 任务表、
-租约、心跳和 advisory lock 保证恢复。Redis 只做缓存，不参与任务可靠性。
+API 只负责把任务写入 Redis；`cmd/worker` 使用 Asynq 的两个独立队列消费知识构建与视觉导入。
+知识构建阶段进度与结果在 Redis 保留 1 小时供前端轮询；模型临时错误在当前阶段最多尝试 3 次，
+最终切片、Wiki 页面、关系和向量索引事务写入 PostgreSQL。视觉导入的任务、页进度、重试和死信
+业务状态也统一保存在 Redis，并由每分钟一次的
+Asynq 补偿任务恢复极小窗口内的入队失败。Redis 必须启用持久化和 `noeviction`，不再允许仅把它
+视为可丢缓存。根 Compose 同时启动官方 `asynqmon`，默认仅监听 `127.0.0.1:8081`。
 
 ## 验证
 

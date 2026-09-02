@@ -1,13 +1,23 @@
 {$PETRICHOR_DOMAIN::80} {
 	encode zstd gzip
 
-	@backend path /api/* /healthz /readyz
-	reverse_proxy @backend api:8080
+	@backend path /api /api/* /healthz /readyz
+	handle @backend {
+		reverse_proxy api:8080
+	}
 
-	@immutable path /assets/*
-	header @immutable Cache-Control "public, max-age=31536000, immutable"
-	@spa not path /api/* /healthz /readyz /assets/*
-	header @spa Cache-Control "no-cache"
+	handle {
+		@immutable path /assets/*
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		@spa not path /assets/*
+		header @spa Cache-Control "no-cache"
+
+		root * /srv
+		try_files {path} /index.html
+		file_server {
+			precompressed br gzip
+		}
+	}
 
 	header {
 		-Server
@@ -18,11 +28,5 @@
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
 		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' https: wss:; frame-src 'self' https:; worker-src 'self' blob:"
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
-	}
-
-	root * /srv
-	try_files {path} /index.html
-	file_server {
-		precompressed br gzip
 	}
 }

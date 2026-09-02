@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	httpx "petrichor/api/internal/httpx"
+	"petrichor/api/internal/taskqueue"
 )
 
 // execQuerier 同时兼容 *pgxpool.Pool 与 pgx.Tx。
@@ -327,54 +328,9 @@ type ChunkIndexRow struct {
 	UpdatedAt           time.Time
 }
 
-const jobColumns = `id, user_id, knowledge_base_id, parent_node_id, source_type, file_name,
-	source_key, title, total_pages, processed_pages, status, model_config_id, article_id, error,
-	lease_owner, lease_expires_at, heartbeat_at, dead_lettered_at, replay_count, created_at, updated_at`
-
-type JobRow struct {
-	ID              int64
-	UserID          int64
-	KnowledgeBaseID int64
-	ParentNodeID    *int64
-	SourceType      string
-	FileName        string
-	SourceKey       *string
-	Title           string
-	TotalPages      int32
-	ProcessedPages  int32
-	Status          string
-	ModelConfigID   *int64
-	ArticleID       *int64
-	Error           *string
-	LeaseOwner      *string
-	LeaseExpiresAt  *time.Time
-	HeartbeatAt     *time.Time
-	DeadLetteredAt  *time.Time
-	ReplayCount     int32
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-}
-
-const jobPageColumns = `id, job_id, page_no, image_key, extracted_by, status, markdown, error,
-	attempt_count, max_attempts, next_attempt_at, last_error, dead_lettered_at, created_at, updated_at`
-
-type JobPageRow struct {
-	ID             int64
-	JobID          int64
-	PageNo         int32
-	ImageKey       *string
-	ExtractedBy    string
-	Status         string
-	Markdown       *string
-	Error          *string
-	AttemptCount   int32
-	MaxAttempts    int32
-	NextAttemptAt  time.Time
-	LastError      *string
-	DeadLetteredAt *time.Time
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-}
+// 视觉导入运行态完全保存在 Asynq 共用的 Redis 中；别名保留 KB 域内既有命名。
+type JobRow = taskqueue.DocumentImportJob
+type JobPageRow = taskqueue.DocumentImportPage
 
 // ===== 哈希与格式化工具 =====
 

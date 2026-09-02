@@ -2,126 +2,185 @@ package kb
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"petrichor/api/internal/config"
+	"github.com/hibiken/asynq"
+
+	httpx "petrichor/api/internal/httpx"
+	"petrichor/api/internal/taskqueue"
 )
 
-func TestArticleKnowledgeBuildSchedulerDeduplicatesActiveArticle(t *testing.T) {
-	started := make(chan struct{}, 1)
-	release := make(chan struct{})
-	var releaseOnce sync.Once
-	var calls atomic.Int32
-	scheduler := newArticleKnowledgeBuildScheduler(2, 8,
-		func(ctx context.Context, _, _, articleID int64) (map[string]any, error) {
-			calls.Add(1)
-			started <- struct{}{}
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-release:
-				return map[string]any{"articleId": articleID}, nil
-			}
-		})
-	ctx, cancel := context.WithCancel(context.Background())
-	wait := scheduler.start(ctx)
-	defer func() {
-		releaseOnce.Do(func() { close(release) })
-		cancel()
-		wait()
-	}()
+func TestArticleKnowledgeBuildJobResponseMapsAsynqStates(t *testing.T) {
+	createdAt := time.Now().Add(-time.Minute).UTC()
+	payload, err := json.Marshal(taskqueue.KnowledgeBuildPayload{
+		UserID: 7, KnowledgeBaseID: 11, ArticleID: 13, CreatedAt: createdAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := articleKnowledgeBuildJobResponse(&asynq.TaskInfo{
+		ID: "job-1", Type: taskqueue.TypeKnowledgeBuild, Payload: payload, State: asynq.TaskStatePending,
+	})
+	if err != nil {
+		t.Fatalf("映射 pending 任务失败: %v", err)
+	}
+	if pending["status"] != "pending" || pending["userId"] != "7" || pending["articleId"] != "13" {
+		t.Fatalf("pending 响应错误: %#v", pending)
+	}
 
-	first, err := scheduler.create(7, 11, 13)
+	startedAt := createdAt.Add(10 * time.Second)
+	completedAt := startedAt.Add(20 * time.Second)
+	resultBytes, err := json.Marshal(knowledgeBuildTaskResult{
+		Result: map[string]any{"articleId": "13"}, StartedAt: startedAt, CompletedAt: completedAt,
+	})
 	if err != nil {
-		t.Fatalf("创建任务失败: %v", err)
+		t.Fatal(err)
 	}
-	second, err := scheduler.create(7, 11, 13)
+	completed, err := articleKnowledgeBuildJobResponse(&asynq.TaskInfo{
+		ID: "job-1", Type: taskqueue.TypeKnowledgeBuild, Payload: payload,
+		State: asynq.TaskStateCompleted, Result: resultBytes, CompletedAt: completedAt,
+	})
 	if err != nil {
-		t.Fatalf("复用任务失败: %v", err)
+		t.Fatalf("映射 completed 任务失败: %v", err)
 	}
-	firstID, _ := first["id"].(string)
-	secondID, _ := second["id"].(string)
-	if firstID == "" || secondID != firstID {
-		t.Fatalf("重复文章没有复用任务: first=%q second=%q", firstID, secondID)
+	if completed["status"] != "completed" || completed["result"] == nil || completed["completedAt"] == nil {
+		t.Fatalf("completed 响应错误: %#v", completed)
 	}
-	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("任务没有被内存 Worker 领取")
+
+	failed, err := articleKnowledgeBuildJobResponse(&asynq.TaskInfo{
+		ID: "job-1", Type: taskqueue.TypeKnowledgeBuild, Payload: payload,
+		State: asynq.TaskStateArchived, LastErr: "构建失败", LastFailedAt: completedAt,
+	})
+	if err != nil {
+		t.Fatalf("映射 archived 任务失败: %v", err)
 	}
-	releaseOnce.Do(func() { close(release) })
-	completed := waitForArticleKnowledgeBuildStatus(t, scheduler, 7, firstID, "completed")
-	result, _ := completed["result"].(map[string]any)
-	if result["articleId"] != int64(13) {
-		t.Fatalf("任务结果错误: %#v", result)
-	}
-	if calls.Load() != 1 {
-		t.Fatalf("同一文章执行了 %d 次，期望 1 次", calls.Load())
+	if failed["status"] != "failed" || failed["error"] == nil {
+		t.Fatalf("failed 响应错误: %#v", failed)
 	}
 }
 
-func TestArticleKnowledgeBuildSchedulerLimitsConcurrency(t *testing.T) {
-	concurrency := config.DefaultKnowledgeBuildConcurrency
-	started := make(chan struct{}, concurrency+1)
-	release := make(chan struct{})
-	var releaseOnce sync.Once
-	var active atomic.Int32
-	var maximum atomic.Int32
-	scheduler := newArticleKnowledgeBuildScheduler(concurrency, concurrency+1,
-		func(ctx context.Context, _, _, articleID int64) (map[string]any, error) {
-			current := active.Add(1)
-			defer active.Add(-1)
-			for {
-				observed := maximum.Load()
-				if current <= observed || maximum.CompareAndSwap(observed, current) {
-					break
-				}
-			}
-			started <- struct{}{}
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-release:
-				return map[string]any{"articleId": articleID}, nil
-			}
-		})
-	ctx, cancel := context.WithCancel(context.Background())
-	wait := scheduler.start(ctx)
+func TestArticleKnowledgeBuildJobResponseIncludesActiveProgress(t *testing.T) {
+	createdAt := time.Now().Add(-time.Minute).UTC()
+	startedAt := createdAt.Add(5 * time.Second)
+	updatedAt := startedAt.Add(20 * time.Second)
+	payload, err := json.Marshal(taskqueue.KnowledgeBuildPayload{
+		UserID: 7, KnowledgeBaseID: 11, ArticleID: 13, CreatedAt: createdAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resultBytes, err := json.Marshal(knowledgeBuildTaskResult{
+		StartedAt: startedAt,
+		Progress: &knowledgeBuildProgress{
+			Percent: 63, Phase: knowledgeBuildPhasePages, Message: "正在生成 Wiki 页面",
+			Completed: 2, Total: 4, UpdatedAt: updatedAt,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := articleKnowledgeBuildJobResponse(&asynq.TaskInfo{
+		ID: "job-1", Type: taskqueue.TypeKnowledgeBuild, Payload: payload,
+		State: asynq.TaskStateActive, Result: resultBytes,
+	})
+	if err != nil {
+		t.Fatalf("映射 active 任务失败: %v", err)
+	}
+	progress, ok := response["progress"].(knowledgeBuildProgress)
+	if !ok {
+		t.Fatalf("progress 类型错误: %#v", response["progress"])
+	}
+	if progress.Percent != 63 || progress.Phase != knowledgeBuildPhasePages || progress.Completed != 2 || progress.Total != 4 {
+		t.Fatalf("active 进度错误: %#v", progress)
+	}
+	if response["startedAt"] == nil {
+		t.Fatalf("active 响应缺少 startedAt: %#v", response)
+	}
+}
+
+func TestInvokeKnowledgeBuildChatRetriesTransientModelError(t *testing.T) {
+	originalSlots := knowledgeBuildModelSlots
+	originalInvoker := ChatInvoker
+	originalDelay := knowledgeBuildModelRetryDelay
+	knowledgeBuildModelSlots = make(chan struct{}, 1)
+	knowledgeBuildModelRetryDelay = func(int) time.Duration { return 0 }
 	defer func() {
-		releaseOnce.Do(func() { close(release) })
-		cancel()
-		wait()
+		knowledgeBuildModelSlots = originalSlots
+		ChatInvoker = originalInvoker
+		knowledgeBuildModelRetryDelay = originalDelay
 	}()
 
-	jobIDs := make([]string, 0, concurrency+1)
-	for articleID := int64(1); articleID <= int64(concurrency+1); articleID++ {
-		response, err := scheduler.create(1, 1, articleID)
-		if err != nil {
-			t.Fatalf("创建文章 %d 的任务失败: %v", articleID, err)
+	var calls atomic.Int32
+	ChatInvoker = func(context.Context, ChatRequest) (string, error) {
+		if calls.Add(1) < 3 {
+			return "", &httpx.HttpError{Status: 502, Message: `模型调用失败(500)：{"message":"Internal server error"}`}
 		}
-		jobIDs = append(jobIDs, response["id"].(string))
+		return "ok", nil
 	}
-	for range concurrency {
-		select {
-		case <-started:
-		case <-time.After(time.Second):
-			t.Fatalf("前 %d 个任务没有并发启动", concurrency)
+	answer, err := invokeKnowledgeBuildChat(context.Background(), ChatRequest{Op: "kb.build.pages"})
+	if err != nil {
+		t.Fatalf("临时错误重试后仍失败: %v", err)
+	}
+	if answer != "ok" || calls.Load() != 3 {
+		t.Fatalf("answer=%q calls=%d，期望第 3 次成功", answer, calls.Load())
+	}
+}
+
+func TestInvokeKnowledgeBuildJSONRetriesInvalidPayload(t *testing.T) {
+	originalSlots := knowledgeBuildModelSlots
+	originalInvoker := ChatInvoker
+	originalDelay := knowledgeBuildModelRetryDelay
+	knowledgeBuildModelSlots = make(chan struct{}, 1)
+	knowledgeBuildModelRetryDelay = func(int) time.Duration { return 0 }
+	defer func() {
+		knowledgeBuildModelSlots = originalSlots
+		ChatInvoker = originalInvoker
+		knowledgeBuildModelRetryDelay = originalDelay
+	}()
+
+	var calls atomic.Int32
+	ChatInvoker = func(context.Context, ChatRequest) (string, error) {
+		if calls.Add(1) == 1 {
+			return "不是 JSON", nil
 		}
+		return `{"pages":[]}`, nil
 	}
-	select {
-	case <-started:
-		t.Fatalf("第 %d 个任务越过了并发上限", concurrency+1)
-	case <-time.After(50 * time.Millisecond):
+	parsed, err := invokeKnowledgeBuildJSON(context.Background(), ChatRequest{Op: "kb.build.pages"})
+	if err != nil {
+		t.Fatalf("非法 JSON 重试后仍失败: %v", err)
 	}
-	releaseOnce.Do(func() { close(release) })
-	for _, jobID := range jobIDs {
-		waitForArticleKnowledgeBuildStatus(t, scheduler, 1, jobID, "completed")
+	if _, ok := parsed["pages"]; !ok || calls.Load() != 2 {
+		t.Fatalf("parsed=%#v calls=%d", parsed, calls.Load())
 	}
-	if maximum.Load() != int32(concurrency) {
-		t.Fatalf("最大并发 = %d，期望 %d", maximum.Load(), concurrency)
+}
+
+func TestInvokeKnowledgeBuildChatDoesNotRetryProviderClientError(t *testing.T) {
+	originalSlots := knowledgeBuildModelSlots
+	originalInvoker := ChatInvoker
+	originalDelay := knowledgeBuildModelRetryDelay
+	knowledgeBuildModelSlots = make(chan struct{}, 1)
+	knowledgeBuildModelRetryDelay = func(int) time.Duration { return 0 }
+	defer func() {
+		knowledgeBuildModelSlots = originalSlots
+		ChatInvoker = originalInvoker
+		knowledgeBuildModelRetryDelay = originalDelay
+	}()
+
+	var calls atomic.Int32
+	ChatInvoker = func(context.Context, ChatRequest) (string, error) {
+		calls.Add(1)
+		return "", &httpx.HttpError{Status: 502, Message: "模型调用失败(401)：unauthorized"}
+	}
+	_, err := invokeKnowledgeBuildChat(context.Background(), ChatRequest{Op: "kb.build.pages"})
+	if err == nil {
+		t.Fatal("供应商 401 应返回错误")
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("供应商 401 调用了 %d 次，期望不重试", calls.Load())
 	}
 }
 
@@ -183,24 +242,4 @@ func TestKnowledgeBuildModelLimiterCapsAllArticles(t *testing.T) {
 	if maximum.Load() != 3 {
 		t.Fatalf("最大模型并发 = %d，期望 3", maximum.Load())
 	}
-}
-
-func waitForArticleKnowledgeBuildStatus(
-	t *testing.T,
-	scheduler *articleKnowledgeBuildScheduler,
-	userID int64,
-	jobID string,
-	want string,
-) map[string]any {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		response := scheduler.loadOwned(userID, jobID)
-		if response != nil && response["status"] == want {
-			return response
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	t.Fatalf("任务 %s 没有进入 %s", jobID, want)
-	return nil
 }

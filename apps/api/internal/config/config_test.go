@@ -151,7 +151,7 @@ func TestLoadFileRejectsUnsafeKnowledgeBuildConcurrency(t *testing.T) {
 		want   string
 	}{
 		{name: "article concurrency", config: "concurrency = 33", want: "concurrency 必须在 1 到 32"},
-		{name: "queue smaller than workers", config: "concurrency = 8\nqueue_size = 4", want: "queue_size 必须不小于 concurrency"},
+		{name: "queue limit", config: "queue_size = 4097", want: "queue_size 必须在 1 到 4096"},
 		{name: "model concurrency", config: "model_concurrency = 129", want: "model_concurrency 必须在 1 到 128"},
 	}
 	for _, test := range tests {

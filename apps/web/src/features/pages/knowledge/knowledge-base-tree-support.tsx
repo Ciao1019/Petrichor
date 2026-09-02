@@ -391,14 +391,20 @@ export function KnowledgeBaseViewLabel({
 
 export function KnowledgeBaseBuildButton({
   building,
+  progress,
+  progressMessage,
   onBuild,
 }: {
   building: boolean
+  progress?: number
+  progressMessage?: string
   onBuild: () => void
 }) {
   const iconRef = React.useRef<AnimatedIconHandle>(null)
-
-  const label = building ? "知识构建中…" : "构建知识"
+  const percent = Math.min(100, Math.max(0, Math.round(progress ?? 0)))
+  const label = building
+    ? `${progressMessage || "知识构建中"}：${percent}%`
+    : "构建知识"
 
   return (
     <Tooltip>
@@ -408,7 +414,10 @@ export function KnowledgeBaseBuildButton({
           variant="ghost"
           size="icon"
           aria-label={label}
-          className="hidden size-7 rounded-lg text-muted-foreground sm:inline-flex hover:text-foreground"
+          className={cn(
+            "hidden h-7 rounded-lg text-muted-foreground sm:inline-flex hover:text-foreground",
+            building ? "w-auto min-w-14 gap-1 px-2" : "w-7",
+          )}
           disabled={building}
           onClick={(event) => {
             event.stopPropagation()
@@ -420,7 +429,10 @@ export function KnowledgeBaseBuildButton({
           onBlur={() => iconRef.current?.stopAnimation()}
         >
           {building ? (
-            <Loader2 className="size-3.5 animate-spin" />
+            <>
+              <Loader2 className="size-3.5 animate-spin" />
+              <span className="text-[11px] font-medium tabular-nums">{percent}%</span>
+            </>
           ) : (
             <BookOpenIcon ref={iconRef} size={14} />
           )}

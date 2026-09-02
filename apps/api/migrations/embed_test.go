@@ -17,6 +17,7 @@ func TestEmbeddedMigrations(t *testing.T) {
 		"202608280001_knowledge_build_job.sql",
 		"202608280002_worker_retry_and_dead_letter.sql",
 		"202608280003_drop_knowledge_build_job.sql",
+		"202609020001_drop_document_import_jobs.sql",
 	}
 	if !reflect.DeepEqual(entries, want) {
 		t.Fatalf("内嵌迁移不符合预期\n实际: %v\n期望: %v", entries, want)
@@ -82,10 +83,24 @@ func TestEmbeddedMigrations(t *testing.T) {
 
 	data, err = fs.ReadFile(Files, want[3])
 	if err != nil {
-		t.Fatalf("读取知识构建内存队列迁移失败: %v", err)
+		t.Fatalf("读取知识构建 Asynq 迁移失败: %v", err)
 	}
 	dropJobSQL := string(data)
 	if !strings.Contains(dropJobSQL, "DROP TABLE public.petrichor_kb_knowledge_build_job") {
-		t.Fatal("知识构建内存队列迁移没有删除旧任务表")
+		t.Fatal("知识构建 Asynq 迁移没有删除旧任务表")
+	}
+
+	data, err = fs.ReadFile(Files, want[4])
+	if err != nil {
+		t.Fatalf("读取视觉导入 Redis 迁移失败: %v", err)
+	}
+	dropImportSQL := string(data)
+	for _, required := range []string{
+		"DROP TABLE public.petrichor_kb_import_job_page",
+		"DROP TABLE public.petrichor_kb_import_job",
+	} {
+		if !strings.Contains(dropImportSQL, required) {
+			t.Fatalf("视觉导入 Redis 迁移缺少删除语句: %q", required)
+		}
 	}
 }

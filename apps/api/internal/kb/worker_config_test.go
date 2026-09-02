@@ -13,7 +13,7 @@ func TestBackgroundWorkerConcurrencyLimits(t *testing.T) {
 	if config.DefaultKnowledgeBuildModelConcurrency != 64 {
 		t.Fatalf("default knowledge model concurrency = %d, want 64", config.DefaultKnowledgeBuildModelConcurrency)
 	}
-	if visionImportWorkerConcurrency*visionImportPageConcurrency > 2 {
-		t.Fatalf("vision model concurrency = %d, want <= 2", visionImportWorkerConcurrency*visionImportPageConcurrency)
+	if VisionImportWorkerConcurrency > 2 {
+		t.Fatalf("vision model concurrency = %d, want <= 2", VisionImportWorkerConcurrency)
 	}
 }

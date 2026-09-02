@@ -338,8 +338,6 @@ export interface DocumentImportJobResponse {
   modelConfigId: string | null
   articleId: string | null
   error: string | null
-  leaseExpiresAt: string | null
-  heartbeatAt: string | null
   deadLetteredAt: string | null
   replayCount: number
   createdAt: string

@@ -7,6 +7,9 @@ export default defineConfig({
     plugins: [react(), tailwindcss()],
     envPrefix: ["VITE_", "PETRICHOR_PUBLIC_"],
     resolve: {
+        // Bun 可能为宽松 peerDependency 保留嵌套 React；强制编辑器等 lazy chunk
+        // 始终复用应用入口的同一 React 实例，避免生产构建触发 Invalid Hook Call。
+        dedupe: ["react", "react-dom"],
         alias: [
             { find: "@", replacement: fileURLToPath(new URL("./src", import.meta.url)) },
             {

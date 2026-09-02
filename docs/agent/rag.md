@@ -90,9 +90,10 @@ PageIndex 目录时再执行“更新 Wiki”；配置了 Embedding 模型后还
 
 ## 4. 单篇“构建知识”做了什么
 
-入口是 `POST /api/kb/knowledge/build`。请求进入 API 进程内的有界队列，同一用户、知识库和文章
-正在运行时会复用原任务，不重复编译。默认最多同时构建 8 篇文章，队列容量 128，单任务超时
-15 分钟；问题生成和页面生成还有各自的批次并发，但所有文章共享一个全局模型信号量。
+入口是 `POST /api/kb/knowledge/build`。API 把任务写入 Redis，由 Asynq Worker 消费；同一用户、
+知识库和文章正在运行时会复用原任务，不重复编译。默认最多同时构建 8 篇文章，Redis 待处理任务
+软上限为 128，单次执行超时 15 分钟；问题生成和页面生成还有各自的批次并发，但所有文章共享
+一个全局模型信号量。
 
 任务的核心阶段如下：
 
@@ -109,6 +110,12 @@ flowchart LR
 ```
 
 问题生成与整篇抽取并行执行；只有页面、链接和索引准备完整后，结果才会在同一事务中提交。
+Worker 会把准备、分析、目录规划、页面生成、持久化和向量化进度直接写入 Asynq task result，
+状态接口返回 0–100% 百分比、阶段文案及批次计数，前端轮询展示，不另建 PostgreSQL 任务表。
+
+每次问题生成、候选抽取、目录规划和页面生成模型调用最多尝试 3 次。仅上游限流/5xx、网络异常和
+非法 JSON 会按 1 秒、2 秒退避重试；供应商 4xx 不重试。重试耗尽后，可降级阶段使用模板问题、
+既有目录或摘要页继续构建；数据库事务等任务级失败才交给 Asynq 重试整篇任务。
 
 ### 4.1 编译说明书
 
@@ -208,7 +215,8 @@ flowchart LR
 7. 写入 source / entity / concept 页面、页面链接、来源引用和知识库索引页。
 
 整篇输入上限为 72000 个 Unicode 字符。超限时保留约 62% 文首和 38% 文尾，并显式插入省略
-标记。页面生成失败会退回候选摘要页；候选抽取失败时仍可保存原文分片和 source 页面。
+标记。页面生成连续 3 次失败后会退回候选摘要页；候选抽取连续失败时仍可保存原文分片和 source
+页面，并在构建结果中返回明确的降级警告。
 
 同一实体或概念可聚合多篇文章的贡献。重新构建某篇文章前，系统先移除它的旧贡献，再写入新
 贡献；没有其它来源和人工底稿的孤立生成页会被清理。最终事务同时提交分片、索引、Wiki、链接
@@ -476,7 +484,8 @@ model_concurrency = 64
 - 切片与推荐问题：`apps/api/internal/kb/kb-workflow.go`
 - 整篇候选、目录规划与页面生成：`apps/api/internal/kb/kb-workflow_extraction.go`
 - 构建事务与多文章 Wiki 聚合：`apps/api/internal/kb/wiki-build.go`
-- 内存任务队列与并发：`apps/api/internal/kb/wiki-build-job.go`
+- Asynq 任务协议与队列状态：`apps/api/internal/taskqueue/taskqueue.go`
+- 知识构建任务处理与并发：`apps/api/internal/kb/wiki-build-job.go`
 - 分片与问题向量：`apps/api/internal/kb/wiki-chunk-index.go`
 - source 页与 PageIndex：`apps/api/internal/kb/wiki-ingest.go`、`wiki-tree.go`
 

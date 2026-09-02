@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useArticleChunkDialogState } from "@/components/knowledge/useArticleChunkDialogState"
-import type { ArticleKnowledgeChunkResponse } from "@/lib/api"
+import type { ArticleKnowledgeBuildProgress, ArticleKnowledgeChunkResponse } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 type ArticleChunkDialogProps = {
@@ -31,6 +31,47 @@ function formatBuiltAt(value: string | null) {
   if (!value) return null
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+
+function KnowledgeBuildProgress({ progress }: { progress: ArticleKnowledgeBuildProgress }) {
+  const percent = Math.min(100, Math.max(0, Math.round(progress.percent)))
+  const failed = progress.phase === "failed"
+  const detail = progress.total
+    ? `${progress.completed ?? 0}/${progress.total}`
+    : null
+
+  return (
+    <div
+      className={cn(
+        "space-y-2 rounded-md border px-3 py-2.5",
+        failed ? "border-destructive/40 bg-destructive/5" : "bg-muted/20",
+      )}
+      role="progressbar"
+      aria-label="知识构建进度"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={percent}
+    >
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <span className={cn("min-w-0 truncate", failed ? "text-destructive" : "text-muted-foreground")}>
+          {progress.message}
+          {detail ? `（${detail}）` : ""}
+        </span>
+        <strong className={cn("shrink-0 tabular-nums", failed && "text-destructive")}>
+          {percent}%
+        </strong>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className={cn(
+            "h-full rounded-full transition-[width] duration-500",
+            failed ? "bg-destructive" : "bg-primary",
+          )}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+    </div>
+  )
 }
 
 async function copyText(value: string, successMessage: string) {
@@ -144,7 +185,7 @@ export function ArticleChunkDialog({
   articleId,
   readOnly = false,
 }: ArticleChunkDialogProps) {
-  const { loading, building, error, data, keyword, setKeyword, visibleChunks, rebuild } =
+  const { loading, building, buildProgress, error, data, keyword, setKeyword, visibleChunks, rebuild } =
     useArticleChunkDialogState({ open, knowledgeBaseId, articleId })
 
   const built = Boolean(data?.built)
@@ -164,7 +205,7 @@ export function ArticleChunkDialog({
             {building ? (
               <>
                 <Loader2 className="size-4 animate-spin" />
-                构建中...
+                构建中 {buildProgress?.percent ?? 0}%
               </>
             ) : built ? (
               "重新构建"
@@ -202,6 +243,8 @@ export function ArticleChunkDialog({
             </Badge>
           ) : null}
         </div>
+
+        {buildProgress ? <KnowledgeBuildProgress progress={buildProgress} /> : null}
 
         {error ? (
           <p className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
