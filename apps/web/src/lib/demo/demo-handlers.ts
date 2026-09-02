@@ -93,7 +93,7 @@ const handlers: Record<string, DemoHandler> = {
         const knowledgeBaseId = str(body.knowledgeBaseId)
         if (!kbById(knowledgeBaseId)) return notFound("知识库不存在")
         const roots = nodesOf(knowledgeBaseId, null).map((node) => toTreeNode(node, true))
-        return ok({ knowledgeBaseId, roots, totalFolders: roots.length })
+        return ok({ knowledgeBaseId, roots, totalRootNodes: roots.length })
     },
     "POST /kb/node/roots": (body) => {
         const knowledgeBaseId = str(body.knowledgeBaseId)
@@ -106,7 +106,7 @@ const handlers: Record<string, DemoHandler> = {
                 .filter((node) => node.knowledgeBaseId === knowledgeBaseId && node.name.toLowerCase().includes(keyword))
                 .map((node) => toTreeNode(node, false))
         }
-        return ok({ knowledgeBaseId, roots, totalFolders: roots.length, pageNum: 1, pageSize: 200 })
+        return ok({ knowledgeBaseId, roots, totalRootNodes: roots.length, pageNum: 1, pageSize: 200 })
     },
     "POST /kb/node/children": (body) => {
         const knowledgeBaseId = str(body.knowledgeBaseId)

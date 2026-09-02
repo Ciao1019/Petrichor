@@ -119,7 +119,7 @@ export interface KnowledgeBaseTreeResponse {
   knowledgeBaseId: string
   pageNum?: number
   pageSize?: number
-  totalFolders?: number
+  totalRootNodes?: number
   roots: KnowledgeBaseTreeNode[]
 }
 

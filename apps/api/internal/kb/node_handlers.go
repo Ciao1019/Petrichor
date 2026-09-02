@@ -2,7 +2,6 @@
 package kb
 
 import (
-	httpx "petrichor/api/internal/httpx"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -32,19 +31,14 @@ func TreeNodes(c *gin.Context) {
 		}
 		idx := indexGraph(graph)
 		roots := filterTreeByKeyword(buildTree(graph, idx, nil, true), input.Keyword)
+		page, totalRootNodes := paginateTreeNodes(roots, input.PaginationInput)
 
-		totalFolders := 0
-		for _, node := range roots {
-			if node.Type == "FOLDER" {
-				totalFolders++
-			}
-		}
 		return map[string]any{
 			"knowledgeBaseId": strconv.FormatInt(input.KnowledgeBaseID, 10),
 			"pageNum":         pageNumOr(input.PageNum, 1),
 			"pageSize":        pageNumOr(input.PageSize, 20),
-			"totalFolders":    totalFolders,
-			"roots":           nodesToMaps(roots),
+			"totalRootNodes":  totalRootNodes,
+			"roots":           nodesToMaps(page),
 		}, nil
 	})
 }
@@ -72,28 +66,13 @@ func RootNodes(c *gin.Context) {
 		idx := indexGraph(graph)
 		filtered := filterTreeByKeyword(buildTree(graph, idx, nil, true), input.Keyword)
 		roots := shallowTreeNodes(filtered)
-		p := httpx.ResolvePagination(input.PaginationInput)
-		start := p.Offset
-		if start > int64(len(roots)) {
-			start = int64(len(roots))
-		}
-		end := start + p.Limit
-		if end > int64(len(roots)) {
-			end = int64(len(roots))
-		}
-		page := roots[start:end]
+		page, totalRootNodes := paginateTreeNodes(roots, input.PaginationInput)
 
-		totalFolders := 0
-		for _, node := range roots {
-			if node.Type == "FOLDER" {
-				totalFolders++
-			}
-		}
 		return map[string]any{
 			"knowledgeBaseId": strconv.FormatInt(input.KnowledgeBaseID, 10),
 			"pageNum":         pageNumOr(input.PageNum, 1),
 			"pageSize":        pageNumOr(input.PageSize, 20),
-			"totalFolders":    totalFolders,
+			"totalRootNodes":  totalRootNodes,
 			"roots":           nodesToMaps(page),
 		}, nil
 	})
