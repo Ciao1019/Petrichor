@@ -82,12 +82,14 @@ export function AppPagination({
   // "第 X–Y 条，共 Z 条"
   const recordInfo = React.useMemo(() => {
     if (total === undefined) return null
+    const safeTotal = Math.max(0, total)
     if (pageSize !== undefined && pageSize > 0) {
-      const from = safePage * pageSize + 1
-      const to = Math.min((safePage + 1) * pageSize, total)
-      return `第 ${from}–${to} 条，共 ${total} 条`
+      if (safeTotal === 0) return "第 0–0 条，共 0 条"
+      const from = Math.min(safePage * pageSize + 1, safeTotal)
+      const to = Math.min((safePage + 1) * pageSize, safeTotal)
+      return `第 ${from}–${to} 条，共 ${safeTotal} 条`
     }
-    return `共 ${total} 条`
+    return `共 ${safeTotal} 条`
   }, [total, pageSize, safePage])
 
   return (

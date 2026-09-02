@@ -50,7 +50,7 @@ export function KnowledgeBaseTreePage() {
 
   const [knowledgeBase, setKnowledgeBase] = React.useState<KnowledgeBaseResponse | null>(null)
   const [roots, setRoots] = React.useState<KnowledgeBaseTreeNode[]>([])
-  const [totalFolders, setTotalFolders] = React.useState(0)
+  const [totalRootNodes, setTotalRootNodes] = React.useState(0)
   const [pageIndex, setPageIndex] = React.useState(0)
   const [pageSize] = React.useState(10)
   const [keyword, setKeyword] = React.useState("")
@@ -93,7 +93,7 @@ export function KnowledgeBaseTreePage() {
   const articleCreatedDateLabel = hasArticleCreatedDateFilter
     ? `创建日期：${articleCreatedDateFrom} ~ ${articleCreatedDateTo}`
     : "创建日期（全部）"
-  const totalPages = Math.max(1, Math.ceil(totalFolders / pageSize))
+  const totalPages = Math.max(1, Math.ceil(totalRootNodes / pageSize))
   const isSearching = debouncedKeyword.length > 0 || hasArticleCreatedDateFilter
   const autoExpandedFolderIds = React.useMemo(() => {
     const keyword = debouncedKeyword.trim()
@@ -220,10 +220,10 @@ export function KnowledgeBaseTreePage() {
         })
 
       setRoots(res.data.roots || [])
-      setTotalFolders(res.data.totalFolders ?? 0)
+      setTotalRootNodes(res.data.totalRootNodes ?? 0)
     } catch {
       setRoots([])
-      setTotalFolders(0)
+      setTotalRootNodes(0)
       toast.error("加载目录失败")
     } finally {
       setLoading(false)
@@ -665,7 +665,7 @@ export function KnowledgeBaseTreePage() {
         knowledgeBaseId, navigate, knowledgeBase, activeView, setActiveView, wikiFocusPageKey,
         setWikiFocusPageKey, openWikiPageFromGraph, prefersReducedMotion, loading, saving, roots,
         keyword, setKeyword, debouncedKeyword, pageIndex, setPageIndex, pageSize, totalPages,
-        totalFolders, articleCreatedDateRange, setArticleCreatedDateRange, articleCreatedDateDraftRange,
+        totalRootNodes, articleCreatedDateRange, setArticleCreatedDateRange, articleCreatedDateDraftRange,
         setArticleCreatedDateDraftRange, articleCreatedDateOpen, setArticleCreatedDateOpen,
         articleCreatedDateLabel, hasArticleCreatedDateFilter, openCreateFolder, openCreateArticle,
         setImportDialogOpen, importDialogOpen, sensors, collisionDetection, handleDragStart,

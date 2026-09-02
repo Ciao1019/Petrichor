@@ -326,6 +326,20 @@ func filterTreeByKeyword(nodes []*treeNodeResponse, keyword string) []*treeNodeR
 	return out
 }
 
+// paginateTreeNodes 按顶层节点分页；总数同时包含根文件夹与根文章。
+func paginateTreeNodes(nodes []*treeNodeResponse, input httpx.PaginationInput) ([]*treeNodeResponse, int) {
+	p := httpx.ResolvePagination(input)
+	start := p.Offset
+	if start > int64(len(nodes)) {
+		start = int64(len(nodes))
+	}
+	end := start + p.Limit
+	if end > int64(len(nodes)) {
+		end = int64(len(nodes))
+	}
+	return nodes[start:end], len(nodes)
+}
+
 // buildPath 从节点向上拼接「 / 」分隔路径。
 func buildPath(nodeByID map[int64]*NodeRow, nodeID int64) string {
 	var names []string

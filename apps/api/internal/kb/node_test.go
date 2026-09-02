@@ -1,6 +1,31 @@
 package kb
 
-import "testing"
+import (
+	"testing"
+
+	httpx "petrichor/api/internal/httpx"
+)
+
+func TestPaginateTreeNodesCountsFoldersAndArticles(t *testing.T) {
+	pageNum := int64(2)
+	pageSize := int64(2)
+	nodes := []*treeNodeResponse{
+		{ID: "1", Type: "FOLDER"},
+		{ID: "2", Type: "ARTICLE"},
+		{ID: "3", Type: "ARTICLE"},
+	}
+
+	page, total := paginateTreeNodes(nodes, httpx.PaginationInput{
+		PageNum:  &pageNum,
+		PageSize: &pageSize,
+	})
+	if total != 3 {
+		t.Fatalf("根节点总数 = %d，期望同时统计文件夹与文章共 3 个", total)
+	}
+	if len(page) != 1 || page[0].ID != "3" {
+		t.Fatalf("第二页节点 = %#v，期望仅包含节点 3", page)
+	}
+}
 
 func TestShallowTreeNodesPreservesLazyLoadHint(t *testing.T) {
 	rootID := int64(1)

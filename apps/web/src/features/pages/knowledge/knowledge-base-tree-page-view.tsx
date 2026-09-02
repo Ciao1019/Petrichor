@@ -58,7 +58,7 @@ interface KnowledgeBaseTreePageViewProps {
   setPageIndex: React.Dispatch<React.SetStateAction<number>>
   pageSize: number
   totalPages: number
-  totalFolders: number
+  totalRootNodes: number
   articleCreatedDateRange: DateRange | undefined
   setArticleCreatedDateRange: React.Dispatch<React.SetStateAction<DateRange | undefined>>
   articleCreatedDateDraftRange: DateRange | undefined
@@ -106,7 +106,7 @@ export function KnowledgeBaseTreePageView(props: KnowledgeBaseTreePageViewProps)
     knowledgeBaseId, navigate, knowledgeBase, activeView, setActiveView, wikiFocusPageKey,
     setWikiFocusPageKey, openWikiPageFromGraph, prefersReducedMotion, loading, saving, roots,
     keyword, setKeyword, debouncedKeyword, pageIndex, setPageIndex, pageSize, totalPages,
-    totalFolders, articleCreatedDateRange, setArticleCreatedDateRange, articleCreatedDateDraftRange,
+    totalRootNodes, articleCreatedDateRange, setArticleCreatedDateRange, articleCreatedDateDraftRange,
     setArticleCreatedDateDraftRange, articleCreatedDateOpen, setArticleCreatedDateOpen,
     articleCreatedDateLabel, hasArticleCreatedDateFilter, openCreateFolder, openCreateArticle,
     setImportDialogOpen, importDialogOpen, sensors, collisionDetection, handleDragStart,
@@ -433,7 +433,7 @@ export function KnowledgeBaseTreePageView(props: KnowledgeBaseTreePageViewProps)
           <AppPagination
             page={pageIndex}
             totalPages={totalPages}
-            total={totalFolders}
+            total={totalRootNodes}
             pageSize={pageSize}
             onChange={handlePageChange}
           />
