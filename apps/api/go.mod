@@ -6,7 +6,7 @@ require (
 	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/aws/aws-sdk-go-v2 v1.43.8
 	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.57.5
-	github.com/cloudwego/eino v0.9.15
+	github.com/cloudwego/eino v0.9.17
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/gin-gonic/gin v1.12.0
 	github.com/hibiken/asynq v0.26.0
