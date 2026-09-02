@@ -12,7 +12,7 @@ require (
 	github.com/hibiken/asynq v0.26.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/json-iterator/go v1.1.12
-	github.com/pelletier/go-toml/v2 v2.3.1
+	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/pressly/goose/v3 v3.27.3
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/sa-tokens/sa-token-go/integrations/gin v0.2.3
