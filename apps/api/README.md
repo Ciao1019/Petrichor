@@ -98,6 +98,17 @@ go run ./cmd/migrate up
 产物，由入口脚本按 Compose command 选择。真实 `config.toml` 通过 Compose secret 挂载，
 不会复制到构建上下文或镜像层；容器全程以非 root 的 `petrichor` 用户运行。
 
+公开镜像 [`ghcr.io/ciao1019/petrichor-api`](https://github.com/users/Ciao1019/packages/container/package/petrichor-api)
+支持 `linux/amd64` 与 `linux/arm64`：
+
+```bash
+docker pull ghcr.io/ciao1019/petrichor-api:latest
+```
+
+`latest` 与 `master` 指向当前发布版本，`sha-<12 位提交哈希>` 用于不可变部署。API、Worker 和
+Migrate 共用同一镜像，由入口脚本分别选择 `server`、`worker` 和 `migrate` 命令；完整部署请使用
+仓库根目录的 `compose.yaml`。
+
 API 只负责把任务写入 Redis；`cmd/worker` 使用 Asynq 的两个独立队列消费知识构建与视觉导入。
 知识构建阶段进度与结果在 Redis 保留 1 小时供前端轮询；模型临时错误在当前阶段最多尝试 3 次，
 最终切片、Wiki 页面、关系和向量索引事务写入 PostgreSQL。视觉导入的任务、页进度、重试和死信

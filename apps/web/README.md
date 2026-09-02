@@ -43,6 +43,19 @@ cp apps/web/.env.example apps/web/.env.local
 
 Web 环境文件只保存 `PETRICHOR_PUBLIC_*`、`VITE_*` 和 `PETRICHOR_GO_API_URL`。数据库、Session、加密密钥、对象存储等后端配置统一写入 `apps/api/config.toml`。
 
+## Docker 镜像
+
+公开镜像 [`ghcr.io/ciao1019/petrichor-web`](https://github.com/users/Ciao1019/packages/container/package/petrichor-web)
+使用 Caddy 提供 Vite 静态产物，并支持 `linux/amd64` 与 `linux/arm64`：
+
+```bash
+docker pull ghcr.io/ciao1019/petrichor-web:latest
+```
+
+`latest` 与 `master` 指向当前发布版本，`sha-<12 位提交哈希>` 用于不可变部署。Caddyfile 会把
+`/api/*` 与 `/healthz` 反代到同一 Docker 网络中的 `api:8080`，完整部署请使用仓库根目录的
+`compose.yaml`。
+
 ## 质量检查
 
 ```bash

@@ -43,7 +43,7 @@ services:
       - backend
 
   api:
-    image: petrichor-api:local
+    image: ${PETRICHOR_API_IMAGE:-ghcr.io/ciao1019/petrichor-api:latest}
     build:
       context: ./apps/api
       dockerfile: Dockerfile
@@ -71,7 +71,7 @@ services:
       - backend
 
   worker:
-    image: petrichor-api:local
+    image: ${PETRICHOR_API_IMAGE:-ghcr.io/ciao1019/petrichor-api:latest}
     restart: unless-stopped
     command: ["worker"]
     depends_on:
@@ -88,7 +88,7 @@ services:
       - backend
 
   web:
-    image: petrichor-web:local
+    image: ${PETRICHOR_WEB_IMAGE:-ghcr.io/ciao1019/petrichor-web:latest}
     build:
       context: ./apps/web
       dockerfile: Dockerfile

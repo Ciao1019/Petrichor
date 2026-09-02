@@ -77,10 +77,23 @@ cp apps/api/config.example.toml apps/api/config.toml
 5. 按需配置登录、AI 模型供应商和外部搜索能力。
 
 ```bash
-docker compose up -d --build
+# 拉取公开的 GHCR 多架构镜像（linux/amd64、linux/arm64）
+docker compose pull
+docker compose up -d --no-build
 docker compose ps
 docker compose logs -f api worker
 ```
+
+Compose 默认使用以下公开镜像；API 镜像同时包含 Server、Asynq Worker 与迁移命令：
+
+| 服务 | 镜像 |
+| --- | --- |
+| API / Worker / Migrate | [`ghcr.io/ciao1019/petrichor-api:latest`](https://github.com/users/Ciao1019/packages/container/package/petrichor-api) |
+| Web / Caddy | [`ghcr.io/ciao1019/petrichor-web:latest`](https://github.com/users/Ciao1019/packages/container/package/petrichor-web) |
+
+镜像同时发布 `latest`、`master` 与不可变的 `sha-<12 位提交哈希>` 标签。生产环境建议在 `.env`
+中通过 `PETRICHOR_API_IMAGE` 和 `PETRICHOR_WEB_IMAGE` 固定同一提交的 `sha-*` 标签。需要从当前源码
+重新构建时，仍可执行 `docker compose up -d --build`。
 
 打开配置的域名，首次访问会进入管理员初始化页。官方 Asynq 可视化管理器 asynqmon 默认同时启动，
 仅监听宿主机 `http://127.0.0.1:8081`，可查看、重试、归档或删除两个队列中的任务。Petrichor 不写入默认账号，初始化只能成功执行一次。
