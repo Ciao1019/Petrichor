@@ -208,6 +208,27 @@ func TestNormalizeSearchOutputSuggestsRewriteWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestSelectKnowledgeLookupReadTargetsIncludesWikiDetail(t *testing.T) {
+	hits := []map[string]any{
+		{"chunkId": "20", "title": "最相关章节"},
+		{"chunkId": "14", "title": "次相关章节"},
+		{"chunkId": "21", "title": "另一章节"},
+		{"pageKey": "entity-mole", "title": "Mole"},
+	}
+	selected := selectKnowledgeLookupReadTargets(hits, 2)
+	if len(selected) != 2 || selected[0]["chunkId"] != "20" || selected[1]["pageKey"] != "entity-mole" {
+		t.Fatalf("lookup 没有在最高相关章节之外补读 Wiki 详情: %#v", selected)
+	}
+
+	wikiFirst := selectKnowledgeLookupReadTargets([]map[string]any{
+		{"pageKey": "entity-mole", "title": "Mole"},
+		{"chunkId": "20", "title": "最相关章节"},
+	}, 2)
+	if len(wikiFirst) != 2 || wikiFirst[0]["pageKey"] != "entity-mole" || wikiFirst[1]["chunkId"] != "20" {
+		t.Fatalf("Wiki 已排第一时不应重复选择或丢掉普通章节: %#v", wikiFirst)
+	}
+}
+
 func TestNormalizeLookupOutputPreservesWikiPagesForAnswerMentions(t *testing.T) {
 	normalized := normalizeLookupOutput(map[string]any{
 		"mode": "hybrid",

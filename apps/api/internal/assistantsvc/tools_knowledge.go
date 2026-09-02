@@ -276,7 +276,52 @@ func executeKnowledgeSearch(ctx *rt.ToolExecutionContext, input any) (any, error
 
 func roundFloat(v float64) float64 { return float64(int(v*10000+0.5)) / 10000 }
 
-// executeKnowledgeLookup 复合检索：search + 深读最相关 1~2 个章节。
+// selectKnowledgeLookupReadTargets 保留最高相关候选，并尽量补读一个 Wiki 页面。
+// Wiki 详情会带回关联页词典，回答渲染才能把正文和表格里的相关概念都补成可点击内链；
+// 若只按总排序读取前两个普通分片，命中的 Wiki 页面稍靠后时就只会高亮主实体。
+func selectKnowledgeLookupReadTargets(hits []map[string]any, limit int) []map[string]any {
+	if limit <= 0 || len(hits) == 0 {
+		return nil
+	}
+	selected := make([]map[string]any, 0, minIntLocal(len(hits), limit))
+	selected = append(selected, hits[0])
+	if limit > 1 && strings.TrimSpace(stringValue(hits[0]["pageKey"])) == "" {
+		for _, hit := range hits[1:] {
+			if strings.TrimSpace(stringValue(hit["pageKey"])) != "" {
+				selected = append(selected, hit)
+				break
+			}
+		}
+	}
+	for _, hit := range hits[1:] {
+		if len(selected) >= limit {
+			break
+		}
+		alreadySelected := false
+		for _, current := range selected {
+			if hitKeyFromMap(current) == hitKeyFromMap(hit) {
+				alreadySelected = true
+				break
+			}
+		}
+		if !alreadySelected {
+			selected = append(selected, hit)
+		}
+	}
+	return selected
+}
+
+func hitKeyFromMap(hit map[string]any) string {
+	for _, key := range []string{"chunkId", "pageKey", "nodeKey", "articleId"} {
+		if value := strings.TrimSpace(stringValue(hit[key])); value != "" {
+			return key + ":" + value
+		}
+	}
+	raw, _ := json.Marshal(hit)
+	return string(raw)
+}
+
+// executeKnowledgeLookup 复合检索：search + 深读最相关候选，并优先覆盖一个 Wiki 页面。
 func executeKnowledgeLookup(ctx *rt.ToolExecutionContext, input any) (any, error) {
 	params, _ := input.(map[string]any)
 	query, _ := params["query"].(string)
@@ -297,7 +342,7 @@ func executeKnowledgeLookup(ctx *rt.ToolExecutionContext, input any) (any, error
 	record, _ := searchOutput.(map[string]any)
 	hits, _ := record["hits"].([]map[string]any)
 	reads := make([]map[string]any, 0, 2)
-	for _, hit := range hits {
+	for _, hit := range selectKnowledgeLookupReadTargets(hits, len(hits)) {
 		read, readErr := readKnowledgeTarget(ctx, hit)
 		if readErr == nil && read != nil {
 			reads = append(reads, read)

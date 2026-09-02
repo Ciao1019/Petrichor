@@ -25,7 +25,8 @@ type wikiMentionCandidate struct {
 	Kind    string   `json:"kind"`
 }
 
-var explicitWikiMentionPattern = regexp.MustCompile(`\[\[([^\]|]+)(?:\|([^\]]+))?]]`)
+// Markdown 表格中的 wikilink 分隔符会写成 `\|`，普通正文则是 `|`；两种都要识别。
+var explicitWikiMentionPattern = regexp.MustCompile(`\[\[([^\]|\\]+)(?:\\?\|([^\]]+))?]]`)
 
 func inferWikiMentionKind(pageKey string) string {
 	lower := strings.ToLower(strings.TrimSpace(pageKey))
@@ -43,6 +44,33 @@ func isWikiMentionKind(kind, pageKey string) bool {
 		resolved = inferWikiMentionKind(pageKey)
 	}
 	return resolved == "concept" || resolved == "entity"
+}
+
+func wikiMentionCandidatesFromText(text string) []wikiMentionCandidate {
+	matches := explicitWikiMentionPattern.FindAllStringSubmatch(text, -1)
+	out := make([]wikiMentionCandidate, 0, len(matches))
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		pageKey := strings.TrimSpace(match[1])
+		label := pageKey
+		if len(match) > 2 && strings.TrimSpace(match[2]) != "" {
+			label = strings.TrimSpace(match[2])
+			label = strings.NewReplacer(`\|`, `|`, `\[`, `[`, `\]`, `]`, `\\`, `\`).Replace(label)
+		}
+		kind := inferWikiMentionKind(pageKey)
+		if pageKey == "" || label == "" || kind == "" {
+			continue
+		}
+		out = append(out, wikiMentionCandidate{
+			PageKey: pageKey,
+			Title:   label,
+			Aliases: []string{},
+			Kind:    kind,
+		})
+	}
+	return out
 }
 
 func stringList(value any) []string {
@@ -122,6 +150,11 @@ func CollectWikiMentionTargets(observations *ObservationStore, evidence *Evidenc
 				Aliases: stringList(item.Metadata["aliases"]),
 				Kind:    kind,
 			}, &index)
+			// Wiki 正文已经用 [[pageKey|标题]] 明确声明了页面关系；即使关系表尚未
+			// 同步完整，也应把这些显式链接作为本轮高亮词典，尤其要兼容表格里的 \|。
+			for _, linked := range wikiMentionCandidatesFromText(item.Content) {
+				add(linked, nil)
+			}
 		}
 	}
 

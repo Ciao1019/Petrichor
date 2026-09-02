@@ -35,6 +35,35 @@ func TestAnnotateNormalQaWikiMentionsProtectsMarkdownAndOnlyLinksFirstMention(t 
 	}
 }
 
+func TestCollectWikiMentionTargetsReadsEscapedLinksFromEvidence(t *testing.T) {
+	evidence := NewEvidenceStore()
+	evidence.Add(AgentEvidence{
+		Source: EvidenceWiki,
+		Title:  "Mole",
+		Content: strings.Join([]string{
+			"| 功能 | 命令 |",
+			"| --- | --- |",
+			`| [[concept-system-optimize\|系统优化]] | mo optimize |`,
+			`| [[concept-system-monitoring\|系统监控]] | mo status |`,
+			`此外还有 [[concept-project-purge|项目清理]]。`,
+		}, "\n"),
+		Metadata: map[string]any{"pageKey": "entity-mole", "kind": "entity"},
+	})
+
+	targets := CollectWikiMentionTargets(nil, evidence)
+	answer := "| 系统优化 | mo optimize |\n| 系统监控 | mo status |\n\n项目清理用于删除构建产物。"
+	annotated := AnnotateNormalQaWikiMentions(answer, targets)
+	for _, mention := range []string{
+		"[[concept-system-optimize|系统优化]]",
+		"[[concept-system-monitoring|系统监控]]",
+		"[[concept-project-purge|项目清理]]",
+	} {
+		if !strings.Contains(annotated, mention) {
+			t.Fatalf("证据中的显式 Wiki 链接没有进入回答高亮词典 %q:\n%s\ntargets=%#v", mention, annotated, targets)
+		}
+	}
+}
+
 func TestCollectAndEmitWikiMentionTargetsSupportsHitsAndItems(t *testing.T) {
 	observations := NewObservationStore()
 	observations.Add(CreateObservation(
