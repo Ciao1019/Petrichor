@@ -1,3 +1,5 @@
+![Agent 集成层](../assets/covers/agent-integration.png)
+
 # Agent 集成层：API Key、REST、MCP 与 Skill
 
 Petrichor 的外部 Agent 集成层位于 `apps/api/internal/agentapi`。它和产品内的

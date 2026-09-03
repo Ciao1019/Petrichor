@@ -3,7 +3,15 @@ import * as React from 'react';
 import { uploadApi } from '@/lib/api';
 import { normalizeS4ObjectKey, normalizeS4ObjectUrl } from '@/lib/s4-url';
 
-const SignedUrlPublicAccessContext = React.createContext(false);
+type SignedUrlPublicAccessValue = {
+  publicAccess: boolean;
+  mediaAccessToken?: string | null;
+};
+
+const SignedUrlPublicAccessContext = React.createContext<SignedUrlPublicAccessValue>({
+  publicAccess: false,
+  mediaAccessToken: null,
+});
 
 // 简单内存缓存，避免同一 key 重复请求
 const cache = new Map<string, { url: string; expiresAt: number }>();
@@ -13,6 +21,7 @@ const CACHE_TTL_MS = 55 * 60 * 1000;
 type SignedUrlPublicAccessProviderProps = {
   children: React.ReactNode;
   publicAccess?: boolean;
+  mediaAccessToken?: string | null;
 };
 
 export function resolveSignedUrlPublicAccess(
@@ -25,25 +34,39 @@ export function resolveSignedUrlPublicAccess(
 export function SignedUrlPublicAccessProvider({
   children,
   publicAccess = false,
+  mediaAccessToken = null,
 }: SignedUrlPublicAccessProviderProps) {
+  const value = React.useMemo(
+    () => ({ publicAccess, mediaAccessToken }),
+    [mediaAccessToken, publicAccess]
+  );
   return React.createElement(
     SignedUrlPublicAccessContext.Provider,
-    { value: publicAccess },
+    { value },
     children
   );
 }
 
-async function fetchSignedUrl(objectKey: string, isPublic: boolean): Promise<string> {
-  const cached = cache.get(objectKey);
+function signedUrlCacheKey(objectKey: string, isPublic: boolean, mediaAccessToken?: string | null) {
+  return `${isPublic ? `public:${mediaAccessToken || "anonymous"}` : "private"}:${objectKey}`;
+}
+
+async function fetchSignedUrl(
+  objectKey: string,
+  isPublic: boolean,
+  mediaAccessToken?: string | null
+): Promise<string> {
+  const cacheKey = signedUrlCacheKey(objectKey, isPublic, mediaAccessToken);
+  const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.url;
   }
 
   const { data } = isPublic
-    ? await uploadApi.publicPresignGet(objectKey)
+    ? await uploadApi.publicPresignGet(objectKey, mediaAccessToken)
     : await uploadApi.presignGet(objectKey);
 
-  cache.set(objectKey, { url: data.url, expiresAt: Date.now() + CACHE_TTL_MS });
+  cache.set(cacheKey, { url: data.url, expiresAt: Date.now() + CACHE_TTL_MS });
   return data.url;
 }
 
@@ -55,14 +78,15 @@ async function fetchSignedUrl(objectKey: string, isPublic: boolean): Promise<str
  */
 export function useSignedUrl(url: string | undefined | null, isPublic?: boolean): string | undefined {
   const inheritedPublicAccess = React.useContext(SignedUrlPublicAccessContext);
-  const shouldUsePublicAccess = resolveSignedUrlPublicAccess(isPublic, inheritedPublicAccess);
+  const shouldUsePublicAccess = resolveSignedUrlPublicAccess(isPublic, inheritedPublicAccess.publicAccess);
+  const mediaAccessToken = shouldUsePublicAccess ? inheritedPublicAccess.mediaAccessToken : null;
 
   const [signedUrl, setSignedUrl] = React.useState<string | undefined>(() => {
     // 非 S4 对象地址直接用原 URL
     const objectKey = normalizeS4ObjectKey(url);
     if (!objectKey) return url ?? undefined;
     // 检查缓存
-    const cached = cache.get(objectKey);
+    const cached = cache.get(signedUrlCacheKey(objectKey, shouldUsePublicAccess, mediaAccessToken));
     if (cached && cached.expiresAt > Date.now()) return cached.url;
     return undefined;
   });
@@ -80,7 +104,7 @@ export function useSignedUrl(url: string | undefined | null, isPublic?: boolean)
 
     let cancelled = false;
 
-    fetchSignedUrl(objectKey, shouldUsePublicAccess)
+    fetchSignedUrl(objectKey, shouldUsePublicAccess, mediaAccessToken)
       .then((signed) => {
         if (!cancelled) setSignedUrl(signed);
       })
@@ -91,7 +115,7 @@ export function useSignedUrl(url: string | undefined | null, isPublic?: boolean)
     return () => {
       cancelled = true;
     };
-  }, [url, shouldUsePublicAccess]);
+  }, [mediaAccessToken, shouldUsePublicAccess, url]);
 
   return signedUrl;
 }

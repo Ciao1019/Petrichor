@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Petrichor</title>
+  <id>https://petrichor-demo.vercel.app/</id>
+  <updated>2026-08-28T00:00:00Z</updated>
+  <link href="https://petrichor-demo.vercel.app/" rel="alternate" type="text/html" />
+  <link href="https://petrichor-demo.vercel.app/atom.xml" rel="self" type="application/atom+xml" />
+  <author><name>Petrichor</name></author>
+  <entry>
+    <title>小鼹鼠 Mole：macOS 清理工具完整使用指南</title>
+    <id>https://petrichor-demo.vercel.app/p/mole-macos-guide</id>
+    <updated>2026-08-28T00:00:00Z</updated>
+    <published>2026-08-28T00:00:00Z</published>
+    <link href="https://petrichor-demo.vercel.app/p/mole-macos-guide" rel="alternate" type="text/html" />
+    <summary type="text">从安装到清理、卸载、磁盘分析与白名单配置的完整 Mole 使用手册。</summary>
+    <category term="Mole" />
+    <category term="macOS" />
+  </entry>
+  <entry>
+    <title>Fastfetch 使用说明：安装、配置与高级技巧</title>
+    <id>https://petrichor-demo.vercel.app/p/fastfetch-guide</id>
+    <updated>2026-08-27T00:00:00Z</updated>
+    <published>2026-08-27T00:00:00Z</published>
+    <link href="https://petrichor-demo.vercel.app/p/fastfetch-guide" rel="alternate" type="text/html" />
+    <summary type="text">Fastfetch 的跨平台安装、JSONC 配置、模块、Logo 与常见问题说明。</summary>
+    <category term="Fastfetch" />
+    <category term="JSONC" />
+  </entry>
+</feed>

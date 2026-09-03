@@ -19,7 +19,12 @@ func WireInvokers() {
 			rt := resolved.Runtime
 			rt.Quirks = ResolveQuirks(rt.ProviderKey, resolved.ModelRef)
 			msgs := buildMessages(req.SystemPrompt, req.Message)
-			result, err := Chat(ctx, rt, resolved.ModelRef, msgs, resolved.Options)
+			options := resolved.Options
+			if req.MaxTokens > 0 && (options.MaxTokens == nil || *options.MaxTokens > req.MaxTokens) {
+				maxTokens := req.MaxTokens
+				options.MaxTokens = &maxTokens
+			}
+			result, err := Chat(ctx, rt, resolved.ModelRef, msgs, options)
 			if err != nil {
 				return "", err
 			}

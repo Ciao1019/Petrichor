@@ -33,6 +33,8 @@ type skipTaskRetryError struct {
 func (err *skipTaskRetryError) Error() string { return err.message }
 func (err *skipTaskRetryError) Unwrap() error { return asynq.SkipRetry }
 
+const knowledgeBuildStatusListLimit = 200
+
 var (
 	questionBatchConcurrency = config.DefaultKnowledgeBuildQuestionBatchConcurrency
 	wikiPageBatchConcurrency = config.DefaultKnowledgeBuildPageBatchConcurrency
@@ -290,6 +292,88 @@ func ArticleKnowledgeBuild(c *ginContext) {
 			return nil, &httpx.HttpError{Status: 503, Message: "知识构建队列暂不可用，请稍后重试"}
 		}
 		return articleKnowledgeBuildJobResponse(info)
+	})
+}
+
+type knowledgeBuildTaskInfoLookup func(jobID string) (*asynq.TaskInfo, error)
+
+func listArticleKnowledgeBuildJobs(
+	userID, knowledgeBaseID int64,
+	articleIDs []int64,
+	lookup knowledgeBuildTaskInfoLookup,
+) ([]map[string]any, error) {
+	jobs := make([]map[string]any, 0, len(articleIDs))
+	seen := make(map[int64]struct{}, len(articleIDs))
+	for _, articleID := range articleIDs {
+		if _, duplicate := seen[articleID]; duplicate {
+			continue
+		}
+		seen[articleID] = struct{}{}
+		jobID := taskqueue.KnowledgeBuildTaskID(userID, knowledgeBaseID, articleID)
+		info, err := lookup(jobID)
+		if errors.Is(err, asynq.ErrTaskNotFound) || errors.Is(err, asynq.ErrQueueNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		response, err := articleKnowledgeBuildJobResponse(info)
+		if err != nil {
+			return nil, err
+		}
+		if response["userId"] != strconv.FormatInt(userID, 10) ||
+			response["knowledgeBaseId"] != strconv.FormatInt(knowledgeBaseID, 10) ||
+			response["articleId"] != strconv.FormatInt(articleID, 10) {
+			continue
+		}
+		jobs = append(jobs, response)
+	}
+	return jobs, nil
+}
+
+// ArticleKnowledgeBuildStatusList 按当前可见文章批量恢复 Asynq 中保留的构建状态。
+func ArticleKnowledgeBuildStatusList(c *ginContext) {
+	run(c, func(c *ginContext) (any, error) {
+		user := currentUser(c)
+		raw, err := readBody(c)
+		if err != nil {
+			return nil, err
+		}
+		kbID, err := reqID(raw["knowledgeBaseId"], "ID 必须是正整数")
+		if err != nil {
+			return nil, err
+		}
+		rawArticleIDs, ok := raw["articleIds"].([]any)
+		if !ok || len(rawArticleIDs) == 0 {
+			return nil, badReq("articleIds 不能为空")
+		}
+		if len(rawArticleIDs) > knowledgeBuildStatusListLimit {
+			return nil, badReq("articleIds 最多包含 200 项")
+		}
+		articleIDs := make([]int64, 0, len(rawArticleIDs))
+		for _, rawArticleID := range rawArticleIDs {
+			articleID, err := reqID(rawArticleID, "文章 ID 必须是正整数")
+			if err != nil {
+				return nil, err
+			}
+			articleIDs = append(articleIDs, articleID)
+		}
+		if _, err := assertKnowledgeBaseOwner(c.Request.Context(), pool(), user.ID, kbID); err != nil {
+			return nil, err
+		}
+		jobs, err := listArticleKnowledgeBuildJobs(
+			user.ID, kbID, articleIDs, taskqueue.KnowledgeBuildTaskInfo,
+		)
+		if err != nil {
+			slog.Error("批量读取知识构建任务状态失败",
+				"userId", user.ID,
+				"knowledgeBaseId", kbID,
+				"articleCount", len(articleIDs),
+				"err", err,
+			)
+			return nil, &httpx.HttpError{Status: 503, Message: "知识构建队列暂不可用，请稍后重试"}
+		}
+		return map[string]any{"jobs": jobs}, nil
 	})
 }
 

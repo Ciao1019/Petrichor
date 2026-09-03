@@ -1,3 +1,5 @@
+![Petrichor Agentic RAG](../assets/covers/agent-rag.png)
+
 # Petrichor Agentic RAG：从 Markdown 到可追溯回答
 
 Petrichor 的 RAG 不是“切片后做一次向量 Top-K”。它同时保留原文分片、用户问法、产品内

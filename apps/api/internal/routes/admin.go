@@ -17,6 +17,9 @@ func registerAdminRoutes(rg *gin.RouterGroup) {
 	g.GET("/appearance", adminpanel.AdminSiteAppearanceDetail)
 	g.POST("/appearance", adminpanel.AdminSiteAppearanceUpdate)
 
+	g.GET("/filing", adminpanel.AdminSiteFilingDetail)
+	g.POST("/filing", adminpanel.AdminSiteFilingUpdate)
+
 	g.GET("/projects", adminpanel.AdminProjectShowcaseDetail)
 	g.POST("/projects", adminpanel.AdminProjectShowcaseUpdate)
 	g.GET("/runtime/metrics", adminpanel.AdminRuntimeMetrics)

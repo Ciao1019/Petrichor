@@ -1,3 +1,5 @@
+![AI 模型接入](./assets/covers/ai-model-setup.png)
+
 # AI 模型接入
 
 ## 数据模型

@@ -104,6 +104,8 @@ func run() error {
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
 
+	routes.RegisterPublicFeeds(r)
+
 	api := r.Group("/api")
 	routes.RegisterPublic(api)
 	routes.RegisterAuth(api)

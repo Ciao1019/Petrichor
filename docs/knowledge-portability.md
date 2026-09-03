@@ -1,3 +1,5 @@
+![知识可移植性](./assets/covers/knowledge-portability.png)
+
 # 知识可移植性：OKF 导出、编译说明书与 Skill 包
 
 Petrichor 把源文档编译成 Wiki 之后，这一层知识不应该只锁在数据库里。

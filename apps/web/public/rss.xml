@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Petrichor</title>
+    <link>https://petrichor-demo.vercel.app/</link>
+    <description>Petrichor 公开知识与文章更新</description>
+    <language>zh-CN</language>
+    <lastBuildDate>Thu, 28 Aug 2026 00:00:00 +0000</lastBuildDate>
+    <item>
+      <title>小鼹鼠 Mole：macOS 清理工具完整使用指南</title>
+      <link>https://petrichor-demo.vercel.app/p/mole-macos-guide</link>
+      <guid isPermaLink="true">https://petrichor-demo.vercel.app/p/mole-macos-guide</guid>
+      <description>从安装到清理、卸载、磁盘分析与白名单配置的完整 Mole 使用手册。</description>
+      <pubDate>Thu, 28 Aug 2026 00:00:00 +0000</pubDate>
+      <category>Mole</category>
+      <category>macOS</category>
+    </item>
+    <item>
+      <title>Fastfetch 使用说明：安装、配置与高级技巧</title>
+      <link>https://petrichor-demo.vercel.app/p/fastfetch-guide</link>
+      <guid isPermaLink="true">https://petrichor-demo.vercel.app/p/fastfetch-guide</guid>
+      <description>Fastfetch 的跨平台安装、JSONC 配置、模块、Logo 与常见问题说明。</description>
+      <pubDate>Wed, 27 Aug 2026 00:00:00 +0000</pubDate>
+      <category>Fastfetch</category>
+      <category>JSONC</category>
+    </item>
+  </channel>
+</rss>

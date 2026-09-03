@@ -165,7 +165,11 @@ function resolveClientIP(request: Request, bunServer: Bun.Server<unknown>) {
 }
 
 function isBackendPath(pathname: string) {
-    return pathname.startsWith("/api/") || pathname === "/healthz" || pathname === "/readyz"
+    return pathname.startsWith("/api/")
+        || pathname === "/healthz"
+        || pathname === "/readyz"
+        || pathname === "/rss.xml"
+        || pathname === "/atom.xml"
 }
 
 function normalizeOrigin(value: string | undefined) {

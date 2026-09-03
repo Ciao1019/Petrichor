@@ -102,6 +102,35 @@ func TestArticleKnowledgeBuildJobResponseIncludesActiveProgress(t *testing.T) {
 	}
 }
 
+func TestListArticleKnowledgeBuildJobsRestoresRetainedTasks(t *testing.T) {
+	createdAt := time.Now().Add(-time.Minute).UTC()
+	payload, err := json.Marshal(taskqueue.KnowledgeBuildPayload{
+		UserID: 7, KnowledgeBaseID: 11, ArticleID: 13, CreatedAt: createdAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lookedUp := []string{}
+	jobs, err := listArticleKnowledgeBuildJobs(7, 11, []int64{13, 14, 13}, func(jobID string) (*asynq.TaskInfo, error) {
+		lookedUp = append(lookedUp, jobID)
+		if jobID == "knowledge-build-7-11-14" {
+			return nil, asynq.ErrTaskNotFound
+		}
+		return &asynq.TaskInfo{
+			ID: jobID, Type: taskqueue.TypeKnowledgeBuild, Payload: payload, State: asynq.TaskStatePending,
+		}, nil
+	})
+	if err != nil {
+		t.Fatalf("批量恢复任务失败: %v", err)
+	}
+	if len(lookedUp) != 2 || lookedUp[0] != "knowledge-build-7-11-13" || lookedUp[1] != "knowledge-build-7-11-14" {
+		t.Fatalf("查询任务 ID 错误: %#v", lookedUp)
+	}
+	if len(jobs) != 1 || jobs[0]["articleId"] != "13" || jobs[0]["status"] != "pending" {
+		t.Fatalf("恢复结果错误: %#v", jobs)
+	}
+}
+
 func TestInvokeKnowledgeBuildChatRetriesTransientModelError(t *testing.T) {
 	originalSlots := knowledgeBuildModelSlots
 	originalInvoker := ChatInvoker
@@ -115,7 +144,9 @@ func TestInvokeKnowledgeBuildChatRetriesTransientModelError(t *testing.T) {
 	}()
 
 	var calls atomic.Int32
-	ChatInvoker = func(context.Context, ChatRequest) (string, error) {
+	var maxTokens atomic.Int64
+	ChatInvoker = func(_ context.Context, request ChatRequest) (string, error) {
+		maxTokens.Store(request.MaxTokens)
 		if calls.Add(1) < 3 {
 			return "", &httpx.HttpError{Status: 502, Message: `模型调用失败(500)：{"message":"Internal server error"}`}
 		}
@@ -127,6 +158,9 @@ func TestInvokeKnowledgeBuildChatRetriesTransientModelError(t *testing.T) {
 	}
 	if answer != "ok" || calls.Load() != 3 {
 		t.Fatalf("answer=%q calls=%d，期望第 3 次成功", answer, calls.Load())
+	}
+	if maxTokens.Load() != 16_384 {
+		t.Fatalf("页面生成输出上限 = %d，期望 16384", maxTokens.Load())
 	}
 }
 

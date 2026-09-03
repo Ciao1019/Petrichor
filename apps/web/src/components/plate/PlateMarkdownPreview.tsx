@@ -21,6 +21,7 @@ type PlateMarkdownPreviewProps = {
     headings?: PlateHeading[]
     markdown: string
     publicMediaAccess?: boolean
+    publicMediaAccessToken?: string | null
 }
 
 function syncHeadingIds(root: HTMLElement | null, headings: PlateHeading[]) {
@@ -56,6 +57,7 @@ export function PlateMarkdownPreview({
     headings,
     markdown,
     publicMediaAccess = false,
+    publicMediaAccessToken = null,
 }: PlateMarkdownPreviewProps) {
     const containerRef = React.useRef<HTMLDivElement | null>(null)
     const contentMeta = React.useMemo(
@@ -94,7 +96,10 @@ export function PlateMarkdownPreview({
     }, [contentJson, headings, markdown])
 
     return (
-        <SignedUrlPublicAccessProvider publicAccess={publicMediaAccess}>
+        <SignedUrlPublicAccessProvider
+            publicAccess={publicMediaAccess}
+            mediaAccessToken={publicMediaAccessToken}
+        >
             <Plate editor={editor} readOnly>
                 <div ref={containerRef} className={cn("plate-article", className)}>
                     <PlateContent className="plate-article-content" readOnly disabled />

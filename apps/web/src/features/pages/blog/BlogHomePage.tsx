@@ -5,7 +5,8 @@ import { Link } from "react-router-dom"
 
 import { publicArticleShareApi, type PublicArticleListItem } from "@/lib/api"
 import { ArticleStatusBadges } from "@/features/pages/blog/ArticleStatusBadges"
-import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
+import { RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
+import { usePublicPageMeta } from "@/features/pages/public-page-meta"
 
 type HomepageArticle = PublicArticleListItem
 
@@ -36,11 +37,8 @@ function groupArticlesByYear(articles: readonly HomepageArticle[]): ArticleYearG
     const pinned: HomepageArticle[] = []
     const others: HomepageArticle[] = []
     for (const article of articles) {
-        if (article.isPinned) {
-            pinned.push(article)
-        } else {
-            others.push(article)
-        }
+        if (article.isPinned) pinned.push(article)
+        else others.push(article)
     }
     pinned.sort((left, right) => {
         const leftOrder = left.pinOrder ?? 0
@@ -51,23 +49,16 @@ function groupArticlesByYear(articles: readonly HomepageArticle[]): ArticleYearG
     others.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
 
     const groups: ArticleYearGroup[] = []
-    if (pinned.length > 0) {
-        groups.push({ year: PINNED_GROUP_KEY, articles: pinned })
-    }
+    if (pinned.length > 0) groups.push({ year: PINNED_GROUP_KEY, articles: pinned })
 
     const yearMap = new Map<string, HomepageArticle[]>()
     for (const article of others) {
         const year = article.updatedAt.slice(0, 4)
         const group = yearMap.get(year)
-        if (group) {
-            group.push(article)
-        } else {
-            yearMap.set(year, [article])
-        }
+        if (group) group.push(article)
+        else yearMap.set(year, [article])
     }
-    for (const [year, groupedArticles] of yearMap) {
-        groups.push({ year, articles: groupedArticles })
-    }
+    for (const [year, groupedArticles] of yearMap) groups.push({ year, articles: groupedArticles })
     return groups
 }
 
@@ -79,15 +70,10 @@ function getArticleDatePart(value: string) {
 function formatArticleDate(value: string) {
     const datePart = getArticleDatePart(value)
     const [year, month, day] = datePart.split("-")
-
-    if (!year || !month || !day) {
-        return value
-    }
-
-    return `${year}-${month}-${day}`
+    return year && month && day ? `${year}-${month}-${day}` : value
 }
 
-/** 仅文章详情页走 SPA 路由；其余内链（如转载直跳的自托管 HTML）需要整页加载 */
+/** 仅文章详情页走 SPA 路由；其余内链（如转载直跳的自托管 HTML）需要整页加载。 */
 function isSpaArticleHref(href: string) {
     return href.startsWith("/p/")
 }
@@ -96,12 +82,8 @@ function ArticleListItem({ article, copy }: { article: HomepageArticle; copy: Ar
     const date = formatArticleDate(article.updatedAt)
     const linkClassName = "break-words lg:text-[1.125rem] lg:font-medium"
     const handlePrefetchDetail = React.useCallback(() => {
-        if (article.expired || article.hasPassword || !article.shareCode) {
-            return
-        }
-        if (!article.href || !isSpaArticleHref(article.href)) {
-            return
-        }
+        if (article.expired || article.hasPassword || !article.shareCode) return
+        if (!article.href || !isSpaArticleHref(article.href)) return
         void publicArticleShareApi.prefetchDetail(article.shareCode)
     }, [article.expired, article.hasPassword, article.href, article.shareCode])
 
@@ -138,12 +120,10 @@ function ArticleListItem({ article, copy }: { article: HomepageArticle; copy: Ar
                 <time dateTime={getArticleDatePart(article.updatedAt)}>{date}</time>
                 <span className="ml-1.5">{copy.readingTime(article.readingMinutes)}</span>
             </div>
-
             <div className="retypeset-font-time hidden text-[0.9125rem] lg:ml-2.5 lg:inline">
                 <time dateTime={getArticleDatePart(article.updatedAt)}>{date}</time>
                 <span className="ml-1.5">{copy.readingTime(article.readingMinutes)}</span>
             </div>
-
             <div className="hidden lg:mt-[0.5625rem] lg:block">
                 <p className="break-words leading-7">{article.excerpt}</p>
             </div>
@@ -177,15 +157,12 @@ function useArticleIndexDockVisibility(sectionRef: React.RefObject<HTMLElement |
         const updateDockVisibility = () => {
             const section = sectionRef.current
             if (!section) return
-
             const rect = section.getBoundingClientRect()
             setDockVisible(rect.top <= 160 && rect.bottom >= 160)
         }
-
         updateDockVisibility()
         window.addEventListener("scroll", updateDockVisibility, { passive: true })
         window.addEventListener("resize", updateDockVisibility)
-
         return () => {
             window.removeEventListener("scroll", updateDockVisibility)
             window.removeEventListener("resize", updateDockVisibility)
@@ -213,21 +190,12 @@ function ArticleIndexFrame({
                 <main id="article-index-list" className="mb-12">
                     {children}
                 </main>
-                <RetypesetSiteFooter dockVisible={dockVisible} />
             </div>
         </section>
     )
 }
 
-function ArticleIndexStatus({
-    message,
-    detail,
-    action,
-}: {
-    message: string
-    detail?: string
-    action?: React.ReactNode
-}) {
+function ArticleIndexStatus({ message, detail, action }: { message: string; detail?: string; action?: React.ReactNode }) {
     return (
         <div className="retypeset-font-navbar border-y border-current/10 py-12 text-center">
             <p className="retypeset-c-primary text-base font-semibold">{message}</p>
@@ -274,11 +242,11 @@ function ArticleIndexLoadingSkeleton() {
     )
 }
 
-function resolveArticleIndexError(e: unknown) {
+function resolveArticleIndexError(error: unknown) {
     return (
-        (e as { response?: { data?: { msg?: string } } })?.response?.data?.msg ||
-        (e instanceof Error ? e.message : "") ||
-        "加载失败"
+        (error as { response?: { data?: { msg?: string } } })?.response?.data?.msg
+        || (error instanceof Error ? error.message : "")
+        || "加载失败"
     )
 }
 
@@ -297,42 +265,36 @@ function ArticleIndexSection({ initialDockVisible = false }: { initialDockVisibl
             setInitialDockVisibleActive(false)
             return
         }
-
-        setInitialDockVisibleActive(true)
         let secondFrame = 0
         const firstFrame = window.requestAnimationFrame(() => {
-            secondFrame = window.requestAnimationFrame(() => {
-                setInitialDockVisibleActive(false)
-            })
+            secondFrame = window.requestAnimationFrame(() => setInitialDockVisibleActive(false))
         })
-
         return () => {
             window.cancelAnimationFrame(firstFrame)
-            if (secondFrame) {
-                window.cancelAnimationFrame(secondFrame)
-            }
+            if (secondFrame) window.cancelAnimationFrame(secondFrame)
         }
     }, [initialDockVisible])
 
     const fetchArticles = React.useCallback(async (isCanceled: () => boolean = () => false) => {
         const cached = publicArticleShareApi.getCachedList()
         if (cached) {
-            if (isCanceled()) return
-            setArticles(cached.items ?? [])
-            setLoading(false)
-            setError(null)
+            if (!isCanceled()) {
+                setArticles(cached.items ?? [])
+                setLoading(false)
+                setError(null)
+            }
             return
         }
         setLoading(true)
         setError(null)
         try {
-            const res = await publicArticleShareApi.list()
-            if (isCanceled()) return
-            setArticles(res.data.items ?? [])
-        } catch (e: unknown) {
-            if (isCanceled()) return
-            setArticles([])
-            setError(resolveArticleIndexError(e))
+            const response = await publicArticleShareApi.list()
+            if (!isCanceled()) setArticles(response.data.items ?? [])
+        } catch (fetchError: unknown) {
+            if (!isCanceled()) {
+                setArticles([])
+                setError(resolveArticleIndexError(fetchError))
+            }
         } finally {
             if (!isCanceled()) setLoading(false)
         }
@@ -341,57 +303,43 @@ function ArticleIndexSection({ initialDockVisible = false }: { initialDockVisibl
     React.useEffect(() => {
         let canceled = false
         void fetchArticles(() => canceled)
-
-        return () => {
-            canceled = true
-        }
+        return () => { canceled = true }
     }, [fetchArticles])
 
     const articleYearGroups = React.useMemo(() => groupArticlesByYear(articles), [articles])
-    const copy = articleIndexCopy
-
     let content: React.ReactNode
-
-    if (loading) {
-        content = <ArticleIndexLoadingSkeleton />
-    } else if (error) {
+    if (loading) content = <ArticleIndexLoadingSkeleton />
+    else if (error) {
         content = (
             <ArticleIndexStatus
-                message={copy.loadFailed}
+                message={articleIndexCopy.loadFailed}
                 detail={error}
-                action={
+                action={(
                     <button
                         type="button"
-                        className="retypeset-highlight-hover retypeset-c-primary retypeset-font-navbar py-1 text-sm font-semibold transition-colors"
+                        className="retypeset-highlight-hover retypeset-c-primary retypeset-font-navbar py-1 text-sm font-semibold"
                         onClick={() => void fetchArticles()}
                     >
-                        {copy.retry}
+                        {articleIndexCopy.retry}
                     </button>
-                }
+                )}
             />
         )
-    } else if (articleYearGroups.length === 0) {
-        content = <ArticleIndexStatus message={copy.empty} />
-    } else {
-        content = (
-            <div>
-                {articleYearGroups.map((group) => (
-                    <ArticleYearSection key={group.year} group={group} copy={copy} />
-                ))}
-            </div>
-        )
+    } else if (articleYearGroups.length === 0) content = <ArticleIndexStatus message={articleIndexCopy.empty} />
+    else {
+        content = articleYearGroups.map((group) => (
+            <ArticleYearSection key={group.year} group={group} copy={articleIndexCopy} />
+        ))
     }
 
     return (
-        <ArticleIndexFrame
-            dockVisible={dockVisible}
-            sectionRef={sectionRef}
-        >
+        <ArticleIndexFrame dockVisible={dockVisible} sectionRef={sectionRef}>
             {content}
         </ArticleIndexFrame>
     )
 }
 
 export function BlogHomePage() {
+    usePublicPageMeta("Petrichor", "Petrichor 知识库与博客平台。", "/")
     return <ArticleIndexSection initialDockVisible />
 }

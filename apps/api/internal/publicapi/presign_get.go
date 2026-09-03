@@ -3,6 +3,7 @@
 package publicapi
 
 import (
+	"errors"
 	"net/url"
 	"regexp"
 	"strings"
@@ -110,13 +111,21 @@ func PresignGetObject(c *gin.Context) {
 		httpx.HandleError(c, err)
 		return
 	}
-	objectKey := strings.TrimSpace(rawString(raw, "objectKey"))
+	objectKey := normalizeS4ObjectKey(rawString(raw, "objectKey"))
 	if objectKey == "" {
-		httpx.ErrorJSON(c, 400, "objectKey 不能为空")
+		httpx.ErrorJSON(c, 400, "objectKey 非法")
 		return
 	}
-	strippedKey := storage.StripS4KeyPrefix(objectKey)
-	url, uerr := resolveObjectURL(c, strippedKey)
+	allowed, aerr := canReadPublicObject(c.Request.Context(), objectKey, rawString(raw, "mediaAccessToken"))
+	if errors.Is(aerr, errMediaAccessDenied) || (aerr == nil && !allowed) {
+		httpx.HandleError(c, forbiddenErr("该媒体对象不在当前公开范围内"))
+		return
+	}
+	if aerr != nil {
+		httpx.HandleError(c, aerr)
+		return
+	}
+	url, uerr := resolveObjectURL(c, storage.StripS4KeyPrefix(objectKey))
 	if uerr != nil {
 		httpx.HandleError(c, uerr)
 		return

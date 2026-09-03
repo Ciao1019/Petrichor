@@ -6,6 +6,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "rea
 import { AppBreadcrumb } from "@/components/app-breadcrumb"
 import { AppSidebar } from "@/components/app-sidebar"
 import { DemoModeBanner } from "@/components/demo-mode-banner"
+import { PublicSiteFooter } from "@/components/public-site-footer"
 import { RouteLoadErrorBoundary, RouteLoadSuccessMarker } from "@/components/route-load-boundary"
 import { ThemeProvider } from "@/components/theme-provider"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
@@ -78,6 +79,9 @@ const ProjectsConfigPage = lazy(() =>
 const SiteAppearanceConfigPage = lazy(() =>
   import("@/features/pages/admin/SiteAppearanceConfigPage").then((module) => ({ default: module.SiteAppearanceConfigPage })),
 )
+const SiteFilingConfigPage = lazy(() =>
+  import("@/features/pages/admin/SiteFilingConfigPage").then((module) => ({ default: module.SiteFilingConfigPage })),
+)
 const SiteGraphConfigPage = lazy(() =>
   import("@/features/pages/admin/SiteGraphConfigPage").then((module) => ({ default: module.SiteGraphConfigPage })),
 )
@@ -92,9 +96,6 @@ const BlogHomePage = lazy(() =>
 )
 const TagsPage = lazy(() =>
   import("@/features/pages/blog/TagsPage").then((module) => ({ default: module.TagsPage })),
-)
-const SiteGraphPage = lazy(() =>
-  import("@/features/pages/graph/SiteGraphPage").then((module) => ({ default: module.SiteGraphPage })),
 )
 const PublicQaPage = lazy(() =>
   import("@/features/pages/ask/PublicQaPage").then((module) => ({ default: module.PublicQaPage })),
@@ -193,7 +194,8 @@ function DemoDashboardLayout() {
 
 function DemoRoutes() {
   const location = useLocation()
-  const forcedTheme = isPublicSitePath(location.pathname) ? "dark" : undefined
+  const publicSite = isPublicSitePath(location.pathname)
+  const forcedTheme = publicSite ? "dark" : undefined
 
   return (
     <ThemeProvider defaultTheme="system" forcedTheme={forcedTheme}>
@@ -205,11 +207,13 @@ function DemoRoutes() {
               <Routes>
                 <Route path="/" element={<BlogHomePage />} />
                 <Route path="/tags" element={<TagsPage />} />
-                <Route path="/graph" element={<SiteGraphPage />} />
+                <Route path="/graph" element={<Navigate to="/" replace />} />
                 <Route path="/ask" element={<PublicQaPage />} />
                 <Route path="/about" element={<AboutPage />} />
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/petrichor" element={<PetrichorPage />} />
+                <Route path="/search" element={<Navigate to="/" replace />} />
+                <Route path="/wiki/*" element={<Navigate to="/" replace />} />
                 <Route path="/p/:shareCode" element={<PublicArticlePage />} />
                 <Route path="/demo" element={<Navigate to={dashboardRoutes.knowledge} replace />} />
                 <Route path="/login" element={<Navigate to={dashboardRoutes.knowledge} replace />} />
@@ -233,6 +237,7 @@ function DemoRoutes() {
                   <Route path="admin/about" element={<AboutProfileConfigPage />} />
                   <Route path="admin/projects" element={<ProjectsConfigPage />} />
                   <Route path="admin/appearance" element={<SiteAppearanceConfigPage />} />
+                  <Route path="admin/filing" element={<SiteFilingConfigPage />} />
                   <Route path="admin/site-graph" element={<SiteGraphConfigPage />} />
                   <Route path="admin/document-import-dead-letters" element={<DocumentImportDeadLettersPage />} />
                   <Route path="ai/config" element={<AiModelConfigPage />} />
@@ -247,6 +252,7 @@ function DemoRoutes() {
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
               <RouteLoadSuccessMarker />
+              {publicSite ? <PublicSiteFooter /> : null}
             </Suspense>
           </RouteLoadErrorBoundary>
         </div>

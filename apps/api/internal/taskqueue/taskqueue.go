@@ -24,8 +24,8 @@ const (
 	TypeDocumentImport          = "petrichor:document-import:run"
 	TypeDocumentImportReconcile = "petrichor:document-import:reconcile"
 
-	KnowledgeBuildTimeout   = 15 * time.Minute
-	KnowledgeBuildRetention = time.Hour
+	KnowledgeBuildTimeout   = 3 * time.Hour
+	KnowledgeBuildRetention = 24 * time.Hour
 	KnowledgeBuildMaxRetry  = 2
 	DocumentImportTimeout   = 6 * time.Hour
 	DocumentImportRetention = 24 * time.Hour
@@ -386,11 +386,16 @@ func taskIsActive(info *asynq.TaskInfo) bool {
 	return info.State != asynq.TaskStateCompleted && info.State != asynq.TaskStateArchived
 }
 
-func knowledgeBuildTaskID(payload KnowledgeBuildPayload) string {
+// KnowledgeBuildTaskID 返回文章构建任务的稳定 ID，供 API 在页面刷新后按文章恢复状态。
+func KnowledgeBuildTaskID(userID, knowledgeBaseID, articleID int64) string {
 	return "knowledge-build-" +
-		strconv.FormatInt(payload.UserID, 10) + "-" +
-		strconv.FormatInt(payload.KnowledgeBaseID, 10) + "-" +
-		strconv.FormatInt(payload.ArticleID, 10)
+		strconv.FormatInt(userID, 10) + "-" +
+		strconv.FormatInt(knowledgeBaseID, 10) + "-" +
+		strconv.FormatInt(articleID, 10)
+}
+
+func knowledgeBuildTaskID(payload KnowledgeBuildPayload) string {
+	return KnowledgeBuildTaskID(payload.UserID, payload.KnowledgeBaseID, payload.ArticleID)
 }
 
 func documentImportTaskID(jobID int64) string {

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAIHTTPClientKeepsParallelConnectionsAlive(t *testing.T) {
@@ -18,6 +19,9 @@ func TestAIHTTPClientKeepsParallelConnectionsAlive(t *testing.T) {
 	if transport.MaxIdleConns < 128 || transport.MaxIdleConnsPerHost < 64 {
 		t.Fatalf("AI HTTP keep-alive pool too small: total=%d perHost=%d",
 			transport.MaxIdleConns, transport.MaxIdleConnsPerHost)
+	}
+	if httpClient.Timeout != 30*time.Minute {
+		t.Fatalf("AI HTTP timeout = %s，期望 30m", httpClient.Timeout)
 	}
 }
 

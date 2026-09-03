@@ -321,6 +321,15 @@ let users: AdminUserItem[] = [
 ]
 
 let appearance = { publicQaEnabled: true, createdAt: seedTime, updatedAt: recentTime }
+let filing = {
+  enabled: false,
+  icpNumber: "",
+  icpUrl: "https://beian.miit.gov.cn/",
+  publicSecurityNumber: "",
+  publicSecurityUrl: "https://www.beian.gov.cn/portal/registerSystemInfo",
+  createdAt: null as string | null,
+  updatedAt: null as string | null,
+}
 let deadLetters = [
   { kind: "document_import", id: "demo-import-2", userId: "demo-user", knowledgeBaseId: "demo-kb-product", articleId: null, title: "Mole 安全清理笔记", attemptCount: 3, maxAttempts: 3, replayCount: 1, lastError: "第 4 页图像文字置信度不足", deadLetteredAt: recentTime, updatedAt: recentTime },
 ]
@@ -518,6 +527,7 @@ const handlers: Record<string, DemoHandler> = {
 
   /* 系统管理 */
   "GET /public/appearance": () => ok(appearance),
+  "GET /public/filing": () => ok(filing),
   "POST /admin/user/list": (body) => {
     const keyword = str(body.keyword).toLowerCase()
     const rows = users.filter((item) => !keyword || item.email.toLowerCase().includes(keyword) || (item.nickname ?? "").toLowerCase().includes(keyword))
@@ -547,6 +557,19 @@ const handlers: Record<string, DemoHandler> = {
   "POST /admin/appearance": (body) => {
     appearance = { ...appearance, publicQaEnabled: Boolean(body.publicQaEnabled), updatedAt: now() }
     return ok(appearance)
+  },
+  "GET /admin/filing": () => ok(filing),
+  "POST /admin/filing": (body) => {
+    filing = {
+      ...filing,
+      enabled: Boolean(body.enabled),
+      icpNumber: str(body.icpNumber),
+      icpUrl: str(body.icpUrl) || "https://beian.miit.gov.cn/",
+      publicSecurityNumber: str(body.publicSecurityNumber),
+      publicSecurityUrl: str(body.publicSecurityUrl) || "https://www.beian.gov.cn/portal/registerSystemInfo",
+      updatedAt: now(),
+    }
+    return ok(filing)
   },
   "GET /admin/site-graph/overview": () => ok(graphOverview()),
   "POST /admin/site-graph/validate": () => ok({ validation: graphOverview().validation, summary: "星图结构完整，可以发布。" }),

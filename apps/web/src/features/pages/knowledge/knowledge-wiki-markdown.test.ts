@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 
-import { convertAnswerWikiLinks, prepareWikiMarkdown } from "./knowledge-wiki-markdown"
+import {
+  convertAnswerWikiLinks,
+  preparePublicWikiMarkdown,
+  prepareWikiMarkdown,
+} from "./knowledge-wiki-markdown"
 
 describe("prepareWikiMarkdown", () => {
   it("将显式 Wiki 引用转换为可跳转链接", () => {
@@ -57,6 +61,17 @@ describe("prepareWikiMarkdown", () => {
     )).toBe(
       "`深度清理` [深度清理](https://example.com)\n\n正文中的[深度清理](#wiki-page=concept-deep-clean)。",
     )
+  })
+})
+
+describe("preparePublicWikiMarkdown", () => {
+  it("把 Wiki 引用转换为可直接访问的公开页面路由", () => {
+    expect(preparePublicWikiMarkdown(
+      "# Mole\n\n支持 [[概念/清理|深度清理]]。",
+      "Mole",
+      "42",
+      [{ pageKey: "概念/清理", title: "深度清理" }],
+    )).toBe("支持 [深度清理](/wiki/42/%E6%A6%82%E5%BF%B5%2F%E6%B8%85%E7%90%86)。")
   })
 })
 

@@ -18,6 +18,7 @@ import { isPublicSitePath } from '@/lib/public-theme-routes'
 import { authApi } from '@/lib/api'
 import { RouteLoadErrorBoundary, RouteLoadSuccessMarker } from '@/components/route-load-boundary'
 import { SiteSetupGate } from '@/components/site-setup-gate'
+import { PublicSiteFooter } from '@/components/public-site-footer'
 
 // Next.js 迁移到 React Router 后不再自动按页面拆包；显式 lazy 才能避免把编辑器、
 // 文档查看器、图表和 AI 管理页全部塞进首个 Rollup chunk。
@@ -72,9 +73,6 @@ const BlogHomePage = lazy(() =>
 const TagsPage = lazy(() =>
   import('@/features/pages/blog/TagsPage').then((module) => ({ default: module.TagsPage }))
 )
-const SiteGraphPage = lazy(() =>
-  import('@/features/pages/graph/SiteGraphPage').then((module) => ({ default: module.SiteGraphPage }))
-)
 const AboutPage = lazy(() =>
   import('@/features/pages/about/AboutPage').then((module) => ({ default: module.AboutPage }))
 )
@@ -114,6 +112,9 @@ const NotificationPage = lazy(() =>
 )
 const SiteAppearanceConfigPage = lazy(() =>
   import('@/features/pages/admin/SiteAppearanceConfigPage').then((module) => ({ default: module.SiteAppearanceConfigPage }))
+)
+const SiteFilingConfigPage = lazy(() =>
+  import('@/features/pages/admin/SiteFilingConfigPage').then((module) => ({ default: module.SiteFilingConfigPage }))
 )
 const SiteGraphConfigPage = lazy(() =>
   import('@/features/pages/admin/SiteGraphConfigPage').then((module) => ({ default: module.SiteGraphConfigPage }))
@@ -285,7 +286,8 @@ function DemoEntry() {
 function AppThemeScope() {
   const location = useLocation()
   // 前台公开页固定暗色，后台仍可自由切换
-  const forcedTheme = isPublicSitePath(location.pathname) ? 'dark' : undefined
+  const publicSite = isPublicSitePath(location.pathname)
+  const forcedTheme = publicSite ? 'dark' : undefined
 
   return (
     <ThemeProvider defaultTheme="system" forcedTheme={forcedTheme}>
@@ -298,7 +300,9 @@ function AppThemeScope() {
                 <Routes>
               <Route path="/" element={<BlogHomePage />} />
               <Route path="/tags" element={<TagsPage />} />
-              <Route path="/graph" element={<SiteGraphPage />} />
+              <Route path="/graph" element={<Navigate to="/" replace />} />
+              <Route path="/wiki/*" element={<Navigate to="/" replace />} />
+              <Route path="/search" element={<Navigate to="/" replace />} />
               <Route path="/ask" element={<PublicQaPage />} />
               <Route path="/about" element={<AboutPage />} />
               <Route path="/projects" element={<ProjectsPage />} />
@@ -329,6 +333,7 @@ function AppThemeScope() {
                 <Route path="admin/about" element={<AboutProfileConfigPage />} />
                 <Route path="admin/projects" element={<ProjectsConfigPage />} />
                 <Route path="admin/appearance" element={<SiteAppearanceConfigPage />} />
+                <Route path="admin/filing" element={<SiteFilingConfigPage />} />
                 <Route path="admin/site-graph" element={<SiteGraphConfigPage />} />
                 <Route path="admin/document-import-dead-letters" element={<DocumentImportDeadLettersPage />} />
                 <Route path="ai/config" element={<AiModelConfigPage />} />
@@ -341,6 +346,7 @@ function AppThemeScope() {
               </Route>
                 </Routes>
                 <RouteLoadSuccessMarker />
+                {publicSite ? <PublicSiteFooter /> : null}
               </Suspense>
             </RouteLoadErrorBoundary>
           </div>

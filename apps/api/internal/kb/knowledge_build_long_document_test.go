@@ -61,8 +61,8 @@ func TestExtractDocumentCandidatesCoversEveryLongDocumentChunk(t *testing.T) {
 	if summary != "整篇摘要" || len(warnings) != 0 {
 		t.Fatalf("summary=%q warnings=%v", summary, warnings)
 	}
-	if len(extractionMessages) != 2 {
-		t.Fatalf("候选抽取调用数 = %d，期望按 48000 字预算分成 2 批", len(extractionMessages))
+	if len(extractionMessages) != 3 {
+		t.Fatalf("候选抽取调用数 = %d，期望按 16000 字预算拆分超大切片", len(extractionMessages))
 	}
 	allMessages := strings.Join(extractionMessages, "\n")
 	for _, marker := range []string{"HEAD_MARKER", "MIDDLE_MARKER", "TAIL_MARKER"} {

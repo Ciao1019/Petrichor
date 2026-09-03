@@ -2,7 +2,7 @@
 
 import * as React from "react"
 
-import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
+import { RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import { publicAboutProfileApi, type AboutAccent, type AboutProfileResponse } from "@/lib/api"
 
 import { BlueNote, HandUnderline, MarkerHighlight } from "./DeskAccents"
@@ -248,9 +248,6 @@ export function AboutPage() {
                 </div>
             </section>
 
-            <div className="relative z-30 mx-auto mt-auto w-full max-w-6xl px-6 pb-8 md:px-24 lg:contents">
-                <RetypesetSiteFooter dockVisible />
-            </div>
         </main>
     )
 }

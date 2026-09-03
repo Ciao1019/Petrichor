@@ -12,16 +12,17 @@ import (
 )
 
 var (
-	fenceRe     = regexp.MustCompile("(?s)```.*?```")
-	inlineCode  = regexp.MustCompile("`([^`]+)`")
-	mdImageRe   = regexp.MustCompile(`!\[[^\]]*\]\([^)]*\)`)
-	mdLinkText  = regexp.MustCompile(`\[([^\]]+)]\([^)]*\)`)
-	headStrip   = regexp.MustCompile(`(?m)^#{1,6}\s+`)
-	quoteStrip  = regexp.MustCompile(`(?m)^>\s?`)
-	mdSymbolRe  = regexp.MustCompile("[*_~#>`\\-]+")
-	spaceRe     = regexp.MustCompile("\\s+")
-	headingRe   = regexp.MustCompile(`^(#{1,6})\s+(.+?)\s*$`)
-	fenceLineRe = regexp.MustCompile(`^\s*(` + "`" + `{3}|~{3})`)
+	fenceRe      = regexp.MustCompile("(?s)```.*?```")
+	inlineCode   = regexp.MustCompile("`([^`]+)`")
+	mdImageRe    = regexp.MustCompile(`!\[[^\]]*\]\([^)]*\)`)
+	mdLinkText   = regexp.MustCompile(`\[([^\]]+)]\([^)]*\)`)
+	wikiLinkText = regexp.MustCompile(`\[\[([^\]|]+)(?:\|([^\]]+))?]]`)
+	headStrip    = regexp.MustCompile(`(?m)^#{1,6}\s+`)
+	quoteStrip   = regexp.MustCompile(`(?m)^>\s?`)
+	mdSymbolRe   = regexp.MustCompile("[*_~#>`\\-]+")
+	spaceRe      = regexp.MustCompile("\\s+")
+	headingRe    = regexp.MustCompile(`^(#{1,6})\s+(.+?)\s*$`)
+	fenceLineRe  = regexp.MustCompile(`^\s*(` + "`" + `{3}|~{3})`)
 )
 
 // markdownToPlainText 摘要与阅读时长共用的纯文本归一化。
@@ -30,6 +31,16 @@ func markdownToPlainText(contentMd string) string {
 	text = inlineCode.ReplaceAllString(text, "$1")
 	text = mdImageRe.ReplaceAllString(text, " ")
 	text = mdLinkText.ReplaceAllString(text, "$1")
+	text = wikiLinkText.ReplaceAllStringFunc(text, func(raw string) string {
+		parts := wikiLinkText.FindStringSubmatch(raw)
+		if len(parts) > 2 && strings.TrimSpace(parts[2]) != "" {
+			return parts[2]
+		}
+		if len(parts) > 1 {
+			return parts[1]
+		}
+		return raw
+	})
 	text = headStrip.ReplaceAllString(text, "")
 	text = quoteStrip.ReplaceAllString(text, "")
 	text = mdSymbolRe.ReplaceAllString(text, " ")

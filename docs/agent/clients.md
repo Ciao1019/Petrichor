@@ -1,3 +1,5 @@
+![把 Petrichor 接入你的 Agent](../assets/covers/agent-clients.png)
+
 # 把 Petrichor 接入你的 Agent：MCP、REST 与 Skill
 
 Petrichor 对外提供三种入口，它们共用同一套 Agent API Key、scope 校验和调用审计：

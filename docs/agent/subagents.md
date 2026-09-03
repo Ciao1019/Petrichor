@@ -1,3 +1,5 @@
+![子 Agent 委派](../assets/covers/agent-subagents.png)
+
 # 子 Agent 委派
 
 产品内 Agent Runtime 通过 `agent.delegate` 把互不依赖的只读子任务并行执行。核心实现位于

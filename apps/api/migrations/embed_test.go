@@ -18,6 +18,7 @@ func TestEmbeddedMigrations(t *testing.T) {
 		"202608280002_worker_retry_and_dead_letter.sql",
 		"202608280003_drop_knowledge_build_job.sql",
 		"202609020001_drop_document_import_jobs.sql",
+		"202609020002_site_filing.sql",
 	}
 	if !reflect.DeepEqual(entries, want) {
 		t.Fatalf("内嵌迁移不符合预期\n实际: %v\n期望: %v", entries, want)
@@ -101,6 +102,21 @@ func TestEmbeddedMigrations(t *testing.T) {
 	} {
 		if !strings.Contains(dropImportSQL, required) {
 			t.Fatalf("视觉导入 Redis 迁移缺少删除语句: %q", required)
+		}
+	}
+
+	data, err = fs.ReadFile(Files, want[5])
+	if err != nil {
+		t.Fatalf("读取站点备案迁移失败: %v", err)
+	}
+	filingSQL := string(data)
+	for _, required := range []string{
+		"CREATE TABLE public.petrichor_site_filing",
+		"enabled boolean DEFAULT false NOT NULL",
+		"public_security_number text",
+	} {
+		if !strings.Contains(filingSQL, required) {
+			t.Fatalf("站点备案迁移缺少结构: %q", required)
 		}
 	}
 }

@@ -551,22 +551,142 @@ export const publicSiteAppearanceApi = {
   detail: () => api.get<SiteAppearanceResponse>("/public/appearance"),
 }
 
+export interface SiteFilingResponse {
+  enabled: boolean
+  icpNumber: string
+  icpUrl: string
+  publicSecurityNumber: string
+  publicSecurityUrl: string
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export interface SiteFilingUpdateRequest {
+  enabled: boolean
+  icpNumber: string
+  icpUrl: string
+  publicSecurityNumber: string
+  publicSecurityUrl: string
+}
+
+export const publicSiteFilingApi = {
+  detail: () => api.get<SiteFilingResponse>("/public/filing"),
+}
+
+export type PublicSearchMode = "fulltext" | "lexical" | "semantic" | "hybrid"
+export type PublicSearchType = "all" | "article" | "wiki"
+
+export interface PublicSearchResult {
+  id: string
+  type: "article" | "wiki"
+  title: string
+  summary: string
+  snippet: string
+  href: string
+  updatedAt: string
+  score: number
+  semanticScore: number
+  matchReason: string
+  articleId?: string
+  knowledgeBaseId: string | null
+  pageKey: string | null
+  kind: string | null
+  categoryPath: string[]
+  tags: string[]
+  knowledgeBaseName: string | null
+  sourceCount: number | null
+}
+
+export interface PublicSearchResponse {
+  query: string
+  mode: PublicSearchMode
+  modeRequested: PublicSearchMode
+  modeApplied: PublicSearchMode
+  type: PublicSearchType
+  knowledgeBaseId: string | null
+  tag: string | null
+  items: PublicSearchResult[]
+  total: number
+  limit: number
+  offset: number
+  hasMore: boolean
+  semanticAvailable: boolean
+  semanticMessage: string | null
+  tookMs: number
+}
+
+export const publicSearchApi = {
+  search: (params: {
+    q: string
+    mode?: PublicSearchMode
+    type?: PublicSearchType
+    kb?: string
+    tag?: string
+    limit?: number
+    offset?: number
+    signal?: AbortSignal
+  }) => {
+    const { signal, ...query } = params
+    return api.get<PublicSearchResponse>("/public/search", { params: query, signal })
+  },
+}
+
+export interface PublicWikiKnowledgeBase {
+  knowledgeBaseId: string
+  name: string
+  description: string | null
+  pageCount: number
+  articleCount: number
+  updatedAt: string
+}
+
+export interface PublicWikiPageListItem {
+  pageKey: string
+  title: string
+  kind: string
+  summary: string
+  aliases: string[]
+  categoryPath: string[]
+  sourceCount: number
+  updatedAt: string
+  href: string
+}
+
+export interface PublicWikiPageListResponse {
+  knowledgeBaseId: string
+  knowledgeBaseName: string
+  description: string | null
+  updatedAt: string
+  items: PublicWikiPageListItem[]
+  total: number
+  limit: number
+  offset: number
+  hasMore: boolean
+}
+
 export interface PublicWikiNeighborPage {
   pageKey: string
   title: string
   kind: string | null
   summary: string | null
   linkType: string
+  href?: string
 }
 
-/** 前台问答 Wiki 弹窗用的页面详情（仅限关联了公开文章的页面）。 */
+/** 公开 Wiki 页面详情；服务端保证其全部来源文章都处于匿名公开作用域。 */
 export interface PublicWikiPageDetail {
+  knowledgeBaseId: string
+  knowledgeBaseName: string
   pageKey: string
   title: string
   kind: string
   summary: string
   aliases: string[]
+  categoryPath: string[]
+  href: string
+  updatedAt: string
   contentMd: string
+  mediaAccessToken?: string | null
   links: PublicWikiNeighborPage[]
   inLinks: PublicWikiNeighborPage[]
   sourceArticles: Array<{
@@ -577,9 +697,40 @@ export interface PublicWikiPageDetail {
   }>
 }
 
+export interface PublicWikiGraphResponse {
+  knowledgeBaseId: string
+  knowledgeBaseName: string
+  nodes: Array<PublicWikiPageListItem>
+  links: Array<{
+    id: string
+    fromPageKey: string
+    toPageKey: string
+    linkType: string
+    description: string | null
+  }>
+  stats: {
+    pageCount: number
+    linkCount: number
+    conceptCount: number
+    entityCount: number
+    sourceCount: number
+  }
+  generatedAt: string | null
+  truncated: boolean
+  totalPageCount: number
+}
+
 export const publicWikiApi = {
-  detail: (pageKey: string) =>
-    api.get<PublicWikiPageDetail>("/public/wiki/page", { params: { pageKey } }),
+  knowledgeBases: (signal?: AbortSignal) =>
+    api.get<{ items: PublicWikiKnowledgeBase[] }>("/public/wiki/knowledge-bases", { signal }),
+  pages: (params: { knowledgeBaseId: string; q?: string; kind?: string; limit?: number; offset?: number }) =>
+    api.get<PublicWikiPageListResponse>("/public/wiki/pages", { params }),
+  detail: (pageKey: string, knowledgeBaseId?: string | null) =>
+    api.get<PublicWikiPageDetail>("/public/wiki/page", {
+      params: { pageKey, ...(knowledgeBaseId ? { knowledgeBaseId } : {}) },
+    }),
+  graph: (knowledgeBaseId: string) =>
+    api.get<PublicWikiGraphResponse>("/public/wiki/graph", { params: { knowledgeBaseId } }),
 }
 
 /** 后台助手 Wiki 弹窗：读取当前用户自己的 Wiki 页面详情。 */
@@ -593,4 +744,9 @@ export const assistantWikiApi = {
 export const adminSiteAppearanceApi = {
   detail: () => api.get<SiteAppearanceResponse>("/admin/appearance"),
   update: (data: SiteAppearanceUpdateRequest) => api.post<SiteAppearanceResponse>("/admin/appearance", data),
+}
+
+export const adminSiteFilingApi = {
+  detail: () => api.get<SiteFilingResponse>("/admin/filing"),
+  update: (data: SiteFilingUpdateRequest) => api.post<SiteFilingResponse>("/admin/filing", data),
 }

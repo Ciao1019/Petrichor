@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp"
 import { Label } from "@/components/ui/label"
 import { TiltCard } from "@/components/petrichor-ui/tilt-card"
-import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
+import { RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import {
   PublicArticlePageView,
 } from "@/features/pages/public/PublicArticlePageView"
@@ -31,9 +31,6 @@ function BurnShell({ children }: { children: React.ReactNode }) {
         {children}
       </section>
 
-      <div className="relative z-30 mx-auto mt-auto w-full max-w-[51.462rem] px-[min(7.25vw,3.731rem)] pb-8 lg:contents">
-        <RetypesetSiteFooter dockVisible />
-      </div>
     </main>
   )
 }

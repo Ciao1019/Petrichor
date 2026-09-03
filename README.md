@@ -35,7 +35,7 @@
 ## 🧩 核心能力
 
 - **结构化写作** — PlateJS、Markdown、代码块、公式、表格、白板、思维导图与媒体嵌入。
-- **知识库与发布** — 多级目录、标签、全文搜索、文章分享、RSS / Atom 与公开问答。
+- **知识库与发布** — 多级目录、标签、全文搜索、文章分享、公开问答，以及标准 [`/rss.xml`](https://wl.do/rss.xml) / [`/atom.xml`](https://wl.do/atom.xml) 订阅。
 - **Agentic RAG** — 标题感知切片、推荐问题、BM25 / Vector / Wiki 融合、目录导航、Evidence / Trace。
 - **语义 Wiki** — 实体与概念抽取、多文章聚合、关系图谱、来源引用、补丁审计与结构检查。
 - **Agent Runtime** — ReAct 工具循环、计划、子 Agent、动态 Skill、预算控制和外部研究。

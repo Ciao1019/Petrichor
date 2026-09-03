@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "bun scripts/dev.ts",
     "build": "bun --smol --bun vite build && bun scripts/compress-dist.ts",
-    "build:demo": "bun run typecheck:demo && VITE_DEMO_ONLY=1 bun --smol --bun vite build --mode demo && bun scripts/compress-dist.ts",
+    "build:demo": "bun run typecheck:demo && VITE_DEMO_ONLY=1 bun --smol --bun vite build --mode demo && bun scripts/write-demo-feeds.ts && bun scripts/compress-dist.ts",
     "start": "bun server.ts",
     "lint": "bun --bun eslint .",
     "test": "vitest run",

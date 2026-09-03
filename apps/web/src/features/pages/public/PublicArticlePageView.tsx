@@ -7,7 +7,7 @@ import { ChevronUp, GalleryHorizontalEnd, ImageIcon } from "@/components/iconima
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
+import { RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import { PublicArticleErrorCard, PublicArticlePasswordCard } from "@/features/pages/public/PublicArticleChrome"
 import { PublicArticleComments } from "@/features/pages/public/PublicArticleComments"
 import { PublicArticlePanel, PublicMindmapPanel } from "@/features/pages/public/PublicArticlePanels"
@@ -60,6 +60,7 @@ export type PublicArticlePageModel = {
   tab: "article" | "mindmap"
   onTabChange: (tab: "article" | "mindmap") => void
   contentMd: string
+  mediaAccessToken?: string | null
   contentJson?: string | null
   contentMetaJson?: string | null
   tocAll: TocItem[]
@@ -110,9 +111,6 @@ export function PublicArticlePageView({ model }: { model: PublicArticlePageModel
         {showArticleBody ? <PublicArticleBody model={model} /> : null}
       </section>
 
-      <div className="relative z-30 mx-auto mt-auto w-full max-w-[51.462rem] px-[min(7.25vw,3.731rem)] pb-8 lg:contents">
-        <RetypesetSiteFooter dockVisible />
-      </div>
 
       <BackToTopButton />
     </main>
@@ -315,6 +313,7 @@ function PublicArticleTabPanels({
           contentJson={model.contentJson}
           contentMetaJson={model.contentMetaJson}
           contentMd={model.contentMd}
+          mediaAccessToken={model.mediaAccessToken}
           toc={model.tocAll}
           activeHeadingId={model.activeHeadingId}
           onTocClick={model.onTocClick}

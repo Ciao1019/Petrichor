@@ -11,11 +11,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import type { ListItem } from "@/components/uitripled/native-nested-list-shadcnui"
 import { rememberKnowledgeBase } from "@/features/pages/knowledge/kb-recent"
 import {
-  buildArticleKnowledgeAndWait,
   knowledgeBaseApi,
   knowledgeBaseArticleApi,
   knowledgeBaseNodeApi,
-  type ArticleKnowledgeBuildProgress,
+  type ArticleKnowledgeBuildJobResponse,
   type KnowledgeBaseResponse,
   type KnowledgeBaseTreeNode,
 } from "@/lib/api"
@@ -40,6 +39,10 @@ import {
   type DeleteTarget,
   type KnowledgeBaseView,
 } from "./knowledge-base-tree-support"
+import {
+  collectLoadedArticleIds,
+  useArticleKnowledgeBuildJobs,
+} from "./use-article-knowledge-build-jobs"
 import { useKnowledgeBaseTreeDnd } from "./use-knowledge-base-tree-dnd"
 
 /**
@@ -79,10 +82,6 @@ export function KnowledgeBaseTreePage() {
     setActiveView("knowledge")
   }, [])
   const prefersReducedMotion = useReducedMotion()
-  const [buildingArticleIds, setBuildingArticleIds] = React.useState<Set<string>>(new Set())
-  const [buildProgressByArticleId, setBuildProgressByArticleId] = React.useState<
-    Record<string, ArticleKnowledgeBuildProgress>
-  >({})
   const [deleteOpen, setDeleteOpen] = React.useState(false)
   const [deleteTarget, setDeleteTarget] = React.useState<DeleteTarget | null>(null)
   // 行元素本体（不含展开的子树），命中测试要按行高算，sortable 包裹层的矩形是整棵子树。
@@ -162,8 +161,6 @@ export function KnowledgeBaseTreePage() {
     setCreateArticleTarget(null)
     setImportDialogOpen(false)
     setActiveView("documents")
-    setBuildingArticleIds(new Set())
-    setBuildProgressByArticleId({})
     setDeleteOpen(false)
     setDeleteTarget(null)
   }, [knowledgeBaseId])
@@ -247,42 +244,34 @@ export function KnowledgeBaseTreePage() {
     void fetchTree()
   }, [fetchTree])
 
-  const buildArticleKnowledge = React.useCallback(async (articleId: string) => {
-    if (!knowledgeBaseId || buildingArticleIds.has(articleId)) return
-    setBuildingArticleIds((current) => new Set(current).add(articleId))
-    setBuildProgressByArticleId((current) => ({
-      ...current,
-      [articleId]: {
-        percent: 0,
-        phase: "queued",
-        message: "正在提交知识构建任务",
-        updatedAt: new Date().toISOString(),
-      },
-    }))
-    try {
-      const result = await buildArticleKnowledgeAndWait({
-        knowledgeBaseId,
-        articleId,
-      }, {
-        onProgress: (progress) => {
-          setBuildProgressByArticleId((current) => ({ ...current, [articleId]: progress }))
-        },
-      })
-      toast.success(
-        `知识构建完成：${result.chunkCount} 个切片、${result.entityCount} 个实体、${result.conceptCount} 个概念${result.fromCache ? "（已复用）" : ""}`
-      )
-      if (result.warnings.length > 0) toast.warning(result.warnings[0])
-      await fetchTree()
-    } catch (error) {
+  const loadedArticleIds = React.useMemo(() => collectLoadedArticleIds(roots), [roots])
+  const handleBuildCompleted = React.useCallback((job: ArticleKnowledgeBuildJobResponse) => {
+    const result = job.result
+    if (!result) return
+    toast.success(
+      `知识构建完成：${result.chunkCount} 个切片、${result.entityCount} 个实体、${result.conceptCount} 个概念${result.fromCache ? "（已复用）" : ""}`
+    )
+    if (result.warnings.length > 0) toast.warning(result.warnings[0])
+    void fetchTree()
+  }, [fetchTree])
+  const handleBuildFailed = React.useCallback((job: ArticleKnowledgeBuildJobResponse) => {
+    toast.error(job.error || job.progress.message || "知识构建失败")
+  }, [])
+  const {
+    jobsByArticleId,
+    submittingArticleIds,
+    startBuild,
+  } = useArticleKnowledgeBuildJobs({
+    knowledgeBaseId,
+    articleIds: loadedArticleIds,
+    onCompleted: handleBuildCompleted,
+    onFailed: handleBuildFailed,
+  })
+  const buildArticleKnowledge = React.useCallback((articleId: string) => {
+    void startBuild(articleId).catch((error) => {
       toast.error(resolveApiErrorMessage(error, "知识构建失败"))
-    } finally {
-      setBuildingArticleIds((current) => {
-        const next = new Set(current)
-        next.delete(articleId)
-        return next
-      })
-    }
-  }, [buildingArticleIds, fetchTree, knowledgeBaseId])
+    })
+  }, [startBuild])
 
   React.useEffect(() => {
     if (pageIndex > totalPages - 1) {
@@ -594,10 +583,9 @@ export function KnowledgeBaseTreePage() {
           ) : null}
           {!isFolder && node.articleId ? (
             <KnowledgeBaseBuildButton
-              building={buildingArticleIds.has(node.articleId)}
-              progress={buildProgressByArticleId[node.articleId]?.percent}
-              progressMessage={buildProgressByArticleId[node.articleId]?.message}
-              onBuild={() => void buildArticleKnowledge(node.articleId!)}
+              job={jobsByArticleId[node.articleId]}
+              submitting={submittingArticleIds.has(node.articleId)}
+              onBuild={() => buildArticleKnowledge(node.articleId!)}
             />
           ) : null}
           <Tooltip>
@@ -667,7 +655,7 @@ export function KnowledgeBaseTreePage() {
       ),
       children: node.children?.length ? node.children.map(buildTreeItem) : undefined,
     }
-  }, [activeDragNode, activeDragNodeId, buildArticleKnowledge, buildProgressByArticleId, buildingArticleIds, dragDisabled, dropIntent, expandedIds, getRowRef, knowledgeBaseId, loadChildren, movingNodeId, navigate, nodeLoadErrorById, nodeLoadingById, roots])
+  }, [activeDragNode, activeDragNodeId, buildArticleKnowledge, dragDisabled, dropIntent, expandedIds, getRowRef, jobsByArticleId, knowledgeBaseId, loadChildren, movingNodeId, navigate, nodeLoadErrorById, nodeLoadingById, roots, submittingArticleIds])
 
   const treeItems = React.useMemo(() => roots.map(buildTreeItem), [buildTreeItem, roots])
 

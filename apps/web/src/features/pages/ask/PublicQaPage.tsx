@@ -16,7 +16,7 @@ import { AssistantChatTransport, useChatRuntime } from "@assistant-ui/react-ai-s
 import { ArrowUp, BookOpen, Copy, MessageCircleQuestion, RefreshCw, Square } from "@/components/iconimate"
 
 import { MarkdownText } from "@/components/assistant-ui/markdown-text"
-import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
+import { RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import { QaMarkdownScope, QaMarkdownText, QaPreparing, WikiLinkClickProvider } from "@/features/pages/knowledge/QaMarkdown"
 import { SignedUrlPublicAccessProvider } from "@/hooks/use-signed-url"
 import { publicSiteAppearanceApi, publicWikiApi } from "@/lib/api"
@@ -108,9 +108,6 @@ export function PublicQaPage() {
         )}
       </section>
 
-      <div className="relative z-30 mx-auto mt-auto w-full max-w-[51.462rem] px-[min(7.25vw,3.731rem)] pb-8 lg:contents">
-        <RetypesetSiteFooter dockVisible />
-      </div>
     </main>
   )
 }

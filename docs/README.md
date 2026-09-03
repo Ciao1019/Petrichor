@@ -1,3 +1,5 @@
+![Petrichor 文档中心](./assets/covers/docs-home.png)
+
 # Petrichor 文档中心
 
 > [!TIP]
@@ -23,6 +25,11 @@
 1. [Agentic RAG 全流程](./agent/rag.md)：切片、推荐问题、Wiki、混合召回和 Evidence。
 2. [AI 模型配置](./ai-model-setup.md)：Chat、Embedding 等模型用途绑定。
 3. [知识可移植性](./knowledge-portability.md)：OKF、Obsidian、Skill 包和编译说明书。
+
+### 🌐 我想理解公开知识门户
+
+1. [公开知识门户实现](./public-knowledge-portal-plan.md)：匿名公开边界、Wiki、关系图谱、统一检索与 RSS / Atom。
+2. 标准订阅入口为 `/rss.xml` 和 `/atom.xml`；API 别名为 `/api/public/feed/rss.xml` 与 `/api/public/feed/atom.xml`。
 
 ### 🤖 我想理解 Agent Runtime
 

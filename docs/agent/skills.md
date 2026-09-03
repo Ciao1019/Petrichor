@@ -1,3 +1,5 @@
+![Agent Skill 机制](../assets/covers/agent-skills.png)
+
 # Agent Skill 机制
 
 本文描述产品内 Agent Runtime 的动态 Skill，不是外部客户端使用的 `/api/agent/skill` 文件。

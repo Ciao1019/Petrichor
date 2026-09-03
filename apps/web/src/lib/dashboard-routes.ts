@@ -13,6 +13,7 @@ export const dashboardRoutes = {
     adminAbout: `${DASHBOARD_ROOT}/admin/about`,
     adminProjects: `${DASHBOARD_ROOT}/admin/projects`,
     adminAppearance: `${DASHBOARD_ROOT}/admin/appearance`,
+    adminFiling: `${DASHBOARD_ROOT}/admin/filing`,
     adminSiteGraph: `${DASHBOARD_ROOT}/admin/site-graph`,
     adminDocumentImportDeadLetters: `${DASHBOARD_ROOT}/admin/document-import-dead-letters`,
     aiConfig: `${DASHBOARD_ROOT}/ai/config`,

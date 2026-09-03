@@ -12,6 +12,7 @@ import (
 
 	"petrichor/api/internal/cache"
 	httpx "petrichor/api/internal/httpx"
+	"petrichor/api/internal/publicscope"
 	"petrichor/api/internal/sitecontent"
 )
 
@@ -217,7 +218,7 @@ func PublicArticleListResponse(ctx context.Context) (map[string]any, error) {
 		`SELECT `+shareJoinColumns+`
 		 FROM petrichor_kb_article_share s
 		 JOIN petrichor_kb_article a ON a.id = s.article_id
-		 WHERE s.enabled = true AND s.revoked_at IS NULL
+		 WHERE `+publicscope.ShareVisibilityWhere+`
 		 ORDER BY s.pin_order IS NULL, s.pin_order DESC, a.updated_at DESC, s.id DESC`)
 	if err != nil {
 		return nil, err

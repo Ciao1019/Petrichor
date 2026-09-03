@@ -16,6 +16,7 @@ export interface PublicArticleTocItem {
 
 export interface PublicSharedArticleDetailResponse {
   title: string
+  mediaAccessToken?: string | null
   contentMd: string
   contentJson?: string | null
   contentMetaJson?: string | null
@@ -299,8 +300,11 @@ export const uploadApi = {
     api.post<PresignGetResponse>("/upload/presign-get", { objectKey }),
 
   /** 公开版：获取预签名下载 URL，用于公开分享文章的附件（无需登录） */
-  publicPresignGet: (objectKey: string) =>
-    api.post<PresignGetResponse>("/public/upload/presign-get", { objectKey }),
+  publicPresignGet: (objectKey: string, mediaAccessToken?: string | null) =>
+    api.post<PresignGetResponse>("/public/upload/presign-get", {
+      objectKey,
+      ...(mediaAccessToken ? { mediaAccessToken } : {}),
+    }),
 }
 
 // ===== 文档导入（PDF / Word → 多模态 → 文章） =====

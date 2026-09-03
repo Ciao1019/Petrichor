@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	httpx "petrichor/api/internal/httpx"
+	"petrichor/api/internal/publicscope"
 )
 
 const (
@@ -72,7 +73,7 @@ func validatePublicArticleSearchInput(queryParams map[string]string) (*publicArt
 		return nil, badReq("关键字长度不能超过 " + strconvItoa(publicSearchMaxKeywordLength))
 	}
 	limit := parseBoundedNumber(queryParams["limit"], publicSearchDefaultLimit, 1, publicSearchMaxLimit)
-	offset := parseBoundedNumber(queryParams["offset"], 0, 0, int64(^uint64(0)>>1))
+	offset := parseBoundedNumber(queryParams["offset"], 0, 0, publicSearchMaxOffset)
 	return &publicArticleSearchInput{keyword: keyword, limit: limit, offset: offset}, nil
 }
 
@@ -86,13 +87,6 @@ func firstNonEmpty(values ...string) string {
 }
 
 func runeLen(s string) int { return len([]rune(s)) }
-
-const searchScoreSQL = `(
-	similarity(a.title, $3) * 4
-	+ similarity(coalesce(a.public_excerpt, ''), $3) * 2
-	+ similarity(coalesce(a.ai_summary, ''), $3) * 2
-	+ similarity(coalesce(a.content_md, ''), $3)
-)`
 
 // ArticleSearch GET /api/public/article/search。
 func ArticleSearch(c *gin.Context) {
@@ -108,55 +102,74 @@ func ArticleSearch(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	likePattern := "%" + escapeLikePattern(input.keyword) + "%"
-	rows, qerr := pool().Query(ctx,
-		`SELECT `+shareJoinColumns+`, `+searchScoreSQL+` AS score
-		 FROM petrichor_kb_article_share s
-		 JOIN petrichor_kb_article a ON a.id = s.article_id
-		 WHERE s.enabled = true AND s.revoked_at IS NULL
-		   AND (
-		     a.title ILIKE $1
-		     OR coalesce(a.public_excerpt, '') ILIKE $1
-		     OR coalesce(a.ai_summary, '') ILIKE $1
-		     OR coalesce(a.content_md, '') ILIKE $1
-		   )
-		 ORDER BY s.pin_order IS NULL, s.pin_order DESC, score DESC, a.updated_at DESC, s.id DESC
-		 LIMIT $2 OFFSET $4`,
-		likePattern, input.limit, input.keyword, input.offset)
-	if qerr != nil {
-		httpx.HandleError(c, qerr)
-		return
-	}
-
-	type scoredRow struct {
-		shareListRow
-		score float64
-	}
-	list := []*scoredRow{}
-	for rows.Next() {
-		var r scoredRow
-		serr := rows.Scan(&r.articleID, &r.title, &r.updatedAt,
-			&r.publicExcerpt, &r.publicContentHash, &r.aiSummary, &r.readingMinutes,
-			&r.shareCode, &r.expiresAt, &r.passwordHash,
-			&r.isRepost, &r.originalURL, &r.originalAuthorName, &r.internalURL,
-			&r.pinOrder, &r.score)
-		if serr != nil {
-			rows.Close()
-			httpx.HandleError(c, serr)
-			return
-		}
-		list = append(list, &r)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+	scope, err := loadPublicSearchScope(ctx)
+	if err != nil {
 		httpx.HandleError(c, err)
 		return
 	}
-
-	baseRows := make([]*shareListRow, 0, len(list))
-	for _, row := range list {
-		row.searchScore = row.score
-		baseRows = append(baseRows, &row.shareListRow)
+	candidateLimit := int(input.offset + input.limit + 1)
+	if candidateLimit > int(publicSearchMaxOffset+publicSearchMaxLimit+1) {
+		candidateLimit = int(publicSearchMaxOffset + publicSearchMaxLimit + 1)
+	}
+	hits, err := lexicalPublicArticleSearch(ctx, input.keyword, scope, candidateLimit)
+	if err != nil {
+		httpx.HandleError(c, err)
+		return
+	}
+	start := int(input.offset)
+	if start > len(hits) {
+		start = len(hits)
+	}
+	end := start + int(input.limit)
+	if end > len(hits) {
+		end = len(hits)
+	}
+	selected := hits[start:end]
+	selectedIDs := make([]int64, 0, len(selected))
+	scoreByArticle := map[int64]float64{}
+	for _, hit := range selected {
+		selectedIDs = append(selectedIDs, hit.articleID)
+		scoreByArticle[hit.articleID] = hit.lexicalScore
+	}
+	rowByArticle := map[int64]*shareListRow{}
+	if len(selectedIDs) > 0 {
+		rows, queryErr := pool().Query(ctx,
+			`SELECT `+shareJoinColumns+`
+			 FROM petrichor_kb_article_share s
+			 JOIN petrichor_kb_article a ON a.id = s.article_id
+			 WHERE `+publicscope.ShareVisibilityWhere+` AND a.id = ANY($1)
+			 ORDER BY s.id DESC`, selectedIDs)
+		if queryErr != nil {
+			httpx.HandleError(c, queryErr)
+			return
+		}
+		for rows.Next() {
+			var row shareListRow
+			if scanErr := rows.Scan(&row.articleID, &row.title, &row.updatedAt,
+				&row.publicExcerpt, &row.publicContentHash, &row.aiSummary, &row.readingMinutes,
+				&row.shareCode, &row.expiresAt, &row.passwordHash,
+				&row.isRepost, &row.originalURL, &row.originalAuthorName, &row.internalURL,
+				&row.pinOrder); scanErr != nil {
+				rows.Close()
+				httpx.HandleError(c, scanErr)
+				return
+			}
+			if rowByArticle[row.articleID] == nil {
+				row.searchScore = scoreByArticle[row.articleID]
+				rowByArticle[row.articleID] = &row
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			httpx.HandleError(c, err)
+			return
+		}
+	}
+	baseRows := make([]*shareListRow, 0, len(selected))
+	for _, hit := range selected {
+		if row := rowByArticle[hit.articleID]; row != nil {
+			baseRows = append(baseRows, row)
+		}
 	}
 
 	resp, aerr := assembleArticleItems(ctx, baseRows, timeNow(), true)
@@ -167,8 +180,7 @@ func ArticleSearch(c *gin.Context) {
 	resp["keyword"] = input.keyword
 	resp["limit"] = input.limit
 	resp["offset"] = input.offset
-	itemCount := int64(len(resp["items"].([]map[string]any)))
-	resp["hasMore"] = itemCount == input.limit
+	resp["hasMore"] = end < len(hits)
 
 	c.Header("Cache-Control", publicArticleSearchCacheControl)
 	httpx.OK(c, resp)

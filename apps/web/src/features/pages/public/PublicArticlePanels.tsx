@@ -11,6 +11,7 @@ type PublicArticlePanelProps = {
   contentJson?: string | null
   contentMetaJson?: string | null
   contentMd: string
+  mediaAccessToken?: string | null
   toc: TocItem[]
   activeHeadingId: string
   onTocClick: (id: string) => void
@@ -164,6 +165,7 @@ export function PublicArticlePanel({
   contentJson,
   contentMetaJson,
   contentMd,
+  mediaAccessToken,
   toc,
   activeHeadingId,
   onTocClick,
@@ -184,6 +186,7 @@ export function PublicArticlePanel({
             headings={toc}
             className="mx-auto max-w-none"
             publicMediaAccess
+            publicMediaAccessToken={mediaAccessToken}
           />
         </Suspense>
       </div>

@@ -20,6 +20,7 @@ import (
 
 	"petrichor/api/internal/aicore"
 	httpx "petrichor/api/internal/httpx"
+	"petrichor/api/internal/publicscope"
 	"petrichor/api/internal/sitecontent"
 )
 
@@ -303,12 +304,6 @@ type qaWikiHit struct {
 	contentMd string
 }
 
-// publicShareVisibilityWhere 公开可见性条件（永久分享已启用、未撤销、无密码、未过期），
-// 与 loadPublicArticleScope 保持一致。
-const publicShareVisibilityWhere = `s.enabled = true AND s.revoked_at IS NULL
-	AND (s.password_hash IS NULL OR btrim(s.password_hash) = '')
-	AND (s.expires_at IS NULL OR s.expires_at > now())`
-
 // searchPublicQaArticles 对照 ArticleSearch 的相似度排序，但只取无密码有效分享的文章。
 func searchPublicQaArticles(ctx context.Context, query string, limit int64) ([]qaArticleHit, error) {
 	likePattern := "%" + escapeLikePattern(query) + "%"
@@ -320,7 +315,7 @@ func searchPublicQaArticles(ctx context.Context, query string, limit int64) ([]q
 			 + similarity(coalesce(a.content_md, ''), $2)) AS score
 		 FROM petrichor_kb_article_share s
 		 JOIN petrichor_kb_article a ON a.id = s.article_id
-		 WHERE `+publicShareVisibilityWhere+`
+		 WHERE `+publicscope.ShareVisibilityWhere+`
 		   AND (a.title ILIKE $1
 		     OR coalesce(a.public_excerpt, '') ILIKE $1
 		     OR coalesce(a.ai_summary, '') ILIKE $1
@@ -344,23 +339,24 @@ func searchPublicQaArticles(ctx context.Context, query string, limit int64) ([]q
 	return hits, rows.Err()
 }
 
-// searchPublicQaWikiPages Wiki 页面检索：页面经由 source_ref 关联到公开文章才可达
-// （与 resolveAccessiblePage 的可见性边界一致）。
+// searchPublicQaWikiPages 只检索全部来源均公开的 Wiki 页面。
 func searchPublicQaWikiPages(ctx context.Context, query string, limit int64) ([]qaWikiHit, error) {
+	safePageIDs, err := publicscope.LoadSafeWikiPageIDs(ctx, nil)
+	if err != nil || len(safePageIDs) == 0 {
+		return []qaWikiHit{}, err
+	}
 	likePattern := "%" + escapeLikePattern(query) + "%"
 	rows, err := pool().Query(ctx,
-		`SELECT DISTINCT p.id, p.page_key, p.title, p.kind,
+		`SELECT p.id, p.page_key, p.title, p.kind,
 			coalesce(p.summary, ''), p.content_md,
 			(similarity(p.title, $2) * 4 + similarity(p.content_md, $2)) AS score
 		 FROM petrichor_kb_wiki_page p
-		 JOIN petrichor_kb_wiki_source_ref r ON r.page_id = p.id
-		 JOIN petrichor_kb_article_share s ON s.article_id = r.article_id
-		 WHERE `+publicShareVisibilityWhere+`
+		 WHERE p.id = ANY($3)
 		   AND p.archived_at IS NULL AND p.kind NOT IN ('source', 'index', 'log')
 		   AND (p.title ILIKE $1 OR coalesce(p.summary, '') ILIKE $1 OR p.content_md ILIKE $1)
 		 ORDER BY score DESC
-		 LIMIT $3`,
-		likePattern, query, limit)
+		 LIMIT $4`,
+		likePattern, query, safePageIDs, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -8,7 +8,7 @@ import { BlogSearchDialog, useBlogSearchHotkey } from "@/components/blog-search-
 import { StaticNoise } from "@/cuicui/other/creative-effects/animated-noise/static-noise"
 import { isDemoOnlyBuild } from "@/lib/demo/demo-mode"
 
-export type RetypesetSiteActiveSection = "articles" | "tags" | "graph" | "ask" | "projects" | "petrichor" | "about"
+export type RetypesetSiteActiveSection = "articles" | "tags" | "wiki" | "graph" | "search" | "ask" | "projects" | "petrichor" | "about"
 type RetypesetSiteNavSection = RetypesetSiteActiveSection
 type RetypesetSiteNavItem = {
     section: RetypesetSiteNavSection
@@ -20,16 +20,11 @@ type RetypesetSiteNavItem = {
 let retypesetScrollbarMounts = 0
 
 const RETYPESET_SCROLLBAR_HIDDEN_CLASS = "retypeset-scrollbar-hidden"
-const RETYPESET_SITE_EMAIL = "zang@linux.do"
-const RETYPESET_SITE_RSS_HREF = "/atom.xml"
-const RETYPESET_SITE_START_YEAR = 2024
-
 const retypesetSiteCopy = {
     siteTitle: "Petrichor",
     siteSubtitle: "Knowledge, Articles & Inspiration",
     navLabel: "站点导航",
     navPosts: "文章",
-    navGraph: "星图",
     navAsk: "问答",
     navProjects: "开源",
     navPetrichor: "项目",
@@ -42,8 +37,7 @@ const RETYPESET_SITE_GITHUB_HREF = "https://github.com/Ciao1019/Petrichor"
 
 const retypesetSiteNavItems: RetypesetSiteNavItem[] = [
     { section: "articles", href: "/#articles", label: retypesetSiteCopy.navPosts, internal: true },
-    // 标签页不进导航栏（仍保留 /tags 路由，由文章标签与图谱标签节点跳入）
-    { section: "graph", href: "/graph", label: retypesetSiteCopy.navGraph, internal: true },
+    // Wiki 与图谱能力保留在服务端，当前不在公开前台展示。
     { section: "projects", href: "/projects", label: retypesetSiteCopy.navProjects, internal: true },
     { section: "petrichor", href: "/petrichor", label: retypesetSiteCopy.navPetrichor, internal: true },
     { section: "about", href: "/about", label: retypesetSiteCopy.navAbout, internal: true },
@@ -51,13 +45,6 @@ const retypesetSiteNavItems: RetypesetSiteNavItem[] = [
 
 function getDockVisibilityClass(dockVisible: boolean) {
     return dockVisible ? "lg:opacity-100" : "lg:pointer-events-none lg:opacity-0"
-}
-
-function getCopyrightYearRange() {
-    const currentYear = new Date().getFullYear()
-    return RETYPESET_SITE_START_YEAR === currentYear
-        ? `${RETYPESET_SITE_START_YEAR}`
-        : `${RETYPESET_SITE_START_YEAR}-${currentYear}`
 }
 
 function getChromeLinkClassName(active: boolean) {
@@ -196,44 +183,6 @@ export function RetypesetSiteNav({
                 </div>
             </nav>
             <BlogSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
-        </div>
-    )
-}
-
-export function RetypesetSiteFooter({ dockVisible }: { dockVisible: boolean }) {
-    const dockVisibilityClass = getDockVisibilityClass(dockVisible)
-    const year = getCopyrightYearRange()
-
-    return (
-        <div className="retypeset-home contents">
-            <footer
-                className={`${dockVisibilityClass} retypeset-font-navbar text-xs leading-[1.25em] transition-opacity duration-150 lg:fixed lg:right-[max(5rem,calc(50vw-35rem))] lg:bottom-20 lg:z-30 lg:w-56 lg:text-sm`}
-            >
-                <p>
-                    <a className="retypeset-highlight-hover retypeset-footer-link py-[0.2rem] transition-colors" href={RETYPESET_SITE_RSS_HREF}>
-                        RSS
-                    </a>
-                    /
-                    <a
-                        className="retypeset-highlight-hover retypeset-footer-link py-[0.2rem] transition-colors"
-                        href={`mailto:${RETYPESET_SITE_EMAIL}`}
-                    >
-                        Email
-                    </a>
-                </p>
-                <p>© {year} Petrichor</p>
-                <p>
-                    Powered by{" "}
-                    <a
-                        className="retypeset-highlight-hover retypeset-footer-link py-[0.2rem] transition-colors"
-                        href="https://github.com/Ciao1019"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                    >
-                        CiZaii
-                    </a>
-                </p>
-            </footer>
         </div>
     )
 }

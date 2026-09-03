@@ -5,46 +5,24 @@ package publicapi
 import (
 	"context"
 	"encoding/json"
-	"regexp"
+	"errors"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 
 	httpx "petrichor/api/internal/httpx"
+	"petrichor/api/internal/publicscope"
 )
 
-// PublicArticleRef 一篇公开（已分享、未撤销、未过期、无密码）文章的归属信息。
-type PublicArticleRef struct {
-	ArticleID       int64
-	UserID          int64
-	KnowledgeBaseID int64
-	ShareCode       string
-	Title           string
-}
+// PublicArticleRef 保留包内既有名称，实际定义统一放在 publicscope。
+type PublicArticleRef = publicscope.ArticleRef
 
-// loadPublicArticleScope 加载当前所有「公开可访问」的文章作用域：
-// 已启用分享、未撤销、未过期、且无访问密码。公开 Wiki/问答检索的唯一可达边界。
+// loadPublicArticleScope 是公开问答等既有调用的兼容入口。
 func loadPublicArticleScope(ctx context.Context) (map[int64]*PublicArticleRef, error) {
-	rows, err := pool().Query(ctx,
-		`SELECT a.id, a.user_id, a.knowledge_base_id, a.title, s.share_code
-		 FROM petrichor_kb_article_share s
-		 JOIN petrichor_kb_article a ON a.id = s.article_id
-		 WHERE s.enabled = true AND s.revoked_at IS NULL
-		   AND (s.password_hash IS NULL OR btrim(s.password_hash) = '')
-		   AND (s.expires_at IS NULL OR s.expires_at > now())`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	scope := map[int64]*PublicArticleRef{}
-	for rows.Next() {
-		var ref PublicArticleRef
-		if serr := rows.Scan(&ref.ArticleID, &ref.UserID, &ref.KnowledgeBaseID, &ref.Title, &ref.ShareCode); serr != nil {
-			return nil, serr
-		}
-		scope[ref.ArticleID] = &ref
-	}
-	return scope, rows.Err()
+	return publicscope.LoadArticles(ctx)
 }
 
 type wikiPageRecord struct {
@@ -57,15 +35,17 @@ type wikiPageRecord struct {
 	contentMd       string
 	frontmatterJSON *string
 	summary         *string
+	createdAt       time.Time
+	updatedAt       time.Time
 }
 
 const wikiPageColumnsPublic = `id, user_id, knowledge_base_id, page_key, title, kind,
-	content_md, frontmatter_json, summary`
+	content_md, frontmatter_json, summary, created_at, updated_at`
 
 func scanWikiPage(scanner interface{ Scan(dest ...any) error }) (*wikiPageRecord, error) {
 	var r wikiPageRecord
 	err := scanner.Scan(&r.id, &r.userID, &r.knowledgeBaseID, &r.pageKey, &r.title, &r.kind,
-		&r.contentMd, &r.frontmatterJSON, &r.summary)
+		&r.contentMd, &r.frontmatterJSON, &r.summary, &r.createdAt, &r.updatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -81,10 +61,7 @@ type wikiLinkRow struct {
 
 // summarizeWikiContent 对应 wiki-qa-core.ts 的 summarizeWikiContent（省略号截断）。
 func summarizeWikiContent(contentMd string, maxLength int) string {
-	text := fenceRe.ReplaceAllString(contentMd, " ")
-	text = regexp.MustCompile("[#>*_`~-]+").ReplaceAllString(text, "")
-	text = spaceRe.ReplaceAllString(text, " ")
-	text = strings.TrimSpace(text)
+	text := markdownToPlainText(contentMd)
 	runes := []rune(text)
 	if len(runes) > maxLength {
 		return string(runes[:maxLength]) + "…"
@@ -97,26 +74,28 @@ func extractWikiMatchSnippet(contentMd, keyword string, radius int) string {
 	if keyword == "" {
 		return ""
 	}
-	haystack := fenceRe.ReplaceAllString(contentMd, " ")
+	haystack := markdownToPlainText(contentMd)
 	lower := strings.ToLower(haystack)
-	index := strings.Index(lower, strings.ToLower(keyword))
-	if index < 0 {
+	byteIndex := strings.Index(lower, strings.ToLower(keyword))
+	if byteIndex < 0 {
 		return ""
 	}
+	runes := []rune(haystack)
+	index := utf8.RuneCountInString(lower[:byteIndex])
+	keywordLength := len([]rune(keyword))
 	start := index - radius
 	prefix := "…"
 	if start < 0 {
 		start = 0
 		prefix = ""
 	}
-	end := index + len(keyword) + radius
+	end := index + keywordLength + radius
 	suffix := "…"
-	if end > len(haystack) {
-		end = len(haystack)
+	if end > len(runes) {
+		end = len(runes)
 		suffix = ""
 	}
-	fragment := spaceRe.ReplaceAllString(haystack[start:end], " ")
-	return prefix + strings.TrimSpace(fragment) + suffix
+	return prefix + strings.TrimSpace(string(runes[start:end])) + suffix
 }
 
 // readFrontmatterAliases 读取 frontmatter JSON 的 aliases 数组。
@@ -146,12 +125,14 @@ func toWikiQaCard(page *wikiPageRecord) map[string]any {
 	if summary == "" {
 		summary = summarizeWikiContent(page.contentMd, 160)
 	}
+	metadata := readPublicWikiMetadata(page.frontmatterJSON)
 	return map[string]any{
-		"pageKey": page.pageKey,
-		"title":   page.title,
-		"kind":    page.kind,
-		"summary": summary,
-		"aliases": readFrontmatterAliases(page.frontmatterJSON),
+		"pageKey":      page.pageKey,
+		"title":        page.title,
+		"kind":         page.kind,
+		"summary":      summary,
+		"aliases":      metadata.Aliases,
+		"categoryPath": metadata.CategoryPath,
 	}
 }
 
@@ -163,83 +144,27 @@ func isTopicKind(kind string) bool {
 	return false
 }
 
-// resolveAccessiblePage 按 pageKey 找到公开可达的目标页面；index 页在知识库有公开文章时放行。
-func resolveAccessiblePage(ctx context.Context, scope map[int64]*PublicArticleRef, pageKey string) (*wikiPageRecord, error) {
-	rows, err := pool().Query(ctx,
+// resolveAccessiblePage 只从已通过“全部来源均公开”检查的页面集合中解析目标。
+func resolveAccessiblePage(
+	ctx context.Context,
+	safePageIDs []int64,
+	knowledgeBaseID *int64,
+	pageKey string,
+) (*wikiPageRecord, error) {
+	if len(safePageIDs) == 0 {
+		return nil, notFoundErr("Wiki 页面不存在或不在公开范围内")
+	}
+	row := pool().QueryRow(ctx,
 		`SELECT `+wikiPageColumnsPublic+`
 		 FROM petrichor_kb_wiki_page
-		 WHERE page_key = $1 AND archived_at IS NULL ORDER BY id ASC`, pageKey)
-	if err != nil {
-		return nil, err
+		 WHERE page_key = $1 AND id = ANY($2) AND archived_at IS NULL
+		   AND ($3::bigint IS NULL OR knowledge_base_id = $3)
+		 ORDER BY id ASC LIMIT 1`, pageKey, safePageIDs, knowledgeBaseID)
+	page, err := scanWikiPage(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, notFoundErr("Wiki 页面不存在或不在公开范围内")
 	}
-	pages := []*wikiPageRecord{}
-	for rows.Next() {
-		page, serr := scanWikiPage(rows)
-		if serr != nil {
-			rows.Close()
-			return nil, serr
-		}
-		pages = append(pages, page)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if len(pages) == 0 {
-		return nil, notFoundErr("Wiki 页面不存在")
-	}
-
-	pageIDs := make([]int64, 0, len(pages))
-	for _, page := range pages {
-		pageIDs = append(pageIDs, page.id)
-	}
-	refRows, rerr := pool().Query(ctx,
-		`SELECT page_id, article_id FROM petrichor_kb_wiki_source_ref WHERE page_id = ANY($1)`, pageIDs)
-	if rerr != nil {
-		return nil, rerr
-	}
-	type pageArticleRef struct {
-		pageID    int64
-		articleID int64
-	}
-	refs := []pageArticleRef{}
-	for refRows.Next() {
-		var item pageArticleRef
-		if serr := refRows.Scan(&item.pageID, &item.articleID); serr != nil {
-			refRows.Close()
-			return nil, serr
-		}
-		refs = append(refs, item)
-	}
-	refRows.Close()
-	if err := refRows.Err(); err != nil {
-		return nil, err
-	}
-
-	for _, page := range pages {
-		for _, ref := range refs {
-			if ref.pageID == page.id {
-				if _, public := scope[ref.articleID]; public {
-					return page, nil
-				}
-			}
-		}
-	}
-
-	// index 页特例：其知识库下存在任何公开文章即可读（目录不含敏感正文）。
-	for _, page := range pages {
-		if page.kind != "index" {
-			continue
-		}
-		for _, ref := range refs {
-			if article, public := scope[ref.articleID]; public &&
-				article.UserID == page.userID && article.KnowledgeBaseID == page.knowledgeBaseID {
-				return page, nil
-			}
-		}
-	}
-
-	return nil, notFoundErr("该 Wiki 页面不在公开范围内")
+	return page, err
 }
 
 // WikiPageDetail GET /api/public/wiki/page?pageKey=...。
@@ -249,28 +174,48 @@ func WikiPageDetail(c *gin.Context) {
 		httpx.HandleError(c, badReq("pageKey 不能为空"))
 		return
 	}
+	var knowledgeBaseID *int64
+	if rawID := strings.TrimSpace(c.Query("knowledgeBaseId")); rawID != "" {
+		parsedID, err := parseInt64(rawID)
+		if err != nil || parsedID <= 0 {
+			httpx.HandleError(c, badReq("knowledgeBaseId 必须是正整数"))
+			return
+		}
+		knowledgeBaseID = &parsedID
+	}
 	ctx := c.Request.Context()
 	scope, err := loadPublicArticleScope(ctx)
 	if err != nil {
 		httpx.HandleError(c, err)
 		return
 	}
-	page, perr := resolveAccessiblePage(ctx, scope, pageKey)
+	safePageIDs, err := publicscope.LoadSafeWikiPageIDs(ctx, knowledgeBaseID)
+	if err != nil {
+		httpx.HandleError(c, err)
+		return
+	}
+	page, perr := resolveAccessiblePage(ctx, safePageIDs, knowledgeBaseID, pageKey)
 	if perr != nil {
 		httpx.HandleError(c, perr)
 		return
 	}
 
-	detail, derr := readPublicWikiPageDetail(ctx, scope, page)
+	detail, derr := readPublicWikiPageDetail(ctx, scope, publicscope.IDSet(safePageIDs), page)
 	if derr != nil {
 		httpx.HandleError(c, derr)
 		return
 	}
+	c.Header("Cache-Control", publicWikiCacheControl)
 	httpx.OK(c, detail)
 }
 
 // readPublicWikiPageDetail 页面详情：全文 + 出入链邻居摘要 + 来源文章（WeKnora 式）。
-func readPublicWikiPageDetail(ctx context.Context, scope map[int64]*PublicArticleRef, page *wikiPageRecord) (map[string]any, error) {
+func readPublicWikiPageDetail(
+	ctx context.Context,
+	scope map[int64]*PublicArticleRef,
+	safePageIDs map[int64]struct{},
+	page *wikiPageRecord,
+) (map[string]any, error) {
 	links := []wikiLinkRow{}
 	linkRows, err := pool().Query(ctx,
 		`SELECT id, from_page_id, to_page_key, link_type FROM petrichor_kb_wiki_link
@@ -336,6 +281,13 @@ func readPublicWikiPageDetail(ctx context.Context, scope map[int64]*PublicArticl
 		return nil, err
 	}
 
+	var knowledgeBaseName string
+	if err := pool().QueryRow(ctx,
+		`SELECT name FROM petrichor_kb_knowledge_base WHERE id = $1`,
+		page.knowledgeBaseID).Scan(&knowledgeBaseName); err != nil {
+		return nil, err
+	}
+
 	buildNeighbor := func(pageKey, linkType string, resolved *wikiPageRecord) map[string]any {
 		title := pageKey
 		var kind any
@@ -355,24 +307,31 @@ func readPublicWikiPageDetail(ctx context.Context, scope map[int64]*PublicArticl
 			"kind":     kind,
 			"summary":  summary,
 			"linkType": linkType,
+			"href":     publicWikiPageHref(page.knowledgeBaseID, pageKey),
 		}
 	}
 
 	linkItems := []map[string]any{}
 	for _, l := range links {
-		linkItems = append(linkItems, buildNeighbor(l.toPageKey, l.linkType, outByKey[l.toPageKey]))
+		resolved := outByKey[l.toPageKey]
+		if resolved == nil {
+			continue
+		}
+		if _, safe := safePageIDs[resolved.id]; !safe {
+			continue
+		}
+		linkItems = append(linkItems, buildNeighbor(l.toPageKey, l.linkType, resolved))
 	}
 	inLinkItems := []map[string]any{}
 	for _, l := range inLinks {
 		resolved := neighborByID[l.fromPage]
-		key := ""
-		if resolved != nil {
-			key = resolved.pageKey
-		}
-		if key == "" {
+		if resolved == nil {
 			continue
 		}
-		inLinkItems = append(inLinkItems, buildNeighbor(key, l.linkType, resolved))
+		if _, safe := safePageIDs[resolved.id]; !safe {
+			continue
+		}
+		inLinkItems = append(inLinkItems, buildNeighbor(resolved.pageKey, l.linkType, resolved))
 	}
 
 	// 来源文章：只列仍在公开作用域内的引用。
@@ -413,11 +372,20 @@ func readPublicWikiPageDetail(ctx context.Context, scope map[int64]*PublicArticl
 		})
 	}
 
+	mediaToken, err := issueMediaAccessToken(mediaKindWiki, page.id)
+	if err != nil {
+		return nil, err
+	}
 	resp := toWikiQaCard(page)
+	resp["knowledgeBaseId"] = formatInt(page.knowledgeBaseID)
+	resp["knowledgeBaseName"] = knowledgeBaseName
+	resp["href"] = publicWikiPageHref(page.knowledgeBaseID, page.pageKey)
+	resp["updatedAt"] = httpx.FormatISO(page.updatedAt)
 	resp["contentMd"] = page.contentMd
 	resp["links"] = linkItems
 	resp["inLinks"] = inLinkItems
 	resp["sourceArticles"] = sourceArticles
+	resp["mediaAccessToken"] = mediaToken
 	return resp, nil
 }
 

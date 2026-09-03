@@ -17,6 +17,21 @@ import (
 
 const knowledgeBuildModelMaxAttempts = 3
 
+func knowledgeBuildModelMaxTokens(operation string) int64 {
+	switch operation {
+	case "kb.build.questions", "kb.build.summary":
+		return 2_048
+	case "kb.build.extraction":
+		return 8_192
+	case "kb.build.taxonomy":
+		return 4_096
+	case "kb.build.pages":
+		return 16_384
+	default:
+		return 0
+	}
+}
+
 var (
 	knowledgeBuildModelRetryDelay = func(failedAttempt int) time.Duration {
 		return time.Duration(1<<max(failedAttempt-1, 0)) * time.Second
@@ -50,6 +65,9 @@ func invokeKnowledgeBuildModel(ctx context.Context, request ChatRequest, require
 	if err := requireChat(); err != nil {
 		return "", nil, err
 	}
+	if request.MaxTokens <= 0 {
+		request.MaxTokens = knowledgeBuildModelMaxTokens(request.Op)
+	}
 	var lastErr error
 	for attempt := 1; attempt <= knowledgeBuildModelMaxAttempts; attempt++ {
 		answer, err := invokeKnowledgeBuildModelOnce(ctx, request)
@@ -66,6 +84,12 @@ func invokeKnowledgeBuildModel(ctx context.Context, request ChatRequest, require
 		lastErr = err
 		retryable := retryableKnowledgeBuildModelError(err)
 		if !retryable || attempt == knowledgeBuildModelMaxAttempts {
+			slog.Warn("知识构建模型阶段调用失败",
+				"operation", request.Op,
+				"attempts", attempt,
+				"retryable", retryable,
+				"err", err,
+			)
 			return "", nil, &knowledgeBuildModelCallError{
 				cause: err, attempts: attempt, retryable: retryable,
 			}

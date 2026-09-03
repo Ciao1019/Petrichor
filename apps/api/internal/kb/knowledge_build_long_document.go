@@ -9,8 +9,8 @@ import (
 
 const (
 	// 候选抽取按连续切片分段，确保长文档的每一部分都进入模型，而不是只保留头尾。
-	knowledgeExtractionBatchMaxChars = 48_000
-	knowledgeExtractionBatchMaxItems = 40
+	knowledgeExtractionBatchMaxChars = 16_000
+	knowledgeExtractionBatchMaxItems = 12
 	wikiPageContextMaxChars          = 72_000
 )
 

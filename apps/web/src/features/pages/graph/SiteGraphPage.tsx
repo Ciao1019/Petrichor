@@ -4,7 +4,7 @@ import * as React from "react"
 import { useNavigate } from "react-router-dom"
 
 import { SiteGraphExplorer } from "@/components/site-graph/SiteGraphExplorer"
-import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
+import { RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import { publicSiteGraphApi, type SiteGraphPayload } from "@/lib/api"
 
 const siteGraphCopy = {
@@ -128,9 +128,6 @@ export function SiteGraphPage() {
                 </div>
             </section>
 
-            <div className="relative z-30 mx-auto mt-auto w-full max-w-[51.462rem] px-[min(7.25vw,3.731rem)] pb-10 lg:contents">
-                <RetypesetSiteFooter dockVisible />
-            </div>
         </main>
     )
 }

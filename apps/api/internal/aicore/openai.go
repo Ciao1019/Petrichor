@@ -51,7 +51,7 @@ func newAIHTTPClient() *http.Client {
 	// 兼容供应商在每批任务之间反复建立 TCP/TLS 连接，HTTP/2 仍自动复用连接。
 	transport.MaxIdleConns = 128
 	transport.MaxIdleConnsPerHost = 64
-	return &http.Client{Transport: transport, Timeout: 300 * time.Second}
+	return &http.Client{Transport: transport, Timeout: 30 * time.Minute}
 }
 
 func (r RuntimeConfig) effectiveBaseURL(fallback string) string {

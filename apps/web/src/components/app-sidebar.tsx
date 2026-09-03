@@ -15,6 +15,7 @@ import {
   IconRobot,
   IconSettings,
   IconSparkles,
+  ShieldCheck,
   IconUserCircle,
   IconUsers,
 } from "@/components/iconimate"
@@ -183,6 +184,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         url: dashboardRoutes.adminAppearance,
         icon: IconPalette,
         isActive: isDashboardSectionPath(location.pathname, "admin/appearance"),
+      },
+      {
+        title: "备案管理",
+        url: dashboardRoutes.adminFiling,
+        icon: ShieldCheck,
+        isActive: isDashboardSectionPath(location.pathname, "admin/filing"),
       },
       {
         title: "全站星图",

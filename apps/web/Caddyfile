@@ -1,7 +1,7 @@
 {$PETRICHOR_DOMAIN::80} {
 	encode zstd gzip
 
-	@backend path /api /api/* /healthz /readyz
+	@backend path /api /api/* /healthz /readyz /rss.xml /atom.xml
 	handle @backend {
 		reverse_proxy api:8080
 	}

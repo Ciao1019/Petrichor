@@ -1,3 +1,5 @@
+![Vercel 纯前端演示站](./assets/covers/vercel-static-demo.png)
+
 # Vercel 纯前端演示站
 
 Petrichor 的正式生产形态仍是 Docker Compose：Web、Go API、Asynq Worker、Redis、PostgreSQL 与对象存储协同运行。
@@ -5,8 +7,8 @@ Petrichor 的正式生产形态仍是 Docker Compose：Web、Go API、Asynq Work
 
 ## 演示范围
 
-- 前台文章列表、搜索、文章详情、思维导图标签页；
-- 前台普通问答与 Wiki 问答（浏览器内脚本化流式回放）；
+- 前台知识门户、文章详情、公开 Wiki、关系图谱与全文 / 语义统一搜索；
+- 静态 `/rss.xml`、`/atom.xml` 示例订阅，以及普通问答与 Wiki 问答（浏览器内脚本化流式回放）；
 - 后台知识库、完整文章编辑器、Wiki 页面与图谱；
 - 文档库、视觉导入任务与死信处理；
 - 助手、模型配置、数据概览和全站星图；

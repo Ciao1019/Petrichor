@@ -27,7 +27,7 @@ vi.mock("axios", () => ({
   default: axiosMocks.axios,
 }))
 
-import { publicArticleShareApi, publicProjectShowcaseApi } from "./api"
+import { publicArticleShareApi, publicProjectShowcaseApi, publicSearchApi } from "./api"
 
 function mockWindowLocation(pathname: string, search = "", hash = "") {
   const replace = vi.fn()
@@ -213,6 +213,35 @@ describe("publicArticleShareApi client cache", () => {
     await publicArticleShareApi.search({ keyword: "缓存", limit: 8, offset: 2, signal })
     expect(axiosMocks.instance.get).toHaveBeenLastCalledWith("/public/article/search", {
       params: { q: "缓存", limit: 8, offset: 2 },
+      signal,
+    })
+  })
+
+  it("统一公开搜索透传模式、类型、知识库和标签筛选", async () => {
+    const signal = new AbortController().signal
+    axiosMocks.instance.get.mockResolvedValueOnce({ data: { items: [] } })
+
+    await publicSearchApi.search({
+      q: "RAG",
+      mode: "hybrid",
+      type: "wiki",
+      kb: "42",
+      tag: "检索",
+      limit: 20,
+      offset: 40,
+      signal,
+    })
+
+    expect(axiosMocks.instance.get).toHaveBeenLastCalledWith("/public/search", {
+      params: {
+        q: "RAG",
+        mode: "hybrid",
+        type: "wiki",
+        kb: "42",
+        tag: "检索",
+        limit: 20,
+        offset: 40,
+      },
       signal,
     })
   })

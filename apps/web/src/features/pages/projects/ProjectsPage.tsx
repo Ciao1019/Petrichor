@@ -2,7 +2,7 @@
 
 import * as React from "react"
 
-import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
+import { RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import { publicProjectShowcaseApi, type ProjectItem, type ProjectShowcaseResponse } from "@/lib/api"
 
 import { DateTag, HandStamp, LinkDoodle } from "../about/DeskAccents"
@@ -244,9 +244,6 @@ export function ProjectsPage() {
                 </div>
             </section>
 
-            <div className="relative z-30 mx-auto mt-auto w-full max-w-6xl px-6 pb-8 md:px-24 lg:contents">
-                <RetypesetSiteFooter dockVisible />
-            </div>
         </main>
     )
 }

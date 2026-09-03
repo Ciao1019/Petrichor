@@ -2,7 +2,7 @@
 
 import * as React from "react"
 
-import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
+import { RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 
 import { BlueNote, DateTag, HandStamp, HandUnderline, MarkerHighlight, type MarkerColor } from "../about/DeskAccents"
 
@@ -132,7 +132,7 @@ const PRODUCT_SURFACES: { title: string; tag: string; detail: string; dot: Marke
         title: "公开阅读站",
         tag: "Publish",
         dot: "orange",
-        detail: "文章发布、密码与有效期、短链接、标签、全文搜索、RSS / Atom、站点星图和公开问答。",
+        detail: "文章发布、密码与有效期、短链接、标签、全文搜索、RSS / Atom 和公开问答。",
     },
     {
         title: "视觉文档导入",
@@ -527,9 +527,6 @@ export function PetrichorPage() {
                 </div>
             </section>
 
-            <div className="relative z-30 mx-auto mt-auto w-full max-w-6xl px-6 pb-8 md:px-24 lg:contents">
-                <RetypesetSiteFooter dockVisible />
-            </div>
         </main>
     )
 }

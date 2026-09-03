@@ -197,6 +197,7 @@ export function useBurnReadModel(code: string | undefined): BurnReadModel {
     tab,
     onTabChange: setTab,
     contentMd: data?.contentMd || "",
+    mediaAccessToken: data?.mediaAccessToken ?? null,
     contentJson: data?.contentJson ?? null,
     contentMetaJson: data?.contentMetaJson ?? null,
     tocAll,

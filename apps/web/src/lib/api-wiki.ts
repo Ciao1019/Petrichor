@@ -255,6 +255,10 @@ export interface ArticleKnowledgeBuildJobResponse {
   updatedAt: string | null
 }
 
+export interface ArticleKnowledgeBuildJobListResponse {
+  jobs: ArticleKnowledgeBuildJobResponse[]
+}
+
 export interface ArticleKnowledgeBuildInput {
   knowledgeBaseId: string
   articleId: string
@@ -353,6 +357,8 @@ export const knowledgeBaseWikiAgentApi = {
     api.post<ArticleKnowledgeBuildJobResponse>("/kb/knowledge/build", data),
   articleKnowledgeBuildStatus: (jobId: string) =>
     api.post<ArticleKnowledgeBuildJobResponse>("/kb/knowledge/build/status", { jobId }),
+  articleKnowledgeBuildStatusList: (data: { knowledgeBaseId: string; articleIds: string[] }) =>
+    api.post<ArticleKnowledgeBuildJobListResponse>("/kb/knowledge/build/status/list", data),
   articleChunks: (data: { knowledgeBaseId: string; articleId: string }) =>
     api.post<ArticleKnowledgeChunkListResponse>("/kb/knowledge/chunk/list", data),
   embedWiki: (knowledgeBaseId: string) =>
@@ -438,8 +444,8 @@ async function restoreBlobErrorBody(error: unknown): Promise<unknown> {
   return error
 }
 
-// 服务端单任务最长 15 分钟，额外预留一轮排队和最终状态返回时间。
-const ARTICLE_KNOWLEDGE_BUILD_POLL_TIMEOUT_MS = 30 * 60 * 1_000
+// 单次模型请求最长 30 分钟；知识构建还包含多个阶段与排队，前端等待窗口需覆盖 Worker 总时限。
+const ARTICLE_KNOWLEDGE_BUILD_POLL_TIMEOUT_MS = 4 * 60 * 60 * 1_000
 
 export interface BuildArticleKnowledgeWaitOptions {
   onProgress?: (

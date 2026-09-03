@@ -1,3 +1,5 @@
+![Agent 工具协议](../assets/covers/agent-tools.png)
+
 # Agent 工具协议
 
 产品内 Agent Runtime 的工具注册表位于 `apps/api/internal/assistantsvc/runtime`，具体工具按领域

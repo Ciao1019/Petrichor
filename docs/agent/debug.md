@@ -1,3 +1,5 @@
+![Agent Runtime 调试指南](../assets/covers/agent-debug.png)
+
 # Agent Runtime 调试指南
 
 Agent Runtime 会把一次执行拆成 Run、Trace、Evidence 和 Subtask 四层审计数据。运行失败或回答

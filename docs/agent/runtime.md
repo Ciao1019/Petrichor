@@ -1,3 +1,5 @@
+![Agent Runtime](../assets/covers/agent-runtime.png)
+
 # Agent Runtime（Go）
 
 Petrichor 的站内助手由 Go API 执行。它不是“先分类、再跑固定流程”的问答链，

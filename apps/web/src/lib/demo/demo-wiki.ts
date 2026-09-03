@@ -9,7 +9,10 @@ import type {
   KnowledgeBaseWikiPageKind,
   KnowledgeBaseWikiPageResponse,
   KnowledgeBaseWikiTreeResponse,
+  PublicWikiGraphResponse,
+  PublicWikiKnowledgeBase,
   PublicWikiPageDetail,
+  PublicWikiPageListResponse,
 } from "@/lib/api"
 
 import { demoShareCodeForArticle } from "./demo-public-data"
@@ -418,30 +421,135 @@ export function demoWikiGraph(knowledgeBaseId: string): KnowledgeBaseWikiGraphRe
   }
 }
 
-export function demoPublicWikiPage(pageKey: string): PublicWikiPageDetail | null {
-  for (const knowledgeBaseId of Object.keys(WIKI_BY_KB)) {
+function demoPublicWikiPagesOf(knowledgeBaseId: string) {
+  return demoWikiPages(knowledgeBaseId).filter((page) => {
+    if (page.kind === "index" || page.kind === "log") return false
+    const detail = demoWikiPageDetail(knowledgeBaseId, page.pageKey)
+    if (!detail || detail.sourceRefs.length === 0) return false
+    return detail.sourceRefs.every((ref) => Boolean(demoShareCodeForArticle(ref.articleId)))
+  })
+}
+
+export function demoPublicWikiKnowledgeBases(): PublicWikiKnowledgeBase[] {
+  return Object.keys(WIKI_BY_KB).flatMap((knowledgeBaseId) => {
+    const pages = demoPublicWikiPagesOf(knowledgeBaseId)
+    const knowledgeBase = kbById(knowledgeBaseId)
+    if (!knowledgeBase || pages.length === 0) return []
+    const articleIds = new Set<string>()
+    for (const page of pages) {
+      for (const ref of demoWikiPageDetail(knowledgeBaseId, page.pageKey)?.sourceRefs ?? []) {
+        if (demoShareCodeForArticle(ref.articleId)) articleIds.add(ref.articleId)
+      }
+    }
+    return [{
+      knowledgeBaseId,
+      name: knowledgeBase.name,
+      description: knowledgeBase.description || null,
+      pageCount: pages.length,
+      articleCount: articleIds.size,
+      updatedAt: pages[0]?.updatedAt ?? new Date().toISOString(),
+    }]
+  })
+}
+
+export function demoPublicWikiPageList(params: {
+  knowledgeBaseId: string
+  q?: string
+  kind?: string
+  limit?: number
+  offset?: number
+}): PublicWikiPageListResponse | null {
+  const knowledgeBase = kbById(params.knowledgeBaseId)
+  if (!knowledgeBase) return null
+  const keyword = params.q?.trim().toLowerCase() ?? ""
+  const kind = params.kind && params.kind !== "all" ? params.kind : ""
+  const filtered = demoPublicWikiPagesOf(params.knowledgeBaseId).filter((page) =>
+    (!kind || page.kind === kind)
+    && (!keyword || `${page.title} ${page.summary ?? ""} ${page.contentMd}`.toLowerCase().includes(keyword)))
+  const offset = Math.max(0, params.offset ?? 0)
+  const limit = Math.max(1, params.limit ?? 50)
+  const items = filtered.slice(offset, offset + limit).map((page) => ({
+    pageKey: page.pageKey,
+    title: page.title,
+    kind: page.kind,
+    summary: page.summary ?? "",
+    aliases: page.aliases,
+    categoryPath: page.categoryPath,
+    sourceCount: demoWikiPageDetail(params.knowledgeBaseId, page.pageKey)?.sourceRefs.length ?? 0,
+    updatedAt: page.updatedAt ?? new Date().toISOString(),
+    href: `/wiki/${params.knowledgeBaseId}/${encodeURIComponent(page.pageKey)}`,
+  }))
+  return {
+    knowledgeBaseId: params.knowledgeBaseId,
+    knowledgeBaseName: knowledgeBase.name,
+    description: knowledgeBase.description || null,
+    updatedAt: filtered[0]?.updatedAt ?? new Date().toISOString(),
+    items,
+    total: filtered.length,
+    limit,
+    offset,
+    hasMore: offset + items.length < filtered.length,
+  }
+}
+
+export function demoPublicWikiGraph(knowledgeBaseId: string): PublicWikiGraphResponse | null {
+  const graph = demoWikiGraph(knowledgeBaseId)
+  if (!kbById(knowledgeBaseId)) return null
+  const publicKeys = new Set(demoPublicWikiPagesOf(knowledgeBaseId).map((page) => page.pageKey))
+  const nodes = graph.nodes
+    .filter((node) => publicKeys.has(node.pageKey))
+    .map((node) => ({ ...node, summary: node.summary ?? "", href: `/wiki/${knowledgeBaseId}/${encodeURIComponent(node.pageKey)}` }))
+  const links = graph.links.filter((link) => publicKeys.has(link.fromPageKey) && publicKeys.has(link.toPageKey))
+  return {
+    ...graph,
+    nodes,
+    links,
+    truncated: false,
+    totalPageCount: nodes.length,
+    stats: {
+      pageCount: nodes.length,
+      linkCount: links.length,
+      conceptCount: nodes.filter((node) => node.kind === "concept").length,
+      entityCount: nodes.filter((node) => node.kind === "entity").length,
+      sourceCount: nodes.filter((node) => node.kind === "source").length,
+    },
+  }
+}
+
+export function demoPublicWikiPage(pageKey: string, scopedKnowledgeBaseId?: string): PublicWikiPageDetail | null {
+  const knowledgeBaseIds = scopedKnowledgeBaseId ? [scopedKnowledgeBaseId] : Object.keys(WIKI_BY_KB)
+  for (const knowledgeBaseId of knowledgeBaseIds) {
+    const safePageKeys = new Set(demoPublicWikiPagesOf(knowledgeBaseId).map((page) => page.pageKey))
+    if (!safePageKeys.has(pageKey)) continue
     const detail = demoWikiPageDetail(knowledgeBaseId, pageKey)
     if (!detail) continue
     return {
+      knowledgeBaseId,
+      knowledgeBaseName: kbById(knowledgeBaseId)?.name ?? "演示知识库",
       pageKey: detail.pageKey,
       title: detail.title,
       kind: detail.kind,
       summary: detail.summary ?? "",
       aliases: detail.aliases,
+      categoryPath: detail.categoryPath,
+      href: `/wiki/${knowledgeBaseId}/${encodeURIComponent(detail.pageKey)}`,
+      updatedAt: new Date().toISOString(),
       contentMd: detail.contentMd,
-      links: detail.links.map((link) => ({
+      links: detail.links.filter((link) => safePageKeys.has(link.toPageKey)).map((link) => ({
         pageKey: link.toPageKey,
         title: link.toPageTitle,
         kind: link.toPageKind ?? null,
         summary: link.toPageSummary ?? null,
         linkType: link.linkType,
+        href: `/wiki/${knowledgeBaseId}/${encodeURIComponent(link.toPageKey)}`,
       })),
-      inLinks: detail.inLinks.map((link) => ({
+      inLinks: detail.inLinks.filter((link) => safePageKeys.has(link.fromPageKey)).map((link) => ({
         pageKey: link.fromPageKey,
         title: link.fromPageTitle,
         kind: link.fromPageKind ?? null,
         summary: link.fromPageSummary ?? null,
         linkType: link.linkType,
+        href: `/wiki/${knowledgeBaseId}/${encodeURIComponent(link.fromPageKey)}`,
       })),
       sourceArticles: detail.sourceRefs.map((ref) => {
         const shareCode = demoShareCodeForArticle(ref.articleId)

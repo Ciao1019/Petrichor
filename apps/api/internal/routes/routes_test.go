@@ -7,6 +7,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func TestPublicFeedRootRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	RegisterPublicFeeds(router)
+	routes := map[string]struct{}{}
+	for _, route := range router.Routes() {
+		routes[route.Method+" "+route.Path] = struct{}{}
+	}
+	for _, key := range []string{"GET /rss.xml", "HEAD /rss.xml", "GET /atom.xml", "HEAD /atom.xml"} {
+		if _, ok := routes[key]; !ok {
+			t.Fatalf("public feed route missing: %s", key)
+		}
+	}
+}
+
 func TestRouteRegistryHasNoDuplicatesAndKeepsCriticalContracts(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -37,6 +52,14 @@ func TestRouteRegistryHasNoDuplicatesAndKeepsCriticalContracts(t *testing.T) {
 	}
 
 	critical := []string{
+		"GET /api/public/search",
+		"GET /api/public/wiki/knowledge-bases",
+		"GET /api/public/wiki/pages",
+		"GET /api/public/wiki/graph",
+		"GET /api/public/feed/rss.xml",
+		"HEAD /api/public/feed/rss.xml",
+		"GET /api/public/feed/atom.xml",
+		"HEAD /api/public/feed/atom.xml",
 		"POST /api/auth/setup",
 		"POST /api/auth/login",
 		"GET /api/auth/me",

@@ -1,3 +1,5 @@
+![运行与运维](./assets/covers/operations.png)
+
 # 运行与运维
 
 ## 运行时基线

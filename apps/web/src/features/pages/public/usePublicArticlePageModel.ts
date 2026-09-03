@@ -96,6 +96,7 @@ export function usePublicArticlePageModel(shareCode: string | undefined): Public
     repostSource: derived.repostSource,
     tab, onTabChange: setTab,
     contentMd: data?.contentMd || "",
+    mediaAccessToken: data?.mediaAccessToken ?? null,
     contentJson: data?.contentJson ?? null,
     contentMetaJson: data?.contentMetaJson ?? null,
     tocAll, activeHeadingId, onTocClick: handleScrollTo,

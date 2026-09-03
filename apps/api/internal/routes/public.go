@@ -19,6 +19,10 @@ func registerPublicRoutes(rg *gin.RouterGroup) {
 	appearance.GET("", publicapi.SiteAppearance)
 	appearance.POST("", publicapi.SiteAppearance)
 
+	filing := g.Group("/filing")
+	filing.GET("", publicapi.SiteFiling)
+	filing.POST("", publicapi.SiteFiling)
+
 	projects := g.Group("/projects")
 	projects.GET("", publicapi.ProjectShowcase)
 	projects.POST("", publicapi.ProjectShowcase)
@@ -32,6 +36,15 @@ func registerPublicRoutes(rg *gin.RouterGroup) {
 	article.GET("/list", publicapi.ArticleList)
 	article.POST("/list", publicapi.ArticleList)
 	article.GET("/search", publicapi.ArticleSearch)
+	g.GET("/search", publicapi.Search)
+	g.GET("/feed/rss", publicapi.RSSFeed)
+	g.HEAD("/feed/rss", publicapi.RSSFeed)
+	g.GET("/feed/rss.xml", publicapi.RSSFeed)
+	g.HEAD("/feed/rss.xml", publicapi.RSSFeed)
+	g.GET("/feed/atom", publicapi.AtomFeed)
+	g.HEAD("/feed/atom", publicapi.AtomFeed)
+	g.GET("/feed/atom.xml", publicapi.AtomFeed)
+	g.HEAD("/feed/atom.xml", publicapi.AtomFeed)
 	article.GET("/share/detail", publicapi.ShareDetailGet)
 	article.POST("/share/detail", publicapi.ShareDetail)
 
@@ -44,7 +57,10 @@ func registerPublicRoutes(rg *gin.RouterGroup) {
 	g.POST("/qa/chat", publicapi.QaChat)
 
 	// 公开 Wiki
+	g.GET("/wiki/knowledge-bases", publicapi.WikiKnowledgeBases)
+	g.GET("/wiki/pages", publicapi.WikiPageList)
 	g.GET("/wiki/page", publicapi.WikiPageDetail)
+	g.GET("/wiki/graph", publicapi.WikiGraph)
 
 	// 公开下载预签名
 	g.POST("/upload/presign-get", publicapi.PresignGetObject)

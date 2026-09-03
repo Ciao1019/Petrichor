@@ -233,7 +233,16 @@ func loadPublicShareDetailResponse(ctx context.Context, shareCode, accessPasswor
 	}
 
 	repost := buildRepostAttribution(share.isRepost, share.originalURL, share.originalAuthorName)
-	return buildPublicArticleDetailResponse(ctx, article, repost)
+	resp, err := buildPublicArticleDetailResponse(ctx, article, repost)
+	if err != nil {
+		return nil, err
+	}
+	mediaToken, err := issueMediaAccessToken(mediaKindArticle, article.id)
+	if err != nil {
+		return nil, err
+	}
+	resp["mediaAccessToken"] = mediaToken
+	return resp, nil
 }
 
 // ShareDetail POST /api/public/article/share/detail：body {shareCode, accessPassword?}。

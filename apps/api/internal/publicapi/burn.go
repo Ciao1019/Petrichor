@@ -241,6 +241,12 @@ func BurnConsume(c *gin.Context) {
 		httpx.HandleError(c, derr)
 		return
 	}
+	mediaToken, terr := issueMediaAccessToken(mediaKindBurn, consumedArticleID)
+	if terr != nil {
+		httpx.HandleError(c, terr)
+		return
+	}
+	resp["mediaAccessToken"] = mediaToken
 	resp["burn"] = map[string]any{
 		"viewCount": consumedViewCount,
 		"maxViews":  consumedMaxViews,

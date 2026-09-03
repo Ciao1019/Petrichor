@@ -7,6 +7,8 @@ import {
   searchDemoPublicArticles,
 } from "./demo-public-data"
 import {
+  demoPublicWikiGraph,
+  demoPublicWikiKnowledgeBases,
   demoPublicWikiPage,
   demoWikiGraph,
   demoWikiPageDetail,
@@ -50,5 +52,17 @@ describe("Vercel 静态演示数据", () => {
     expect(graph.stats.pageCount).toBe(pages.length)
     expect(graph.stats.linkCount).toBeGreaterThan(0)
     expect(publicPage?.sourceArticles[0]?.href).toBe("/p/mole-macos-guide")
+  })
+
+  it("公开 Wiki 只投影两篇已公开文章的安全知识页", () => {
+    const knowledgeBases = demoPublicWikiKnowledgeBases()
+    const graph = demoPublicWikiGraph("demo-kb-product")
+
+    expect(knowledgeBases.map((item) => item.knowledgeBaseId)).toEqual(["demo-kb-product"])
+    expect(demoPublicWikiPage("source-1", "demo-kb-engineering")).toBeNull()
+    expect(graph?.nodes.length).toBeGreaterThan(0)
+    expect(graph?.links.every((link) =>
+      graph.nodes.some((node) => node.pageKey === link.fromPageKey)
+      && graph.nodes.some((node) => node.pageKey === link.toPageKey))).toBe(true)
   })
 })

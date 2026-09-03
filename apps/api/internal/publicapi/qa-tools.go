@@ -12,6 +12,7 @@ import (
 
 	"petrichor/api/internal/aicore"
 	httpx "petrichor/api/internal/httpx"
+	"petrichor/api/internal/publicscope"
 	"petrichor/api/internal/sitecontent"
 )
 
@@ -208,7 +209,7 @@ func listPublicQaArticles(ctx context.Context, limit, offset int) (map[string]an
 	if err := pool().QueryRow(ctx,
 		`SELECT count(*) FROM petrichor_kb_article_share s
 		 JOIN petrichor_kb_article a ON a.id = s.article_id
-		 WHERE `+publicShareVisibilityWhere).Scan(&total); err != nil {
+		 WHERE `+publicscope.ShareVisibilityWhere).Scan(&total); err != nil {
 		return nil, err
 	}
 	rows, err := pool().Query(ctx,
@@ -216,7 +217,7 @@ func listPublicQaArticles(ctx context.Context, limit, offset int) (map[string]an
 		 coalesce(nullif(btrim(a.ai_summary), ''), coalesce(a.public_excerpt, '')), a.updated_at
 		 FROM petrichor_kb_article_share s
 		 JOIN petrichor_kb_article a ON a.id = s.article_id
-		 WHERE `+publicShareVisibilityWhere+`
+		 WHERE `+publicscope.ShareVisibilityWhere+`
 		 ORDER BY s.pin_order IS NULL, s.pin_order DESC, a.updated_at DESC, s.id DESC
 		 LIMIT $1 OFFSET $2`, limit, offset)
 	if err != nil {
@@ -353,11 +354,15 @@ func readPublicQaWikiDetail(ctx context.Context, scope map[int64]*PublicArticleR
 	if pageKey == "" {
 		return nil, badReq("pageKey 不能为空")
 	}
-	page, err := resolveAccessiblePage(ctx, scope, pageKey)
+	safePageIDs, err := publicscope.LoadSafeWikiPageIDs(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	return readPublicWikiPageDetail(ctx, scope, page)
+	page, err := resolveAccessiblePage(ctx, safePageIDs, nil, pageKey)
+	if err != nil {
+		return nil, err
+	}
+	return readPublicWikiPageDetail(ctx, scope, publicscope.IDSet(safePageIDs), page)
 }
 
 func readPublicQaSourceArticle(ctx context.Context, scope map[int64]*PublicArticleRef, articleID int64) (map[string]any, error) {
@@ -378,21 +383,20 @@ func readPublicQaSourceArticle(ctx context.Context, scope map[int64]*PublicArtic
 	}, nil
 }
 
-func listPublicQaWikiOverview(ctx context.Context, scope map[int64]*PublicArticleRef) (map[string]any, error) {
-	articleIDs := make([]int64, 0, len(scope))
-	for id := range scope {
-		articleIDs = append(articleIDs, id)
+func listPublicQaWikiOverview(ctx context.Context, _ map[int64]*PublicArticleRef) (map[string]any, error) {
+	safePageIDs, err := publicscope.LoadSafeWikiPageIDs(ctx, nil)
+	if err != nil {
+		return nil, err
 	}
-	if len(articleIDs) == 0 {
+	if len(safePageIDs) == 0 {
 		return map[string]any{"total": 0, "topics": []any{}, "sources": []any{}, "emptyMessage": "本站暂无公开的 Wiki 页面"}, nil
 	}
 	rows, err := pool().Query(ctx,
-		`SELECT DISTINCT p.id, p.user_id, p.knowledge_base_id, p.page_key, p.title, p.kind,
+		`SELECT p.id, p.user_id, p.knowledge_base_id, p.page_key, p.title, p.kind,
 		 p.content_md, p.frontmatter_json, p.summary
 		 FROM petrichor_kb_wiki_page p
-		 JOIN petrichor_kb_wiki_source_ref r ON r.page_id = p.id
-		 WHERE r.article_id = ANY($1) AND p.archived_at IS NULL
-		 ORDER BY p.title ASC`, articleIDs)
+		 WHERE p.id = ANY($1)
+		 ORDER BY p.title ASC`, safePageIDs)
 	if err != nil {
 		return nil, err
 	}

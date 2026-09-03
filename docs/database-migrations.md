@@ -1,3 +1,5 @@
+![数据库初始化与迁移](./assets/covers/database-migrations.png)
+
 # 数据库初始化与迁移
 
 数据库完全由 Go 和 Goose 管理，与 Bun、Web 构建和前端环境变量无关。

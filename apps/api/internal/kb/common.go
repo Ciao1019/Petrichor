@@ -42,6 +42,8 @@ type ChatRequest struct {
 	SystemPrompt string
 	Message      string
 	Op           string
+	// MaxTokens 仅作为业务阶段上限；0 表示沿用模型用途绑定。
+	MaxTokens int64
 }
 
 // EmbedRequest 批量文本向量（对应 embedTexts）。

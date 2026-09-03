@@ -23,7 +23,10 @@ import {
     searchDemoPublicArticles,
 } from "./demo-public-data"
 import {
+    demoPublicWikiGraph,
+    demoPublicWikiKnowledgeBases,
     demoPublicWikiPage,
+    demoPublicWikiPageList,
     demoWikiDashboard,
     demoWikiEmbedding,
     demoWikiGraph,
@@ -34,6 +37,7 @@ import {
     demoWikiPages,
     demoWikiTree,
 } from "./demo-wiki"
+import { demoPublicSearch } from "./demo-public-search"
 
 /*
  * 演示模式的 mock 路由表：键为 "METHOD /path"（不含 /api 前缀）。
@@ -86,13 +90,37 @@ const handlers: Record<string, DemoHandler> = {
         num(body.offset, 0),
         num(body.limit, 20),
     )),
+    "GET /public/search": (body) => ok(demoPublicSearch({
+        q: str(body.q),
+        mode: body.mode === "fulltext" || body.mode === "lexical" || body.mode === "semantic" ? body.mode : "hybrid",
+        type: body.type === "article" || body.type === "wiki" ? body.type : "all",
+        kb: str(body.kb) || undefined,
+        tag: str(body.tag) || undefined,
+        offset: num(body.offset, 0),
+        limit: num(body.limit, 20),
+    })),
     "GET /public/appearance": () => ok({ publicQaEnabled: true }),
     "GET /public/about/profile": () => ok(DEMO_ABOUT_PROFILE),
     "GET /public/projects": () => ok(DEMO_PROJECT_SHOWCASE),
     "GET /public/site-graph": () => ok(buildDemoSiteGraph()),
+    "GET /public/wiki/knowledge-bases": () => ok({ items: demoPublicWikiKnowledgeBases() }),
+    "GET /public/wiki/pages": (body) => {
+        const result = demoPublicWikiPageList({
+            knowledgeBaseId: str(body.knowledgeBaseId),
+            q: str(body.q),
+            kind: str(body.kind),
+            limit: num(body.limit, 50),
+            offset: num(body.offset, 0),
+        })
+        return result ? ok(result) : notFound("演示知识库不存在")
+    },
     "GET /public/wiki/page": (body) => {
-        const page = demoPublicWikiPage(str(body.pageKey))
+        const page = demoPublicWikiPage(str(body.pageKey), str(body.knowledgeBaseId) || undefined)
         return page ? ok(page) : notFound("演示 Wiki 页面不存在")
+    },
+    "GET /public/wiki/graph": (body) => {
+        const graph = demoPublicWikiGraph(str(body.knowledgeBaseId))
+        return graph ? ok(graph) : notFound("演示 Wiki 图谱不存在")
     },
     "GET /assistant/wiki/page": (body) => {
         const page = demoPublicWikiPage(str(body.pageKey))

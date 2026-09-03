@@ -69,6 +69,24 @@ export function convertAnswerWikiLinks(markdown: string) {
   return replaceWikiLinks(markdown, (pageKey) => pageKey)
 }
 
+/** 将公开 Wiki 正文中的页内协议改写为可直接分享和刷新的公开路由。 */
+export function preparePublicWikiMarkdown(
+  contentMd: string,
+  title: string,
+  knowledgeBaseId: string,
+  relatedKnowledge: WikiMarkdownLinkTarget[] = [],
+) {
+  const titleByKey = new Map(relatedKnowledge.map((target) => [target.pageKey, target.title]))
+  return prepareWikiMarkdown(
+    contentMd,
+    title,
+    relatedKnowledge,
+    (pageKey) => titleByKey.get(pageKey),
+  ).replace(/\]\(#wiki-page=([^)]+)\)/g, (_match, encodedPageKey: string) => (
+    `](/wiki/${encodeURIComponent(knowledgeBaseId)}/${encodedPageKey})`
+  ))
+}
+
 /**
  * 把正文中的显式 [[pageKey|标题]] 和相关知识的首次裸文本提及统一转换为页内 Wiki 链接。
  * 代码块、行内代码、已有 Markdown 链接、图片和 HTML 标签保持原样。

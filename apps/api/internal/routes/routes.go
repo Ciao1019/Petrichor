@@ -1,10 +1,22 @@
 // Package routes 汇总各业务域路由注册。
 package routes
 
-import "github.com/gin-gonic/gin"
+import (
+	"github.com/gin-gonic/gin"
+
+	"petrichor/api/internal/publicapi"
+)
 
 // RegisterPublic 公开接口组。
 func RegisterPublic(rg *gin.RouterGroup) { registerPublicRoutes(rg) }
+
+// RegisterPublicFeeds 注册标准根路径订阅地址。
+func RegisterPublicFeeds(router gin.IRoutes) {
+	router.GET("/rss.xml", publicapi.RSSFeed)
+	router.HEAD("/rss.xml", publicapi.RSSFeed)
+	router.GET("/atom.xml", publicapi.AtomFeed)
+	router.HEAD("/atom.xml", publicapi.AtomFeed)
+}
 
 // RegisterAuth 认证组。
 func RegisterAuth(rg *gin.RouterGroup) { registerAuthRoutes(rg) }

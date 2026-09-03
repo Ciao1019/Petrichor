@@ -62,6 +62,7 @@ func registerKBRoutes(rg *gin.RouterGroup) {
 	// 构建知识（LLM 注入）
 	kbGroup.POST("/knowledge/build", func(c *gin.Context) { kb.ArticleKnowledgeBuild(c) })
 	kbGroup.POST("/knowledge/build/status", func(c *gin.Context) { kb.ArticleKnowledgeBuildStatus(c) })
+	kbGroup.POST("/knowledge/build/status/list", func(c *gin.Context) { kb.ArticleKnowledgeBuildStatusList(c) })
 	kbGroup.POST("/knowledge/chunk/list", func(c *gin.Context) { kb.ArticleKnowledgeChunkList(c) })
 
 	// LLM Wiki

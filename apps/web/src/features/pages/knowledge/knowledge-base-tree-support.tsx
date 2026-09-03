@@ -1,4 +1,6 @@
 import {
+  AlertCircle,
+  CheckCircle2,
   Folder,
   FolderInput,
   FolderOpen,
@@ -35,6 +37,7 @@ import {
 } from "@/components/ui/tooltip"
 import { type ListItem } from "@/components/uitripled/native-nested-list-shadcnui"
 import {
+  type ArticleKnowledgeBuildJobResponse,
   type ArticleTreeStatus,
   type KnowledgeBaseTreeNode
 } from "@/lib/api"
@@ -390,21 +393,31 @@ export function KnowledgeBaseViewLabel({
 }
 
 export function KnowledgeBaseBuildButton({
-  building,
-  progress,
-  progressMessage,
+  job,
+  submitting,
   onBuild,
 }: {
-  building: boolean
-  progress?: number
-  progressMessage?: string
+  job?: ArticleKnowledgeBuildJobResponse
+  submitting: boolean
   onBuild: () => void
 }) {
   const iconRef = React.useRef<AnimatedIconHandle>(null)
-  const percent = Math.min(100, Math.max(0, Math.round(progress ?? 0)))
-  const label = building
-    ? `${progressMessage || "知识构建中"}：${percent}%`
-    : "构建知识"
+  const running = submitting || job?.status === "pending" || job?.status === "processing"
+  const failed = job?.status === "failed"
+  const warnings = job?.status === "completed" ? job.result?.warnings ?? [] : []
+  const partial = warnings.length > 0
+  const completed = job?.status === "completed" && !partial
+  const percent = Math.min(100, Math.max(0, Math.round(job?.progress.percent ?? 0)))
+  const label = running
+    ? `${job?.progress.message || "正在提交知识构建任务"}：${percent}%`
+    : failed
+      ? `知识构建失败：${job.error || job.progress.message || "请稍后重试"}；点击重试`
+      : partial
+        ? `知识构建部分完成：${warnings[0]}；点击重新构建`
+        : completed
+          ? "知识构建完成；点击重新构建"
+          : "构建知识"
+  const expanded = running || failed || partial || completed
 
   return (
     <Tooltip>
@@ -416,9 +429,12 @@ export function KnowledgeBaseBuildButton({
           aria-label={label}
           className={cn(
             "hidden h-7 rounded-lg text-muted-foreground sm:inline-flex hover:text-foreground",
-            building ? "w-auto min-w-14 gap-1 px-2" : "w-7",
+            expanded ? "w-auto min-w-14 gap-1 px-2" : "w-7",
+            failed && "text-destructive hover:text-destructive",
+            partial && "text-amber-600 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-400",
+            completed && "text-emerald-600 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-400",
           )}
-          disabled={building}
+          disabled={running}
           onClick={(event) => {
             event.stopPropagation()
             onBuild()
@@ -428,17 +444,27 @@ export function KnowledgeBaseBuildButton({
           onFocus={() => iconRef.current?.startAnimation()}
           onBlur={() => iconRef.current?.stopAnimation()}
         >
-          {building ? (
+          {running ? (
             <>
               <Loader2 className="size-3.5 animate-spin" />
               <span className="text-[11px] font-medium tabular-nums">{percent}%</span>
+            </>
+          ) : failed || partial ? (
+            <>
+              <AlertCircle className="size-3.5" />
+              <span className="text-[11px] font-medium">{failed ? "失败" : "部分完成"}</span>
+            </>
+          ) : completed ? (
+            <>
+              <CheckCircle2 className="size-3.5" />
+              <span className="text-[11px] font-medium">完成</span>
             </>
           ) : (
             <BookOpenIcon ref={iconRef} size={14} />
           )}
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="top">{label}</TooltipContent>
+      <TooltipContent side="top" className="max-w-80">{label}</TooltipContent>
     </Tooltip>
   )
 }

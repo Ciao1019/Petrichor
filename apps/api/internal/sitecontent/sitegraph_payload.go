@@ -9,6 +9,7 @@ import (
 
 	"petrichor/api/internal/db"
 	httpx "petrichor/api/internal/httpx"
+	"petrichor/api/internal/publicscope"
 )
 
 // RootKey 根节点业务键（对应 SITE_GRAPH_ROOT_KEY）。
@@ -126,10 +127,7 @@ func loadPublicSiteArticles(ctx context.Context) ([]publicSiteArticleRow, error)
 		`SELECT s.article_id, a.title, s.internal_url, s.share_code
 		 FROM petrichor_kb_article_share s
 		 JOIN petrichor_kb_article a ON a.id = s.article_id
-		 WHERE s.enabled = true AND s.revoked_at IS NULL
-		   AND (s.expires_at IS NULL OR s.expires_at > now())
-		   AND COALESCE(TRIM(s.password_hash), '') = ''
-		   AND COALESCE(TRIM(s.share_code), '') <> ''
+		 WHERE `+publicscope.ShareVisibilityWhere+`
 		 ORDER BY CASE WHEN s.pin_order IS NULL THEN 1 ELSE 0 END, s.pin_order DESC NULLS LAST,
 		          a.updated_at DESC, s.id DESC`)
 	if err != nil {
