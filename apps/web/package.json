@@ -76,7 +76,7 @@
     "@platejs/juice": "^52.0.11",
     "@platejs/layout": "^52.0.11",
     "@platejs/link": "^52.0.11",
-    "@platejs/list": "^52.0.11",
+    "@platejs/list": "^53.1.3",
     "@platejs/list-classic": "^52.0.11",
     "@platejs/markdown": "^52.3.1",
     "@platejs/math": "^52.0.11",
