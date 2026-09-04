@@ -38,6 +38,10 @@
 3. [子 Agent](./agent/subagents.md) 与 [Skill 机制](./agent/skills.md)：委派和动态能力加载。
 4. [调试指南](./agent/debug.md)：Run、Trace、Evidence 和常见故障。
 
+### 🖥️ 我想了解桌面端计划
+
+1. [桌面端（本地版）开发计划](./desktop-plan.md)：Tauri 壳、内嵌 PostgreSQL、免登录与本地 agent CLI 集成的架构与分阶段实施。
+
 ### 🔌 我想接入外部客户端
 
 1. [Claude Code / Codex / Cursor 接入](./agent/clients.md)：MCP、REST 与单文件 Skill 安装步骤。
@@ -101,6 +105,8 @@ flowchart LR
 - [`agent/integration.md`](./agent/integration.md)：REST 能力层、MCP Server、API Key scope 与审计设计。
 
 ### 数据库、部署与安全
+
+- [`desktop-plan.md`](./desktop-plan.md)：桌面端（本地版）架构设计、内嵌 PostgreSQL、进程内队列与 agent CLI 集成计划。
 
 - [`database-migrations.md`](./database-migrations.md)：Goose 基线、自动迁移和首次管理员初始化。
 - [`operations.md`](./operations.md)：Compose、探针、优雅关停、Worker、指标与发布检查。
