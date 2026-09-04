@@ -1,0 +1,100 @@
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 98888744dfba67bdfb3f764b1273196373c2a3fc..f63176fbc10cefa3e34984f128b4bbb7e4486b70 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -37,6 +37,10 @@ type NumberingOptions = {
+   defaultOrderedListStyleType?: DocxListStyleType;
+ };
+ type DocumentOptions = {
++  /**
++   * 是否在 DOCX 导出时抓取远程 HTTP(S) 图片。默认关闭，仅应对可信内容显式启用。
++   */
++  allowRemoteImages?: boolean;
+   complexScriptFontSize?: number | string | null;
+   createdAt?: Date;
+   creator?: string;
+diff --git a/dist/index.js b/dist/index.js
+index 5b3d9aa692b52b1895787f1ae5fae2ec5b4da260..7dd1d4e215854508c6b7ceabadf10d7b88d36ed6 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -43,6 +43,7 @@ const defaultFont = "Times New Roman";
+ const defaultFontSize = 22;
+ const defaultLang = "en-US";
+ const defaultDocumentOptions = {
++	allowRemoteImages: false,
+ 	complexScriptFontSize: defaultFontSize,
+ 	createdAt: /* @__PURE__ */ new Date(),
+ 	creator: applicationName,
+@@ -978,7 +979,7 @@ const buildParagraph = async (vNode, attributes, docxDocumentInstance) => {
+ 				let base64String;
+ 				const imageSource = childVNode.properties?.src;
+ 				if (imageSource && (imageSource.includes(".webp") || imageSource.includes("image/webp"))) continue;
+-				if (imageSource && isValidUrl(imageSource)) {
++				if (docxDocumentInstance?.allowRemoteImages && imageSource && isValidUrl(imageSource)) {
+ 					base64String = await image_to_base64_default(imageSource).catch(() => {});
+ 					if (base64String) {
+ 						let mimeType = mimeTypes.lookup(imageSource);
+@@ -1028,8 +1029,8 @@ const buildParagraph = async (vNode, attributes, docxDocumentInstance) => {
+ 				paragraphFragment.up();
+ 				return paragraphFragment;
+ 			}
+-			let base64String = imageSource;
+-			if (imageSource && isValidUrl(imageSource)) {
++			let base64String;
++			if (docxDocumentInstance?.allowRemoteImages && imageSource && isValidUrl(imageSource)) {
+ 				base64String = await image_to_base64_default(imageSource).catch(() => {});
+ 				if (base64String) {
+ 					let mimeType = mimeTypes.lookup(imageSource);
+@@ -1054,8 +1055,8 @@ const buildParagraph = async (vNode, attributes, docxDocumentInstance) => {
+ 					paragraphFragment.up();
+ 					return paragraphFragment;
+ 				}
+-			} else if (base64String) {
+-				const match = base64String.match(/^data:([A-Za-z-+/]+);base64,(.+)$/);
++			} else if (imageSource?.startsWith("data:")) {
++				const match = imageSource.match(/^data:([A-Za-z-+/]+);base64,(.+)$/);
+ 				if (match) base64String = match[2];
+ 			}
+ 			if (base64String) {
+@@ -1860,7 +1861,7 @@ const buildImage = async (docxDocumentInstance, vNode, maximumWidth = null) => {
+ 	try {
+ 		const imageSource = vNode.properties?.src;
+ 		if (imageSource && (imageSource.includes(".webp") || imageSource.includes("image/webp"))) return null;
+-		if (imageSource && isValidUrl(imageSource)) {
++		if (docxDocumentInstance.allowRemoteImages && imageSource && isValidUrl(imageSource)) {
+ 			const base64String = await image_to_base64_default(imageSource).catch(() => {});
+ 			if (base64String) {
+ 				let mimeType = mimeTypes.lookup(imageSource);
+@@ -1877,7 +1878,7 @@ const buildImage = async (docxDocumentInstance, vNode, maximumWidth = null) => {
+ 				}
+ 				base64Uri = `data:${mimeType};base64,${base64String}`;
+ 			}
+-		} else if (imageSource) base64Uri = decodeURIComponent(imageSource);
++		} else if (imageSource?.startsWith("data:")) base64Uri = decodeURIComponent(imageSource);
+ 		if (base64Uri) response = docxDocumentInstance.createMediaFile(base64Uri);
+ 	} catch (_error) {}
+ 	if (response) {
+@@ -2892,6 +2893,7 @@ async function generateSectionXML(vTree, type = "header") {
+ 	};
+ }
+ var DocxDocument = class {
++	allowRemoteImages;
+ 	availableDocumentSpace;
+ 	complexScriptFontSize;
+ 	createdAt;
+@@ -2938,6 +2940,7 @@ var DocxDocument = class {
+ 	constructor(properties) {
+ 		this.zip = properties.zip;
+ 		this.htmlString = properties.htmlString;
++		this.allowRemoteImages = properties.allowRemoteImages === true;
+ 		this.orientation = properties.orientation || defaultOrientation;
+ 		this.pageSize = properties.pageSize || defaultDocumentOptions.pageSize;
+ 		const isPortraitOrientation = this.orientation === defaultOrientation;
+@@ -3299,6 +3302,7 @@ const normalizeUnits = (dimensioningObject, defaultDimensionsProperty) => {
+ };
+ const normalizeDocumentOptions = (documentOptions) => {
+ 	const result = {};
++	if (documentOptions.allowRemoteImages !== void 0) result.allowRemoteImages = documentOptions.allowRemoteImages;
+ 	if (documentOptions.createdAt !== void 0) result.createdAt = documentOptions.createdAt;
+ 	if (documentOptions.creator !== void 0) result.creator = documentOptions.creator;
+ 	if (documentOptions.decodeUnicode !== void 0) result.decodeUnicode = documentOptions.decodeUnicode;

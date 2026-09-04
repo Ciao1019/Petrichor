@@ -20,7 +20,7 @@
     "typecheck": "bun --bun tsc --noEmit",
     "typecheck:demo": "bun --bun tsc --noEmit -p tsconfig.demo.json",
     "typecheck:api-strict": "bun --bun tsc --project tsconfig.api-strict.json",
-    "audit": "bun audit --ignore=GHSA-8fgx-wgvr-pcx8",
+    "audit": "bun audit --ignore=GHSA-8fgx-wgvr-pcx8 --ignore=GHSA-4q39-2jhr-7qx8",
     "check:bundle": "bun scripts/check-bundle-budget.ts"
   },
   "dependencies": {
@@ -198,7 +198,8 @@
   ],
   "patchedDependencies": {
     "@lobehub/ui@5.15.17": "patches/@lobehub__ui@5.15.17.patch",
-    "js-video-url-parser@0.5.1": "patches/js-video-url-parser@0.5.1.patch"
+    "js-video-url-parser@0.5.1": "patches/js-video-url-parser@0.5.1.patch",
+    "@platejs/docx-io@52.3.10": "patches/@platejs%2Fdocx-io@52.3.10.patch"
   },
   "overrides": {
     "@assistant-ui/core": "0.2.18",
@@ -206,7 +207,9 @@
     "@assistant-ui/tap": "0.9.2",
     "@excalidraw/excalidraw": "0.18.1",
     "@excalidraw/mermaid-to-excalidraw": "2.2.2",
+    "@xmldom/xmldom": "0.8.15",
     "brace-expansion": "1.1.18",
+    "browserslist": "4.28.8",
     "dompurify": "3.4.14",
     "immutable": "4.3.9",
     "js-yaml": "4.3.2",

@@ -34,6 +34,9 @@
 
 ## 依赖审计说明
 
-CI 会运行 Bun 与 Go 漏洞扫描。`js-video-url-parser` 的 GHSA-8fgx-wgvr-pcx8 暂无上游修复版本，
-仓库通过 `apps/web/patches/js-video-url-parser@0.5.1.patch` 替换灾难性回溯正则并限制输入长度，
-因此审计命令只忽略这一条已本地修复的公告；删除补丁前不得保留忽略项。
+CI 会运行 Bun 与 Go 漏洞扫描。暂时无法兼容升级的直接依赖只有在仓库内补丁已经关闭漏洞路径后，
+才能按 GHSA 编号加入审计忽略项：`js-video-url-parser` 的 GHSA-8fgx-wgvr-pcx8 由本地补丁
+替换灾难性回溯正则并限制输入长度；`@platejs/docx-io` 的 GHSA-4q39-2jhr-7qx8 由本地补丁
+默认禁止 DOCX 导出抓取远程图片，仅保留可信内容显式启用。两者补丁均位于 `apps/web/patches/`，
+删除补丁或升级到上游修复版本时必须同步删除对应忽略项。其余可兼容修复的传递依赖使用
+`overrides` 固定到已修复版本，不应添加审计例外。
