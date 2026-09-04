@@ -426,6 +426,10 @@ func (r *PetrichorAgentRuntime) Run(ctx context.Context, request *RunRequest) (*
 
 	if stopReason == StopMaxToolCalls {
 		budgetNotifier.exhaust(events)
+	} else {
+		// 预算告警只是运行中的状态；任务以其他原因收尾时立即覆盖为 resolved，
+		// 避免已经完成的回答仍提示用户“继续发消息”。
+		budgetNotifier.resolve(events, stopPolicy.RemainingToolCalls(state.Current()))
 	}
 	if answer != "" {
 		events.Emit("final_answer_completed", map[string]any{"text": answer})
@@ -499,29 +503,41 @@ const stepBudgetWarnRemaining = 2
 type stepBudgetNotifier struct {
 	warned    bool
 	exhausted bool
+	resolved  bool
 }
 
 func (n *stepBudgetNotifier) observe(events *AgentEventEmitter, remaining int) {
-	if n.warned || n.exhausted || remaining > stepBudgetWarnRemaining || remaining <= 0 {
+	if n.warned || n.exhausted || n.resolved || remaining > stepBudgetWarnRemaining || remaining <= 0 {
 		return
 	}
 	n.warned = true
 	events.Emit("step_budget", map[string]any{
 		"status":    "warning",
 		"remaining": remaining,
-		"label":     "本轮还剩 " + itoa(remaining) + " 步，可能需要再发一条消息继续",
+		"label":     "本轮还可调用 " + itoa(remaining) + " 次工具，当前任务仍在继续",
+	})
+}
+
+func (n *stepBudgetNotifier) resolve(events *AgentEventEmitter, remaining int) {
+	if !n.warned || n.exhausted || n.resolved {
+		return
+	}
+	n.resolved = true
+	events.Emit("step_budget", map[string]any{
+		"status":    "resolved",
+		"remaining": remaining,
 	})
 }
 
 func (n *stepBudgetNotifier) exhaust(events *AgentEventEmitter) {
-	if n.exhausted {
+	if n.exhausted || n.resolved {
 		return
 	}
 	n.exhausted = true
 	events.Emit("step_budget", map[string]any{
 		"status":    "exhausted",
 		"remaining": 0,
-		"label":     "本轮步数已用尽，可继续发消息接着做",
+		"label":     "本轮工具调用预算已用尽；如答案不完整，可继续发送消息",
 	})
 }
 

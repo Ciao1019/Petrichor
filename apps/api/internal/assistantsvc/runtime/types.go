@@ -167,7 +167,6 @@ const (
 	NamespaceKnowledge ToolNamespace = "knowledge"
 	NamespaceResearch  ToolNamespace = "research"
 	NamespaceMemory    ToolNamespace = "memory"
-	NamespaceGraph     ToolNamespace = "graph"
 	NamespaceWriter    ToolNamespace = "writer"
 	NamespaceDocument  ToolNamespace = "document"
 	NamespaceAdmin     ToolNamespace = "admin"

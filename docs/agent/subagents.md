@@ -58,7 +58,7 @@
 
 这里的父级集合是权限层可用集合，不要求对应 Skill 已在主 Agent 当前轮次加载；这不会提权，因为
 主 Agent 本来就可以自行加载该 Skill。未给 `allowedToolIds` 和 `skillIds` 时，Runtime 从 knowledge、
-research、graph、document 命名空间选择无副作用的默认工具。随后继续经过 `PermissionResolver`。
+research、document 命名空间选择无副作用的默认工具。随后继续经过 `PermissionResolver`。
 以下工具不会进入子 Agent：
 
 - `SideEffect=true` 的工具；

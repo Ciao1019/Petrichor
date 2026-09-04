@@ -13,7 +13,7 @@ func registerAgentMetaTools(registry interface {
 	registry.Register(&rt.AgentToolDefinition{
 		ID: "agent.load_skill", Name: "load_skill", Namespace: rt.NamespaceAgent,
 		Description: "加载一个能力包（技能），获得对应工具集与操作说明。",
-		InputSchema: schemaJSON(`{"type":"object","properties":{"skill":{"type":"string","minLength":1,"maxLength":64,"enum":["knowledge","graph","research","memory","writer","documents","admin","system"]},"skillId":{"type":"string","minLength":1,"maxLength":64,"description":"兼容旧调用；优先使用 skill"}},"anyOf":[{"required":["skill"]},{"required":["skillId"]}]}`),
+		InputSchema: schemaJSON(`{"type":"object","properties":{"skill":{"type":"string","minLength":1,"maxLength":64,"enum":["knowledge","research","memory","writer","documents","admin","system"]},"skillId":{"type":"string","minLength":1,"maxLength":64,"description":"兼容旧调用；优先使用 skill"}},"anyOf":[{"required":["skill"]},{"required":["skillId"]}]}`),
 		RiskLevel:   rt.RiskLow, Core: true, AllowedInSubAgent: toolPtr(false),
 		Execute: executeLoadSkill,
 		Normalize: func(_ any, input any) rt.ToolNormalizerResult {
@@ -265,19 +265,6 @@ func registerBuiltinSkills(skills interface{ Register(skill rt.AgentSkill) }) {
 		}, "\n"),
 		ToolIDs: []string{"writer.compose", "writer.rewrite", "writer.summarize", "writer.structure", "writer.save_artifact"},
 		Tags:    []string{"generation"},
-	})
-
-	skills.Register(rt.AgentSkill{
-		ID: "graph", Name: "知识图谱", Description: "实体关系、依赖与关联文章的图谱查询",
-		Instructions: joinStrings([]string{
-			"## 知识图谱",
-			"1. 图谱适合关系型问题：实体依赖、关联文章、路径查询、多跳关系。",
-			"2. 图谱不替代普通知识检索：它只覆盖已公开分享的内容，查不到私有知识库正文。",
-			"3. 典型组合：knowledge.search → 图谱扩散 → knowledge.read。",
-		}, "\n"),
-		ToolIDs: []string{"graph.search", "graph.expand", "graph.get_entity", "graph.get_relations"},
-		Deps:    []string{"knowledge"},
-		Tags:    []string{"retrieval"},
 	})
 
 	skills.Register(rt.AgentSkill{

@@ -13,7 +13,6 @@ import {
     Globe,
     type LucideIcon,
     Minus,
-    Network,
     PencilLine,
     Search,
     Sparkles,
@@ -48,7 +47,6 @@ import type { AgentActivityType } from "@/lib/agent/tool-ui"
 const TYPE_ICON: Record<AgentActivityType, LucideIcon> = {
     knowledge_search: Search,
     knowledge_read: BookOpen,
-    graph_search: Network,
     web_search: Globe,
     web_read: Globe,
     memory_search: Brain,

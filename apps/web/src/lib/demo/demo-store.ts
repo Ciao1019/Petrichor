@@ -557,8 +557,6 @@ export function buildDashboardOverview(): DashboardOverviewResponse {
                 { key: "wikiPages", label: "Wiki 页面", value: 36 },
                 { key: "documents", label: "文档", value: 12, hint: "348 页" },
                 { key: "tags", label: "标签", value: 17 },
-                { key: "graphNodes", label: "图谱节点", value: 64, hint: "48 已发布" },
-                { key: "graphEdges", label: "图谱关系", value: 92 },
                 { key: "readingMinutes", label: "阅读时长", value: 486, hint: "分钟" },
             ],
         },
@@ -591,7 +589,6 @@ export function buildDashboardOverview(): DashboardOverviewResponse {
             { label: "文章", count: totalArticles },
             { label: "Wiki 页面", count: 36 },
             { label: "文档", count: 12 },
-            { label: "图谱节点", count: 64 },
         ],
         agent: {
             windowDays: 30,

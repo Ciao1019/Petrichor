@@ -5,10 +5,11 @@ import { Github, MessageCircleQuestion, Search } from "@/components/iconimate"
 import { Link } from "react-router-dom"
 
 import { BlogSearchDialog, useBlogSearchHotkey } from "@/components/blog-search-dialog"
+import { PublicSiteFooter } from "@/components/public-site-footer"
 import { StaticNoise } from "@/cuicui/other/creative-effects/animated-noise/static-noise"
 import { isDemoOnlyBuild } from "@/lib/demo/demo-mode"
 
-export type RetypesetSiteActiveSection = "articles" | "tags" | "wiki" | "graph" | "search" | "ask" | "projects" | "petrichor" | "about"
+export type RetypesetSiteActiveSection = "articles" | "tags" | "wiki" | "search" | "ask" | "projects" | "petrichor" | "about"
 type RetypesetSiteNavSection = RetypesetSiteActiveSection
 type RetypesetSiteNavItem = {
     section: RetypesetSiteNavSection
@@ -37,7 +38,7 @@ const RETYPESET_SITE_GITHUB_HREF = "https://github.com/Ciao1019/Petrichor"
 
 const retypesetSiteNavItems: RetypesetSiteNavItem[] = [
     { section: "articles", href: "/#articles", label: retypesetSiteCopy.navPosts, internal: true },
-    // Wiki 与图谱能力保留在服务端，当前不在公开前台展示。
+    // Wiki 能力保留在服务端，当前不在公开前台展示。
     { section: "projects", href: "/projects", label: retypesetSiteCopy.navProjects, internal: true },
     { section: "petrichor", href: "/petrichor", label: retypesetSiteCopy.navPetrichor, internal: true },
     { section: "about", href: "/about", label: retypesetSiteCopy.navAbout, internal: true },
@@ -114,74 +115,79 @@ export function RetypesetSiteNav({
 
     return (
         <div className="retypeset-home contents">
-            <nav
-                aria-label={retypesetSiteCopy.navLabel}
-                className={`${dockVisibilityClass} retypeset-font-navbar mb-[2.625rem] text-[0.9rem] font-semibold leading-[2.45em] transition-opacity duration-150 lg:fixed lg:right-[max(5rem,calc(50vw-35rem))] lg:bottom-[min(calc(9.04rem+3.85vw),12.5rem)] lg:z-30 lg:mb-0 lg:w-56 lg:text-base`}
-            >
-                <ul>
-                    {retypesetSiteNavItems.map((item) => {
-                        const active = item.section === activeSection
-                        const className = getChromeLinkClassName(active)
+            <div className="mb-[2.625rem] lg:contents" data-public-site-navigation>
+                <nav
+                    aria-label={retypesetSiteCopy.navLabel}
+                    className={`${dockVisibilityClass} retypeset-font-navbar text-[0.9rem] font-semibold leading-[2.45em] transition-opacity duration-150 lg:fixed lg:right-[max(5rem,calc(50vw-35rem))] lg:bottom-[min(calc(9.04rem+3.85vw),12.5rem)] lg:z-30 lg:w-56 lg:text-base`}
+                >
+                    <ul>
+                        {retypesetSiteNavItems.map((item) => {
+                            const active = item.section === activeSection
+                            const className = getChromeLinkClassName(active)
 
-                        return (
-                            <li key={item.href}>
-                                {item.internal ? (
-                                    <Link className={className} to={item.href}>
-                                        {item.label}
-                                    </Link>
-                                ) : (
-                                    <a className={className} href={item.href}>
-                                        {item.label}
-                                    </a>
-                                )}
+                            return (
+                                <li key={item.href}>
+                                    {item.internal ? (
+                                        <Link className={className} to={item.href}>
+                                            {item.label}
+                                        </Link>
+                                    ) : (
+                                        <a className={className} href={item.href}>
+                                            {item.label}
+                                        </a>
+                                    )}
+                                </li>
+                            )
+                        })}
+                        {isDemoOnlyBuild() ? (
+                            <li className="mt-1">
+                                <Link
+                                    className="retypeset-highlight-static retypeset-c-primary inline-flex font-bold"
+                                    to="/dashboard/knowledge"
+                                >
+                                    进入后台演示 →
+                                </Link>
                             </li>
-                        )
-                    })}
-                    {isDemoOnlyBuild() ? (
-                        <li className="mt-1">
-                            <Link
-                                className="retypeset-highlight-static retypeset-c-primary inline-flex font-bold"
-                                to="/dashboard/knowledge"
-                            >
-                                进入后台演示 →
-                            </Link>
-                        </li>
-                    ) : null}
-                </ul>
-                <div className="mt-3 flex items-center gap-3 lg:mt-4">
-                    <button
-                        type="button"
-                        onClick={openSearch}
-                        aria-label={retypesetSiteCopy.searchTrigger}
-                        title={retypesetSiteCopy.searchTrigger}
-                        className="retypeset-c-secondary inline-flex size-7 cursor-pointer items-center justify-center rounded-full"
-                    >
-                        <Search className="size-4" aria-hidden="true" />
-                        <span className="sr-only">{retypesetSiteCopy.searchTrigger}</span>
-                    </button>
-                    <Link
-                        to="/ask"
-                        aria-label={retypesetSiteCopy.navAsk}
-                        aria-current={activeSection === "ask" ? "page" : undefined}
-                        title={retypesetSiteCopy.navAsk}
-                        className={`${activeSection === "ask" ? "retypeset-c-primary" : "retypeset-c-secondary"} inline-flex size-7 cursor-pointer items-center justify-center rounded-full transition-colors`}
-                    >
-                        <MessageCircleQuestion className="size-4" aria-hidden="true" />
-                        <span className="sr-only">{retypesetSiteCopy.navAsk}</span>
-                    </Link>
-                    <a
-                        href={RETYPESET_SITE_GITHUB_HREF}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        aria-label={retypesetSiteCopy.githubTrigger}
-                        title={retypesetSiteCopy.githubTrigger}
-                        className="retypeset-c-secondary inline-flex size-7 cursor-pointer items-center justify-center rounded-full"
-                    >
-                        <Github className="size-4" aria-hidden="true" />
-                        <span className="sr-only">{retypesetSiteCopy.githubTrigger}</span>
-                    </a>
-                </div>
-            </nav>
+                        ) : null}
+                    </ul>
+                    <div className="mt-3 flex items-center gap-3 lg:mt-4">
+                        <button
+                            type="button"
+                            onClick={openSearch}
+                            aria-label={retypesetSiteCopy.searchTrigger}
+                            title={retypesetSiteCopy.searchTrigger}
+                            className="retypeset-c-secondary inline-flex size-7 cursor-pointer items-center justify-center rounded-full"
+                        >
+                            <Search className="size-4" aria-hidden="true" />
+                            <span className="sr-only">{retypesetSiteCopy.searchTrigger}</span>
+                        </button>
+                        <Link
+                            to="/ask"
+                            aria-label={retypesetSiteCopy.navAsk}
+                            aria-current={activeSection === "ask" ? "page" : undefined}
+                            title={retypesetSiteCopy.navAsk}
+                            className={`${activeSection === "ask" ? "retypeset-c-primary" : "retypeset-c-secondary"} inline-flex size-7 cursor-pointer items-center justify-center rounded-full transition-colors`}
+                        >
+                            <MessageCircleQuestion className="size-4" aria-hidden="true" />
+                            <span className="sr-only">{retypesetSiteCopy.navAsk}</span>
+                        </Link>
+                        <a
+                            href={RETYPESET_SITE_GITHUB_HREF}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label={retypesetSiteCopy.githubTrigger}
+                            title={retypesetSiteCopy.githubTrigger}
+                            className="retypeset-c-secondary inline-flex size-7 cursor-pointer items-center justify-center rounded-full"
+                        >
+                            <Github className="size-4" aria-hidden="true" />
+                            <span className="sr-only">{retypesetSiteCopy.githubTrigger}</span>
+                        </a>
+                    </div>
+                </nav>
+                <PublicSiteFooter
+                    className={`${dockVisibilityClass} mt-2 transition-opacity duration-150 lg:fixed lg:right-[max(5rem,calc(50vw-35rem))] lg:bottom-20 lg:z-30 lg:mt-0 lg:w-56`}
+                />
+            </div>
             <BlogSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
         </div>
     )

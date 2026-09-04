@@ -61,7 +61,6 @@ type AgentToolDefinition struct {
 | 领域 | 工具 ID |
 | --- | --- |
 | Wiki | `knowledge.wiki_overview`、`knowledge.search_wiki_pages`、`knowledge.read_wiki_page_detail` |
-| 图谱 | `graph.search`、`graph.expand`、`graph.get_entity`、`graph.get_relations` |
 | 研究 | `research.search`、`research.fetch`、`research.extract` |
 | 记忆 | `memory.search`、`memory.write`、`memory.update`、`memory.delete` |
 | 写作 | `writer.compose`、`writer.rewrite`、`writer.summarize`、`writer.structure`、`writer.save_artifact` |

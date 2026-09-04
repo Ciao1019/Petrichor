@@ -27,10 +27,6 @@ func registerPublicRoutes(rg *gin.RouterGroup) {
 	projects.GET("", publicapi.ProjectShowcase)
 	projects.POST("", publicapi.ProjectShowcase)
 
-	siteGraph := g.Group("/site-graph")
-	siteGraph.GET("", publicapi.SiteGraph)
-	siteGraph.POST("", publicapi.SiteGraph)
-
 	// 公开文章
 	article := g.Group("/article")
 	article.GET("/list", publicapi.ArticleList)

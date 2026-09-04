@@ -3,7 +3,6 @@ import type {
   ProjectShowcaseResponse,
   PublicArticleListItem,
   PublicSharedArticleDetailResponse,
-  SiteGraphPayload,
 } from "@/lib/api"
 
 import { demoStore } from "./demo-store"
@@ -169,94 +168,4 @@ export const DEMO_PROJECT_SHOWCASE: ProjectShowcaseResponse = {
       siteUrl: "",
     },
   ],
-}
-
-export function buildDemoSiteGraph(): SiteGraphPayload {
-  const articles = buildDemoPublicArticleList()
-  const sectionId = "demo-section-open-source"
-  const nodes: SiteGraphPayload["nodes"] = [
-    {
-      id: "demo-graph-root",
-      label: "CiZai",
-      kind: "root",
-      route: "/",
-      summary: "Coding、AI 与开源工具的个人知识站。",
-      attributes: [{ name: "来源", value: "Petrichor 静态演示" }],
-      aliases: ["CiZai's Knowledge Base"],
-      parentId: null,
-      topSectionId: null,
-      weight: 10,
-    },
-    {
-      id: sectionId,
-      label: "开源命令行工具",
-      kind: "section",
-      route: null,
-      summary: "面向日常使用的安装、配置、安全实践与问题排查指南。",
-      attributes: [],
-      aliases: ["CLI 工具"],
-      parentId: "demo-graph-root",
-      topSectionId: sectionId,
-      weight: 8,
-    },
-    ...articles.map((article, index) => ({
-      id: `demo-graph-article-${index + 1}`,
-      label: article.title,
-      kind: "article" as const,
-      route: article.href,
-      summary: article.excerpt,
-      attributes: article.tags.map((tag) => ({ name: "标签", value: tag })),
-      aliases: [],
-      parentId: sectionId,
-      topSectionId: sectionId,
-      weight: 6,
-    })),
-    {
-      id: "demo-concept-safe-cleanup",
-      label: "安全清理",
-      kind: "concept",
-      route: "/p/mole-macos-guide",
-      summary: "通过 dry-run、白名单与备份降低系统清理风险。",
-      attributes: [{ name: "来源", value: "Mole 指南" }],
-      aliases: ["预览模式"],
-      parentId: sectionId,
-      topSectionId: sectionId,
-      weight: 5,
-    },
-    {
-      id: "demo-concept-system-profile",
-      label: "系统信息展示",
-      kind: "concept",
-      route: "/p/fastfetch-guide",
-      summary: "使用模块、Logo 与格式字符串构建可定制的终端系统概览。",
-      attributes: [{ name: "来源", value: "Fastfetch 指南" }],
-      aliases: ["System Fetch"],
-      parentId: sectionId,
-      topSectionId: sectionId,
-      weight: 5,
-    },
-  ]
-  const links: SiteGraphPayload["links"] = [
-    { source: "demo-graph-root", target: sectionId, kind: "structure", relation: "包含" },
-    ...articles.map((_, index) => ({
-      source: sectionId,
-      target: `demo-graph-article-${index + 1}`,
-      kind: "structure" as const,
-      relation: "包含",
-    })),
-    { source: "demo-graph-article-1", target: "demo-concept-safe-cleanup", kind: "derived", relation: "提炼" },
-    { source: "demo-graph-article-2", target: "demo-concept-system-profile", kind: "derived", relation: "提炼" },
-    { source: "demo-concept-safe-cleanup", target: "demo-concept-system-profile", kind: "semantic", relation: "共同用于系统维护" },
-  ]
-  return {
-    nodes,
-    links,
-    stats: {
-      nodeCount: nodes.length,
-      linkCount: links.length,
-      articleCount: articles.length,
-      conceptCount: 2,
-    },
-    generatedAt: new Date().toISOString(),
-  }
 }

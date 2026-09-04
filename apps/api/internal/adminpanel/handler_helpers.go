@@ -20,11 +20,11 @@ func authUserID(c *gin.Context) int64 {
 
 func trimSpaces(s string) string { return strings.TrimSpace(s) }
 
-// anySliceFromAttributes 把类型化属性转回弱类型数组，复用统一归一化入口。
-func anySliceFromAttributes(items []Attribute) []any {
-	raw := make([]any, 0, len(items))
-	for _, item := range items {
-		raw = append(raw, map[string]any{"name": item.Name, "value": item.Value})
+func inList(list []string, value string) bool {
+	for _, item := range list {
+		if item == value {
+			return true
+		}
 	}
-	return raw
+	return false
 }

@@ -10,7 +10,6 @@ const ASSET_COLORS: Record<string, string> = {
   文章: VIZ.slot1,
   "Wiki 页面": VIZ.slot2,
   文档: VIZ.slot3,
-  图谱节点: VIZ.slot4,
 }
 
 type AssetCompositionProps = {

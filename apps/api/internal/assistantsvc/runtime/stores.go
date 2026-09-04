@@ -445,7 +445,7 @@ func NormalizeTitle(title string) string {
 	return trimSpace(t)
 }
 
-// ScoreSourceQuality 来源质量规则打分：内部知识库/图谱高可信；官方域名高于普通博客。
+// ScoreSourceQuality 来源质量规则打分：内部知识库与历史图谱证据高可信；官方域名高于普通博客。
 func ScoreSourceQuality(input EvidenceInput) float64 {
 	switch input.Source {
 	case EvidenceKnowledge, EvidenceGraph:

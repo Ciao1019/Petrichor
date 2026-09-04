@@ -173,6 +173,20 @@ describe("持久消息恢复", () => {
       { type: "text", text: "x" },
       { type: "data-intent-route", data: 2 },
     ] })).toEqual([{ type: "text", text: "x" }, { type: "data-intent-route", data: 2 }])
+    const exhaustedBudget = {
+      type: "data-step-budget",
+      id: "run-1:step-budget",
+      data: { status: "exhausted", remaining: 0 },
+    }
+    expect(extractPersistedParts({ parts: [
+      { type: "data-step-budget", data: { status: "warning", remaining: 2 } },
+      { type: "text", text: "answer" },
+      { type: "data-step-budget", data: { status: "resolved", remaining: 2 } },
+      exhaustedBudget,
+    ] })).toEqual([{ type: "text", text: "answer" }, exhaustedBudget])
+    expect(extractPersistedParts({ parts: [
+      { type: "data-step-budget", data: { status: "warning", remaining: 2 } },
+    ] })).toBeNull()
     expect(extractPersistedMessageMetadata(null)).toBeNull()
     expect(extractPersistedMessageMetadata({})).toBeNull()
     expect(extractPersistedMessageMetadata({

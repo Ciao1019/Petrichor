@@ -1,4 +1,4 @@
-// site_endpoints.go 站点内容公开端点：about / appearance / filing / projects / site-graph。
+// site_endpoints.go 站点内容公开端点：about / appearance / filing / projects。
 package publicapi
 
 import (
@@ -50,18 +50,6 @@ func ProjectShowcase(c *gin.Context) {
 	ctx := c.Request.Context()
 	resp, err := cache.ReadThrough(sitecontent.ProjectShowcaseCacheKey(), sitecontent.TTLSeconds,
 		func() (map[string]any, error) { return sitecontent.LoadPublicProjectShowcaseResponse(ctx) })
-	if err != nil {
-		httpx.HandleError(c, err)
-		return
-	}
-	httpx.OK(c, resp)
-}
-
-// SiteGraph GET+POST /api/public/site-graph。
-func SiteGraph(c *gin.Context) {
-	ctx := c.Request.Context()
-	resp, err := cache.ReadThrough(sitecontent.SiteGraphCacheKey(), sitecontent.TTLSeconds,
-		func() (map[string]any, error) { return sitecontent.LoadPublicSiteGraphResponse(ctx) })
 	if err != nil {
 		httpx.HandleError(c, err)
 		return

@@ -31,7 +31,7 @@ function parsePx(value: string): number | null {
   return Number.isFinite(next) ? next : null
 }
 
-export function scrollToHeading(id: string): boolean {
+export function scrollToHeading(id: string, behaviorOverride?: ScrollBehavior): boolean {
   if (typeof window === "undefined") return false
   const el = document.getElementById(id)
   if (!el) return false
@@ -42,7 +42,7 @@ export function scrollToHeading(id: string): boolean {
     // ignore
   }
 
-  const behavior = supportsReducedMotion() ? "auto" : "smooth"
+  const behavior = behaviorOverride ?? (supportsReducedMotion() ? "auto" : "smooth")
   const scrollMarginTop = parsePx(window.getComputedStyle(el).scrollMarginTop) ?? 0
   const absoluteTop = el.getBoundingClientRect().top + window.scrollY
   const targetTop = Math.max(0, absoluteTop - scrollMarginTop)

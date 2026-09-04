@@ -18,7 +18,6 @@ import { isPublicSitePath } from '@/lib/public-theme-routes'
 import { authApi } from '@/lib/api'
 import { RouteLoadErrorBoundary, RouteLoadSuccessMarker } from '@/components/route-load-boundary'
 import { SiteSetupGate } from '@/components/site-setup-gate'
-import { PublicSiteFooter } from '@/components/public-site-footer'
 
 // Next.js 迁移到 React Router 后不再自动按页面拆包；显式 lazy 才能避免把编辑器、
 // 文档查看器、图表和 AI 管理页全部塞进首个 Rollup chunk。
@@ -115,9 +114,6 @@ const SiteAppearanceConfigPage = lazy(() =>
 )
 const SiteFilingConfigPage = lazy(() =>
   import('@/features/pages/admin/SiteFilingConfigPage').then((module) => ({ default: module.SiteFilingConfigPage }))
-)
-const SiteGraphConfigPage = lazy(() =>
-  import('@/features/pages/admin/SiteGraphConfigPage').then((module) => ({ default: module.SiteGraphConfigPage }))
 )
 const DocumentImportDeadLettersPage = lazy(() =>
   import('@/features/pages/admin/DocumentImportDeadLettersPage').then((module) => ({
@@ -334,7 +330,7 @@ function AppThemeScope() {
                 <Route path="admin/projects" element={<ProjectsConfigPage />} />
                 <Route path="admin/appearance" element={<SiteAppearanceConfigPage />} />
                 <Route path="admin/filing" element={<SiteFilingConfigPage />} />
-                <Route path="admin/site-graph" element={<SiteGraphConfigPage />} />
+                <Route path="admin/site-graph" element={<Navigate to={dashboardRoutes.adminAppearance} replace />} />
                 <Route path="admin/document-import-dead-letters" element={<DocumentImportDeadLettersPage />} />
                 <Route path="ai/config" element={<AiModelConfigPage />} />
                 <Route path="agent" element={<AgentKeysPage />} />
@@ -346,7 +342,6 @@ function AppThemeScope() {
               </Route>
                 </Routes>
                 <RouteLoadSuccessMarker />
-                {publicSite ? <PublicSiteFooter /> : null}
               </Suspense>
             </RouteLoadErrorBoundary>
           </div>

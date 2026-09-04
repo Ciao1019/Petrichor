@@ -18,7 +18,6 @@ import {
   Gauge,
   ListTree,
   Loader2,
-  Network,
   Pencil,
   Search,
   Square,
@@ -26,7 +25,6 @@ import {
 import { toast } from "sonner"
 
 import { QaPreparing } from "@/features/pages/knowledge/QaMarkdown"
-import { GraphRetrievalBody, parseGraphRetrievalResult } from "@/components/site-graph/GraphPathChain"
 import { CitationList } from "@/components/tool-ui/citation"
 import { safeParseSerializableCitation } from "@/components/tool-ui/citation/schema"
 import { DataTable } from "@/components/tool-ui/data-table"
@@ -46,6 +44,7 @@ import {
   toolStatusLabel,
 } from "./assistant-message-utils"
 import { ProcessToolGroup } from "./process-tool-group"
+import { StepBudgetNotice } from "./step-budget-notice"
 
 const SUBAGENT_BUDGET_LABEL = "最多 6 步 · 超时 90s"
 const FANOUT_BUDGET_LABEL = "最多 3 路并行 · 每路 6 步 / 90s"
@@ -277,27 +276,6 @@ export const ListKbToolUI = makeAssistantToolUI({
 export const ListDocLibrariesToolUI = makeAssistantToolUI({
   toolName: "list_doc_libraries",
   render: ({ toolCallId }) => <ProcessToolGroup toolCallId={toolCallId} />,
-})
-
-export const SearchGraphToolUI = makeAssistantToolUI({
-  toolName: "search_knowledge_graph",
-  render: ({ result, status }) => {
-    const { matched, paths, graphNodes, graphLinks, emptyMessage } = parseGraphRetrievalResult(result)
-
-    if (paths.length === 0 && matched.length === 0) {
-      return (
-        <ToolStatusCard title="星图检索" status={status} icon={<Network className="size-4" />}>
-          {emptyMessage ? <p className="text-xs text-muted-foreground">{emptyMessage}</p> : null}
-        </ToolStatusCard>
-      )
-    }
-
-    return (
-      <ToolStatusCard title="星图检索" status={status} icon={<Network className="size-4" />} collapsible defaultOpen={false}>
-        <GraphRetrievalBody matched={matched} paths={paths} graphNodes={graphNodes} graphLinks={graphLinks} />
-      </ToolStatusCard>
-    )
-  },
 })
 
 export const ReadKnowledgeToolUI = makeAssistantToolUI({
@@ -595,29 +573,10 @@ export const IntentRouteDataUI = makeAssistantDataUI({
   render: IntentRouteChips,
 })
 
-/** 服务端 data-step-budget → 步数将尽 / 已用尽提示 */
+/** 服务端 data-step-budget → 工具预算将尽 / 已用尽提示 */
 export const StepBudgetDataUI = makeAssistantDataUI({
   name: "step-budget",
-  render: ({ data }) => {
-    const payload = asRecord(data)
-    if (!payload) return null
-    const status = payload.status
-    if (status !== "warning" && status !== "exhausted") return null
-    const label = typeof payload.label === "string" && payload.label.trim()
-      ? payload.label.trim()
-      : status === "exhausted"
-        ? "本轮步数已用尽，可继续发消息接着做"
-        : "本轮步数将尽"
-    return (
-      <div
-        className="mb-2 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-2.5 py-2 text-xs text-amber-950/80 dark:text-amber-100/90"
-        role="status"
-      >
-        <Gauge className="mt-0.5 size-3.5 shrink-0 opacity-80" aria-hidden />
-        <span>{label}</span>
-      </div>
-    )
-  },
+  render: ({ data }) => <StepBudgetNotice data={data} />,
 })
 
 export function ToolStatusCard({

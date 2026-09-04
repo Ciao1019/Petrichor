@@ -11,7 +11,7 @@ Petrichor 的正式生产形态仍是 Docker Compose：Web、Go API、Asynq Work
 - 静态 `/rss.xml`、`/atom.xml` 示例订阅，以及普通问答与 Wiki 问答（浏览器内脚本化流式回放）；
 - 后台知识库、完整文章编辑器、Wiki 页面与图谱；
 - 文档库、视觉导入任务与死信处理；
-- 助手、模型配置、数据概览和全站星图；
+- 助手、模型配置和数据概览；
 - Agent API Key、调用日志、MCP Server 与 Agent Skill；
 - 用户、关于、开源项目、外观和个人资料等管理页面。
 

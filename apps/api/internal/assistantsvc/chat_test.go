@@ -202,6 +202,41 @@ func TestAssistantStreamPartsMatchesAIDataPartUpdateSemantics(t *testing.T) {
 	}
 }
 
+func TestStepBudgetBridgeOverwritesWarningWithTerminalState(t *testing.T) {
+	for _, terminalStatus := range []string{"resolved", "exhausted"} {
+		t.Run(terminalStatus, func(t *testing.T) {
+			parts := newAssistantStreamParts()
+			chunks := []map[string]any{}
+			bridge := newAssistantEventBridge(func(chunk any) bool {
+				chunks = append(chunks, chunk.(map[string]any))
+				return true
+			}, parts)
+
+			events := []*rt.AgentStreamEvent{
+				{RunID: "run-budget", Sequence: 1, Type: "step_budget", Payload: json.RawMessage(`{"status":"warning","remaining":2}`)},
+				{RunID: "run-budget", Sequence: 2, Type: "step_budget", Payload: json.RawMessage(`{"status":"` + terminalStatus + `","remaining":0}`)},
+			}
+			for _, event := range events {
+				if !bridge.onEvent(event) {
+					t.Fatal("bridge unexpectedly stopped")
+				}
+			}
+
+			if len(chunks) != 2 || chunks[0]["id"] != "run-budget:step-budget" || chunks[1]["id"] != chunks[0]["id"] {
+				t.Fatalf("预算状态必须使用同一 data part 原位更新：%#v", chunks)
+			}
+			persisted := parts.all()
+			if len(persisted) != 1 || persisted[0]["type"] != stepBudgetPartType {
+				t.Fatalf("落库不应保留两条预算状态：%#v", persisted)
+			}
+			data := persisted[0]["data"].(map[string]any)
+			if data["status"] != terminalStatus {
+				t.Fatalf("落库必须保留终态 %q：%#v", terminalStatus, data)
+			}
+		})
+	}
+}
+
 func TestAssistantStreamPartsPersistsStandardToolTerminalState(t *testing.T) {
 	parts := newAssistantStreamParts()
 	parts.addTool("call-1", "request_user_confirmation", map[string]any{"id": "confirm-1"}, map[string]any{"confirmed": false})

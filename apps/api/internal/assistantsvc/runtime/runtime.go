@@ -162,7 +162,7 @@ func MapDomainsToSkills(domains []string, availableSkillIDs []string) []string {
 		"knowledge": "knowledge", "doc_library": "documents", "document": "documents",
 		"documents": "documents", "system": "system", "content_write": "documents",
 		"write": "writer", "writer": "writer", "admin": "admin",
-		"research": "research", "graph": "graph", "memory": "memory",
+		"research": "research", "memory": "memory",
 	}
 	out := []string{}
 	added := map[string]bool{}

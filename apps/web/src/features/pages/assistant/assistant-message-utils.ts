@@ -189,13 +189,22 @@ export function extractPersistedParts(content: unknown) {
     .map((part) => sanitizeUIMessagePart(part))
     .filter((part): part is Record<string, unknown> => part != null)
   if (sanitized.length === 0) return null
+
+  // 能从历史接口读到的消息都已经结束：warning/resolved 只是运行中状态，刷新后不应复活。
+  // 只有确实因工具预算耗尽而停止的 exhausted 提示需要随消息保留。
+  const terminalParts = sanitized.filter((part) => {
+    if (part.type !== "data-step-budget") return true
+    return asRecord(part.data)?.status === "exhausted"
+  })
+  if (terminalParts.length === 0) return null
+
   // 历史消息若残留多条 data-intent-route，只保留最后一条
   let lastIntentIndex = -1
-  for (let index = 0; index < sanitized.length; index += 1) {
-    if (sanitized[index]?.type === "data-intent-route") lastIntentIndex = index
+  for (let index = 0; index < terminalParts.length; index += 1) {
+    if (terminalParts[index]?.type === "data-intent-route") lastIntentIndex = index
   }
-  if (lastIntentIndex < 0) return sanitized
-  return sanitized.filter((part, index) => part.type !== "data-intent-route" || index === lastIntentIndex)
+  if (lastIntentIndex < 0) return terminalParts
+  return terminalParts.filter((part, index) => part.type !== "data-intent-route" || index === lastIntentIndex)
 }
 
 export function sanitizeUIMessagePart(part: unknown): Record<string, unknown> | null {

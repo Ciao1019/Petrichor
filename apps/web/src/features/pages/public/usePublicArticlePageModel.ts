@@ -70,8 +70,8 @@ export function usePublicArticlePageModel(shareCode: string | undefined): Public
   const { articleRef, scrollOffsetPx } = usePublicArticleScrollOffset(SCROLL_OFFSET_EXTRA_PX)
   const { activeHeadingId, setActiveHeadingId } = usePublicArticleActiveHeading({ tab, navToc, scrollOffsetPx })
 
-  const handleScrollTo = React.useCallback((id: string) => {
-    scrollToHeading(id)
+  const handleScrollTo = React.useCallback((id: string, behavior?: ScrollBehavior) => {
+    scrollToHeading(id, behavior)
     setActiveHeadingId(id)
   }, [setActiveHeadingId])
   usePublicArticleInitialHashScroll({

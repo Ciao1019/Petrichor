@@ -11,7 +11,6 @@ import {
   IconPackage,
   IconPlugConnected,
   IconPalette,
-  IconNetwork,
   IconRobot,
   IconSettings,
   IconSparkles,
@@ -190,12 +189,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         url: dashboardRoutes.adminFiling,
         icon: ShieldCheck,
         isActive: isDashboardSectionPath(location.pathname, "admin/filing"),
-      },
-      {
-        title: "全站星图",
-        url: dashboardRoutes.adminSiteGraph,
-        icon: IconNetwork,
-        isActive: isDashboardSectionPath(location.pathname, "admin/site-graph"),
       },
       {
         title: "视觉导入死信",

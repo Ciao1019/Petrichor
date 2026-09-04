@@ -36,7 +36,6 @@ type scalarRow struct {
 	knowledgeBases   int64
 	tags             int64
 	wikiPages        int64
-	graphEdges       int64
 	agentCallsTotal  int64
 	agentWindowTotal int64
 	agentSuccess     int64
@@ -166,7 +165,6 @@ SELECT
 	(SELECT count(distinct t.tag)::int FROM petrichor_kb_article_tag t
 		JOIN petrichor_kb_article a ON a.id = t.article_id WHERE a.user_id = $1),
 	(SELECT count(*)::int FROM petrichor_kb_wiki_page WHERE user_id = $1 AND archived_at IS NULL),
-	(SELECT count(*)::int FROM petrichor_site_graph_edge WHERE user_id = $1),
 	(SELECT count(*)::int FROM petrichor_agent_call_log WHERE user_id = $1),
 	(SELECT count(*)::int FROM petrichor_agent_call_log WHERE user_id = $1 AND created_at >= $2),
 	(SELECT coalesce(sum(CASE WHEN status_code < 400 THEN 1 ELSE 0 END), 0)::int FROM petrichor_agent_call_log WHERE user_id = $1 AND created_at >= $2),
@@ -177,7 +175,7 @@ SELECT
 		userID, agentStart).Scan(
 		&scalars.articles, &scalars.words, &scalars.minutes,
 		&scalars.threads, &scalars.knowledgeBases, &scalars.tags,
-		&scalars.wikiPages, &scalars.graphEdges, &scalars.agentCallsTotal,
+		&scalars.wikiPages, &scalars.agentCallsTotal,
 		&scalars.agentWindowTotal, &scalars.agentSuccess, &scalars.agentClientErr,
 		&scalars.agentServerErr, &scalars.agentAvgMs, &scalars.agentMaxMs)
 	if scalarErr != nil {
@@ -266,23 +264,17 @@ SELECT t.bucket, t.label, t.c1 FROM (
 		return nil, err
 	}
 
-	// 4) 文档状态 / 导入任务状态 / 图谱节点类型分组计数。
+	// 4) 文档状态 / 导入任务状态分组计数。
 	groupRows := []labelRow{}
 	if err := collectRows(&groupRows, func() (rowScanner, error) {
 		return pool.Query(ctx, `
 SELECT t.bucket, t.label, t.c1, t.c2, t.c3 FROM (
-	SELECT 'doc' AS bucket, status AS label, count(*)::int AS c1,
-	       coalesce(sum(coalesce(size_bytes, 0)), 0)::bigint AS c2,
-	       coalesce(sum(coalesce(page_count, 0)), 0)::bigint AS c3
-		FROM petrichor_doc_document
-		WHERE user_id = $1
-		GROUP BY status
-	UNION ALL
-	SELECT 'graph_node', kind, count(*)::int,
-	       coalesce(sum(CASE WHEN status = 'PUBLISHED' THEN 1 ELSE 0 END), 0)::int, 0
-		FROM petrichor_site_graph_node
-		WHERE user_id = $1
-		GROUP BY kind
+		SELECT 'doc' AS bucket, status AS label, count(*)::int AS c1,
+		       coalesce(sum(coalesce(size_bytes, 0)), 0)::bigint AS c2,
+		       coalesce(sum(coalesce(page_count, 0)), 0)::bigint AS c3
+			FROM petrichor_doc_document
+			WHERE user_id = $1
+			GROUP BY status
 ) AS t ORDER BY t.bucket ASC, t.c1 DESC`, userID)
 	}, func(rs rowScanner) (labelRow, error) {
 		var r labelRow
@@ -425,7 +417,6 @@ LIMIT 6`, userID)
 
 	docRows := filterLabelRows(groupRows, "doc")
 	importRows := filterLabelRows(groupRows, "import")
-	graphNodeRows := filterLabelRows(groupRows, "graph_node")
 
 	var documentTotal, documentBytes, documentPages, importTotal int64
 	for _, row := range docRows {
@@ -436,12 +427,6 @@ LIMIT 6`, userID)
 	for _, row := range importRows {
 		importTotal += num(row.c1)
 	}
-	var graphNodeTotal, graphNodePublished int64
-	for _, row := range graphNodeRows {
-		graphNodeTotal += num(row.c1)
-		graphNodePublished += num(row.c2)
-	}
-
 	agentWindowCalls := num(scalars.agentWindowTotal)
 	var successRate float64
 	if agentWindowCalls > 0 {
@@ -533,7 +518,6 @@ LIMIT 6`, userID)
 		{Label: "文章", Count: num(scalars.articles)},
 		{Label: "Wiki 页面", Count: num(scalars.wikiPages)},
 		{Label: "文档", Count: documentTotal},
-		{Label: "图谱节点", Count: graphNodeTotal},
 	}
 	filteredAssets := assets[:0]
 	for _, item := range assets {
@@ -545,7 +529,6 @@ LIMIT 6`, userID)
 	unitWord := "字"
 	unitMinutes := "分钟"
 	hintPages := itoa64(documentPages) + " 页"
-	hintPublished := itoa64(graphNodePublished) + " 已发布"
 
 	return &OverviewResponse{
 		GeneratedAt: httpx.FormatISO(now),
@@ -561,8 +544,6 @@ LIMIT 6`, userID)
 				{Key: "wikiPages", Label: "Wiki 页面", Value: num(scalars.wikiPages)},
 				{Key: "documents", Label: "文档", Value: documentTotal, Hint: &hintPages},
 				{Key: "tags", Label: "标签", Value: num(scalars.tags)},
-				{Key: "graphNodes", Label: "图谱节点", Value: graphNodeTotal, Hint: &hintPublished},
-				{Key: "graphEdges", Label: "图谱关系", Value: num(scalars.graphEdges)},
 				{Key: "readingMinutes", Label: "阅读时长", Value: num(scalars.minutes), Hint: &unitMinutes},
 			},
 		},

@@ -2,6 +2,7 @@ package routes
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -74,6 +75,13 @@ func TestRouteRegistryHasNoDuplicatesAndKeepsCriticalContracts(t *testing.T) {
 	for _, key := range critical {
 		if _, exists := seen[key]; !exists {
 			t.Error(fmt.Sprintf("critical route missing: %s", key))
+		}
+	}
+
+	for key := range seen {
+		if key == "GET /api/public/site-graph" || key == "POST /api/public/site-graph" ||
+			strings.Contains(key, " /api/admin/site-graph") {
+			t.Errorf("removed route is still registered: %s", key)
 		}
 	}
 }

@@ -24,6 +24,13 @@ func joinStrings(parts []string, sep string) string {
 
 func itoa(n int) string { return strconv.Itoa(n) }
 
+func minInt(left, right int) int {
+	if left < right {
+		return left
+	}
+	return right
+}
+
 func mustJSON(v any) json.RawMessage {
 	raw, err := json.Marshal(v)
 	if err != nil {
@@ -93,7 +100,6 @@ func RegisterAssistantTools(registry interface {
 	registerSystemTools(registry)
 	registerKnowledgeTools(registry)
 	registerDocumentTools(registry)
-	registerGraphTools(registry)
 	registerMemoryTools(registry)
 	registerResearchTools(registry)
 	registerWriterTools(registry)

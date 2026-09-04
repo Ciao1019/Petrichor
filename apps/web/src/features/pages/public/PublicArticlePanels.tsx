@@ -14,7 +14,7 @@ type PublicArticlePanelProps = {
   mediaAccessToken?: string | null
   toc: TocItem[]
   activeHeadingId: string
-  onTocClick: (id: string) => void
+  onTocClick: (id: string, behavior?: ScrollBehavior) => void
 }
 
 const LazyPlateMarkdownPreview = React.lazy(() => (
@@ -90,7 +90,7 @@ function PublicArticleFloatingToc({
   )
 }
 
-function MobileTocDrawer({
+export function MobileTocDrawer({
   open,
   onClose,
   navToc,
@@ -101,7 +101,7 @@ function MobileTocDrawer({
   onClose: () => void
   navToc: TocItem[]
   activeHeadingId: string
-  onTocClick: (id: string) => void
+  onTocClick: (id: string, behavior?: ScrollBehavior) => void
 }) {
   return (
     <div className="lg:hidden">
@@ -128,6 +128,7 @@ function MobileTocDrawer({
         <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3">
           <span className="text-sm font-semibold">目录</span>
           <button
+            type="button"
             onClick={onClose}
             className="rounded-md p-1 transition-colors hover:bg-white/10"
             aria-label="关闭目录"
@@ -140,8 +141,14 @@ function MobileTocDrawer({
             const active = activeHeadingId === item.id
             return (
               <button
+                type="button"
                 key={item.id}
-                onClick={() => { onTocClick(item.id); onClose() }}
+                onClick={() => {
+                  // 移动端抽屉关闭时会同时触发 fixed/transform 合成动画；平滑滚动在部分
+                  // 移动浏览器中会被延后甚至取消。先即时定位，再关闭抽屉最可靠。
+                  onTocClick(item.id, "auto")
+                  onClose()
+                }}
                 className={cn(
                   "w-full rounded-lg px-3 py-2 text-left text-sm transition-colors",
                   item.level === 3 && "pl-7",
@@ -196,6 +203,7 @@ export function PublicArticlePanel({
           <PublicArticleFloatingToc navToc={navToc} activeHeadingId={activeHeadingId} onTocClick={onTocClick} />
           {/* 小屏目录入口；桌面端保留侧边浮动目录。 */}
           <button
+            type="button"
             aria-label="打开目录"
             onClick={() => setMobileTocOpen(true)}
             className={cn(

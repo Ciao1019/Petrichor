@@ -33,37 +33,40 @@ type ProjectItem struct {
 	SiteURL    string   `json:"siteUrl"`
 }
 
-const defaultProjectHeading = "开源项目"
+const (
+	defaultProjectHeading = "开源项目"
+	defaultProjectIntro   = "我正在构建与参与的开源项目。点开每一项，可以查看项目简介、技术栈与源码。"
+)
 
 var defaultProjectItems = []ProjectItem{
 	{
-		Name:       "Ech0 — self-hosted microblog",
-		Year:       "2025",
-		Stack:      []string{"Go", "Vue"},
-		Stamp:      "popular",
-		StampColor: "red",
-		Blurb:      "An open-source, self-hosted space for publishing and sharing your thoughts — your own little corner of the web.",
-		RepoURL:    "https://github.com/lin-snow/Ech0",
-		SiteURL:    "https://ech0.app",
-	},
-	{
-		Name:       "Dox — todos in terminal",
+		Name:       "Petrichor",
 		Year:       "2026",
-		Stack:      []string{"Go", "TypeScript"},
-		Stamp:      "new",
-		StampColor: "blue",
-		Blurb:      "More than a todo list: a terminal-first task manager. TUI by default, CLI for scripts — projects, an inbox, markdown notes, full-text search and multi-user invites, all from one container and a single SQLite file.",
-		RepoURL:    "https://github.com/lin-snow/dox",
+		Stack:      []string{"TypeScript", "React", "Go", "PostgreSQL"},
+		Stamp:      "SELF-HOSTED",
+		StampColor: "red",
+		Blurb:      "面向人与 AI Agent 的自托管知识平台：从编辑、公开发布和语义 Wiki，到基于证据的 RAG 问答、MCP / REST 接入与可移植 Agent Skill。",
+		RepoURL:    "https://github.com/Ciao1019/Petrichor",
 		SiteURL:    "",
 	},
 	{
-		Name:       "Kemate — a Vercel-like PaaS",
-		Year:       "2026",
-		Stack:      []string{"Go"},
-		Stamp:      "WIP",
+		Name:       "AgentX",
+		Year:       "2025",
+		Stack:      []string{"Java", "TypeScript", "MCP", "Docker"},
+		Stamp:      "AGENT",
+		StampColor: "blue",
+		Blurb:      "通过自然语言与工具集成构建个性化智能 Agent，涵盖 MCP 网关、模型高可用、RAG、长期记忆、定时任务、监控与 OpenAPI。",
+		RepoURL:    "https://github.com/lucky-aeon/AgentX",
+		SiteURL:    "",
+	},
+	{
+		Name:       "stream-query",
+		Year:       "2022",
+		Stack:      []string{"Java", "MyBatis-Plus", "Stream", "Lambda"},
+		Stamp:      "DROMARA",
 		StampColor: "green",
-		Blurb:      "A platform-as-a-service taking aim at the likes of Vercel, built on a microservice architecture.",
-		RepoURL:    "",
+		Blurb:      "以 Stream 与 Lambda 封装数据查询和结果处理，提供无需手写 Mapper 的 MyBatis-Plus 体验，并支持 Database、OneToOne 与 OneToMany 等流式 API。",
+		RepoURL:    "https://github.com/dromara/stream-query",
 		SiteURL:    "",
 	},
 }
@@ -211,7 +214,7 @@ func BuildProjectShowcaseResponse(record *projectRecord) map[string]any {
 	if record == nil {
 		return map[string]any{
 			"heading":   defaultProjectHeading,
-			"intro":     "",
+			"intro":     defaultProjectIntro,
 			"items":     cloneProjectItems(defaultProjectItems),
 			"createdAt": nil,
 			"updatedAt": nil,

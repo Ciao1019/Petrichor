@@ -19,6 +19,7 @@ func TestEmbeddedMigrations(t *testing.T) {
 		"202608280003_drop_knowledge_build_job.sql",
 		"202609020001_drop_document_import_jobs.sql",
 		"202609020002_site_filing.sql",
+		"202609040001_default_project_showcase.sql",
 	}
 	if !reflect.DeepEqual(entries, want) {
 		t.Fatalf("内嵌迁移不符合预期\n实际: %v\n期望: %v", entries, want)
@@ -118,5 +119,27 @@ func TestEmbeddedMigrations(t *testing.T) {
 		if !strings.Contains(filingSQL, required) {
 			t.Fatalf("站点备案迁移缺少结构: %q", required)
 		}
+	}
+
+	data, err = fs.ReadFile(Files, want[6])
+	if err != nil {
+		t.Fatalf("读取默认项目清单迁移失败: %v", err)
+	}
+	projectsSQL := string(data)
+	for _, required := range []string{
+		"ALTER COLUMN intro SET DEFAULT",
+		"ALTER COLUMN items_json SET DEFAULT",
+		"INSERT INTO public.petrichor_site_project_showcase (id)",
+		"ON CONFLICT (id) DO NOTHING",
+		`"name":"Petrichor"`,
+		`"name":"AgentX"`,
+		`"name":"stream-query"`,
+	} {
+		if !strings.Contains(projectsSQL, required) {
+			t.Fatalf("默认项目清单迁移缺少内容: %q", required)
+		}
+	}
+	if strings.Contains(projectsSQL, "ON CONFLICT (id) DO UPDATE") {
+		t.Fatal("默认项目清单迁移不应覆盖管理员已有配置")
 	}
 }

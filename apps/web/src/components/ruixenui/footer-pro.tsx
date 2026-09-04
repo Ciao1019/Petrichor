@@ -22,7 +22,7 @@ export default function FooterPro({ bottomLinks = [], className }: FooterProProp
     >
       <nav
         aria-label="备案信息"
-        className="retypeset-c-secondary mx-auto flex max-w-7xl flex-wrap items-center justify-center gap-x-5 gap-y-2 px-6 py-6 text-center text-xs sm:px-8 sm:py-8"
+        className="retypeset-font-navbar retypeset-c-secondary flex flex-wrap items-center justify-start gap-x-3 gap-y-0.5 text-left text-[0.6875rem] leading-4 lg:flex-col lg:items-start lg:gap-0 lg:text-xs lg:leading-[1.35em]"
       >
         {bottomLinks.map((link) => (
           <a
@@ -30,7 +30,7 @@ export default function FooterPro({ bottomLinks = [], className }: FooterProProp
             href={link.href}
             target="_blank"
             rel="noopener noreferrer"
-            className="underline-offset-4 opacity-80 transition-opacity hover:opacity-100 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--retypeset-accent)]"
+            className="retypeset-highlight-hover retypeset-footer-link max-w-full break-words py-[0.15rem] transition-colors focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--retypeset-accent)]"
           >
             {link.label}
           </a>

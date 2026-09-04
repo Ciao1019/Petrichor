@@ -364,11 +364,11 @@ describe("选择器", () => {
             event("tool_completed", { callId: "c1", toolId: "knowledge.search", summary: "ok", durationMs: 10, evidenceIds: [] }),
             event("tool_started", { callId: "c2", toolId: "knowledge.read", title: "阅读" }),
             event("tool_completed", { callId: "c2", toolId: "knowledge.read", summary: "ok", durationMs: 10, evidenceIds: ["e1"] }),
-            event("tool_started", { callId: "c3", toolId: "graph.search", title: "图谱" }),
-            event("tool_completed", { callId: "c3", toolId: "graph.search", summary: "ok", durationMs: 10, evidenceIds: [] }),
+            event("tool_started", { callId: "c3", toolId: "research.search", title: "外部搜索" }),
+            event("tool_completed", { callId: "c3", toolId: "research.search", summary: "ok", durationMs: 10, evidenceIds: [] }),
             event("agent_completed", { status: "completed", metrics: { durationMs: 3_000, toolCalls: 3 } }),
         ])
-        // 3 次调用聚合成 knowledge / graph 两组，头部就该说 2 个步骤
+        // 3 次调用聚合成 knowledge / research 两组，头部就该说 2 个步骤
         expect(selectActivityGroups(run)).toHaveLength(2)
         expect(selectCompletionSummary(run)).toContain("2 个步骤")
     })

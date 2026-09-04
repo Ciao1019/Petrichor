@@ -18,7 +18,6 @@ import {
     DEMO_ABOUT_PROFILE,
     DEMO_PROJECT_SHOWCASE,
     buildDemoPublicArticleList,
-    buildDemoSiteGraph,
     findDemoPublicArticle,
     searchDemoPublicArticles,
 } from "./demo-public-data"
@@ -102,7 +101,6 @@ const handlers: Record<string, DemoHandler> = {
     "GET /public/appearance": () => ok({ publicQaEnabled: true }),
     "GET /public/about/profile": () => ok(DEMO_ABOUT_PROFILE),
     "GET /public/projects": () => ok(DEMO_PROJECT_SHOWCASE),
-    "GET /public/site-graph": () => ok(buildDemoSiteGraph()),
     "GET /public/wiki/knowledge-bases": () => ok({ items: demoPublicWikiKnowledgeBases() }),
     "GET /public/wiki/pages": (body) => {
         const result = demoPublicWikiPageList({

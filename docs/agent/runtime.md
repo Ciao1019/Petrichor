@@ -82,9 +82,9 @@ Vertex 使用服务账号 JWT 换取并缓存 OAuth token。Bedrock 使用 AWS S
 
 ## 工具与安全
 
-工具按 `knowledge`、`document`、`research`、`memory`、`graph`、`writer`、`admin`、
+工具按 `knowledge`、`document`、`research`、`memory`、`writer`、`admin`、
 `system` 和 `agent` 命名空间注册。默认能力覆盖站内知识与 Wiki 检索/深读、文档库检索、
-文章创建更新移动与分享、外部研究、长期记忆、知识图谱、写作、管理查询、动态技能与委派。
+文章创建更新移动与分享、外部研究、长期记忆、写作、管理查询、动态技能与委派。
 
 危险写操作必须先由服务端签发确认票据。票据绑定用户、线程、工具和参数摘要，经过加密保护，
 并在消费时校验、防重放；模型自行声称“用户已确认”无效。工具输入、输出、SSE 和 Trace

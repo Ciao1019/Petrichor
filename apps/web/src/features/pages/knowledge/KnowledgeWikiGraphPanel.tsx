@@ -19,7 +19,7 @@ import {
   wikiGraphRoutePageKey,
 } from "@/features/pages/knowledge/knowledge-wiki-graph"
 
-/** 文案随知识库语境替换，交互与配色沿用全站星图那套点群 */
+/** 文案随知识库语境替换，交互与配色沿用通用图谱点群。 */
 const WIKI_GRAPH_PRESENTATION: Partial<SiteGraphPresentation> = {
   kindLabels: {
     root: "知识库",
@@ -59,7 +59,7 @@ export interface KnowledgeWikiGraphPanelProps {
 
 /**
  * 知识库的 Wiki 图谱：Wiki 页面为节点、页面出链为关系边，
- * 直接复用 `/graph` 全站星图的点群运行时与交互外壳，只换掉文案。
+ * 复用通用点群运行时与交互外壳，只替换 Wiki 语境文案。
  */
 export function KnowledgeWikiGraphPanel({ knowledgeBaseId, onOpenPage }: KnowledgeWikiGraphPanelProps) {
   const [graph, setGraph] = React.useState<KnowledgeBaseWikiGraphResponse | null>(null)

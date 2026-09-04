@@ -65,7 +65,7 @@ export type PublicArticlePageModel = {
   contentMetaJson?: string | null
   tocAll: TocItem[]
   activeHeadingId: string
-  onTocClick: (id: string) => void
+  onTocClick: (id: string, behavior?: ScrollBehavior) => void
   mindmapData: MindElixirData | null
 }
 

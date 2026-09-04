@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -13,7 +12,6 @@ import (
 	"petrichor/api/internal/aicore"
 	httpx "petrichor/api/internal/httpx"
 	"petrichor/api/internal/publicscope"
-	"petrichor/api/internal/sitecontent"
 )
 
 type publicQaTool struct {
@@ -105,10 +103,6 @@ func buildPublicQaTools(scope map[int64]*PublicArticleRef, mode string) *publicQ
 			execute: func(ctx context.Context, args map[string]any) (any, error) {
 				return listPublicQaArticles(ctx, qaBoundedInt(args, "limit", 30, 1, 50), qaBoundedInt(args, "offset", 0, 0, 100000))
 			},
-		},
-		publicQaTool{
-			definition: qaToolDefinition("search_knowledge_graph", "在公开全站星图上检索概念/实体关系与关联公开文章，适合关联型问题。", `{"type":"object","properties":{"query":{"type":"string","minLength":1},"maxHops":{"type":"integer","minimum":1,"maximum":3},"limit":{"type":"integer","minimum":1,"maximum":10}},"required":["query"]}`),
-			execute:    func(ctx context.Context, args map[string]any) (any, error) { return searchPublicQaGraph(ctx, args) },
 		},
 		publicQaTool{
 			definition: qaToolDefinition("search_public_articles", "在公开文章标题、摘要和正文中检索，返回 articleId、shareCode、摘要与公开链接。", `{"type":"object","properties":{"query":{"type":"string","minLength":1},"limit":{"type":"integer","minimum":1,"maximum":20}},"required":["query"]}`),
@@ -464,89 +458,6 @@ func searchPublicQaWikiTool(ctx context.Context, args map[string]any) (map[strin
 		}
 	}
 	return map[string]any{"queries": queries, "items": items, "emptyMessage": "没有匹配的 Wiki 页面"}, nil
-}
-
-func searchPublicQaGraph(ctx context.Context, args map[string]any) (map[string]any, error) {
-	query := strings.ToLower(qaRequiredString(args, "query", 200))
-	if query == "" {
-		return nil, badReq("query 不能为空")
-	}
-	maxHops := qaBoundedInt(args, "maxHops", 2, 1, 3)
-	limit := qaBoundedInt(args, "limit", 6, 1, 10)
-	payload, err := sitecontent.LoadPublicGraphPayload(ctx)
-	if err != nil {
-		return nil, err
-	}
-	type scoredNode struct {
-		node  sitecontent.PayloadNode
-		score int
-	}
-	ranked := []scoredNode{}
-	for _, node := range payload.Nodes {
-		haystack := strings.ToLower(node.Label + " " + node.Summary + " " + strings.Join(node.Aliases, " "))
-		score := 0
-		if strings.Contains(strings.ToLower(node.Label), query) {
-			score += 10
-		}
-		if strings.Contains(haystack, query) {
-			score += 4
-		}
-		for _, term := range strings.Fields(query) {
-			if len([]rune(term)) >= 2 && strings.Contains(haystack, term) {
-				score++
-			}
-		}
-		if score > 0 {
-			ranked = append(ranked, scoredNode{node: node, score: score})
-		}
-	}
-	sort.SliceStable(ranked, func(i, j int) bool { return ranked[i].score > ranked[j].score })
-	if len(ranked) > limit {
-		ranked = ranked[:limit]
-	}
-	selected := map[string]struct{}{}
-	frontier := map[string]struct{}{}
-	for _, item := range ranked {
-		selected[item.node.ID] = struct{}{}
-		frontier[item.node.ID] = struct{}{}
-	}
-	keptLinks := []sitecontent.PayloadLink{}
-	for hop := 0; hop < maxHops; hop++ {
-		next := map[string]struct{}{}
-		for _, link := range payload.Links {
-			_, from := frontier[link.Source]
-			_, to := frontier[link.Target]
-			if !from && !to {
-				continue
-			}
-			keptLinks = append(keptLinks, link)
-			selected[link.Source] = struct{}{}
-			selected[link.Target] = struct{}{}
-			if from {
-				next[link.Target] = struct{}{}
-			}
-			if to {
-				next[link.Source] = struct{}{}
-			}
-		}
-		frontier = next
-	}
-	nodes := []sitecontent.PayloadNode{}
-	articles := []map[string]any{}
-	for _, node := range payload.Nodes {
-		if _, exists := selected[node.ID]; !exists {
-			continue
-		}
-		nodes = append(nodes, node)
-		if node.Kind == "article" && node.Route != nil {
-			articles = append(articles, map[string]any{"id": node.ID, "title": node.Label, "href": *node.Route, "summary": node.Summary})
-		}
-	}
-	matches := make([]map[string]any, 0, len(ranked))
-	for _, item := range ranked {
-		matches = append(matches, map[string]any{"id": item.node.ID, "label": item.node.Label, "kind": item.node.Kind, "summary": item.node.Summary, "score": item.score})
-	}
-	return map[string]any{"query": query, "matches": matches, "nodes": nodes, "links": keptLinks, "articles": articles}, nil
 }
 
 func publicQaToolError(err error) string {

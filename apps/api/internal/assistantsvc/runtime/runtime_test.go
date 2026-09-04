@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -120,6 +121,36 @@ func TestStepBudgetNotifierAnnouncesEachStageOnce(t *testing.T) {
 	notifier.exhaust(events)
 	if len(collected) != 2 || collected[1]["status"] != "exhausted" {
 		t.Fatalf("用尽应恰好一条：%v", collected)
+	}
+}
+
+func TestStepBudgetNotifierResolvesTransientWarningOnce(t *testing.T) {
+	collected := []map[string]any{}
+	events := NewAgentEventEmitter("run-budget-resolved", func(event *AgentStreamEvent) {
+		if event.Type != "step_budget" {
+			return
+		}
+		payload := map[string]any{}
+		_ = json.Unmarshal(event.Payload, &payload)
+		collected = append(collected, payload)
+	})
+
+	notifier := &stepBudgetNotifier{}
+	// 没发过告警时不制造一个无意义的 resolved part。
+	notifier.resolve(events, 6)
+	notifier.observe(events, 2)
+	notifier.resolve(events, 2)
+	notifier.resolve(events, 2)
+	notifier.exhaust(events)
+
+	if len(collected) != 2 {
+		t.Fatalf("warning/resolved 应各播一次：%v", collected)
+	}
+	if collected[0]["status"] != "warning" || collected[1]["status"] != "resolved" {
+		t.Fatalf("预算状态顺序错误：%v", collected)
+	}
+	if label, _ := collected[0]["label"].(string); label == "" || strings.Contains(label, "再发一条消息") {
+		t.Fatalf("运行中告警文案不应误导用户继续发消息：%q", label)
 	}
 }
 

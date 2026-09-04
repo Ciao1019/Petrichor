@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ArrowRight, BookOpen, Network } from "@/components/iconimate"
+import { ArrowRight, BookOpen } from "@/components/iconimate"
 import { Link } from "react-router-dom"
 
 import { publicWikiApi, type PublicWikiKnowledgeBase } from "@/lib/api"
@@ -109,10 +109,6 @@ export function PublicWikiIndexPage() {
               这里不是另一份文章目录，而是从公开内容中抽取并相互连接的知识页面。
             </p>
           </div>
-          <Link to="/graph" className="retypeset-font-navbar inline-flex items-center gap-2 border border-current/20 px-3 py-2 text-xs font-semibold hover:bg-white/5">
-            <Network className="size-4" aria-hidden="true" />
-            全站关系图
-          </Link>
         </div>
       </header>
       {content}

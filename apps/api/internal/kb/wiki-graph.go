@@ -1,5 +1,5 @@
 // wiki-graph.go 知识库 Wiki 图谱：把 Wiki 页面与页面间链接一次性打包成点群载荷，
-// 供前端「Wiki 图谱」视图渲染（在知识库内扮演全站星图 /public/site-graph 的角色）。
+// 供前端「Wiki 图谱」视图渲染。
 // 单独成端点而不是让前端逐页拉 wiki/page/detail：一个知识库常有几百个页面，
 // 逐页取详情会退化成 N 次往返。
 package kb

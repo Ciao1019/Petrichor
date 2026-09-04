@@ -27,7 +27,7 @@ export function buildFilingLinks(config: SiteFilingResponse | null): FooterProLi
   return links
 }
 
-export function PublicSiteFooter() {
+export function PublicSiteFooter({ className }: { className?: string }) {
   const [filing, setFiling] = React.useState<SiteFilingResponse | null>(null)
 
   React.useEffect(() => {
@@ -44,5 +44,5 @@ export function PublicSiteFooter() {
     }
   }, [])
 
-  return <FooterPro bottomLinks={buildFilingLinks(filing)} />
+  return <FooterPro bottomLinks={buildFilingLinks(filing)} className={className} />
 }

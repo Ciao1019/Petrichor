@@ -25,7 +25,6 @@ Skill 只扩大“可见能力”，不会绕过权限，也不会赋予子 Agen
 | `knowledge` | 知识库列表、检索、定位、批量阅读、Wiki 与目录检索 |
 | `research` | 外部搜索、页面抓取和正文要点提取 |
 | `memory` | 用户记忆的检索、写入、更新和删除 |
-| `graph` | 图谱搜索、扩展、实体与关系读取 |
 | `writer` | 撰写、改写、摘要、结构梳理和保存写作产物 |
 | `documents` | 文档库搜索/读写、导出、移动、分享与确认入口 |
 | `admin` | 模型绑定、Agent Key 与公开问答状态管理 |
@@ -38,7 +37,6 @@ knowledge              -> knowledge
 doc_library/documents  -> documents
 content_write/write    -> documents/writer
 research               -> research
-graph                  -> graph
 memory                 -> memory
 admin                   -> admin
 system                  -> system

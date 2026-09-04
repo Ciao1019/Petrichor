@@ -6,9 +6,9 @@ import type {
 } from "@/lib/api"
 
 /**
- * 把 Wiki 图谱响应折算成全站星图的点群载荷，直接喂给 `graph-runtime`。
+ * 把 Wiki 图谱响应折算成通用点群载荷，直接喂给 `graph-runtime`。
  *
- * 复用星图那套 kind 而不是另造一套：运行时的配色、半径、层级布局和标签样式全部按
+ * 复用运行时既有 kind 而不是另造一套：配色、半径、层级布局和标签样式全部按
  * root/section/article/concept/entity/tag 分支写死，换一套枚举等于把运行时抄一遍。
  * 语义对应关系：知识库=root、分类=section、文章摘要=article、其他页面=tag。
  */
@@ -23,7 +23,7 @@ const CATEGORY_PREFIX = "wiki:category:"
 /** 页面节点的 route 前缀：宿主组件靠它把双击/「打开知识页」还原成 pageKey */
 const PAGE_ROUTE_PREFIX = "wiki:page:"
 
-/** Wiki 页面类型 → 星图节点类型 */
+/** Wiki 页面类型 → 点群节点类型 */
 const KIND_BY_PAGE_KIND: Record<string, SiteGraphPayloadNode["kind"]> = {
   index: "section",
   source: "article",

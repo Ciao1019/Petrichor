@@ -96,7 +96,7 @@ export function SiteFilingConfigPage() {
             备案管理
           </h1>
           <p className="text-sm text-muted-foreground">
-            配置 ICP 与公安备案信息。启用后会展示在所有前台公开页面的底部。
+            配置 ICP 与公安备案信息。启用后会展示在所有前台公开页面的导航区域。
           </p>
         </div>
         <div className="flex gap-2">
@@ -115,7 +115,7 @@ export function SiteFilingConfigPage() {
         <CardHeader>
           <CardTitle className="text-base">前台展示</CardTitle>
           <CardDescription>
-            关闭后会保留已填写的信息，但前台页脚不会显示备案链接。
+            关闭后会保留已填写的信息，但前台导航区不会显示备案链接。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -205,7 +205,7 @@ export function SiteFilingConfigPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">发布状态</CardTitle>
-          <CardDescription>公开页脚会在保存后读取最新的单例配置。</CardDescription>
+          <CardDescription>公开页面会在保存后读取最新的单例配置。</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 text-sm sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">

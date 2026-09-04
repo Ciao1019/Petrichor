@@ -6,7 +6,6 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "rea
 import { AppBreadcrumb } from "@/components/app-breadcrumb"
 import { AppSidebar } from "@/components/app-sidebar"
 import { DemoModeBanner } from "@/components/demo-mode-banner"
-import { PublicSiteFooter } from "@/components/public-site-footer"
 import { RouteLoadErrorBoundary, RouteLoadSuccessMarker } from "@/components/route-load-boundary"
 import { ThemeProvider } from "@/components/theme-provider"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
@@ -81,9 +80,6 @@ const SiteAppearanceConfigPage = lazy(() =>
 )
 const SiteFilingConfigPage = lazy(() =>
   import("@/features/pages/admin/SiteFilingConfigPage").then((module) => ({ default: module.SiteFilingConfigPage })),
-)
-const SiteGraphConfigPage = lazy(() =>
-  import("@/features/pages/admin/SiteGraphConfigPage").then((module) => ({ default: module.SiteGraphConfigPage })),
 )
 const DocumentImportDeadLettersPage = lazy(() =>
   import("@/features/pages/admin/DocumentImportDeadLettersPage").then((module) => ({ default: module.DocumentImportDeadLettersPage })),
@@ -238,7 +234,7 @@ function DemoRoutes() {
                   <Route path="admin/projects" element={<ProjectsConfigPage />} />
                   <Route path="admin/appearance" element={<SiteAppearanceConfigPage />} />
                   <Route path="admin/filing" element={<SiteFilingConfigPage />} />
-                  <Route path="admin/site-graph" element={<SiteGraphConfigPage />} />
+                  <Route path="admin/site-graph" element={<Navigate to={dashboardRoutes.adminAppearance} replace />} />
                   <Route path="admin/document-import-dead-letters" element={<DocumentImportDeadLettersPage />} />
                   <Route path="ai/config" element={<AiModelConfigPage />} />
                   <Route path="agent" element={<AgentKeysPage />} />
@@ -252,7 +248,6 @@ function DemoRoutes() {
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
               <RouteLoadSuccessMarker />
-              {publicSite ? <PublicSiteFooter /> : null}
             </Suspense>
           </RouteLoadErrorBoundary>
         </div>

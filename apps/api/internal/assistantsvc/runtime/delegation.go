@@ -12,7 +12,6 @@ const subagentMaxParallel = 3
 var subagentReadNamespaces = map[ToolNamespace]bool{
 	NamespaceKnowledge: true,
 	NamespaceResearch:  true,
-	NamespaceGraph:     true,
 	NamespaceDocument:  true,
 }
 

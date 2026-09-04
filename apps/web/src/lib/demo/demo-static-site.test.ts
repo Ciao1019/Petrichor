@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest"
 
 import {
   buildDemoPublicArticleList,
-  buildDemoSiteGraph,
   findDemoPublicArticle,
   searchDemoPublicArticles,
 } from "./demo-public-data"
@@ -28,14 +27,6 @@ describe("Vercel 静态演示数据", () => {
     expect(findDemoPublicArticle("fastfetch-guide")?.contentMd.length).toBeGreaterThan(12_000)
     expect(articles.some((article) => article.articleId === "demo-a-fastfetch")).toBe(true)
     expect(searchDemoPublicArticles("JSONC").items[0]?.href).toBe("/p/fastfetch-guide")
-  })
-
-  it("为公开星图生成文章、概念和关系边", () => {
-    const graph = buildDemoSiteGraph()
-
-    expect(graph.nodes.some((node) => node.kind === "article")).toBe(true)
-    expect(graph.nodes.some((node) => node.kind === "concept")).toBe(true)
-    expect(graph.links.length).toBeGreaterThan(graph.stats.articleCount)
   })
 
   it("提供后台知识空间详情与图谱", () => {

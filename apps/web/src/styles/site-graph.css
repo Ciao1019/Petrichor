@@ -1,4 +1,4 @@
-/* 全站星图（/graph）：Canvas 点群 + HTML 标签层的样式与配色。
+/* Wiki 图谱：Canvas 点群 + HTML 标签层的样式与配色。
    颜色单独定义成 rgb/hex 变量，避免 Canvas fillStyle 直接吃 oklch() 带来的兼容问题。 */
 
 :root {
@@ -22,22 +22,6 @@
 /* 必须绝对定位：舞台一旦参与正常流，它的高度会被 setCanvasSize 写回 canvas，
    canvas 再撑高父级 flex 容器，形成「越量越高」的反馈回路（实测能涨到 4800px）。
    脱离文档流后，舞台尺寸完全由外层容器决定，单向依赖。 */
-/* 点群页是画布主导的宽版面，不沿用文章列的窄栏几何。
-   右侧要给固定的导航 dock 让位：dock 距右 max(5rem, 50vw-35rem)、自身宽 14rem，
-   再留 2rem 间距，否则图谱卡会被 dock 压住（实测重叠 140px）。 */
-@media (min-width: 1024px) {
-  .site-graph-section {
-    /* 必须覆盖 w-full 的 width:100%，否则宽度不受 margin 约束，
-       会连着左边距一起溢出到视口外并压住 dock */
-    width: auto;
-    margin-left: 3rem;
-    margin-right: calc(max(5rem, 50vw - 35rem) + 16rem);
-    max-width: none;
-    padding-left: 0;
-    padding-right: 0;
-  }
-}
-
 /* 毛玻璃面板：半透明底色 + 背景模糊，让暖色纸感背景透上来 */
 .site-graph-panel {
   background: color-mix(in oklab, var(--card) 26%, transparent);

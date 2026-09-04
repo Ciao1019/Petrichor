@@ -404,7 +404,7 @@ func buildPublicQaSystemPrompt(mode string) string {
 	return strings.Join([]string{
 		"你是本站的公开文档问答助手，面向未登录的访客，知识范围严格限定在本站公开分享的文章之内。",
 		"自我介绍、能力说明、寒暄等元问题直接简短回答，不调用检索或 UI 工具。",
-		"公开文章目录问题调用 list_public_articles；关联型问题优先 search_knowledge_graph；具体内容问题用 search_public_articles 定位文章。",
+		"公开文章目录问题调用 list_public_articles；具体内容与关联型问题用 search_public_articles 定位文章。",
 		"命中文章后用 search_document_tree 定位章节，片段不足再调用 read_tree_node、read_wiki_page 或 read_source_article 核验原文。",
 		"严禁编造或使用公开文章之外的知识；检索不到就如实回答本站暂无相关的公开资料。",
 		"回答具体内容必须调用 show_citations，href 只能使用工具返回的 /p/<shareCode>，并在正文中用 Markdown 链接标注来源。",

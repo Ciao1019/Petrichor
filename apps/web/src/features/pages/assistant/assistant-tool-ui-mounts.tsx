@@ -26,7 +26,6 @@ import {
   ReadDocumentToolUI,
   ReadKnowledgeToolUI,
   SaveArtifactToolUI,
-  SearchGraphToolUI,
   SpawnResearchFanoutToolUI,
   SpawnResearchSubagentToolUI,
   SpawnWriteSubagentToolUI,
@@ -59,7 +58,6 @@ export function AssistantToolUIs() {
       <ListDocLibrariesToolUI />
       <SearchKnowledgeToolUI />
       <SearchDocumentsToolUI />
-      <SearchGraphToolUI />
       <WikiOverviewToolUI />
       <SearchWikiPagesToolUI />
       <ReadKnowledgeToolUI />

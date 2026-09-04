@@ -1,5 +1,5 @@
 // Package sitecontent 提供公开内容读取和缓存：
-// about/appearance/filing/projects/site-graph 的公开侧只读入口 + Redis/进程内缓存失效。
+// about/appearance/filing/projects 的公开侧只读入口 + Redis/进程内缓存失效。
 package sitecontent
 
 import (
@@ -20,7 +20,6 @@ var (
 	projectShowcaseCacheKey  = CacheKey("public", "project-showcase")
 	siteAppearanceCacheKey   = CacheKey("public", "site-appearance")
 	siteFilingCacheKey       = CacheKey("public", "site-filing")
-	siteGraphCacheKey        = CacheKey("public", "site-graph")
 )
 
 // InvalidateArticleListCache 失效公开文章列表缓存。
@@ -47,9 +46,6 @@ func InvalidateSiteAppearanceCache() { cache.Drop(siteAppearanceCacheKey) }
 // InvalidateSiteFilingCache 失效前台备案公开缓存。
 func InvalidateSiteFilingCache() { cache.Drop(siteFilingCacheKey) }
 
-// InvalidateSiteGraphCache 失效前台星图公开缓存。
-func InvalidateSiteGraphCache() { cache.Drop(siteGraphCacheKey) }
-
 // ArticleListCacheKey 公开文章列表的缓存键（kb 写路径失效与 publicapi 读穿透共用）。
 func ArticleListCacheKey() string { return articleListCacheKey }
 
@@ -69,6 +65,3 @@ func SiteFilingCacheKey() string { return siteFilingCacheKey }
 
 // ProjectShowcaseCacheKey 公开项目展示缓存键。
 func ProjectShowcaseCacheKey() string { return projectShowcaseCacheKey }
-
-// SiteGraphCacheKey 公开星图载荷缓存键。
-func SiteGraphCacheKey() string { return siteGraphCacheKey }

@@ -13,10 +13,6 @@ var toolActivityRunning = map[string]string{
 	"knowledge.wiki_overview":         "正在查看 Wiki 页面目录",
 	"knowledge.search_wiki_pages":     "正在搜索 Wiki 页面",
 	"knowledge.read_wiki_page_detail": "正在阅读 Wiki 页面",
-	"graph.search":                    "正在查询知识图谱",
-	"graph.expand":                    "正在扩展关联实体",
-	"graph.get_entity":                "正在读取实体信息",
-	"graph.get_relations":             "正在读取实体关系",
 	"research.search":                 "正在搜索外部资料",
 	"research.fetch":                  "正在阅读外部来源",
 	"research.extract":                "正在提取来源要点",
@@ -40,7 +36,6 @@ var toolActivityRunning = map[string]string{
 
 var namespaceActivityRunning = map[string]string{
 	"knowledge": "正在使用知识库",
-	"graph":     "正在查询知识图谱",
 	"research":  "正在查询外部资料",
 	"memory":    "正在使用记忆",
 	"document":  "正在处理文档",

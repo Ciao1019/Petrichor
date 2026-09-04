@@ -13,7 +13,7 @@ import type {
 } from "@/lib/api"
 
 import type { DemoHandler, DemoHandlerResult } from "./demo-adapter"
-import { DEMO_ABOUT_PROFILE, DEMO_PROJECT_SHOWCASE, buildDemoSiteGraph } from "./demo-public-data"
+import { DEMO_ABOUT_PROFILE, DEMO_PROJECT_SHOWCASE } from "./demo-public-data"
 import { DEMO_USER } from "./demo-store"
 
 /* 最新工作台附加数据：覆盖文档库、视觉导入、模型、Agent 与系统管理。
@@ -334,64 +334,6 @@ let deadLetters = [
   { kind: "document_import", id: "demo-import-2", userId: "demo-user", knowledgeBaseId: "demo-kb-product", articleId: null, title: "Mole 安全清理笔记", attemptCount: 3, maxAttempts: 3, replayCount: 1, lastError: "第 4 页图像文字置信度不足", deadLetteredAt: recentTime, updatedAt: recentTime },
 ]
 
-function graphOverview() {
-  const graph = buildDemoSiteGraph()
-  const timestamp = now()
-  const nodes = graph.nodes.map((node, index) => ({
-    id: node.id,
-    nodeKey: node.id,
-    parentId: node.parentId,
-    parentKey: node.parentId,
-    kind: node.kind,
-    name: node.label,
-    summary: node.summary,
-    route: node.route,
-    articleId: node.kind === "article" ? (index === 2 ? "demo-a-mole" : "demo-a-fastfetch") : null,
-    attributes: node.attributes,
-    aliases: node.aliases,
-    weight: node.weight,
-    sortOrder: index,
-    status: "PUBLISHED",
-    source: node.kind === "root" ? "SYSTEM" : "AGENT",
-    confidence: 0.96,
-    locked: node.kind === "root",
-    depth: node.parentId == null ? 0 : node.kind === "article" || node.kind === "concept" ? 2 : 1,
-    childCount: graph.nodes.filter((item) => item.parentId === node.id).length,
-    degree: graph.links.filter((link) => link.source === node.id || link.target === node.id).length,
-    updatedAt: timestamp,
-  }))
-  const conceptualLinks = graph.links.filter((link) => link.kind !== "structure")
-  const edges = conceptualLinks.map((link, index) => ({
-    id: `demo-admin-edge-${index + 1}`,
-    fromNodeId: link.source,
-    fromNodeKey: link.source,
-    fromNodeName: graph.nodes.find((node) => node.id === link.source)?.label ?? link.source,
-    toNodeId: link.target,
-    toNodeKey: link.target,
-    toNodeName: graph.nodes.find((node) => node.id === link.target)?.label ?? link.target,
-    relation: link.relation,
-    kind: link.kind,
-    attributes: [],
-    weight: 1,
-    directed: true,
-    status: "PUBLISHED",
-    source: "AGENT",
-    confidence: 0.94,
-    locked: false,
-    updatedAt: timestamp,
-  }))
-  const validation = { score: 98, passed: true, nodeCount: nodes.length, edgeCount: edges.length, orphanCount: 0, maxDepth: 2, issues: [], checkedAt: timestamp }
-  return {
-    nodes,
-    edges,
-    runs: [{ id: "demo-graph-run", status: "COMPLETED", mode: "FULL", modelName: "GPT-5 mini", articleCount: 2, nodeCount: nodes.length, edgeCount: edges.length, validation, warnings: [], errorMessage: null, startedAt: seedTime, finishedAt: recentTime }],
-    nodeOptions: nodes.map((node) => ({ id: node.id, nodeKey: node.nodeKey, name: node.name, kind: node.kind })),
-    validation,
-    mergeCandidates: [],
-    stats: { nodeCount: nodes.length, edgeCount: edges.length, publishedNodes: nodes.length, draftNodes: 0, lockedNodes: 1, manualNodes: 0, articleNodes: 2, conceptNodes: 2 },
-  }
-}
-
 const handlers: Record<string, DemoHandler> = {
   /* 账户与通知 */
   "GET /auth/profile": () => ok(profile),
@@ -571,15 +513,6 @@ const handlers: Record<string, DemoHandler> = {
     }
     return ok(filing)
   },
-  "GET /admin/site-graph/overview": () => ok(graphOverview()),
-  "POST /admin/site-graph/validate": () => ok({ validation: graphOverview().validation, summary: "星图结构完整，可以发布。" }),
-  "POST /admin/site-graph/generate": () => {
-    const overview = graphOverview()
-    return ok({ runId: "demo-graph-run-new", validation: overview.validation, warnings: [], articleCount: 2, nodeCount: overview.nodes.length, edgeCount: overview.edges.length, lockedSkipped: 1, autoAlignedCount: 2, mergeCandidateCount: 0, summary: "已基于 Mole 与 Fastfetch 重新生成演示星图。" })
-  },
-  "POST /admin/site-graph/publish": () => ok({ publishedNodes: graphOverview().nodes.length, publishedEdges: graphOverview().edges.length, archivedStaleNodes: 0 }),
-  "POST /admin/site-graph/unpublish": () => ok({ unpublishedNodes: graphOverview().nodes.length, unpublishedEdges: graphOverview().edges.length }),
-  "POST /admin/site-graph/clear": () => ok({ cleared: true }),
   "GET /admin/runtime/dead-letters": () => ok({ items: deadLetters }),
   "POST /admin/runtime/dead-letters/replay": (body) => {
     deadLetters = deadLetters.filter((item) => item.id !== str(body.id))

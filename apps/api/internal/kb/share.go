@@ -314,7 +314,6 @@ func CreateArticleShare(c *gin.Context) {
 		}
 
 		invalidatePublicArticleListCache()
-		invalidateSiteGraphCache()
 		invalidatePublicArticleDetailCache(share.ShareCode)
 		if existing != nil && existing.ShareCode != share.ShareCode {
 			invalidatePublicArticleDetailCache(existing.ShareCode)
@@ -334,10 +333,6 @@ func scanSingleShare(rows interface {
 		return nil, rows.Err()
 	}
 	return scanShareRows(rows)
-}
-
-func invalidateSiteGraphCache() {
-	cacheImpl.Drop("petrichor:public:site-graph")
 }
 
 func buildShareCreateResponse(articleID int64, share *ShareRow) map[string]any {
@@ -398,7 +393,6 @@ func RevokeArticleShare(c *gin.Context) {
 			return nil, err
 		}
 		invalidatePublicArticleListCache()
-		invalidateSiteGraphCache()
 		invalidatePublicArticleDetailCache(share.ShareCode)
 		return map[string]any{
 			"articleId": strconv.FormatInt(articleID, 10),
@@ -526,7 +520,6 @@ func SetArticleSharePin(c *gin.Context) {
 			return nil, err
 		}
 		invalidatePublicArticleListCache()
-		invalidateSiteGraphCache()
 		invalidatePublicArticleDetailCache(updated.ShareCode)
 		return map[string]any{
 			"articleId": strconv.FormatInt(articleID, 10),

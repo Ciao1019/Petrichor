@@ -147,7 +147,6 @@ export function aggregateActivities(activities: AgentActivityViewModel[]): Agent
 
 const GROUP_TITLE: Record<string, string> = {
     knowledge: "检索并阅读知识库",
-    graph: "查询知识图谱",
     research: "查询外部资料",
     memory: "检索长期记忆",
     document: "检索并阅读文档",

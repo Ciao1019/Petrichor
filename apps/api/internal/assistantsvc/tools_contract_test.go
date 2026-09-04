@@ -20,7 +20,6 @@ func TestAssistantSkillToolContractsStayAligned(t *testing.T) {
 			"document.create", "document.update", "document.preview_update", "document.move", "document.share",
 			"agent.request_confirmation",
 		},
-		"graph": {"graph.search", "graph.expand", "graph.get_entity", "graph.get_relations"},
 		"knowledge": {
 			"knowledge.lookup", "knowledge.search", "knowledge.outline",
 			"knowledge.read_many", "knowledge.read", "knowledge.list_bases",

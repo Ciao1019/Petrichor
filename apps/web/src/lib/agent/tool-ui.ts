@@ -9,7 +9,6 @@
 export type AgentActivityType =
     | "knowledge_search"
     | "knowledge_read"
-    | "graph_search"
     | "web_search"
     | "web_read"
     | "memory_search"
@@ -38,10 +37,6 @@ const TOOL_UI: Record<string, ToolUiSpec> = {
     "knowledge.read_many": { activityType: "knowledge_read", running: "正在并行阅读知识章节", done: "并行阅读知识章节", group: "knowledge" },
     "knowledge.read": { activityType: "knowledge_read", running: "正在阅读知识文档", done: "阅读知识文档", group: "knowledge" },
     "knowledge.list_bases": { activityType: "knowledge_search", running: "正在查看知识库列表", done: "查看知识库列表", group: "knowledge" },
-    "graph.search": { activityType: "graph_search", running: "正在查询知识图谱", done: "查询知识图谱", group: "graph" },
-    "graph.expand": { activityType: "graph_search", running: "正在扩展关联实体", done: "扩展关联实体", group: "graph" },
-    "graph.get_entity": { activityType: "graph_search", running: "正在读取实体信息", done: "读取实体信息", group: "graph" },
-    "graph.get_relations": { activityType: "graph_search", running: "正在读取实体关系", done: "读取实体关系", group: "graph" },
     "research.search": { activityType: "web_search", running: "正在搜索外部资料", done: "搜索外部资料", group: "research" },
     "research.fetch": { activityType: "web_read", running: "正在阅读外部来源", done: "阅读外部来源", group: "research" },
     "research.extract": { activityType: "web_read", running: "正在提取来源要点", done: "提取来源要点", group: "research" },
@@ -65,7 +60,6 @@ const TOOL_UI: Record<string, ToolUiSpec> = {
 
 const NAMESPACE_FALLBACK: Record<string, ToolUiSpec> = {
     knowledge: { activityType: "knowledge_search", running: "正在使用知识库", done: "使用知识库", group: "knowledge" },
-    graph: { activityType: "graph_search", running: "正在查询知识图谱", done: "查询知识图谱", group: "graph" },
     research: { activityType: "web_search", running: "正在查询外部资料", done: "查询外部资料", group: "research" },
     memory: { activityType: "memory_search", running: "正在使用记忆", done: "使用记忆", group: "memory" },
     document: { activityType: "document_operation", running: "正在处理文档", done: "处理文档", group: "document" },
