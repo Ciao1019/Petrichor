@@ -7,6 +7,7 @@ import { AppBreadcrumb } from "@/components/app-breadcrumb"
 import { AppSidebar } from "@/components/app-sidebar"
 import { DemoModeBanner } from "@/components/demo-mode-banner"
 import { RouteLoadErrorBoundary, RouteLoadSuccessMarker } from "@/components/route-load-boundary"
+import { RouteLoadingFallback } from "@/components/route-loading-fallback"
 import { ThemeProvider } from "@/components/theme-provider"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { Toaster } from "@/components/ui/sonner"
@@ -109,14 +110,6 @@ const PetrichorPage = lazy(() =>
   import("@/features/pages/petrichor/PetrichorPage").then((module) => ({ default: module.PetrichorPage })),
 )
 
-function RouteLoadingFallback() {
-  return (
-    <div className="flex min-h-[40vh] flex-1 items-center justify-center px-4" role="status" aria-live="polite">
-      <span className="text-sm text-muted-foreground motion-safe:animate-pulse">页面加载中…</span>
-    </div>
-  )
-}
-
 function DemoDashboardLayout() {
   const location = useLocation()
   const viewportShellRef = useRef<HTMLDivElement>(null)
@@ -199,7 +192,7 @@ function DemoRoutes() {
         <Toaster />
         <div style={{ position: "relative", minHeight: "100vh" }}>
           <RouteLoadErrorBoundary resetKey={location.pathname}>
-            <Suspense fallback={<RouteLoadingFallback />}>
+            <Suspense fallback={<RouteLoadingFallback silent={publicSite} />}>
               <Routes>
                 <Route path="/" element={<BlogHomePage />} />
                 <Route path="/tags" element={<TagsPage />} />

@@ -95,7 +95,11 @@ export function PublicArticlePageView({ model }: { model: PublicArticlePageModel
         <RetypesetSiteNav activeSection="articles" dockVisible />
       </div>
 
-      <section className="relative z-20 mx-auto flex w-full max-w-[51.462rem] flex-1 flex-col px-[min(7.25vw,3.731rem)] py-10 lg:mx-[max(5.75rem,calc(50vw-34.25rem))] lg:my-20 lg:max-w-[min(calc(75vw-16rem),44rem)] lg:p-0">
+      {/* 让桌面端内部 fixed 目录高于 z-30 侧栏；短视口下两者会发生空间重叠。 */}
+      <section
+        className="relative z-20 mx-auto flex w-full max-w-[51.462rem] flex-1 flex-col px-[min(7.25vw,3.731rem)] py-10 lg:z-40 lg:mx-[max(5.75rem,calc(50vw-34.25rem))] lg:my-20 lg:max-w-[min(calc(75vw-16rem),44rem)] lg:p-0"
+        data-public-article-content
+      >
         {model.error && !model.needPassword ? <PublicArticleErrorCard error={model.error} /> : null}
         {model.needPassword ? (
           <PublicArticlePasswordCard

@@ -28,14 +28,14 @@ const TOC_MAX_LEVEL = 4
 const LINE_W: Record<number, number> = { 2: 14, 3: 10, 4: 7 }
 const LINE_W_ACTIVE: Record<number, number> = { 2: 22, 3: 18, 4: 13 }
 
-function PublicArticleFloatingToc({
+export function PublicArticleFloatingToc({
   navToc,
   activeHeadingId,
   onTocClick,
 }: {
   navToc: TocItem[]
   activeHeadingId: string
-  onTocClick: (id: string) => void
+  onTocClick: (id: string, behavior?: ScrollBehavior) => void
 }) {
   const containerRef = React.useRef<HTMLElement | null>(null)
   const clickLockRef = React.useRef(false)
@@ -52,18 +52,13 @@ function PublicArticleFloatingToc({
   }, [activeHeadingId])
 
   const handleClick = React.useCallback((id: string) => {
-    /* 先把目录容器滚到目标项附近，再锁定自动滚动。 */
-    const container = containerRef.current
-    if (container) {
-      const el = container.querySelector<HTMLElement>(`[data-toc-id="${id}"]`)
-      if (el) {
-        const scrollTarget = el.offsetTop - container.clientHeight / 2 + el.clientHeight / 2
-        container.scrollTo({ top: scrollTarget, behavior: "smooth" })
-      }
-    }
+    /*
+     * 点击项本来就在目录可视区，不要在同一事件中滚动目录；只触发正文的
+     * 默认平滑滚动，并暂时锁住目录自动居中，避免两个滚动动画互相干扰。
+     */
     clickLockRef.current = true
     onTocClick(id)
-    /* 等正文平滑滚动结束后再恢复自动滚动。 */
+    /* 等正文平滑滚动结束后再恢复目录随正文滚动。 */
     setTimeout(() => { clickLockRef.current = false }, 900)
   }, [onTocClick])
 

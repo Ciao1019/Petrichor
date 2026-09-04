@@ -17,6 +17,7 @@ import { DemoModeBanner } from '@/components/demo-mode-banner'
 import { isPublicSitePath } from '@/lib/public-theme-routes'
 import { authApi } from '@/lib/api'
 import { RouteLoadErrorBoundary, RouteLoadSuccessMarker } from '@/components/route-load-boundary'
+import { RouteLoadingFallback } from '@/components/route-loading-fallback'
 import { SiteSetupGate } from '@/components/site-setup-gate'
 
 // Next.js 迁移到 React Router 后不再自动按页面拆包；显式 lazy 才能避免把编辑器、
@@ -120,14 +121,6 @@ const DocumentImportDeadLettersPage = lazy(() =>
     default: module.DocumentImportDeadLettersPage,
   }))
 )
-
-function RouteLoadingFallback() {
-  return (
-    <div className="flex min-h-[40vh] flex-1 items-center justify-center px-4" role="status" aria-live="polite">
-      <span className="text-sm text-muted-foreground motion-safe:animate-pulse">页面加载中…</span>
-    </div>
-  )
-}
 
 function LoginPage() {
   const navigate = useNavigate()
@@ -289,10 +282,10 @@ function AppThemeScope() {
     <ThemeProvider defaultTheme="system" forcedTheme={forcedTheme}>
       <TooltipProvider>
         <Toaster />
-        <SiteSetupGate>
+        <SiteSetupGate silentChecking={publicSite}>
           <div style={{ position: 'relative', minHeight: '100vh' }}>
             <RouteLoadErrorBoundary resetKey={location.pathname}>
-              <Suspense fallback={<RouteLoadingFallback />}>
+              <Suspense fallback={<RouteLoadingFallback silent={publicSite} />}>
                 <Routes>
               <Route path="/" element={<BlogHomePage />} />
               <Route path="/tags" element={<TagsPage />} />

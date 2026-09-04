@@ -24,7 +24,11 @@ function normalizeAxiosError(error: unknown, fallback: string): string {
   return fallback
 }
 
-function SetupLoading() {
+function SetupLoading({ silent = false }: { silent?: boolean }) {
+  if (silent) {
+    return <div className="min-h-screen bg-background" aria-hidden="true" />
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4" role="status" aria-live="polite">
       <div className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -184,7 +188,13 @@ function SetupForm({ onInitialized }: { onInitialized: () => void }) {
   )
 }
 
-export function SiteSetupGate({ children }: { children: React.ReactNode }) {
+export function SiteSetupGate({
+  children,
+  silentChecking = false,
+}: {
+  children: React.ReactNode
+  silentChecking?: boolean
+}) {
   const navigate = useNavigate()
   // /demo 要在路由组件渲染后才写 sessionStorage，因此入口路径也需直接放行。
   const skipSetupCheck = isDemoOnlyBuild()
@@ -215,7 +225,7 @@ export function SiteSetupGate({ children }: { children: React.ReactNode }) {
   }, [checkSetup, skipSetupCheck])
 
   if (skipSetupCheck) return children
-  if (state === "checking") return <SetupLoading />
+  if (state === "checking") return <SetupLoading silent={silentChecking} />
   if (state === "error") return <SetupCheckError onRetry={checkSetup} />
   if (state === "required") {
     return (
