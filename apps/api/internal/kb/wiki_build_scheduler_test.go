@@ -177,7 +177,9 @@ func TestInvokeKnowledgeBuildJSONRetriesInvalidPayload(t *testing.T) {
 	}()
 
 	var calls atomic.Int32
-	ChatInvoker = func(context.Context, ChatRequest) (string, error) {
+	var requestedJSON atomic.Bool
+	ChatInvoker = func(_ context.Context, request ChatRequest) (string, error) {
+		requestedJSON.Store(request.RequireJSON)
 		if calls.Add(1) == 1 {
 			return "不是 JSON", nil
 		}
@@ -189,6 +191,43 @@ func TestInvokeKnowledgeBuildJSONRetriesInvalidPayload(t *testing.T) {
 	}
 	if _, ok := parsed["pages"]; !ok || calls.Load() != 2 {
 		t.Fatalf("parsed=%#v calls=%d", parsed, calls.Load())
+	}
+	if !requestedJSON.Load() {
+		t.Fatal("知识构建 JSON 调用没有请求协议层结构化输出")
+	}
+}
+
+func TestExtractJSONObjectsToleratesModelWrappers(t *testing.T) {
+	cases := map[string]string{
+		"Markdown 围栏": "结果如下：\n```json\n{\"assignments\":[]}\n```",
+		"前置坏对象":       "说明 {不是 JSON}，最终结果 {\"assignments\":[]}",
+		"后置大括号":       "{\"assignments\":[]}\n说明 {done}",
+		"二次字符串编码":     `"{\"assignments\":[]}"`,
+	}
+	for name, raw := range cases {
+		t.Run(name, func(t *testing.T) {
+			parsed := extractJSONObjects(raw)
+			if parsed == nil {
+				t.Fatalf("未能提取模型包装后的 JSON：%q", raw)
+			}
+			if _, ok := parsed["assignments"]; !ok {
+				t.Fatalf("提取了错误对象：%#v", parsed)
+			}
+		})
+	}
+	if parsed := extractJSONObjects("只有普通说明文字"); parsed != nil {
+		t.Fatalf("非 JSON 文本不应被接受：%#v", parsed)
+	}
+}
+
+func TestKnowledgeBuildFallbackWarningKeepsFinalReason(t *testing.T) {
+	err := &knowledgeBuildModelCallError{
+		cause: errKnowledgeBuildInvalidJSON, attempts: 3, retryable: true,
+	}
+	got := knowledgeBuildFallbackWarning("知识目录规划", "本批页面保留旧目录", err)
+	want := "知识目录规划连续 3 次调用失败，本批页面保留旧目录：模型结果不是有效 JSON"
+	if got != want {
+		t.Fatalf("warning=%q，期望 %q", got, want)
 	}
 }
 

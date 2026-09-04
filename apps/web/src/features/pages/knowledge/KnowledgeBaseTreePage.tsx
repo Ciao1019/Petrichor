@@ -22,6 +22,7 @@ import { knowledgeBaseArticlePath } from "@/lib/dashboard-routes"
 import { cn } from "@/lib/utils"
 import type { CreateArticleTarget } from "./knowledge-base-tree-create-article-dialog"
 import { KnowledgeBaseTreePageView } from "./knowledge-base-tree-page-view"
+import { KnowledgeBuildProgressSheet } from "./KnowledgeBuildProgressSheet"
 import {
   ArticleStatusBadges,
   collectVisibleNodeDndIds,
@@ -75,6 +76,11 @@ export function KnowledgeBaseTreePage() {
   const [createArticleTarget, setCreateArticleTarget] = React.useState<CreateArticleTarget | null>(null)
   const [importDialogOpen, setImportDialogOpen] = React.useState(false)
   const [activeView, setActiveView] = React.useState<KnowledgeBaseView>("documents")
+  const [buildDetailsOpen, setBuildDetailsOpen] = React.useState(false)
+  const [buildDetailsArticle, setBuildDetailsArticle] = React.useState<{
+    id: string
+    name: string
+  } | null>(null)
   // 从 Wiki 图谱双击节点跳到知识空间时带过去的落点；知识空间挂载后消费一次
   const [wikiFocusPageKey, setWikiFocusPageKey] = React.useState<string | null>(null)
   const openWikiPageFromGraph = React.useCallback((pageKey: string) => {
@@ -161,6 +167,8 @@ export function KnowledgeBaseTreePage() {
     setCreateArticleTarget(null)
     setImportDialogOpen(false)
     setActiveView("documents")
+    setBuildDetailsOpen(false)
+    setBuildDetailsArticle(null)
     setDeleteOpen(false)
     setDeleteTarget(null)
   }, [knowledgeBaseId])
@@ -267,11 +275,17 @@ export function KnowledgeBaseTreePage() {
     onCompleted: handleBuildCompleted,
     onFailed: handleBuildFailed,
   })
-  const buildArticleKnowledge = React.useCallback((articleId: string) => {
+  const buildArticleKnowledge = React.useCallback((articleId: string, articleName: string) => {
+    // 记住任务对应文章，但按产品约定不在提交后自动打开详情面板。
+    setBuildDetailsArticle({ id: articleId, name: articleName })
     void startBuild(articleId).catch((error) => {
       toast.error(resolveApiErrorMessage(error, "知识构建失败"))
     })
   }, [startBuild])
+  const inspectArticleKnowledgeBuild = React.useCallback((articleId: string, articleName: string) => {
+    setBuildDetailsArticle({ id: articleId, name: articleName })
+    setBuildDetailsOpen(true)
+  }, [])
 
   React.useEffect(() => {
     if (pageIndex > totalPages - 1) {
@@ -585,7 +599,8 @@ export function KnowledgeBaseTreePage() {
             <KnowledgeBaseBuildButton
               job={jobsByArticleId[node.articleId]}
               submitting={submittingArticleIds.has(node.articleId)}
-              onBuild={() => buildArticleKnowledge(node.articleId!)}
+              onBuild={() => buildArticleKnowledge(node.articleId!, node.name)}
+              onInspect={() => inspectArticleKnowledgeBuild(node.articleId!, node.name)}
             />
           ) : null}
           <Tooltip>
@@ -655,7 +670,7 @@ export function KnowledgeBaseTreePage() {
       ),
       children: node.children?.length ? node.children.map(buildTreeItem) : undefined,
     }
-  }, [activeDragNode, activeDragNodeId, buildArticleKnowledge, dragDisabled, dropIntent, expandedIds, getRowRef, jobsByArticleId, knowledgeBaseId, loadChildren, movingNodeId, navigate, nodeLoadErrorById, nodeLoadingById, roots, submittingArticleIds])
+  }, [activeDragNode, activeDragNodeId, buildArticleKnowledge, dragDisabled, dropIntent, expandedIds, getRowRef, inspectArticleKnowledgeBuild, jobsByArticleId, knowledgeBaseId, loadChildren, movingNodeId, navigate, nodeLoadErrorById, nodeLoadingById, roots, submittingArticleIds])
 
   const treeItems = React.useMemo(() => roots.map(buildTreeItem), [buildTreeItem, roots])
 
@@ -667,23 +682,39 @@ export function KnowledgeBaseTreePage() {
     [totalPages],
   )
 
+  const buildDetailsJob = buildDetailsArticle
+    ? jobsByArticleId[buildDetailsArticle.id]
+    : undefined
+
   return (
-    <KnowledgeBaseTreePageView
-      {...{
-        knowledgeBaseId, navigate, knowledgeBase, activeView, setActiveView, wikiFocusPageKey,
-        setWikiFocusPageKey, openWikiPageFromGraph, prefersReducedMotion, loading, saving, roots,
-        keyword, setKeyword, debouncedKeyword, pageIndex, setPageIndex, pageSize, totalPages,
-        totalRootNodes, articleCreatedDateRange, setArticleCreatedDateRange, articleCreatedDateDraftRange,
-        setArticleCreatedDateDraftRange, articleCreatedDateOpen, setArticleCreatedDateOpen,
-        articleCreatedDateLabel, hasArticleCreatedDateFilter, openCreateFolder, openCreateArticle,
-        setImportDialogOpen, importDialogOpen, sensors, collisionDetection, handleDragStart,
-        handleDragMove, handleDragEnd, resetDrag, visibleNodeDndIds, treeItems, expandedIds,
-        handleTreeExpandedChange, activeDragNode, handlePageChange, createFolderOpen,
-        setCreateFolderOpen, createFolderParentId, createFolderParentName, createFolderName,
-        setCreateFolderName, submitCreateFolder, createArticleOpen, createArticleTarget,
-        setCreateArticleOpen, setSaving, refreshTreeAfterCreateArticle, deleteOpen, setDeleteOpen,
-        deleteTarget, confirmDelete,
-      }}
-    />
+    <>
+      <KnowledgeBaseTreePageView
+        {...{
+          knowledgeBaseId, navigate, knowledgeBase, activeView, setActiveView, wikiFocusPageKey,
+          setWikiFocusPageKey, openWikiPageFromGraph, prefersReducedMotion, loading, saving, roots,
+          keyword, setKeyword, debouncedKeyword, pageIndex, setPageIndex, pageSize, totalPages,
+          totalRootNodes, articleCreatedDateRange, setArticleCreatedDateRange, articleCreatedDateDraftRange,
+          setArticleCreatedDateDraftRange, articleCreatedDateOpen, setArticleCreatedDateOpen,
+          articleCreatedDateLabel, hasArticleCreatedDateFilter, openCreateFolder, openCreateArticle,
+          setImportDialogOpen, importDialogOpen, sensors, collisionDetection, handleDragStart,
+          handleDragMove, handleDragEnd, resetDrag, visibleNodeDndIds, treeItems, expandedIds,
+          handleTreeExpandedChange, activeDragNode, handlePageChange, createFolderOpen,
+          setCreateFolderOpen, createFolderParentId, createFolderParentName, createFolderName,
+          setCreateFolderName, submitCreateFolder, createArticleOpen, createArticleTarget,
+          setCreateArticleOpen, setSaving, refreshTreeAfterCreateArticle, deleteOpen, setDeleteOpen,
+          deleteTarget, confirmDelete,
+        }}
+      />
+      {buildDetailsArticle ? (
+        <KnowledgeBuildProgressSheet
+          open={buildDetailsOpen}
+          onOpenChange={setBuildDetailsOpen}
+          articleName={buildDetailsArticle.name}
+          job={buildDetailsJob}
+          submitting={submittingArticleIds.has(buildDetailsArticle.id)}
+          onRebuild={() => buildArticleKnowledge(buildDetailsArticle.id, buildDetailsArticle.name)}
+        />
+      ) : null}
+    </>
   )
 }

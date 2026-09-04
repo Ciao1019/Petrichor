@@ -92,20 +92,45 @@ func attachKnowledgeCandidateSources(candidates []knowledgeCandidate, parsed map
 	return out
 }
 
-// extractDocumentCandidates 对全部连续分段并行执行候选抽取，再做跨分段去重与全局收敛。
+// extractDocumentCandidates 对所有文档都优先交给 ADK Agent 自主遍历全文；
+// Agent 不可用或覆盖校验失败时再对全部连续分段执行确定性抽取。
 func extractDocumentCandidates(ctx context.Context, userID int64, profile compileProfile, articleTitle string, chunks []wfChunk, existingPages []existingKnowledgePage) (string, []knowledgeCandidate, []knowledgeRelation, []string) {
 	batches := batchChunksByBudget(chunks, knowledgeExtractionBatchMaxChars, knowledgeExtractionBatchMaxItems)
 	if len(batches) == 0 {
 		return "", nil, nil, nil
 	}
 
+	agentWarning := ""
+	if DocumentAgentInvoker != nil {
+		summary, candidates, relations, err := extractDocumentCandidatesWithAgent(
+			ctx, userID, profile, articleTitle, chunks, existingPages,
+		)
+		if err == nil {
+			return summary, candidates, relations, nil
+		}
+		agentWarning = knowledgeBuildFallbackWarning(
+			"文档 Agent 抽取", "已回退为连续分段全量抽取", err,
+		)
+		reportKnowledgeBuildEvent(ctx, knowledgeBuildStageAgent, "文档 Agent 未完成，已切换连续分段全文抽取")
+	}
+
+	reportKnowledgeBuildStage(ctx, knowledgeBuildStageUpdate{
+		ParentID: knowledgeBuildPhaseAnalyzing,
+		ID:       knowledgeBuildStageAgent, Status: knowledgeBuildStageRunning,
+		Message: "正在连续分段覆盖全文", Percent: 0, Total: len(batches),
+	})
 	var completed atomic.Int32
 	outputs := mapWithConcurrency(batches, questionBatchConcurrency, func(batch []wfChunk) documentCandidateBatch {
 		summary, candidates, relations, warnings := extractDocumentCandidateBatch(
 			ctx, userID, profile, articleTitle, batch, existingPages,
 		)
 		done := int(completed.Add(1))
-		reportKnowledgeBuildProgressNote(ctx, "正在分析长文档知识候选（"+jsonInt(done)+"/"+jsonInt(len(batches))+"）")
+		reportKnowledgeBuildStage(ctx, knowledgeBuildStageUpdate{
+			ParentID: knowledgeBuildPhaseAnalyzing,
+			ID:       knowledgeBuildStageAgent, Status: knowledgeBuildStageRunning,
+			Message: "正在连续分段覆盖全文（" + jsonInt(done) + "/" + jsonInt(len(batches)) + "）",
+			Percent: done * 100 / len(batches), Completed: done, Total: len(batches),
+		})
 		return documentCandidateBatch{
 			summary: summary, candidates: candidates, relations: relations, warnings: warnings,
 		}
@@ -114,6 +139,9 @@ func extractDocumentCandidates(ctx context.Context, userID int64, profile compil
 	candidates, relations := mergeDocumentCandidateBatches(outputs, wikiItemLimit)
 	summaries := make([]string, 0, len(outputs))
 	warnings := []string{}
+	if agentWarning != "" {
+		warnings = append(warnings, agentWarning)
+	}
 	for _, output := range outputs {
 		if output.summary != "" {
 			summaries = append(summaries, output.summary)
@@ -130,7 +158,12 @@ func extractDocumentCandidates(ctx context.Context, userID int64, profile compil
 	if len(warnings) > 8 {
 		warnings = warnings[:8]
 	}
-	reportKnowledgeBuildProgress(ctx, 36, knowledgeBuildPhaseAnalyzing, "整篇知识候选分析完成", len(batches), len(batches))
+	reportKnowledgeBuildStage(ctx, knowledgeBuildStageUpdate{
+		ParentID: knowledgeBuildPhaseAnalyzing,
+		ID:       knowledgeBuildStageAgent, Status: knowledgeBuildStageCompleted,
+		Message: "连续分段全文抽取完成", Percent: 100,
+		Completed: len(batches), Total: len(batches),
+	})
 	return documentSummary, candidates, relations, warnings
 }
 

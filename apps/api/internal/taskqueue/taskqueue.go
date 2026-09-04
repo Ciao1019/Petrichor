@@ -24,7 +24,7 @@ const (
 	TypeDocumentImport          = "petrichor:document-import:run"
 	TypeDocumentImportReconcile = "petrichor:document-import:reconcile"
 
-	KnowledgeBuildTimeout   = 3 * time.Hour
+	KnowledgeBuildTimeout   = 30 * time.Minute
 	KnowledgeBuildRetention = 24 * time.Hour
 	KnowledgeBuildMaxRetry  = 2
 	DocumentImportTimeout   = 6 * time.Hour

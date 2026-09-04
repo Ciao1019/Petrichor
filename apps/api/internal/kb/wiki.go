@@ -125,17 +125,18 @@ func queryLinks(ctx context.Context, q execQuerier, sql string, args ...any) ([]
 func readKnowledgePageMetadata(raw *string) map[string]any {
 	obj := parseJSONObject(raw)
 	result := map[string]any{
-		"generatedBy":   nil,
-		"buildVersion":  float64(0),
-		"sourceHash":    nil,
-		"chunkCount":    float64(0),
-		"entityCount":   float64(0),
-		"conceptCount":  float64(0),
-		"categoryPath":  []string{},
-		"aliases":       []string{},
-		"baseContentMd": nil,
-		"baseSummary":   nil,
-		"contributions": map[string]any{},
+		"generatedBy":     nil,
+		"buildVersion":    float64(0),
+		"taxonomyVersion": float64(0),
+		"sourceHash":      nil,
+		"chunkCount":      float64(0),
+		"entityCount":     float64(0),
+		"conceptCount":    float64(0),
+		"categoryPath":    []string{},
+		"aliases":         []string{},
+		"baseContentMd":   nil,
+		"baseSummary":     nil,
+		"contributions":   map[string]any{},
 	}
 	if obj == nil {
 		return result
@@ -145,6 +146,7 @@ func readKnowledgePageMetadata(raw *string) map[string]any {
 	result["baseContentMd"] = optNonEmptyString(obj["baseContentMd"])
 	result["baseSummary"] = optNonEmptyString(obj["baseSummary"])
 	result["buildVersion"] = optNumber(obj["buildVersion"])
+	result["taxonomyVersion"] = optNumber(obj["taxonomyVersion"])
 	result["chunkCount"] = optNumber(obj["chunkCount"])
 	result["entityCount"] = optNumber(obj["entityCount"])
 	result["conceptCount"] = optNumber(obj["conceptCount"])

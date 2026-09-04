@@ -10,6 +10,12 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+func TestKnowledgeBuildTimeoutIsThirtyMinutes(t *testing.T) {
+	if KnowledgeBuildTimeout != 30*time.Minute {
+		t.Fatalf("知识构建任务超时=%s，期望 30m", KnowledgeBuildTimeout)
+	}
+}
+
 func TestKnowledgeBuildTaskPayloadRoundTrip(t *testing.T) {
 	createdAt := time.Now().UTC().Truncate(time.Microsecond)
 	payload := KnowledgeBuildPayload{

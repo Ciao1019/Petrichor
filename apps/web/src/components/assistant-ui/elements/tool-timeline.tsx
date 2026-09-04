@@ -1,5 +1,6 @@
 "use client"
 
+import type { ReactNode } from "react"
 import { ChevronRight, type LucideIcon } from "@/components/iconimate"
 import {
     Collapsible,
@@ -8,7 +9,7 @@ import {
 } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
 import { take } from "@/components/assistant-ui/utils/range"
-import { ShimmerLabel, SwapLabel } from "./surfaces"
+import { mono, ShimmerLabel, SwapLabel } from "./surfaces"
 
 /**
  * Tool timeline（来自 assistant-ui registry: elements-tool-timeline）。
@@ -25,6 +26,12 @@ import { ShimmerLabel, SwapLabel } from "./surfaces"
  * 5. 步骤的"进行中"由它自己的 status 决定，不用上游的"最后一个可见步骤 + streaming"。
  *    上游那条规则假设步骤列表是边跑边追加的，本项目的步骤各自带真实状态——照搬会让
  *    一个已经完成的步骤在整轮结束前一直闪。顺带支持 note（次要说明）与 duration（耗时）。
+ * 6. note 放宽为 ReactNode：knowledge 构建动态要在一段里组合"类型 · 委派对象 · 轮次 ·
+ *    等宽工具名"，纯字符串装不下；对传字符串的既有调用方零影响。
+ * 7. 新增 footer 与 listClassName 插槽：前者放展开区底部的隐私说明等附注，后者给
+ *    长列表加内部滚动（knowledge 构建动态沿用旧 UI 的 max-h-80，其余调用方不传不生效）。
+ * 8. 新增 time 槽：动作发生的时刻（HH:MM:SS），渲染在行右端。上游只有 duration
+ *    （过程耗时），但知识构建的每步动作来自后端轮询，用户关心"什么时候发生的"。
  * 另外 chip 不用等宽字体——它装的是中文短句而不是路径或命令。
  */
 
@@ -34,10 +41,12 @@ export interface TimelineStep {
     icon: LucideIcon
     /** 该步骤自身是否仍在进行；只有它为真才闪 */
     active?: boolean
-    /** 次要说明，弱化展示 */
-    note?: string
+    /** 次要说明，弱化展示；允许组合多段节点 */
+    note?: string | ReactNode
     /** 已结束步骤的耗时文案，右对齐 */
     duration?: string
+    /** 步骤发生的时刻，右对齐（与 duration 互斥使用） */
+    time?: string
 }
 
 export interface TimelineStat {
@@ -57,6 +66,10 @@ export interface ToolTimelineProps {
     stats: TimelineStat[]
     /** 触发行最前面的状态指示（带 aria-label），让状态不依赖颜色 */
     leading?: React.ReactNode
+    /** 展开区列表底部的内容（如隐私说明），折叠时不渲染 */
+    footer?: ReactNode
+    /** 追加到步骤列表上，常用于内部滚动高度 */
+    listClassName?: string
     className?: string
 }
 
@@ -70,6 +83,8 @@ export function ToolTimeline({
     activeLabel,
     stats,
     leading,
+    footer,
+    listClassName,
     className,
 }: ToolTimelineProps) {
     return (
@@ -100,7 +115,7 @@ export function ToolTimeline({
                     "data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down",
                 )}
             >
-                <ul className="flex flex-col gap-2.5 ps-4 pt-2.5" aria-label="执行步骤">
+                <ul className={cn("flex flex-col gap-2.5 ps-4 pt-2.5", listClassName)} aria-label="执行步骤">
                     {take(steps, visibleSteps).map((step, index) => {
                         const Icon = step.icon
 
@@ -129,11 +144,15 @@ export function ToolTimeline({
                                         <span className="min-w-0 text-[11px] text-foreground/35">{step.note}</span>
                                     ) : null}
                                 </span>
-                                {step.duration ? (
-                                    <span className="shrink-0 text-[11px] text-foreground/35 tabular-nums">
-                                        {step.duration}
-                                    </span>
-                                ) : null}
+                {step.duration ? (
+                    <span className="shrink-0 text-[11px] text-foreground/35 tabular-nums">
+                        {step.duration}
+                    </span>
+                ) : step.time ? (
+                    <span className={cn(mono, "shrink-0 pt-1 text-foreground/35 tabular-nums")}>
+                        {step.time}
+                    </span>
+                ) : null}
                             </li>
                         )
                     })}
@@ -156,6 +175,7 @@ export function ToolTimeline({
                         </li>
                     )}
                 </ul>
+                {footer}
             </CollapsibleContent>
         </Collapsible>
     )

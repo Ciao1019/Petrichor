@@ -8,11 +8,26 @@ import { cn } from "@/lib/utils"
 /**
  * assistant-ui Elements 的共享表面（来自 registry: elements-surfaces）。
  *
- * 只保留 tool-timeline 实际用到的两个组件。上游还带十几个样式 token（paper /
- * floating / field / inkButton…），本项目已有自己的设计令牌，照搬只会多出一套并行
- * 的视觉语言。上游的 collapsePanel 依赖 Base UI Collapsible 的 data 属性，本项目
- * 用的是 Radix，因此没有搬——折叠动画在 tool-timeline 里按 Radix 约定写。
+ * 只迁移现有 elements 实际用到的 token：tool-timeline 用 ShimmerLabel / SwapLabel /
+ * mono，job-progress 与 agent-status 另需 paper / ghostButton，构建结果统计块用
+ * field。上游还有十几个样式 token（floating / inkButton…），本项目已有自己的设计
+ * 令牌，照搬只会多出一套并行的视觉语言。上游的 collapsePanel 依赖 Base UI Collapsible
+ * 的 data 属性，本项目用的是 Radix，因此没有搬——折叠动画在 tool-timeline 里按
+ * Radix 约定写。
  */
+
+/** "纸面"容器：elements 卡片的统一底色与描边。 */
+export const paper = "bg-background border border-border/60 dark:bg-popover"
+
+/** 内嵌的浅色底：卡片内的统计块、只读字段这类"低一层"表面。 */
+export const field = "bg-foreground/[0.04] dark:bg-foreground/[0.06]"
+
+/** 小号等宽文字：时间、计数这类短数字。 */
+export const mono = "font-mono text-[11px] tracking-tight"
+
+/** 幽灵圆按钮：卡片角落的次要操作。 */
+export const ghostButton
+    = "flex items-center justify-center rounded-full text-foreground/45 outline-none transition-[background-color,color,scale] duration-150 hover:bg-foreground/[0.06] hover:text-foreground/90 active:scale-[0.96] focus-visible:ring-1 focus-visible:ring-foreground/20 motion-reduce:transition-none dark:hover:bg-foreground/[0.09]"
 
 /** shimmer 类来自 tw-shimmer（globals.css 已 @import）。 */
 export function ShimmerLabel({

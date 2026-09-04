@@ -448,8 +448,11 @@ func openAIStreamErrorMessage(raw json.RawMessage) string {
 	return truncate(string(raw), 300)
 }
 
-// applyQuirksToOpenAI 注入 thinking 开关（对应 provider-quirks.ts 的 injectThinkingFlag）。
+// applyQuirksToOpenAI 注入结构化输出与 thinking 开关。
 func applyQuirksToOpenAI(body *openAIChatRequest, rt RuntimeConfig, modelID string, opts GenerationOptions) {
+	if opts.JSONMode {
+		body.ResponseFormat = &openAIRespFormat{Type: "json_object"}
+	}
 	q := ResolveQuirks(rt.ProviderKey, modelID)
 	if !q.SupportsThinkingFlag {
 		return

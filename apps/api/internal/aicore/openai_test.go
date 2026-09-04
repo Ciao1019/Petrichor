@@ -25,6 +25,31 @@ func TestAIHTTPClientKeepsParallelConnectionsAlive(t *testing.T) {
 	}
 }
 
+func TestOpenAIChatRequestsNativeJSONMode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		defer request.Body.Close()
+		var body struct {
+			ResponseFormat *openAIRespFormat `json:"response_format"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.ResponseFormat == nil || body.ResponseFormat.Type != "json_object" {
+			t.Fatalf("response_format = %#v，期望启用 json_object", body.ResponseFormat)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(writer, `{"choices":[{"message":{"content":"{\"ok\":true}"}}]}`)
+	}))
+	defer server.Close()
+
+	result, err := OpenAIChat(context.Background(), RuntimeConfig{
+		ProviderKey: "openai-compatible", BaseURL: server.URL,
+	}, "glm-test", []ChatMessage{{Role: "user", Content: "只输出 JSON"}}, GenerationOptions{JSONMode: true})
+	if err != nil || result.Answer != `{"ok":true}` {
+		t.Fatalf("JSON 模式调用 error=%v result=%#v", err, result)
+	}
+}
+
 func TestOpenAIChatStreamCollectsAnswerWithoutDeltaCallback(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "text/event-stream")

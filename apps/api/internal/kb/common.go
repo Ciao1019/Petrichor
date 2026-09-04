@@ -42,8 +42,59 @@ type ChatRequest struct {
 	SystemPrompt string
 	Message      string
 	Op           string
+	// RequireJSON 要求协议层启用供应商原生 JSON 模式；提示词仍需声明具体结构。
+	RequireJSON bool
 	// MaxTokens 仅作为业务阶段上限；0 表示沿用模型用途绑定。
 	MaxTokens int64
+}
+
+// DocumentAgentChunk 是文档 Agent 工作区中的一个可追溯内容片段。
+type DocumentAgentChunk struct {
+	ChunkKey    string   `json:"chunkKey"`
+	HeadingPath []string `json:"headingPath"`
+	ContentMd   string   `json:"contentMd"`
+}
+
+// DocumentAgentExistingPage 是供文档 Agent 复用 canonical pageKey 的知识库页面摘要。
+type DocumentAgentExistingPage struct {
+	PageKey string   `json:"pageKey"`
+	Kind    string   `json:"kind"`
+	Title   string   `json:"title"`
+	Aliases []string `json:"aliases"`
+	Summary string   `json:"summary"`
+}
+
+// DocumentAgentProgress 是隔离文档工作区的可验证读取进度，不包含模型思维过程或正文。
+type DocumentAgentProgress struct {
+	Message   string
+	Completed int
+	Total     int
+	Percent   int
+}
+
+// DocumentAgentActivity 是可以安全展示给用户的 ADK 行为，不包含正文、提示词、工具结果或思维链。
+type DocumentAgentActivity struct {
+	ID        string
+	Kind      string
+	Status    string
+	Title     string
+	Detail    string
+	AgentName string
+	ToolName  string
+	Round     int
+}
+
+// DocumentAgentRequest 让 Agent 通过隔离文件系统自行遍历整篇长文档，而非被动接收单批正文。
+type DocumentAgentRequest struct {
+	UserID            int64
+	KnowledgeBaseName string
+	ArticleTitle      string
+	CompileGuide      string
+	MaxCandidates     int
+	Chunks            []DocumentAgentChunk
+	ExistingPages     []DocumentAgentExistingPage
+	Progress          func(DocumentAgentProgress)
+	Activity          func(DocumentAgentActivity)
 }
 
 // EmbedRequest 批量文本向量（对应 embedTexts）。
@@ -55,6 +106,9 @@ type EmbedRequest struct {
 
 // ChatInvoker LLM 对话补全注入点；nil 时涉及 LLM 的端点返回 503「AI 服务未就绪」。
 var ChatInvoker func(ctx context.Context, req ChatRequest) (string, error)
+
+// DocumentAgentInvoker 是全文语义抽取 Agent 注入点；失败时知识构建会降级到确定性分批抽取。
+var DocumentAgentInvoker func(ctx context.Context, req DocumentAgentRequest) (string, error)
 
 // EmbedInvoker 向量生成注入点；nil 时向量端点 503，best-effort 路径静默跳过。
 var EmbedInvoker func(ctx context.Context, req EmbedRequest) ([][]float32, error)

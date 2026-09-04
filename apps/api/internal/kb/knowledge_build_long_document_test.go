@@ -72,6 +72,130 @@ func TestExtractDocumentCandidatesCoversEveryLongDocumentChunk(t *testing.T) {
 	}
 }
 
+func TestExtractDocumentCandidatesUsesAgentForWholeLongDocument(t *testing.T) {
+	originalAgentInvoker := DocumentAgentInvoker
+	originalChatInvoker := ChatInvoker
+	defer func() {
+		DocumentAgentInvoker = originalAgentInvoker
+		ChatInvoker = originalChatInvoker
+	}()
+
+	chunks := make([]wfChunk, 0, 13)
+	covered := make([]string, 0, 13)
+	for index := 0; index < 13; index++ {
+		key := "chunk-" + jsonInt(index+1)
+		chunks = append(chunks, wfChunk{
+			chunkKey: key, position: int32(index), headingPath: []string{"章节 " + jsonInt(index+1)},
+			contentMd: "正文 " + jsonInt(index+1),
+		})
+		covered = append(covered, `"`+key+`"`)
+	}
+
+	agentCalls := 0
+	DocumentAgentInvoker = func(_ context.Context, request DocumentAgentRequest) (string, error) {
+		agentCalls++
+		if len(request.Chunks) != len(chunks) {
+			t.Fatalf("Agent 收到 %d 个切片，期望完整的 %d 个", len(request.Chunks), len(chunks))
+		}
+		if request.CompileGuide != "统一使用产品名称。" {
+			t.Fatalf("编译说明没有传给 Agent：%q", request.CompileGuide)
+		}
+		return `{"documentSummary":"全文摘要","coveredChunkKeys":[` + strings.Join(covered, ",") + `],` +
+			`"entities":[],"concepts":[{"name":"Agent 工作流","pageKey":"concept-agent-workflow","aliases":[],"summary":"贯穿全文","sourceChunkKeys":["chunk-1","chunk-13"]}],"relations":[]}`, nil
+	}
+	ChatInvoker = func(context.Context, ChatRequest) (string, error) {
+		t.Fatal("长文档 Agent 成功后不应再调用旧分批抽取")
+		return "", nil
+	}
+
+	summary, candidates, _, warnings := extractDocumentCandidates(
+		context.Background(), 1,
+		compileProfile{KnowledgeBaseName: "测试库", Guide: "# 编译说明书\n\n统一使用产品名称。"},
+		"长文档", chunks, nil,
+	)
+	if agentCalls != 1 || summary != "全文摘要" || len(warnings) != 0 {
+		t.Fatalf("agentCalls=%d summary=%q warnings=%v", agentCalls, summary, warnings)
+	}
+	if len(candidates) != 1 || candidates[0].pageKey != "concept-agent-workflow" {
+		t.Fatalf("candidates=%#v", candidates)
+	}
+	if len(candidates[0].sourceChunkKeys) != 2 || candidates[0].sourceChunkKeys[1] != "chunk-13" {
+		t.Fatalf("Agent 来源没有保留跨全文证据：%#v", candidates[0].sourceChunkKeys)
+	}
+}
+
+func TestExtractDocumentCandidatesFallsBackWhenAgentCoverageIsInvalid(t *testing.T) {
+	originalAgentInvoker := DocumentAgentInvoker
+	originalChatInvoker := ChatInvoker
+	defer func() {
+		DocumentAgentInvoker = originalAgentInvoker
+		ChatInvoker = originalChatInvoker
+	}()
+
+	chunks := make([]wfChunk, 0, 13)
+	for index := 0; index < 13; index++ {
+		chunks = append(chunks, wfChunk{
+			chunkKey: "chunk-" + jsonInt(index+1), position: int32(index),
+			contentMd: "正文 " + jsonInt(index+1),
+		})
+	}
+	DocumentAgentInvoker = func(context.Context, DocumentAgentRequest) (string, error) {
+		return `{"documentSummary":"不完整","coveredChunkKeys":["chunk-1"],"entities":[],"concepts":[],"relations":[]}`, nil
+	}
+	extractionCalls := 0
+	ChatInvoker = func(_ context.Context, request ChatRequest) (string, error) {
+		switch request.Op {
+		case "kb.build.extraction":
+			extractionCalls++
+			return `{"documentSummary":"分段摘要","entities":[],"concepts":[],"relations":[]}`, nil
+		case "kb.build.summary":
+			return `{"documentSummary":"降级后的全文摘要"}`, nil
+		default:
+			return `{}`, nil
+		}
+	}
+
+	summary, _, _, warnings := extractDocumentCandidates(
+		context.Background(), 1, compileProfile{}, "长文档", chunks, nil,
+	)
+	if summary != "降级后的全文摘要" || extractionCalls != 2 {
+		t.Fatalf("summary=%q extractionCalls=%d", summary, extractionCalls)
+	}
+	if len(warnings) == 0 || !strings.Contains(strings.Join(warnings, "\n"), "文档 Agent 抽取") {
+		t.Fatalf("降级原因没有写入警告：%v", warnings)
+	}
+}
+
+func TestExtractDocumentCandidatesUsesAgentForShortDocument(t *testing.T) {
+	originalAgentInvoker := DocumentAgentInvoker
+	originalChatInvoker := ChatInvoker
+	defer func() {
+		DocumentAgentInvoker = originalAgentInvoker
+		ChatInvoker = originalChatInvoker
+	}()
+
+	agentCalls := 0
+	DocumentAgentInvoker = func(_ context.Context, request DocumentAgentRequest) (string, error) {
+		agentCalls++
+		if len(request.Chunks) != 1 || request.Chunks[0].ChunkKey != "chunk-1" {
+			t.Fatalf("短文档没有完整交给 Agent：%#v", request.Chunks)
+		}
+		return `{"documentSummary":"短文摘要","coveredChunkKeys":["chunk-1"],"entities":[],"concepts":[],"relations":[]}`, nil
+	}
+	ChatInvoker = func(context.Context, ChatRequest) (string, error) {
+		t.Fatal("短文档 Agent 成功后不应再调用旧抽取路径")
+		return "", nil
+	}
+
+	summary, _, _, warnings := extractDocumentCandidates(
+		context.Background(), 1, compileProfile{}, "短文档",
+		[]wfChunk{{chunkKey: "chunk-1", contentMd: "短文正文"}}, nil,
+	)
+	if agentCalls != 1 || summary != "短文摘要" || len(warnings) != 0 {
+		t.Fatalf("agentCalls=%d summary=%q warnings=%v", agentCalls, summary, warnings)
+	}
+}
+
 func TestMergeDocumentCandidateBatchesDoesNotPreferOnlyFront(t *testing.T) {
 	batches := make([]documentCandidateBatch, 30)
 	for index := range batches {

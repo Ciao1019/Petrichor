@@ -385,6 +385,9 @@ func writeIndexEmbeddings(ctx context.Context, q execQuerier, userID int64, rows
 			}
 			written++
 		}
+		processed := end
+		reportKnowledgeBuildProgress(ctx, 95+processed*4/len(rowsIn), knowledgeBuildPhaseEmbedding,
+			"正在补充向量索引", processed, len(rowsIn))
 	}
 	return written, nil
 }

@@ -70,8 +70,13 @@ func HandleKnowledgeBuildTask(ctx context.Context, task *asynq.Task) error {
 		return errors.New("知识构建任务缺少 Asynq 任务 ID")
 	}
 	startedAt := time.Now().UTC()
-	progressWriter := newKnowledgeBuildTaskProgressWriter(task, startedAt)
-	ctx = withKnowledgeBuildProgressReporter(ctx, progressWriter.report)
+	retried, _ := asynq.GetRetryCount(ctx)
+	maxRetry, _ := asynq.GetMaxRetry(ctx)
+	progressWriter := newKnowledgeBuildTaskProgressWriter(task, startedAt, retried+1, maxRetry+1)
+	ctx = withKnowledgeBuildProgressReporter(ctx, progressWriter)
+	stopHeartbeat := progressWriter.startHeartbeat(ctx)
+	defer stopHeartbeat()
+	progressWriter.reportEvent(knowledgeBuildPhaseQueued, "Worker 已接收知识构建任务")
 	progressWriter.report(knowledgeBuildProgress{
 		Percent: 2, Phase: knowledgeBuildPhasePreparing, Message: "正在读取文章与知识库配置",
 	})
@@ -80,6 +85,7 @@ func HandleKnowledgeBuildTask(ctx context.Context, task *asynq.Task) error {
 		ctx, payload.UserID, payload.KnowledgeBaseID, payload.ArticleID,
 	)
 	if buildErr != nil {
+		stopHeartbeat()
 		slog.Error("后台知识构建失败",
 			"jobId", taskID,
 			"userId", payload.UserID,
@@ -88,14 +94,16 @@ func HandleKnowledgeBuildTask(ctx context.Context, task *asynq.Task) error {
 			"err", buildErr,
 		)
 		message := knowledgeBuildErrorMessage(buildErr)
-		progress := progressWriter.snapshot()
-		progress.Phase = knowledgeBuildPhaseFailed
-		progress.Message = message
+		phase := knowledgeBuildPhaseFailed
+		progressMessage := message
 		if workerErrorRetryable(buildErr) {
-			progress.Phase = knowledgeBuildPhaseRetrying
-			progress.Message = "本轮构建失败，等待 Asynq 自动重试"
+			phase = knowledgeBuildPhaseRetrying
+			progressMessage = "本轮构建失败，等待 Asynq 自动重试"
 		}
-		progress.UpdatedAt = time.Now().UTC()
+		progressWriter.report(knowledgeBuildProgress{
+			Percent: -1, Phase: phase, Message: progressMessage,
+		})
+		progress := progressWriter.snapshot()
 		_ = writeKnowledgeBuildTaskResult(task, knowledgeBuildTaskResult{
 			Error: &message, Progress: &progress, StartedAt: startedAt, CompletedAt: time.Now().UTC(),
 		})
@@ -105,6 +113,7 @@ func HandleKnowledgeBuildTask(ctx context.Context, task *asynq.Task) error {
 		return errors.New(message)
 	}
 
+	stopHeartbeat()
 	completedAt := time.Now().UTC()
 	progressWriter.report(knowledgeBuildProgress{
 		Percent: 100, Phase: knowledgeBuildPhaseCompleted, Message: "知识构建完成",
@@ -156,9 +165,7 @@ func articleKnowledgeBuildJobResponse(info *asynq.TaskInfo) (map[string]any, err
 	var errorMessage *string
 	var startedAt, completedAt *time.Time
 	updatedAt := payload.CreatedAt
-	progress := knowledgeBuildProgress{
-		Percent: 0, Phase: knowledgeBuildPhaseQueued, Message: "等待 Worker 处理", UpdatedAt: payload.CreatedAt,
-	}
+	progress := initialKnowledgeBuildProgress(payload.CreatedAt, info.Retried+1, info.MaxRetry+1)
 	var taskResult knowledgeBuildTaskResult
 	hasTaskResult := len(info.Result) > 0 && json.Unmarshal(info.Result, &taskResult) == nil
 	if hasTaskResult {
@@ -212,6 +219,7 @@ func articleKnowledgeBuildJobResponse(info *asynq.TaskInfo) (map[string]any, err
 		progress.UpdatedAt = failedAt
 	case asynq.TaskStateRetry, asynq.TaskStateScheduled, asynq.TaskStatePending, asynq.TaskStateAggregating:
 		status = "pending"
+		completedAt = nil
 		if !info.LastFailedAt.IsZero() {
 			updatedAt = info.LastFailedAt
 		}
@@ -220,6 +228,10 @@ func articleKnowledgeBuildJobResponse(info *asynq.TaskInfo) (map[string]any, err
 			progress.Message = "等待 Asynq 自动重试"
 		}
 	}
+	if !hasTaskResult {
+		progress.Attempt = info.Retried + 1
+	}
+	progress.MaxAttempts = max(progress.MaxAttempts, info.MaxRetry+1)
 	progress = normalizeKnowledgeBuildProgress(progress)
 
 	return map[string]any{

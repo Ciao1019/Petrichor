@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	httpx "petrichor/api/internal/httpx"
 )
@@ -55,8 +56,9 @@ func invokeKnowledgeBuildChat(ctx context.Context, request ChatRequest) (string,
 	return answer, err
 }
 
-// invokeKnowledgeBuildJSON 除传输错误外，也会重试模型偶发返回的非法 JSON。
+// invokeKnowledgeBuildJSON 启用供应商原生 JSON 模式；传输错误或偶发非法 JSON 仍会局部重试。
 func invokeKnowledgeBuildJSON(ctx context.Context, request ChatRequest) (map[string]any, error) {
+	request.RequireJSON = true
 	_, parsed, err := invokeKnowledgeBuildModel(ctx, request, true)
 	return parsed, err
 }
@@ -75,6 +77,13 @@ func invokeKnowledgeBuildModel(ctx context.Context, request ChatRequest, require
 		if err == nil && requireJSON {
 			parsed = extractJSONObjects(answer)
 			if parsed == nil {
+				slog.Warn("知识构建模型返回非 JSON",
+					"operation", request.Op,
+					"attempt", attempt,
+					"outputRunes", utf8.RuneCountInString(answer),
+					"hasOpeningBrace", strings.Contains(answer, "{"),
+					"hasClosingBrace", strings.Contains(answer, "}"),
+				)
 				err = errKnowledgeBuildInvalidJSON
 			}
 		}
@@ -96,9 +105,11 @@ func invokeKnowledgeBuildModel(ctx context.Context, request ChatRequest, require
 		}
 		retriesUsed := attempt
 		retriesTotal := knowledgeBuildModelMaxAttempts - 1
-		reportKnowledgeBuildProgressNote(ctx, fmt.Sprintf(
+		retryMessage := fmt.Sprintf(
 			"%s暂时异常，正在重试（%d/%d）", knowledgeBuildOperationLabel(request.Op), retriesUsed, retriesTotal,
-		))
+		)
+		reportKnowledgeBuildProgressNote(ctx, retryMessage)
+		reportKnowledgeBuildEvent(ctx, "model.retry", retryMessage)
 		slog.Warn("知识构建模型阶段触发重试",
 			"operation", request.Op,
 			"attempt", attempt,
@@ -162,7 +173,8 @@ func knowledgeBuildUpstreamStatus(message string) (int, bool) {
 func knowledgeBuildFallbackWarning(stage, fallback string, err error) string {
 	var callErr *knowledgeBuildModelCallError
 	if errors.As(err, &callErr) && callErr.attempts > 1 {
-		return fmt.Sprintf("%s连续 %d 次调用失败，%s", stage, callErr.attempts, fallback)
+		return fmt.Sprintf("%s连续 %d 次调用失败，%s：%s",
+			stage, callErr.attempts, fallback, friendlyKnowledgeBuildModelError(callErr.cause))
 	}
 	if errors.Is(err, errKnowledgeBuildInvalidJSON) {
 		return stage + "返回格式无效，" + fallback

@@ -20,6 +20,7 @@ func WireInvokers() {
 			rt.Quirks = ResolveQuirks(rt.ProviderKey, resolved.ModelRef)
 			msgs := buildMessages(req.SystemPrompt, req.Message)
 			options := resolved.Options
+			options.JSONMode = req.RequireJSON
 			if req.MaxTokens > 0 && (options.MaxTokens == nil || *options.MaxTokens > req.MaxTokens) {
 				maxTokens := req.MaxTokens
 				options.MaxTokens = &maxTokens
@@ -30,6 +31,9 @@ func WireInvokers() {
 			}
 			return result.Answer, nil
 		}
+	}
+	if kb.DocumentAgentInvoker == nil {
+		kb.DocumentAgentInvoker = runKnowledgeDocumentAgent
 	}
 	if kb.EmbedInvoker == nil {
 		kb.EmbedInvoker = func(ctx context.Context, req kb.EmbedRequest) ([][]float32, error) {

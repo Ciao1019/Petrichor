@@ -38,6 +38,8 @@ type GenerationOptions struct {
 	MaxTokens               *int64   `json:"maxTokens"`
 	Thinking                *string  `json:"thinking"` // enabled/disabled
 	DisableThinkingForTools *bool    `json:"disableThinkingForTools"`
+	// JSONMode 是单次调用的协议能力，不进入用途绑定配置。
+	JSONMode bool `json:"-"`
 }
 
 // RuntimeConfig 模型工厂入参（对应 ProviderRuntimeConfig）。

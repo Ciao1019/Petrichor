@@ -5,6 +5,8 @@
 // 三个文件里各自拼了一遍 SQL，本文件把它们收敛成一组入口：
 //
 //   - upsertWikiPage            创建/更新页面并整体替换来源引用
+//   - setWikiPageTaxonomy       更新生成页的全局目录元数据
+//   - rewriteWikiPageKeyReferences 合并页面后重写正文、元数据和链接中的旧 key
 //   - replaceWikiSourceRefs     整体替换一个页面的来源引用
 //   - replaceWikiPageLinks      整体替换一个页面的出链
 //   - replaceWikiPageLinksBatch 批量替换多个页面的出链
@@ -24,6 +26,7 @@ package kb
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -134,6 +137,116 @@ func scanSingleWikiPage(rows pgx.Rows) (*WikiPageRow, error) {
 		return nil, rows.Err()
 	}
 	return scanWikiPageRows(rows)
+}
+
+// setWikiPageTaxonomy 只更新编译生成页的目录字段，保留正文、来源和其余 frontmatter。
+// 调用方必须处于知识构建事务内，使存量页面重整与当前文章落库原子提交。
+func setWikiPageTaxonomy(
+	ctx context.Context,
+	q execQuerier,
+	userID, knowledgeBaseID int64,
+	pageKey string,
+	categoryPath []string,
+	taxonomyVersion int,
+	now time.Time,
+) error {
+	page, err := loadWikiPage(ctx, q, userID, knowledgeBaseID, pageKey)
+	if err != nil || page == nil {
+		return err
+	}
+	metadata := parseJSONObject(page.FrontmatterJson)
+	if metadata == nil || optString(metadata["generatedBy"]) != "article-knowledge-build" {
+		return nil
+	}
+	metadata["categoryPath"] = normalizeKnowledgeCategoryPath(categoryPath)
+	metadata["taxonomyVersion"] = taxonomyVersion
+	_, err = q.Exec(ctx,
+		`UPDATE petrichor_kb_wiki_page
+		 SET frontmatter_json = $1, updated_at = $2, version = version + 1
+		 WHERE id = $3 AND user_id = $4 AND knowledge_base_id = $5 AND archived_at IS NULL`,
+		marshalJSON(metadata), now, page.ID, userID, knowledgeBaseID)
+	return err
+}
+
+// rewriteWikiPageKeyReferences 在同义页面合并后重写整个知识库中的旧 pageKey。
+// 页面正文/frontmatter 与 link 表在同一事务内更新，随后调用方才能安全删除旧页面。
+func rewriteWikiPageKeyReferences(
+	ctx context.Context,
+	q execQuerier,
+	userID, knowledgeBaseID int64,
+	mappings map[string]string,
+	now time.Time,
+) error {
+	if len(mappings) == 0 {
+		return nil
+	}
+	pages, err := queryWikiPagesWhere(ctx, q,
+		`user_id = $1 AND knowledge_base_id = $2 AND archived_at IS NULL`,
+		userID, knowledgeBaseID)
+	if err != nil {
+		return err
+	}
+	for index := range pages {
+		page := &pages[index]
+		content := rewriteKnowledgeContentPageKeys(page.ContentMd, mappings)
+		metadata := parseJSONObject(page.FrontmatterJson)
+		metadataChanged := rewriteKnowledgeFrontmatterPageKeys(metadata, mappings)
+		if content == page.ContentMd && !metadataChanged {
+			continue
+		}
+		frontmatterJSON := page.FrontmatterJson
+		if metadataChanged {
+			frontmatterJSON = marshalJSON(metadata)
+		}
+		if _, err := q.Exec(ctx,
+			`UPDATE petrichor_kb_wiki_page
+			 SET content_md = $1, frontmatter_json = $2, content_hash = $3,
+			     updated_at = $4, version = version + 1
+			 WHERE id = $5 AND user_id = $6 AND knowledge_base_id = $7 AND archived_at IS NULL`,
+			content, frontmatterJSON, sha256Hex(content), now,
+			page.ID, userID, knowledgeBaseID); err != nil {
+			return err
+		}
+	}
+
+	keys := make([]string, 0, len(mappings))
+	for oldKey := range mappings {
+		keys = append(keys, oldKey)
+	}
+	sort.Strings(keys)
+	for _, oldKey := range keys {
+		canonical := canonicalKnowledgePageKey(oldKey, mappings)
+		if canonical == "" || canonical == oldKey {
+			continue
+		}
+		// canonical 链接已存在时先删掉旧 key 的重复边，再改写其余边。
+		if _, err := q.Exec(ctx,
+			`DELETE FROM petrichor_kb_wiki_link old_link
+			 USING petrichor_kb_wiki_link canonical_link
+			 WHERE old_link.user_id = $1 AND old_link.knowledge_base_id = $2
+			   AND old_link.to_page_key = $3
+			   AND canonical_link.user_id = old_link.user_id
+			   AND canonical_link.knowledge_base_id = old_link.knowledge_base_id
+			   AND canonical_link.from_page_id = old_link.from_page_id
+			   AND canonical_link.to_page_key = $4
+			   AND canonical_link.link_type = old_link.link_type`,
+			userID, knowledgeBaseID, oldKey, canonical); err != nil {
+			return err
+		}
+		if _, err := q.Exec(ctx,
+			`UPDATE petrichor_kb_wiki_link SET to_page_key = $1
+			 WHERE user_id = $2 AND knowledge_base_id = $3 AND to_page_key = $4`,
+			canonical, userID, knowledgeBaseID, oldKey); err != nil {
+			return err
+		}
+	}
+	_, err = q.Exec(ctx,
+		`DELETE FROM petrichor_kb_wiki_link link
+		 USING petrichor_kb_wiki_page page
+		 WHERE link.user_id = $1 AND link.knowledge_base_id = $2
+		   AND page.id = link.from_page_id AND page.page_key = link.to_page_key`,
+		userID, knowledgeBaseID)
+	return err
 }
 
 // logWikiEvent 记录 Wiki 审计事件。

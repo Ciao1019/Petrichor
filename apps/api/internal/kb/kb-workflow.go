@@ -1,5 +1,5 @@
-// kb-workflow.go 对照 knowledge-build-workflow.ts：确定性 Markdown 切片 +
-// LLM 步骤（问题生成 / 候选抽取 / 目录规划 / 页面物化），全部走 ChatInvoker 注入。
+// kb-workflow.go：确定性 Markdown 切片 + LLM 知识编译。
+// 所有文档候选优先走 DocumentAgentInvoker，其余模型步骤走 ChatInvoker。
 package kb
 
 import (
@@ -409,15 +409,44 @@ func padLeft(s string, n int, pad byte) string {
 
 // ===== LLM 步骤 =====
 
-// extractJSONObjects 对应 extractJsonObject：截取首尾大括号间内容并解析。
+// extractJSONObjects 从纯 JSON、Markdown 围栏或夹带说明文字的模型回答中提取首个合法对象。
+// 不能简单截取第一个“{”到最后一个“}”：说明文字或后续示例中的大括号会污染合法对象。
 func extractJSONObjects(raw string) map[string]any {
-	start := strings.Index(raw, "{")
-	end := strings.LastIndex(raw, "}")
-	if start < 0 || end < start {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
 		return nil
 	}
+	if value := decodeJSONObject(raw); value != nil {
+		return value
+	}
+
+	// 少数兼容网关会把 JSON 正文再次编码成字符串。
+	var encoded string
+	if json.Unmarshal([]byte(raw), &encoded) == nil && strings.TrimSpace(encoded) != raw {
+		if value := extractJSONObjects(encoded); value != nil {
+			return value
+		}
+	}
+
+	for offset := 0; offset < len(raw); {
+		relativeStart := strings.IndexByte(raw[offset:], '{')
+		if relativeStart < 0 {
+			break
+		}
+		start := offset + relativeStart
+		decoder := json.NewDecoder(strings.NewReader(raw[start:]))
+		var value map[string]any
+		if decoder.Decode(&value) == nil && value != nil {
+			return value
+		}
+		offset = start + 1
+	}
+	return nil
+}
+
+func decodeJSONObject(raw string) map[string]any {
 	var value map[string]any
-	if err := json.Unmarshal([]byte(raw[start:end+1]), &value); err != nil {
+	if json.Unmarshal([]byte(raw), &value) != nil || value == nil {
 		return nil
 	}
 	return value
@@ -521,13 +550,21 @@ func generateChunkQuestions(ctx context.Context, userID int64, profile compilePr
 		warnings []string
 	}
 	batches := batchChunksByBudget(chunks, questionBatchMaxChars, questionBatchMaxItems)
+	reportKnowledgeBuildStage(ctx, knowledgeBuildStageUpdate{
+		ParentID: knowledgeBuildPhaseAnalyzing,
+		ID:       knowledgeBuildStageQuestions, Status: knowledgeBuildStageRunning,
+		Message: "正在生成切片推荐问题", Percent: 0, Total: len(batches),
+	})
 	var completedBatches atomic.Int32
 	outputs := mapWithConcurrency(batches, questionBatchConcurrency, func(batch []wfChunk) batchResult {
 		defer func() {
 			completed := int(completedBatches.Add(1))
-			percent := 10 + completed*22/len(batches)
-			reportKnowledgeBuildProgress(ctx, percent, knowledgeBuildPhaseAnalyzing,
-				"正在生成切片推荐问题", completed, len(batches))
+			reportKnowledgeBuildStage(ctx, knowledgeBuildStageUpdate{
+				ParentID: knowledgeBuildPhaseAnalyzing,
+				ID:       knowledgeBuildStageQuestions, Status: knowledgeBuildStageRunning,
+				Message: "正在生成切片推荐问题（" + jsonInt(completed) + "/" + jsonInt(len(batches)) + "）",
+				Percent: completed * 100 / len(batches), Completed: completed, Total: len(batches),
+			})
 		}()
 		fallback := make([]chunkWithQuestions, 0, len(batch))
 		for _, chunk := range batch {
@@ -587,6 +624,12 @@ func generateChunkQuestions(ctx context.Context, userID int64, profile compilePr
 	if len(uniqueWarnings) > 5 {
 		uniqueWarnings = uniqueWarnings[:5]
 	}
+	reportKnowledgeBuildStage(ctx, knowledgeBuildStageUpdate{
+		ParentID: knowledgeBuildPhaseAnalyzing,
+		ID:       knowledgeBuildStageQuestions, Status: knowledgeBuildStageCompleted,
+		Message: "推荐问题生成完成，共 " + jsonInt(len(flat)) + " 个", Percent: 100,
+		Completed: len(batches), Total: len(batches),
+	})
 	return flat, uniqueWarnings
 }
 

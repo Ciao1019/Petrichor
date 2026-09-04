@@ -213,6 +213,8 @@ export interface ArticleKnowledgeBuildResponse {
   recommendedQuestionCount: number
   entityCount: number
   conceptCount: number
+  mergedKnowledgeCount?: number
+  relationCount?: number
   sourcePage: KnowledgeBaseWikiPageResponse
   warnings: string[]
 }
@@ -231,13 +233,56 @@ export type ArticleKnowledgeBuildPhase =
   | "completed"
   | "failed"
 
+export type ArticleKnowledgeBuildStageStatus = "pending" | "running" | "completed" | "failed"
+
+export interface ArticleKnowledgeBuildProgressStage {
+  id: string
+  status: ArticleKnowledgeBuildStageStatus
+  message?: string
+  percent?: number
+  completed?: number
+  total?: number
+  startedAt?: string
+  completedAt?: string
+  children?: ArticleKnowledgeBuildProgressStage[]
+}
+
+export interface ArticleKnowledgeBuildProgressEvent {
+  id: string
+  stageId: string
+  message: string
+  createdAt: string
+}
+
+export type ArticleKnowledgeBuildAgentActivityStatus = "running" | "completed" | "failed"
+
+export interface ArticleKnowledgeBuildAgentActivity {
+  id: string
+  kind: "lifecycle" | "tool" | "plan" | "delegation" | "context" | "retry" | "validation" | string
+  status: ArticleKnowledgeBuildAgentActivityStatus
+  title: string
+  detail?: string
+  agentName?: string
+  toolName?: string
+  round?: number
+  createdAt: string
+  updatedAt: string
+  completedAt?: string
+}
+
 export interface ArticleKnowledgeBuildProgress {
   percent: number
   phase: ArticleKnowledgeBuildPhase
   message: string
   completed?: number
   total?: number
+  attempt?: number
+  maxAttempts?: number
   updatedAt: string
+  heartbeatAt?: string
+  stages?: ArticleKnowledgeBuildProgressStage[]
+  events?: ArticleKnowledgeBuildProgressEvent[]
+  agentActivities?: ArticleKnowledgeBuildAgentActivity[]
 }
 
 export interface ArticleKnowledgeBuildJobResponse {

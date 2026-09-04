@@ -38,33 +38,9 @@ func buildArticleKnowledgeCore(ctx context.Context, q txBeginner, userID, kbID, 
 	// 编译上下文：知识库名 + 该库自定义的编译说明书（没保存过就是空的）。
 	profile := loadCompileProfile(ctx, q, userID, kb)
 
-	existingRows, err := queryWikiPagesWhere(ctx, q,
-		`user_id = $1 AND knowledge_base_id = $2 AND kind IN ('entity','concept') AND archived_at IS NULL`,
-		userID, kbID)
+	existingPages, err := loadExistingKnowledgePages(ctx, q, userID, kbID)
 	if err != nil {
 		return nil, err
-	}
-	existingPages := make([]existingKnowledgePage, 0, len(existingRows))
-	for i := range existingRows {
-		page := &existingRows[i]
-		metadata := readKnowledgePageMetadata(page.FrontmatterJson)
-		kind := "entity"
-		if page.Kind == "concept" {
-			kind = "concept"
-		}
-		buildVersion := int64(0)
-		if v, ok := metadata["buildVersion"].(float64); ok {
-			buildVersion = int64(v)
-		}
-		existingPages = append(existingPages, existingKnowledgePage{
-			pageKey:      page.PageKey,
-			title:        page.Title,
-			kind:         kind,
-			aliases:      toStrSlice(metadata["aliases"]),
-			summary:      derefStr(page.Summary),
-			categoryPath: toStrSlice(metadata["categoryPath"]),
-			buildVersion: buildVersion,
-		})
 	}
 
 	chunks := splitMarkdownForKnowledgeBuild(article.ContentMd, article.Title, 0)
@@ -72,7 +48,11 @@ func buildArticleKnowledgeCore(ctx context.Context, q txBeginner, userID, kbID, 
 	if len(chunks) == 0 {
 		return nil, badReq("文章没有可构建的 Markdown 切片")
 	}
-	reportKnowledgeBuildProgress(ctx, 10, knowledgeBuildPhaseAnalyzing,
+	reportKnowledgeBuildStage(ctx, knowledgeBuildStageUpdate{
+		ID: knowledgeBuildPhasePreparing, Status: knowledgeBuildStageCompleted,
+		Message: fmt.Sprintf("已准备 %d 个文档切片", len(chunks)), Percent: 100,
+		Completed: len(chunks), Total: len(chunks)})
+	reportKnowledgeBuildProgress(ctx, 5, knowledgeBuildPhaseAnalyzing,
 		"正在分析正文并生成推荐问题", 0, 0)
 
 	var chunksWithQuestions []chunkWithQuestions
@@ -123,30 +103,80 @@ func buildArticleKnowledgeCore(ctx context.Context, q txBeginner, userID, kbID, 
 			chunks[index].recommendedQuestions = normalizeRecommendedQuestions(nil, chunks[index].heading)
 		}
 	}
-	reportKnowledgeBuildProgress(ctx, 48, knowledgeBuildPhaseTaxonomy, "正在规划知识目录", 0, 0)
-	candidates, warnings = planKnowledgeTaxonomy(ctx, userID, profile, article.Title, candidates, existingPages, warnings)
-	reportKnowledgeBuildProgress(ctx, 55, knowledgeBuildPhaseTaxonomy, "知识目录规划完成", 0, 0)
-	reportKnowledgeBuildProgress(ctx, 58, knowledgeBuildPhasePages, "正在生成 Wiki 页面", 0, 0)
+	reportKnowledgeBuildProgress(ctx, 45, knowledgeBuildPhasePages, "正在生成 Wiki 页面", 0, 0)
 	items, warnings := materializeWikiPages(ctx, userID, profile, article.Title, chunks, candidates, relations, warnings)
-	reportKnowledgeBuildProgress(ctx, 88, knowledgeBuildPhasePersisting, "正在写入知识页面和检索索引", 0, 0)
+	reportKnowledgeBuildProgress(ctx, 75, knowledgeBuildPhasePages, "Wiki 页面生成完成", 1, 1)
 
-	sourcePage, entityCount, conceptCount, werr := persistKnowledgeBuild(
-		ctx, q, userID, kbID, kb.Name, article, chunksWithQuestions, documentSummary, items, relations, warnings)
-	if werr != nil {
-		return nil, werr
+	var sourcePage *WikiPageRow
+	var entityCount, conceptCount, mergedKnowledgeCount int
+	err = withKnowledgeBuildWriteLock(kbID, func() error {
+		// 等待同库前一篇文章落库后重新读取全局页面，目录规划才能跨文件复用同一棵树。
+		latestExistingPages, loadErr := loadExistingKnowledgePages(ctx, q, userID, kbID)
+		if loadErr != nil {
+			return loadErr
+		}
+		reportKnowledgeBuildProgress(ctx, 75, knowledgeBuildPhaseTaxonomy, "正在合并同义知识并规划跨文章关系", 0, 0)
+		reportKnowledgeBuildStage(ctx, knowledgeBuildStageUpdate{
+			ParentID: knowledgeBuildPhaseTaxonomy,
+			ID:       knowledgeBuildStageResolution, Status: knowledgeBuildStageRunning,
+			Message: "AI 正在判断同义知识与跨文章关系", Percent: 0,
+		})
+		resolutionPlan, resolutionWarnings := planKnowledgeResolution(
+			ctx, userID, profile, candidates, latestExistingPages,
+		)
+		warnings = append(warnings, resolutionWarnings...)
+		items, candidates, relations, mergedKnowledgeCount = applyKnowledgeResolution(
+			items, relations, resolutionPlan, latestExistingPages,
+		)
+		taxonomyExistingPages := applyKnowledgeResolutionToExistingPages(
+			latestExistingPages, resolutionPlan.canonicalByKey,
+		)
+		reportKnowledgeBuildStage(ctx, knowledgeBuildStageUpdate{
+			ParentID: knowledgeBuildPhaseTaxonomy,
+			ID:       knowledgeBuildStageResolution, Status: knowledgeBuildStageCompleted,
+			Message: fmt.Sprintf("语义整理完成：合并 %d 个重复知识，形成 %d 条关系", mergedKnowledgeCount, len(relations)), Percent: 100,
+		})
+		reportKnowledgeBuildProgress(ctx, 83, knowledgeBuildPhaseTaxonomy, "正在规划全局知识目录", 0, 0)
+		reportKnowledgeBuildStage(ctx, knowledgeBuildStageUpdate{
+			ParentID: knowledgeBuildPhaseTaxonomy,
+			ID:       knowledgeBuildStageCatalog, Status: knowledgeBuildStageRunning,
+			Message: "AI 正在按整个知识库规划目录", Percent: 0,
+		})
+		plannedCandidates, existingTaxonomyUpdates, taxonomyWarnings := planKnowledgeTaxonomy(
+			ctx, userID, profile, article.Title, candidates, taxonomyExistingPages,
+		)
+		warnings = dedupeStrings(append(warnings, taxonomyWarnings...))
+		items = applyKnowledgeTaxonomyToItems(items, plannedCandidates)
+		reportKnowledgeBuildStage(ctx, knowledgeTaxonomyStageUpdate(taxonomyWarnings))
+		reportKnowledgeBuildProgress(ctx, 90, knowledgeBuildPhasePersisting, "正在写入知识页面和检索索引", 0, 0)
+
+		var persistErr error
+		sourcePage, entityCount, conceptCount, persistErr = persistKnowledgeBuild(
+			ctx, q, userID, kbID, kb.Name, article, chunksWithQuestions, documentSummary,
+			items, relations, resolutionPlan.canonicalByKey, existingTaxonomyUpdates, warnings,
+		)
+		return persistErr
+	})
+	if err != nil {
+		return nil, err
 	}
 	reportKnowledgeBuildProgress(ctx, 95, knowledgeBuildPhaseEmbedding, "知识页面已保存，正在补充向量索引", 0, 0)
 
 	// 提交后 best-effort 补向量；EmbedInvoker 未注入时静默跳过。
+	embeddingTotal := 0
 	if EmbedInvoker != nil {
 		if profile, perr := loadEmbeddingProfileOrNull(ctx, q, userID); perr == nil && profile != nil {
 			rows, _, lerr := loadPendingIndexRows(ctx, q, userID, kbID, "chunk", profile)
 			if lerr == nil {
+				embeddingTotal = len(rows)
+				reportKnowledgeBuildProgress(ctx, 95, knowledgeBuildPhaseEmbedding,
+					"正在补充向量索引", 0, embeddingTotal)
 				_, _ = writeIndexEmbeddings(ctx, q, userID, rows, profile)
 			}
 		}
 	}
-	reportKnowledgeBuildProgress(ctx, 99, knowledgeBuildPhaseEmbedding, "正在整理构建结果", 0, 0)
+	reportKnowledgeBuildProgress(ctx, 99, knowledgeBuildPhaseEmbedding,
+		"正在整理构建结果", embeddingTotal, embeddingTotal)
 
 	return map[string]any{
 		"articleId":                strconv.FormatInt(article.ID, 10),
@@ -156,6 +186,8 @@ func buildArticleKnowledgeCore(ctx context.Context, q txBeginner, userID, kbID, 
 		"recommendedQuestionCount": len(chunksWithQuestions) * 3,
 		"entityCount":              entityCount,
 		"conceptCount":             conceptCount,
+		"mergedKnowledgeCount":     mergedKnowledgeCount,
+		"relationCount":            len(relations),
 		"sourcePage":               toWikiPageResponse(sourcePage),
 		"warnings":                 warningsOrEmpty(warnings),
 	}, nil
@@ -185,7 +217,8 @@ type txBeginner interface {
 // persistKnowledgeBuild 对应 buildArticleKnowledge 的落库事务。
 func persistKnowledgeBuild(ctx context.Context, q txBeginner, userID, kbID int64, kbName string,
 	article *ArticleRow, chunks []chunkWithQuestions, documentSummary string,
-	items []extractedItem, relations []knowledgeRelation, warnings []string,
+	items []extractedItem, relations []knowledgeRelation, canonicalPageKeys map[string]string,
+	existingTaxonomyUpdates map[string][]string, warnings []string,
 ) (*WikiPageRow, int, int, error) {
 	tx, err := q.Begin(ctx)
 	if err != nil {
@@ -262,6 +295,9 @@ func persistKnowledgeBuild(ctx context.Context, q txBeginner, userID, kbID int64
 	}
 
 	sourcePageKey := buildArticleWikiSourcePageKey(article.ID)
+	if err := consolidateResolvedKnowledgePages(ctx, tx, userID, kbID, canonicalPageKeys, now); err != nil {
+		return nil, 0, 0, err
+	}
 	if err := detachArticleFromGeneratedKnowledgePages(ctx, tx, userID, kbID, article.ID); err != nil {
 		return nil, 0, 0, err
 	}
@@ -281,6 +317,12 @@ func persistKnowledgeBuild(ctx context.Context, q txBeginner, userID, kbID int64
 			entityCount++
 		} else {
 			conceptCount++
+		}
+	}
+	for _, pageKey := range sortedKnowledgeTaxonomyKeys(existingTaxonomyUpdates) {
+		if err := setWikiPageTaxonomy(ctx, tx, userID, kbID, pageKey,
+			existingTaxonomyUpdates[pageKey], ArticleKnowledgeTaxonomyVersion, now); err != nil {
+			return nil, 0, 0, err
 		}
 	}
 	if err := rebuildGeneratedKnowledgePageLinks(ctx, tx, userID, kbID); err != nil {
@@ -325,11 +367,14 @@ func persistKnowledgeBuild(ctx context.Context, q txBeginner, userID, kbID int64
 	}
 	_ = indexPage
 	if err := logWikiEvent(ctx, tx, userID, kbID, "ARTICLE_KNOWLEDGE_BUILD", &sourcePage.ID, map[string]any{
-		"articleId":    strconv.FormatInt(article.ID, 10),
-		"chunkCount":   len(chunks),
-		"entityCount":  entityCount,
-		"conceptCount": conceptCount,
-		"warnings":     warningsOrEmpty(warnings),
+		"articleId":         strconv.FormatInt(article.ID, 10),
+		"chunkCount":        len(chunks),
+		"entityCount":       entityCount,
+		"conceptCount":      conceptCount,
+		"mergedCount":       len(nonIdentityKnowledgeMappings(canonicalPageKeys)),
+		"canonicalMappings": nonIdentityKnowledgeMappings(canonicalPageKeys),
+		"relationCount":     len(relations),
+		"warnings":          warningsOrEmpty(warnings),
 	}); err != nil {
 		return nil, 0, 0, err
 	}
@@ -381,17 +426,19 @@ func upsertExtractedKnowledgePage(ctx context.Context, q execQuerier, userID, kn
 		"contentMd":       item.contentMd,
 		"aliases":         item.candidate.aliases,
 		"categoryPath":    item.candidate.categoryPath,
-		"sourceChunkKeys": []string{},
+		"sourceChunkKeys": item.candidate.sourceChunkKeys,
 		"relatedPageKeys": item.relatedPageKeys,
 		"relations":       storedRelationsAny(item.relations),
 	}
-	prevBuildVersion := optNumber(previous["buildVersion"])
+	prevTaxonomyVersion := int64(optNumber(previous["taxonomyVersion"]))
 	prevCategoryPath := toStrSlice(previous["categoryPath"])
 	categoryPath := prevCategoryPath
-	if !(prevBuildVersion >= ArticleKnowledgeBuildVersion && len(prevCategoryPath) > 0) {
-		if len(item.candidate.categoryPath) > 0 {
-			categoryPath = item.candidate.categoryPath
-		}
+	taxonomyVersion := prevTaxonomyVersion
+	if item.candidate.taxonomyVersion >= ArticleKnowledgeTaxonomyVersion && len(item.candidate.categoryPath) > 0 {
+		categoryPath = item.candidate.categoryPath
+		taxonomyVersion = ArticleKnowledgeTaxonomyVersion
+	} else if len(categoryPath) == 0 && len(item.candidate.categoryPath) > 0 {
+		categoryPath = item.candidate.categoryPath
 	}
 	aliasSet := dedupeStrings(append(toStrSlice(previous["aliases"]), item.candidate.aliases...))
 	if len(aliasSet) > 20 {
@@ -411,17 +458,18 @@ func upsertExtractedKnowledgePage(ctx context.Context, q execQuerier, userID, kn
 		}
 	}
 	metadata := map[string]any{
-		"generatedBy":   "article-knowledge-build",
-		"buildVersion":  ArticleKnowledgeBuildVersion,
-		"sourceHash":    nil,
-		"chunkCount":    float64(0),
-		"entityCount":   float64(0),
-		"conceptCount":  float64(0),
-		"categoryPath":  categoryPath,
-		"aliases":       aliasSet,
-		"baseContentMd": baseContent,
-		"baseSummary":   baseSummary,
-		"contributions": contributions,
+		"generatedBy":     "article-knowledge-build",
+		"buildVersion":    ArticleKnowledgeBuildVersion,
+		"taxonomyVersion": taxonomyVersion,
+		"sourceHash":      nil,
+		"chunkCount":      float64(0),
+		"entityCount":     float64(0),
+		"conceptCount":    float64(0),
+		"categoryPath":    categoryPath,
+		"aliases":         aliasSet,
+		"baseContentMd":   baseContent,
+		"baseSummary":     baseSummary,
+		"contributions":   contributions,
 	}
 	contributionValues := mapValues(contributions)
 	firstContributionSummary := ""

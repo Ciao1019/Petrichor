@@ -3,7 +3,6 @@ package kb
 import (
 	"context"
 	"regexp"
-	"sort"
 	"strings"
 	"sync/atomic"
 )
@@ -21,6 +20,7 @@ type knowledgeCandidate struct {
 	aliases         []string
 	summary         string
 	categoryPath    []string
+	taxonomyVersion int64
 	sourceChunkKeys []string
 }
 
@@ -299,155 +299,6 @@ func extractDocumentCandidateBatch(ctx context.Context, userID int64, profile co
 	return documentSummary, candidates, relations, nil
 }
 
-// planKnowledgeTaxonomy 全局目录规划；失败回落既有目录或空目录。
-func planKnowledgeTaxonomy(ctx context.Context, userID int64, profile compileProfile, articleTitle string, candidates []knowledgeCandidate, existingPages []existingKnowledgePage, warnings []string) ([]knowledgeCandidate, []string) {
-	if len(candidates) == 0 {
-		return candidates, warnings
-	}
-	existingCategoryByKey := map[string][]string{}
-	var taxonomyPaths []string
-	for _, page := range existingPages {
-		path := normalizeKnowledgeCategoryPath(page.categoryPath)
-		if page.buildVersion >= ArticleKnowledgeBuildVersion && len(path) > 0 {
-			existingCategoryByKey[page.pageKey] = path
-			taxonomyPaths = append(taxonomyPaths, strings.Join(path, " / "))
-		}
-	}
-	sort.Strings(taxonomyPaths)
-	taxonomyPaths = dedupeStrings(taxonomyPaths)
-	if len(taxonomyPaths) > 120 {
-		taxonomyPaths = taxonomyPaths[:120]
-	}
-	foldersText := "（暂无可复用目录）"
-	if len(taxonomyPaths) > 0 {
-		lines := make([]string, 0, len(taxonomyPaths))
-		for _, p := range taxonomyPaths {
-			lines = append(lines, "- "+p)
-		}
-		foldersText = strings.Join(lines, "\n")
-	}
-	itemsText := ""
-	for _, candidate := range candidates {
-		item := "- pageKey: " + candidate.pageKey + " | type: " + candidate.kind + " | title: " + candidate.name
-		if candidate.summary != "" {
-			item += " | about: " + candidate.summary
-		}
-		itemsText += item + "\n"
-	}
-	parsed, err := invokeKnowledgeBuildJSON(ctx, ChatRequest{
-		UserID: userID,
-		SystemPrompt: profile.systemPrompt(
-			"你是 Wiki 导航目录规划器。候选实体和概念已经抽取完成，请一次性为整批候选规划一棵统一、浅层、可复用的中文目录树。",
-			"目录只负责语义分组；entity/concept 是页面类型元数据，绝不能建立「实体」「概念」两个类型根目录。",
-			"每项输出从宽到窄的 category path，最多 2 级，优先只用 1 级。一级目录通常不超过 6 个。",
-			"目录数量必须显著少于页面数量。禁止一页一目录，禁止把页面标题原样再建成叶子目录。",
-			"每个 requested_items 的 pageKey 必须恰好出现一次。只输出 JSON，不要 Markdown 围栏。",
-			"输出结构：{\"assignments\":[{\"pageKey\":\"entity-xxx\",\"path\":[\"一级\",\"二级\"]}]}。",
-		),
-		Message: strings.Join([]string{
-			"知识库：" + profile.KnowledgeBaseName,
-			"当前文档：" + articleTitle,
-			"<existing_folders>",
-			foldersText,
-			"</existing_folders>",
-			"<requested_items>",
-			itemsText,
-			"</requested_items>",
-		}, "\n\n"),
-		Op: "kb.build.taxonomy",
-	})
-	assignments := map[string][]string{}
-	if err == nil {
-		list, ok := parsed["assignments"].([]any)
-		if !ok {
-			warnings = append(warnings, "知识目录规划结果缺少 assignments，已使用既有目录")
-		} else {
-			candidateByKey := map[string]struct{}{}
-			for _, c := range candidates {
-				candidateByKey[c.pageKey] = struct{}{}
-			}
-			for _, raw := range list {
-				entry, ok := raw.(map[string]any)
-				if !ok {
-					continue
-				}
-				rawPageKey := trimSpace(optString(entry["pageKey"]))
-				if rawPageKey == "" {
-					rawPageKey = trimSpace(optString(entry["slug"]))
-				}
-				if rawPageKey == "" {
-					continue
-				}
-				pageKey := rawPageKey
-				if _, exists := candidateByKey[pageKey]; !exists {
-					pageKey = normalizePageKeyForKind(rawPageKey, inferPageKind(rawPageKey), rawPageKey)
-				}
-				if _, exists := candidateByKey[pageKey]; !exists {
-					continue
-				}
-				if _, dup := assignments[pageKey]; dup {
-					continue
-				}
-				pathValue := entry["path"]
-				if pathValue == nil {
-					pathValue = entry["categoryPath"]
-				}
-				assignments[pageKey] = normalizeKnowledgeCategoryPath(pathValue)
-			}
-		}
-	} else {
-		warnings = append(warnings, knowledgeBuildFallbackWarning(
-			"知识目录规划", "已使用既有目录", err,
-		))
-	}
-	out := make([]knowledgeCandidate, 0, len(candidates))
-	for _, candidate := range candidates {
-		categoryPath := existingCategoryByKey[candidate.pageKey]
-		if categoryPath == nil {
-			categoryPath = assignments[candidate.pageKey]
-		}
-		if categoryPath == nil {
-			categoryPath = []string{}
-		}
-		cloned := candidate
-		cloned.categoryPath = categoryPath
-		out = append(out, cloned)
-	}
-	if len(warnings) > 8 {
-		warnings = warnings[:8]
-	}
-	return out, warnings
-}
-
-// normalizeKnowledgeCategoryPath 对应同名函数：字符串或数组归一为最多 2 级路径。
-func normalizeKnowledgeCategoryPath(value any) []string {
-	var raw []any
-	switch v := value.(type) {
-	case []any:
-		raw = v
-	case string:
-		for _, part := range regexp.MustCompile(`[/／|｜>]`).Split(v, -1) {
-			raw = append(raw, part)
-		}
-	default:
-		return []string{}
-	}
-	cleanRe := regexp.MustCompile(`[/／|｜>]`)
-	bannedRe := regexp.MustCompile(`(?i)^(实体|概念|entity|concept)$`)
-	var parts []string
-	for _, item := range raw {
-		part := cleanRe.ReplaceAllString(trimSpace(toStr(item)), "")
-		if part == "" || bannedRe.MatchString(part) {
-			continue
-		}
-		parts = append(parts, part)
-	}
-	if len(parts) > 2 {
-		parts = parts[:2]
-	}
-	return parts
-}
-
 // ===== 页面物化 =====
 
 func renderWikiCandidateCatalog(candidates []knowledgeCandidate) string {
@@ -549,7 +400,7 @@ func materializeWikiPages(ctx context.Context, userID int64, profile compileProf
 	outputs := mapWithConcurrency(batches, wikiPageBatchConcurrency, func(batch []knowledgeCandidate) batchResult {
 		defer func() {
 			completed := int(completedBatches.Add(1))
-			percent := 58 + completed*28/len(batches)
+			percent := 45 + completed*30/len(batches)
 			reportKnowledgeBuildProgress(ctx, percent, knowledgeBuildPhasePages,
 				"正在生成 Wiki 页面", completed, len(batches))
 		}()
@@ -700,11 +551,14 @@ type extractedItem struct {
 
 // existingKnowledgePage 已存在的实体/概念页（供复用 pageKey 与目录）。
 type existingKnowledgePage struct {
-	pageKey      string
-	title        string
-	kind         string // entity | concept
-	aliases      []string
-	summary      string
-	categoryPath []string
-	buildVersion int64
+	pageKey         string
+	title           string
+	kind            string // entity | concept
+	aliases         []string
+	summary         string
+	categoryPath    []string
+	taxonomyVersion int64
+	generated       bool
+	sourceTitles    []string
+	sourceCount     int
 }
