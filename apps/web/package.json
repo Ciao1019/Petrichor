@@ -85,7 +85,7 @@
     "@platejs/resizable": "^52.0.11",
     "@platejs/selection": "^52.0.16",
     "@platejs/slash-command": "^52.0.15",
-    "@platejs/suggestion": "^52.0.11",
+    "@platejs/suggestion": "^53.2.3",
     "@platejs/table": "^52.0.11",
     "@platejs/toc": "^52.0.11",
     "@platejs/toggle": "^52.0.11",
