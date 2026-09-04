@@ -3,7 +3,9 @@ FROM golang:1.26.6-alpine AS builder
 WORKDIR /src
 
 ARG GOPROXY=https://proxy.golang.org,direct
+ARG GO_BUILD_PARALLELISM=1
 ENV GOPROXY=${GOPROXY}
+ENV GOFLAGS=-p=${GO_BUILD_PARALLELISM}
 
 COPY go.mod go.sum ./
 RUN go mod download
