@@ -355,10 +355,6 @@ export interface SiteFilingUpdateRequest {
   publicSecurityUrl: string
 }
 
-export const publicSiteFilingApi = {
-  detail: () => api.get<SiteFilingResponse>("/public/filing"),
-}
-
 export type PublicSearchMode = "fulltext" | "lexical" | "semantic" | "hybrid"
 export type PublicSearchType = "all" | "article" | "wiki"
 

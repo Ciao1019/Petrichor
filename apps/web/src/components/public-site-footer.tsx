@@ -28,9 +28,15 @@ export function buildFilingLinks(config: SiteFilingResponse | null): FooterProLi
 }
 
 export function PublicSiteFooter({ className }: { className?: string }) {
-  const [filing, setFiling] = React.useState<SiteFilingResponse | null>(null)
+  const [filing, setFiling] = React.useState<SiteFilingResponse | null>(() => publicSiteFilingApi.getCachedDetail())
 
   React.useEffect(() => {
+    const cached = publicSiteFilingApi.getCachedDetail()
+    if (cached) {
+      setFiling(cached)
+      return
+    }
+
     let canceled = false
     void publicSiteFilingApi.detail()
       .then((response) => {

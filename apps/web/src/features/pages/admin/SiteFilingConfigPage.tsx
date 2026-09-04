@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { adminSiteFilingApi, type SiteFilingResponse } from "@/lib/api"
+import { adminSiteFilingApi, publicSiteFilingApi, type SiteFilingResponse } from "@/lib/api"
 
 const emptyConfig: SiteFilingResponse = {
   enabled: false,
@@ -72,6 +72,7 @@ export function SiteFilingConfigPage() {
         publicSecurityUrl: config.publicSecurityUrl,
       })
       setConfig(response.data)
+      publicSiteFilingApi.invalidateClientCache()
       toast.success("备案配置已保存")
     } catch (error: unknown) {
       toast.error(resolveApiError(error, "保存备案配置失败"))

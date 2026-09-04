@@ -1,7 +1,7 @@
 import type { AxiosResponse } from "axios"
 
 import { api } from "@/lib/api-client"
-import type { ProjectShowcaseResponse, TableDataInfo } from "@/lib/api-core"
+import type { ProjectShowcaseResponse, SiteFilingResponse, TableDataInfo } from "@/lib/api-core"
 
 export interface PublicSharedArticleDetailRequest {
   shareCode: string
@@ -193,10 +193,45 @@ function invalidatePublicProjectShowcaseClientCache() {
   publicProjectShowcaseRequest = null
 }
 
+let publicSiteFilingCache: SiteFilingResponse | null = null
+let publicSiteFilingRequest: Promise<AxiosResponse<SiteFilingResponse>> | null = null
+
+function fetchPublicSiteFiling() {
+  if (publicSiteFilingCache) {
+    return Promise.resolve(createCachedAxiosResponse(publicSiteFilingCache))
+  }
+  if (publicSiteFilingRequest) {
+    return publicSiteFilingRequest
+  }
+
+  publicSiteFilingRequest = api.get<SiteFilingResponse>("/public/filing")
+    .then((response) => {
+      publicSiteFilingCache = response.data
+      return response
+    })
+    .finally(() => {
+      publicSiteFilingRequest = null
+    })
+
+  return publicSiteFilingRequest
+}
+
+function invalidatePublicSiteFilingClientCache() {
+  publicSiteFilingCache = null
+  publicSiteFilingRequest = null
+}
+
 export const publicProjectShowcaseApi = {
   detail: (options?: { forceRefresh?: boolean }) => fetchPublicProjectShowcase(Boolean(options?.forceRefresh)),
   getCachedDetail: () => getFreshClientCacheValue(publicProjectShowcaseCache),
   invalidateClientCache: invalidatePublicProjectShowcaseClientCache,
+}
+
+export const publicSiteFilingApi = {
+  detail: fetchPublicSiteFiling,
+  getCachedDetail: () => publicSiteFilingCache,
+  invalidateClientCache: invalidatePublicSiteFilingClientCache,
+  resetClientCacheForTests: invalidatePublicSiteFilingClientCache,
 }
 
 export const publicArticleShareApi = {

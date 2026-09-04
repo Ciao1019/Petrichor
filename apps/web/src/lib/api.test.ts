@@ -27,7 +27,7 @@ vi.mock("axios", () => ({
   default: axiosMocks.axios,
 }))
 
-import { publicArticleShareApi, publicProjectShowcaseApi, publicSearchApi } from "./api"
+import { publicArticleShareApi, publicProjectShowcaseApi, publicSearchApi, publicSiteFilingApi } from "./api"
 
 function mockWindowLocation(pathname: string, search = "", hash = "") {
   const replace = vi.fn()
@@ -55,6 +55,7 @@ describe("publicArticleShareApi client cache", () => {
     vi.unstubAllGlobals()
     vi.clearAllMocks()
     publicArticleShareApi.resetClientCacheForTests()
+    publicSiteFilingApi.resetClientCacheForTests()
   })
 
   it("公开文章列表使用 GET 并复用内存缓存", async () => {
@@ -261,6 +262,33 @@ describe("publicArticleShareApi client cache", () => {
 
     publicProjectShowcaseApi.invalidateClientCache()
     const refreshed = await publicProjectShowcaseApi.detail()
+    expect(refreshed.data).toEqual(secondPayload)
+    expect(axiosMocks.instance.get).toHaveBeenCalledTimes(2)
+  })
+
+  it("备案信息在前台路由切换时复用会话缓存", async () => {
+    const firstPayload = {
+      enabled: true,
+      icpNumber: "京ICP备123号",
+      icpUrl: "https://beian.miit.gov.cn/",
+      publicSecurityNumber: "",
+      publicSecurityUrl: "https://www.beian.gov.cn/portal/registerSystemInfo",
+    }
+    const secondPayload = { ...firstPayload, icpNumber: "京ICP备456号" }
+    axiosMocks.instance.get
+      .mockResolvedValueOnce({ data: firstPayload })
+      .mockResolvedValueOnce({ data: secondPayload })
+
+    const first = await publicSiteFilingApi.detail()
+    const cached = await publicSiteFilingApi.detail()
+
+    expect(first.data).toEqual(firstPayload)
+    expect(cached.data).toEqual(firstPayload)
+    expect(publicSiteFilingApi.getCachedDetail()).toEqual(firstPayload)
+    expect(axiosMocks.instance.get).toHaveBeenCalledTimes(1)
+
+    publicSiteFilingApi.invalidateClientCache()
+    const refreshed = await publicSiteFilingApi.detail()
     expect(refreshed.data).toEqual(secondPayload)
     expect(axiosMocks.instance.get).toHaveBeenCalledTimes(2)
   })
