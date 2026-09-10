@@ -1,3 +1,4 @@
+import { ArticleLoadingSkeleton } from "@/components/article-loading-skeleton"
 import { ChevronUp, FileDown, FileUp, Flame, ListTree, RefreshCw, Save, Share2, Sparkles } from "@/components/iconimate"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -121,37 +122,7 @@ export function ArticleSummaryPreview({
 /* ─── Editor loading skeleton ────────────────────────────── */
 
 export function ArticleEditorLoadingCard() {
-  return (
-    <div className="w-full px-6 py-6 lg:px-10 animate-in fade-in-0 duration-300">
-      {/* Action bar skeleton */}
-      <div className="flex items-center justify-between gap-4 mb-8">
-        <div className="h-3.5 w-32 rounded-lg bg-muted/60 animate-pulse" />
-        <div className="flex items-center gap-2">
-          <div className="h-8 w-14 rounded-md bg-muted/60 animate-pulse" />
-          <div className="h-8 w-14 rounded-md bg-muted/60 animate-pulse" />
-          <div className="h-8 w-20 rounded-md bg-muted/60 animate-pulse" />
-        </div>
-      </div>
-      {/* Title skeleton */}
-      <div className="h-9 w-2/5 rounded-lg bg-muted/60 animate-pulse mb-3" />
-      {/* Tags skeleton */}
-      <div className="flex items-center gap-2 mb-8">
-        <div className="h-5 w-16 rounded-full bg-muted/60 animate-pulse" />
-        <div className="h-5 w-20 rounded-full bg-muted/60 animate-pulse" />
-      </div>
-      {/* Editor area skeleton */}
-      <div className="rounded-lg border bg-muted/10 px-8 py-8 space-y-5">
-        <div className="h-3.5 w-full rounded-lg bg-muted/60 animate-pulse" />
-        <div className="h-3.5 w-11/12 rounded-lg bg-muted/60 animate-pulse" />
-        <div className="h-3.5 w-4/5 rounded-lg bg-muted/60 animate-pulse" />
-        <div className="h-px w-full bg-muted/30" />
-        <div className="h-3.5 w-full rounded-lg bg-muted/60 animate-pulse" />
-        <div className="h-3.5 w-3/4 rounded-lg bg-muted/60 animate-pulse" />
-        <div className="h-3.5 w-5/6 rounded-lg bg-muted/60 animate-pulse" />
-        <div className="h-3.5 w-2/3 rounded-lg bg-muted/60 animate-pulse" />
-      </div>
-    </div>
-  )
+  return <ArticleLoadingSkeleton />
 }
 
 /* ─── Editor TOC overlay (portal + fixed) ──────────────── */

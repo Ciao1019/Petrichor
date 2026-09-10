@@ -38,7 +38,7 @@ const RETYPESET_SITE_GITHUB_HREF = "https://github.com/Ciao1019/Petrichor"
 
 const retypesetSiteNavItems: RetypesetSiteNavItem[] = [
     { section: "articles", href: "/#articles", label: retypesetSiteCopy.navPosts, internal: true },
-    // Wiki 能力保留在服务端，当前不在公开前台展示。
+    { section: "wiki", href: "/wiki", label: "Wiki", internal: true },
     { section: "projects", href: "/projects", label: retypesetSiteCopy.navProjects, internal: true },
     { section: "petrichor", href: "/petrichor", label: retypesetSiteCopy.navPetrichor, internal: true },
     { section: "about", href: "/about", label: retypesetSiteCopy.navAbout, internal: true },
@@ -128,7 +128,7 @@ export function RetypesetSiteNav({
                             return (
                                 <li key={item.href}>
                                     {item.internal ? (
-                                        <Link className={className} to={item.href}>
+                                        <Link className={className} to={item.href} aria-current={active ? "page" : undefined}>
                                             {item.label}
                                         </Link>
                                     ) : (

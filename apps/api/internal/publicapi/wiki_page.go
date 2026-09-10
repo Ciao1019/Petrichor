@@ -216,6 +216,15 @@ func readPublicWikiPageDetail(
 	safePageIDs map[int64]struct{},
 	page *wikiPageRecord,
 ) (map[string]any, error) {
+	ids := make([]int64, 0, len(safePageIDs))
+	for id := range safePageIDs {
+		ids = append(ids, id)
+	}
+	targets, err := loadPublicWikiTargets(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	sanitizePublicWikiPage(page, targets)
 	links := []wikiLinkRow{}
 	linkRows, err := pool().Query(ctx,
 		`SELECT id, from_page_id, to_page_key, link_type FROM petrichor_kb_wiki_link
@@ -281,18 +290,12 @@ func readPublicWikiPageDetail(
 		return nil, err
 	}
 
-	var knowledgeBaseName string
-	if err := pool().QueryRow(ctx,
-		`SELECT name FROM petrichor_kb_knowledge_base WHERE id = $1`,
-		page.knowledgeBaseID).Scan(&knowledgeBaseName); err != nil {
-		return nil, err
-	}
-
 	buildNeighbor := func(pageKey, linkType string, resolved *wikiPageRecord) map[string]any {
 		title := pageKey
 		var kind any
 		var summary any
 		if resolved != nil {
+			sanitizePublicWikiPage(resolved, targets)
 			title = resolved.title
 			kind = resolved.kind
 			s := strings.TrimSpace(derefStr(resolved.summary))
@@ -378,7 +381,7 @@ func readPublicWikiPageDetail(
 	}
 	resp := toWikiQaCard(page)
 	resp["knowledgeBaseId"] = formatInt(page.knowledgeBaseID)
-	resp["knowledgeBaseName"] = knowledgeBaseName
+	resp["knowledgeBaseName"] = "公开 Wiki"
 	resp["href"] = publicWikiPageHref(page.knowledgeBaseID, page.pageKey)
 	resp["updatedAt"] = httpx.FormatISO(page.updatedAt)
 	resp["contentMd"] = page.contentMd

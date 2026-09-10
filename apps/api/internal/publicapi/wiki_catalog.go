@@ -15,7 +15,8 @@ import (
 	"petrichor/api/internal/publicscope"
 )
 
-const publicWikiCacheControl = "public, max-age=30, s-maxage=30, stale-while-revalidate=120"
+// 公开状态可随时撤销，Wiki 正文和派生目录不能继续使用过期缓存。
+const publicWikiCacheControl = "no-store"
 
 var publicWikiKinds = map[string]struct{}{
 	"source":     {},
@@ -97,8 +98,11 @@ func loadPublicKnowledgeBase(
 	return &record, err
 }
 
-func parsePublicKnowledgeBaseID(c *gin.Context) (int64, error) {
+func parseOptionalPublicKnowledgeBaseID(c *gin.Context) (int64, error) {
 	raw := strings.TrimSpace(c.Query("knowledgeBaseId"))
+	if raw == "" {
+		return 0, nil
+	}
 	id, err := parseInt64(raw)
 	if err != nil || id <= 0 {
 		return 0, badReq("knowledgeBaseId 必须是正整数")
@@ -165,7 +169,7 @@ func WikiKnowledgeBases(c *gin.Context) {
 
 // WikiPageList GET /api/public/wiki/pages。
 func WikiPageList(c *gin.Context) {
-	knowledgeBaseID, err := parsePublicKnowledgeBaseID(c)
+	knowledgeBaseID, err := parseOptionalPublicKnowledgeBaseID(c)
 	if err != nil {
 		httpx.HandleError(c, err)
 		return
@@ -188,13 +192,17 @@ func WikiPageList(c *gin.Context) {
 	offset := parseBoundedNumber(c.Query("offset"), 0, 0, int64(^uint64(0)>>1))
 
 	ctx := c.Request.Context()
-	kbID := knowledgeBaseID
-	safePageIDs, err := publicscope.LoadSafeWikiPageIDs(ctx, &kbID)
+	safePageIDs, err := loadPublicWikiScope(ctx, knowledgeBaseID)
 	if err != nil {
 		httpx.HandleError(c, err)
 		return
 	}
-	knowledgeBase, err := loadPublicKnowledgeBase(ctx, knowledgeBaseID, safePageIDs)
+	targets, err := loadPublicWikiTargets(ctx, safePageIDs)
+	if err != nil {
+		httpx.HandleError(c, err)
+		return
+	}
+	knowledgeBase, err := loadPublicWikiCatalog(ctx, knowledgeBaseID, safePageIDs)
 	if err != nil {
 		httpx.HandleError(c, err)
 		return
@@ -220,7 +228,7 @@ func WikiPageList(c *gin.Context) {
 		 WHERE p.id = ANY($1)
 		   AND ($2 = '' OR p.kind = $2)
 		   AND ($3 = '' OR p.title ILIKE $4 OR COALESCE(p.summary, '') ILIKE $4)
-		 ORDER BY p.updated_at DESC, p.page_key ASC
+		 ORDER BY p.updated_at DESC, p.id ASC
 		 LIMIT $5 OFFSET $6`, safePageIDs, kind, keyword, pattern, limit, offset)
 	if err != nil {
 		httpx.HandleError(c, err)
@@ -235,6 +243,7 @@ func WikiPageList(c *gin.Context) {
 			httpx.HandleError(c, err)
 			return
 		}
+		sanitizePublicWikiPage(page, targets)
 		metadata := readPublicWikiMetadata(page.frontmatterJSON)
 		summary := strings.TrimSpace(derefStr(page.summary))
 		if summary == "" {
@@ -249,7 +258,7 @@ func WikiPageList(c *gin.Context) {
 			"categoryPath": metadata.CategoryPath,
 			"sourceCount":  sourceCount,
 			"updatedAt":    httpx.FormatISO(page.updatedAt),
-			"href":         publicWikiPageHref(knowledgeBaseID, page.pageKey),
+			"href":         publicWikiPageHref(page.knowledgeBaseID, page.pageKey),
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -281,4 +290,30 @@ func scanPublicWikiListRow(scanner interface{ Scan(dest ...any) error }) (*wikiP
 
 func publicWikiPageHref(knowledgeBaseID int64, pageKey string) string {
 	return "/wiki/" + formatInt(knowledgeBaseID) + "/" + url.PathEscape(pageKey)
+}
+
+func loadPublicWikiScope(ctx context.Context, knowledgeBaseID int64) ([]int64, error) {
+	if knowledgeBaseID == 0 {
+		return publicscope.LoadSafeWikiPageIDs(ctx, nil)
+	}
+	return publicscope.LoadSafeWikiPageIDs(ctx, &knowledgeBaseID)
+}
+
+// 不指定知识库时直接聚合全部安全页面，不读取内部知识库名称或描述。
+func loadPublicWikiCatalog(ctx context.Context, knowledgeBaseID int64, safePageIDs []int64) (*publicKnowledgeBaseRecord, error) {
+	if knowledgeBaseID != 0 {
+		return loadPublicKnowledgeBase(ctx, knowledgeBaseID, safePageIDs)
+	}
+	record := &publicKnowledgeBaseRecord{name: "公开 Wiki"}
+	err := pool().QueryRow(ctx, `SELECT COALESCE(MAX(updated_at), now())
+		FROM petrichor_kb_wiki_page WHERE id = ANY($1)`, safePageIDs).Scan(&record.updatedAt)
+	return record, err
+}
+
+func parsePublicKnowledgeBaseID(c *gin.Context) (int64, error) {
+	id, err := parseOptionalPublicKnowledgeBaseID(c)
+	if err == nil && id == 0 {
+		return 0, badReq("knowledgeBaseId 必须是正整数")
+	}
+	return id, err
 }

@@ -1,19 +1,20 @@
 "use client"
 
 import * as React from "react"
-import { ArrowRight, BookOpen, Network } from "@/components/iconimate"
+import { ArrowRight, BookOpen } from "@/components/iconimate"
 import { Link, useParams } from "react-router-dom"
 
+import { wikiScribbleStyle } from "@/components/markdown/wiki-scribble"
 import { PlateMarkdownPreview } from "@/components/plate/PlateMarkdownPreview"
 import { preparePublicWikiMarkdown } from "@/features/pages/knowledge/knowledge-wiki-markdown"
 import { publicWikiApi, type PublicWikiNeighborPage, type PublicWikiPageDetail } from "@/lib/api"
 import { usePublicPageMeta } from "@/features/pages/public-page-meta"
 import {
   PublicWikiBreadcrumbs,
-  PublicWikiLayout,
   PublicWikiStatus,
   resolvePublicWikiError,
 } from "./PublicWikiLayout"
+import { PublicWikiLoading } from "./PublicWikiLoading"
 
 const kindLabels: Record<string, string> = {
   source: "来源摘要",
@@ -21,6 +22,11 @@ const kindLabels: Record<string, string> = {
   entity: "实体",
   comparison: "对比",
   answer: "答案",
+}
+
+const relationLabels: Record<string, string> = {
+  related: "相关", mentions: "提及", extracts: "摘录", contains: "包含",
+  part_of: "属于", compares: "对比", answers: "解答", index: "收录",
 }
 
 function RelationList({ title, items }: { title: string; items: PublicWikiNeighborPage[] }) {
@@ -33,10 +39,10 @@ function RelationList({ title, items }: { title: string; items: PublicWikiNeighb
           <li key={`${item.pageKey}-${item.linkType}`}>
             <Link to={item.href || `#wiki-page=${encodeURIComponent(item.pageKey)}`} className="group flex h-full flex-col border border-current/15 p-4 hover:border-current/35 hover:bg-white/5">
               <span className="flex items-center justify-between gap-3">
-                <span className="retypeset-c-primary text-xs font-semibold">{item.linkType || "相关"}</span>
-                <ArrowRight className="size-3.5 opacity-45 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                <span className="retypeset-c-primary text-xs font-semibold">{relationLabels[item.linkType] || item.linkType || "相关"}</span>
+                <ArrowRight className="size-3.5 opacity-45 motion-safe:transition-transform motion-safe:group-hover:translate-x-0.5" aria-hidden="true" />
               </span>
-              <strong className="mt-2 break-words text-sm">{item.title}</strong>
+              <strong className="mt-2 break-words text-sm"><span style={wikiScribbleStyle(item.pageKey)}>{item.title}</span></strong>
               {item.summary ? <span className="mt-1 line-clamp-2 text-xs leading-5 opacity-65">{item.summary}</span> : null}
             </Link>
           </li>
@@ -106,70 +112,58 @@ export function PublicWikiPage() {
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   usePublicPageMeta(
-    `${detail?.title || "知识页"} · ${detail?.knowledgeBaseName || "Petrichor Wiki"}`,
+    `${detail?.title || "知识页"} · Petrichor Wiki`,
     detail?.summary || "阅读公开 Wiki 知识页、关联页面与来源文章。",
     `/wiki/${encodeURIComponent(knowledgeBaseId)}/${encodeURIComponent(pageKey)}`,
   )
 
-  const load = React.useCallback(async () => {
+  const load = React.useCallback(async (isCanceled: () => boolean = () => false) => {
     if (!knowledgeBaseId || !pageKey) return
     setLoading(true)
     setError(null)
     try {
       const response = await publicWikiApi.detail(pageKey, knowledgeBaseId)
-      setDetail(response.data)
+      if (!isCanceled()) setDetail(response.data)
     } catch (loadError) {
-      setDetail(null)
-      setError(resolvePublicWikiError(loadError, "Wiki 页面加载失败"))
+      if (!isCanceled()) {
+        setDetail(null)
+        setError(resolvePublicWikiError(loadError, "Wiki 页面加载失败"))
+      }
     } finally {
-      setLoading(false)
+      if (!isCanceled()) setLoading(false)
     }
   }, [knowledgeBaseId, pageKey])
 
-  React.useEffect(() => { void load() }, [load])
+  React.useEffect(() => {
+    let canceled = false
+    void load(() => canceled)
+    return () => { canceled = true }
+  }, [load])
 
-  const knowledgeBaseName = detail?.knowledgeBaseName || "知识库"
   return (
-    <PublicWikiLayout>
+    <>
       <PublicWikiBreadcrumbs items={[
         { label: "首页", href: "/" },
         { label: "Wiki", href: "/wiki" },
-        { label: knowledgeBaseName, href: `/wiki/${knowledgeBaseId}` },
         { label: detail?.title || "知识页" },
       ]} />
 
       {loading ? (
-        <div className="space-y-5 py-8" role="status" aria-label="Wiki 页面加载中">
-          <div className="skeleton-bar h-8 w-2/3" />
-          <div className="skeleton-bar h-4 w-full" />
-          <div className="skeleton-bar h-4 w-5/6" />
-          <div className="skeleton-bar mt-10 h-64 w-full" />
-        </div>
+        <PublicWikiLoading />
       ) : error || !detail ? (
         <PublicWikiStatus
           title="无法打开这个 Wiki 页面"
           detail={error}
           action={(
             <div className="flex justify-center gap-4 text-sm">
-              <Link className="retypeset-highlight-hover" to={`/wiki/${knowledgeBaseId}`}>返回知识库</Link>
+              <Link className="retypeset-highlight-hover" to="/wiki">返回 Wiki</Link>
               <button className="retypeset-highlight-hover font-semibold" onClick={() => void load()}>重试</button>
             </div>
           )}
         />
       ) : (
-        <>
-          <div className="mb-5 flex justify-end">
-            <Link
-              to={`/wiki/${knowledgeBaseId}/graph`}
-              className="retypeset-font-navbar inline-flex items-center gap-2 border border-current/20 px-3 py-2 text-xs font-semibold hover:bg-white/5"
-            >
-              <Network className="size-4" aria-hidden="true" />
-              在图谱中探索
-            </Link>
-          </div>
-          <WikiDetailContent detail={detail} />
-        </>
+        <WikiDetailContent detail={detail} />
       )}
-    </PublicWikiLayout>
+    </>
   )
 }

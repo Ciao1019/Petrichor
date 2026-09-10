@@ -133,7 +133,8 @@
 }
 
 .retypeset-home .retypeset-highlight-static::after,
-.retypeset-home .retypeset-highlight-hover:hover::after {
+.retypeset-home .retypeset-highlight-hover:hover::after,
+.retypeset-home .retypeset-highlight-hover:focus-visible::after {
   transform: scaleX(1);
   transform-origin: bottom left;
 }
@@ -433,4 +434,29 @@
 .retypeset-home .table-copy-button:hover {
   background: color-mix(in oklab, var(--retypeset-surface-tint) 16%, transparent) !important;
   color: var(--retypeset-primary) !important;
+}
+
+.public-wiki :is(a, button, input):focus-visible {
+  outline: 2px solid var(--retypeset-secondary);
+  outline-offset: 5px;
+}
+
+@media (max-width: 1023px) {
+  .public-wiki [data-public-site-navigation] {
+    margin-bottom: 0;
+  }
+
+  .public-wiki [data-public-site-navigation] nav > ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1.25rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .public-wiki *,
+  .public-wiki *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }

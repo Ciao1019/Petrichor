@@ -19,6 +19,8 @@ import { authApi } from '@/lib/api'
 import { RouteLoadErrorBoundary, RouteLoadSuccessMarker } from '@/components/route-load-boundary'
 import { RouteLoadingFallback } from '@/components/route-loading-fallback'
 import { SiteSetupGate } from '@/components/site-setup-gate'
+import { PublicWikiKnowledgeBasePage } from '@/features/pages/public-wiki/PublicWikiKnowledgeBasePage'
+import { PublicWikiRouteLayout } from "@/features/pages/public-wiki/PublicWikiRouteLayout"
 
 // Next.js 迁移到 React Router 后不再自动按页面拆包；显式 lazy 才能避免把编辑器、
 // 文档查看器、图表和 AI 管理页全部塞进首个 Rollup chunk。
@@ -66,6 +68,12 @@ const AgentDebugPage = lazy(() =>
 )
 const AgentMcpPage = lazy(() =>
   import('@/features/pages/agent/AgentMcpPage').then((module) => ({ default: module.AgentMcpPage }))
+)
+const PublicWikiIndexPage = lazy(() =>
+  import("@/features/pages/public-wiki/PublicWikiIndexPage").then((module) => ({ default: module.PublicWikiIndexPage }))
+)
+const PublicWikiPage = lazy(() =>
+  import("@/features/pages/public-wiki/PublicWikiPage").then((module) => ({ default: module.PublicWikiPage }))
 )
 const BlogHomePage = lazy(() =>
   import('@/features/pages/blog/BlogHomePage').then((module) => ({ default: module.BlogHomePage }))
@@ -290,7 +298,13 @@ function AppThemeScope() {
               <Route path="/" element={<BlogHomePage />} />
               <Route path="/tags" element={<TagsPage />} />
               <Route path="/graph" element={<Navigate to="/" replace />} />
-              <Route path="/wiki/*" element={<Navigate to="/" replace />} />
+              <Route path="/wiki" element={<PublicWikiRouteLayout />}>
+                <Route index element={<PublicWikiIndexPage />} />
+                <Route path="graph" element={<Navigate to="/wiki" replace />} />
+                <Route path=":knowledgeBaseId/graph" element={<Navigate to="/wiki" replace />} />
+                <Route path=":knowledgeBaseId/:pageKey" element={<PublicWikiPage />} />
+                <Route path=":knowledgeBaseId" element={<PublicWikiKnowledgeBasePage />} />
+              </Route>
               <Route path="/search" element={<Navigate to="/" replace />} />
               <Route path="/ask" element={<PublicQaPage />} />
               <Route path="/about" element={<AboutPage />} />

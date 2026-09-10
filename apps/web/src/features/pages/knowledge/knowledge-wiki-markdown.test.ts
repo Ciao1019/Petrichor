@@ -65,6 +65,11 @@ describe("prepareWikiMarkdown", () => {
 })
 
 describe("preparePublicWikiMarkdown", () => {
+  it("私有或不存在的目标不暴露别名，也不生成公开入口", () => {
+    expect(preparePublicWikiMarkdown("见 [[secret|私人项目]] 和 [秘密](#wiki-page=missing)。", "概念", "1"))
+      .toBe("见 （未公开知识页） 和 （未公开知识页）。")
+  })
+
   it("把 Wiki 引用转换为可直接访问的公开页面路由", () => {
     expect(preparePublicWikiMarkdown(
       "# Mole\n\n支持 [[概念/清理|深度清理]]。",

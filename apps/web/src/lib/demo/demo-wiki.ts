@@ -453,17 +453,18 @@ export function demoPublicWikiKnowledgeBases(): PublicWikiKnowledgeBase[] {
 }
 
 export function demoPublicWikiPageList(params: {
-  knowledgeBaseId: string
+  knowledgeBaseId?: string
   q?: string
   kind?: string
   limit?: number
   offset?: number
 }): PublicWikiPageListResponse | null {
-  const knowledgeBase = kbById(params.knowledgeBaseId)
-  if (!knowledgeBase) return null
+  const knowledgeBase = params.knowledgeBaseId ? kbById(params.knowledgeBaseId) : null
+  if (params.knowledgeBaseId && !knowledgeBase) return null
   const keyword = params.q?.trim().toLowerCase() ?? ""
   const kind = params.kind && params.kind !== "all" ? params.kind : ""
-  const filtered = demoPublicWikiPagesOf(params.knowledgeBaseId).filter((page) =>
+  const knowledgeBaseIds = params.knowledgeBaseId ? [params.knowledgeBaseId] : Object.keys(WIKI_BY_KB)
+  const filtered = knowledgeBaseIds.flatMap(demoPublicWikiPagesOf).filter((page) =>
     (!kind || page.kind === kind)
     && (!keyword || `${page.title} ${page.summary ?? ""} ${page.contentMd}`.toLowerCase().includes(keyword)))
   const offset = Math.max(0, params.offset ?? 0)
@@ -475,14 +476,14 @@ export function demoPublicWikiPageList(params: {
     summary: page.summary ?? "",
     aliases: page.aliases,
     categoryPath: page.categoryPath,
-    sourceCount: demoWikiPageDetail(params.knowledgeBaseId, page.pageKey)?.sourceRefs.length ?? 0,
+    sourceCount: demoWikiPageDetail(page.knowledgeBaseId, page.pageKey)?.sourceRefs.length ?? 0,
     updatedAt: page.updatedAt ?? new Date().toISOString(),
-    href: `/wiki/${params.knowledgeBaseId}/${encodeURIComponent(page.pageKey)}`,
+    href: `/wiki/${page.knowledgeBaseId}/${encodeURIComponent(page.pageKey)}`,
   }))
   return {
-    knowledgeBaseId: params.knowledgeBaseId,
-    knowledgeBaseName: knowledgeBase.name,
-    description: knowledgeBase.description || null,
+    knowledgeBaseId: params.knowledgeBaseId || "0",
+    knowledgeBaseName: knowledgeBase?.name || "公开 Wiki",
+    description: knowledgeBase?.description || null,
     updatedAt: filtered[0]?.updatedAt ?? new Date().toISOString(),
     items,
     total: filtered.length,

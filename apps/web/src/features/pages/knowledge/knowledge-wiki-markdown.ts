@@ -82,9 +82,15 @@ export function preparePublicWikiMarkdown(
     title,
     relatedKnowledge,
     (pageKey) => titleByKey.get(pageKey),
-  ).replace(/\]\(#wiki-page=([^)]+)\)/g, (_match, encodedPageKey: string) => (
-    `](/wiki/${encodeURIComponent(knowledgeBaseId)}/${encodedPageKey})`
-  ))
+  ).replace(/\[([^\]]*)\]\(#wiki-page=([^)]+)\)/g, (_match, label: string, encodedPageKey: string) => {
+    try {
+      // 公开正文只链接到服务端已确认可见的邻居；不向未知目标生成可点击入口。
+      if (!titleByKey.has(decodeURIComponent(encodedPageKey))) return "（未公开知识页）"
+      return `[${label}](/wiki/${encodeURIComponent(knowledgeBaseId)}/${encodedPageKey})`
+    } catch {
+      return "（未公开知识页）"
+    }
+  })
 }
 
 /**

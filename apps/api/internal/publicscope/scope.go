@@ -88,7 +88,11 @@ func LoadSafeWikiPageIDs(ctx context.Context, knowledgeBaseID *int64) ([]int64, 
 		}
 		ids = append(ids, id)
 	}
-	return ids, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	return filterWikiProvenance(ctx, ids)
 }
 
 // IDSet 把页面 ID 列表转成适合做邻居过滤的集合。

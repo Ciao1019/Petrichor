@@ -1,7 +1,8 @@
 "use client"
 
 import type * as React from "react"
-import { Link } from "react-router-dom"
+import { useLayoutEffect } from "react"
+import { Link, useLocation } from "react-router-dom"
 
 import {
   RetypesetSiteHeader,
@@ -18,15 +19,17 @@ export function PublicWikiLayout({
   wide?: boolean
   activeSection?: RetypesetSiteActiveSection
 }) {
+  const { pathname } = useLocation()
+  useLayoutEffect(() => { window.scrollTo(0, 0) }, [pathname])
   return (
-    <main className="scrollbar-hide retypeset-home relative flex min-h-screen flex-col overflow-hidden bg-[#0044cc] text-white selection:bg-yellow-300 selection:text-blue-950">
+    <main className="scrollbar-hide retypeset-home public-wiki relative flex min-h-screen flex-col overflow-hidden bg-[#0044cc] text-white selection:bg-yellow-300 selection:text-blue-950">
       <div className="blog-home-grid pointer-events-none fixed inset-0 z-0" />
       <div className="relative z-30 mx-auto w-full max-w-[51.462rem] px-[min(7.25vw,3.731rem)] pt-10 lg:contents">
         <RetypesetSiteHeader dockVisible />
         <RetypesetSiteNav activeSection={activeSection} dockVisible />
       </div>
       <section
-        className={`relative z-20 mx-auto flex w-full flex-1 flex-col px-[min(7.25vw,3.731rem)] py-12 lg:py-20 ${
+        className={`relative z-20 mx-auto flex w-full flex-1 flex-col px-[min(7.25vw,3.731rem)] py-8 lg:py-20 ${
           wide
             ? "max-w-[72rem]"
             : "max-w-[51.462rem] lg:mx-[max(5.75rem,calc(50vw-34.25rem))] lg:max-w-[min(calc(75vw-16rem),44rem)] lg:px-0"

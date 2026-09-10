@@ -1,6 +1,8 @@
 "use client"
 
 import { lazy, Suspense, useEffect, useRef } from "react"
+import { PublicWikiKnowledgeBasePage } from "@/features/pages/public-wiki/PublicWikiKnowledgeBasePage"
+import { PublicWikiRouteLayout } from "@/features/pages/public-wiki/PublicWikiRouteLayout"
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom"
 
 import { AppBreadcrumb } from "@/components/app-breadcrumb"
@@ -87,6 +89,12 @@ const DocumentImportDeadLettersPage = lazy(() =>
 )
 const DashboardMetricsPage = lazy(() =>
   import("@/features/pages/dashboard/DashboardMetricsPage").then((module) => ({ default: module.DashboardMetricsPage })),
+)
+const PublicWikiIndexPage = lazy(() =>
+  import("@/features/pages/public-wiki/PublicWikiIndexPage").then((module) => ({ default: module.PublicWikiIndexPage })),
+)
+const PublicWikiPage = lazy(() =>
+  import("@/features/pages/public-wiki/PublicWikiPage").then((module) => ({ default: module.PublicWikiPage })),
 )
 const BlogHomePage = lazy(() =>
   import("@/features/pages/blog/BlogHomePage").then((module) => ({ default: module.BlogHomePage })),
@@ -202,7 +210,13 @@ function DemoRoutes() {
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/petrichor" element={<PetrichorPage />} />
                 <Route path="/search" element={<Navigate to="/" replace />} />
-                <Route path="/wiki/*" element={<Navigate to="/" replace />} />
+                <Route path="/wiki" element={<PublicWikiRouteLayout />}>
+                  <Route index element={<PublicWikiIndexPage />} />
+                  <Route path="graph" element={<Navigate to="/wiki" replace />} />
+                  <Route path=":knowledgeBaseId/graph" element={<Navigate to="/wiki" replace />} />
+                  <Route path=":knowledgeBaseId/:pageKey" element={<PublicWikiPage />} />
+                  <Route path=":knowledgeBaseId" element={<PublicWikiKnowledgeBasePage />} />
+                </Route>
                 <Route path="/p/:shareCode" element={<PublicArticlePage />} />
                 <Route path="/demo" element={<Navigate to={dashboardRoutes.knowledge} replace />} />
                 <Route path="/login" element={<Navigate to={dashboardRoutes.knowledge} replace />} />

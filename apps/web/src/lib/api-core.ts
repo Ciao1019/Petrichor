@@ -505,7 +505,7 @@ export interface PublicWikiGraphResponse {
 export const publicWikiApi = {
   knowledgeBases: (signal?: AbortSignal) =>
     api.get<{ items: PublicWikiKnowledgeBase[] }>("/public/wiki/knowledge-bases", { signal }),
-  pages: (params: { knowledgeBaseId: string; q?: string; kind?: string; limit?: number; offset?: number }) =>
+  pages: (params: { knowledgeBaseId?: string; q?: string; kind?: string; limit?: number; offset?: number }) =>
     api.get<PublicWikiPageListResponse>("/public/wiki/pages", { params }),
   detail: (pageKey: string, knowledgeBaseId?: string | null) =>
     api.get<PublicWikiPageDetail>("/public/wiki/page", {
