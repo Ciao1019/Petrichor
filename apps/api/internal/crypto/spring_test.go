@@ -33,12 +33,13 @@ func TestDecryptTextRejectsTamperedV2Ciphertext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	last := encoded[len(encoded)-1]
+	// 无填充 Base64 的末字符可能包含无效尾部位；改动倒数第二个字符才能保证密文字节改变。
+	index := len(encoded) - 2
 	replacement := byte('A')
-	if last == replacement {
+	if encoded[index] == replacement {
 		replacement = 'B'
 	}
-	tampered := encoded[:len(encoded)-1] + string(replacement)
+	tampered := encoded[:index] + string(replacement) + encoded[index+1:]
 	if _, err := DecryptText(testKey, testSalt, tampered); err == nil {
 		t.Fatal("expected authenticated decryption failure")
 	}
