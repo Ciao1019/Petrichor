@@ -39,9 +39,14 @@ register_enabled = false
 default_system_role = "USER"
 
 [auth.linuxdo]
+# Go 只读取本节，不读取 LINUX_DO_* 环境变量；启用登录/绑定必须同时填写这两项。
 client_id = ""
 client_secret = ""
+# 留空时使用 server.base_url + /api/auth/callback，必须与 LinuxDo Connect 登记的回调一致。
 redirect_uri = ""
+# 授权页：https://connect.linux.do/oauth2/authorize
+# 换取令牌：https://connect.linuxdo.org/oauth2/token
+# 用户信息：https://connect.linuxdo.org/api/user
 
 [auth.local_development]
 enabled = false

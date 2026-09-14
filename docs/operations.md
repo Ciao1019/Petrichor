@@ -17,6 +17,30 @@ Go API 启动时先执行 Goose 迁移，迁移失败不会监听端口；独立
 - `[encryption]` 使用随机、稳定且非模板的 key/salt，并纳入密钥备份；
 - HTTP 读取、响应头、空闲和优雅关闭超时保持有限值。
 
+## 配置来源与 LinuxDo 绑定
+
+Go API 和 Worker 不读取 `LINUX_DO_*` 环境变量。仓库的 `compose.yaml` 从宿主机
+`apps/api/config.toml` 提供 `petrichor_config` secret，容器内挂载到
+`/run/secrets/petrichor_config`；入口脚本再复制为 `/app/config.toml`，供 Go 进程启动时读取。
+实际部署如果修改过 Compose 的 `secrets.petrichor_config.file`，以该路径为准。
+根目录 `.env` 仅用于 Compose 的域名、端口和镜像等变量替换，不会补充 Go 的业务配置。
+
+LinuxDo 登录与绑定要求 `[auth.linuxdo]` 的 `client_id` 和 `client_secret` 同时非空。
+出现“LinuxDo 配置不完整”表示运行中的 Go 配置缺少其中至少一项，尚未请求上游接口；
+仅设置 `LINUX_DO_TOKEN_ENDPOINT` 或 `LINUX_DO_USER_ENDPOINT` 不能解决这个错误。
+
+- `client_id`、`client_secret`：填写同一个 LinuxDo Connect 应用的凭据。
+- `redirect_uri`：应为当前站点的公开地址加 `/api/auth/callback`，并登记在 LinuxDo Connect
+  应用中；留空时由 `[server].base_url` 推导。
+- 授权页固定使用 `https://connect.linux.do/oauth2/authorize`；换取令牌和读取用户信息分别使用
+  `https://connect.linuxdo.org/oauth2/token`、`https://connect.linuxdo.org/api/user`。
+
+修改宿主机配置后，需要重建 API/Worker 容器以重新挂载文件、执行入口脚本并加载配置：
+`docker compose up -d --no-deps --force-recreate api worker`。
+重建时保留当前部署实际使用的 Compose 文件和镜像覆盖项，避免意外切换版本。
+验证登录入口应返回 `302`，跳转 URL 的 `redirect_uri` 应与登记值一致；完整绑定还需实际完成授权回调。
+排查时只核对字段是否已配置，避免打印配置全文、容器全部环境变量或授权请求中的密钥和令牌。
+
 ## 探针与关停
 
 - `GET /healthz`：进程存活，不访问数据库；

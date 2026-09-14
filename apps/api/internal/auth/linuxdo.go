@@ -25,8 +25,8 @@ import (
 
 const (
 	linuxDoAuthorizeURL  = "https://connect.linux.do/oauth2/authorize"
-	linuxDoTokenURL      = "https://connect.linux.do/oauth2/token"
-	linuxDoUserInfoURL   = "https://connect.linux.do/api/user"
+	linuxDoTokenURL      = "https://connect.linuxdo.org/oauth2/token"
+	linuxDoUserInfoURL   = "https://connect.linuxdo.org/api/user"
 	linuxDoStateCookie   = "petrichor_linuxdo_oauth_state"
 	linuxDoFetchTimeout  = 30 * time.Second
 	loginStatePrefix     = "login:"
@@ -161,12 +161,30 @@ type linuxDoCallbackResult struct {
 	user  *User
 }
 
-// handleLinuxDoCallback 校验 code/state → 换 token → 拉取用户信息 → 分发登录或绑定。
-func handleLinuxDoCallback(c *gin.Context, code, state string) (*linuxDoCallbackResult, error) {
+// prepareLinuxDoCallback 在兑换授权码前校验状态，并为绑定恢复经过验证的当前用户。
+// 回调同时服务于未登录的 OAuth 登录，不能统一挂 RequireUser；state Cookie 只用于
+// 防伪造，不能代替登录会话。GET 与 POST 回调共用这一步。
+func prepareLinuxDoCallback(c *gin.Context, code, state string, resolveUser func(*gin.Context) (*User, bool)) (string, error) {
 	if code == "" {
-		return nil, httpx.BadRequest("授权码不能为空")
+		return "", httpx.BadRequest("授权码不能为空")
 	}
 	mode, err := resolveLinuxDoCallbackMode(c, state)
+	if err != nil {
+		return "", err
+	}
+	if mode == "bind" {
+		user, ok := resolveUser(c)
+		if !ok || user == nil {
+			return "", httpx.Unauthorized("登录状态已失效，请重新登录后发起绑定")
+		}
+		c.Set(userCtxKey, user)
+	}
+	return mode, nil
+}
+
+// handleLinuxDoCallback 校验 code/state/绑定会话 → 换 token → 拉取用户信息 → 分发登录或绑定。
+func handleLinuxDoCallback(c *gin.Context, code, state string) (*linuxDoCallbackResult, error) {
+	mode, err := prepareLinuxDoCallback(c, code, state, GetCurrentUser)
 	if err != nil {
 		return nil, err
 	}
