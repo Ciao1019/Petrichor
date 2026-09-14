@@ -38,6 +38,7 @@ import {
     preprocessEmbedDirectives,
 } from "@/components/plate/plate-embed-directives"
 import { sanitizeEditorContentForPersistence } from "@/components/plate/plate-content-sanitize"
+import { deserializeMarkdownWithRecovery } from "@/components/plate/plate-markdown-deserialize"
 import { BlockDiscussion } from "@/components/ui/block-discussion"
 import {
     CodeBlockElement,
@@ -147,9 +148,7 @@ export function deserializeMarkdown(editor: PlateEditor, markdown: string): Valu
         return createEmptyValue()
     }
 
-    const value = editor
-        .getApi(MarkdownPlugin)
-        .markdown.deserialize(preprocessEmbedDirectives(markdown))
+    const value = deserializeMarkdownWithRecovery(editor, preprocessEmbedDirectives(markdown))
     if (value.length > 0) {
         return value
     }
