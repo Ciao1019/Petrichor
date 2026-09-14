@@ -7,13 +7,36 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { PublicWikiPageDetail } from "@/lib/api"
 
 const api = vi.hoisted(() => ({ detail: vi.fn() }))
+const notifications = vi.hoisted(() => ({ error: vi.fn() }))
 vi.mock("@/lib/api", () => ({ publicWikiApi: api }))
+vi.mock("sonner", () => ({ toast: notifications }))
 vi.mock("@/features/pages/blog/RetypesetSiteChrome", () => ({
   RetypesetSiteHeader: () => <header>站点标题</header>,
   RetypesetSiteNav: () => <nav aria-label="站点导航"><Link to="/wiki/1/second">下一页</Link></nav>,
   RetypesetSiteFooter: () => <footer>页脚</footer>,
 }))
-vi.mock("@/components/iconimate", () => ({ ArrowRight: () => null, BookOpen: () => null }))
+vi.mock("@/components/iconimate", () => {
+  const Dummy = () => null
+  return {
+    ArrowLeft: Dummy,
+    ArrowRight: Dummy,
+    BookOpen: Dummy,
+    Check: Dummy,
+    CheckCircle2: Dummy,
+    ChevronLeft: Dummy,
+    ChevronRight: Dummy,
+    Clock: Dummy,
+    Copy: Dummy,
+    FileStack: Dummy,
+    GitForkIcon: Dummy,
+    List: Dummy,
+    RefreshCw: Dummy,
+    Search: Dummy,
+    Sparkles: Dummy,
+    Tags: Dummy,
+    X: Dummy,
+  }
+})
 vi.mock("@/components/plate/PlateMarkdownPreview", () => ({
   PlateMarkdownPreview: ({ markdown }: { markdown: string }) => <p>{markdown}</p>,
 }))
@@ -43,9 +66,56 @@ function HistoryControls() {
 
 beforeEach(() => {
   api.detail.mockReset()
+  notifications.error.mockReset()
   vi.spyOn(window, "scrollTo").mockImplementation(() => undefined)
 })
-afterEach(() => { cleanup(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
+
+function renderDetail() {
+  render(
+    <MemoryRouter initialEntries={["/wiki/1/first"]}>
+      <Routes>
+        <Route path="/wiki" element={<PublicWikiRouteLayout />}>
+          <Route path=":knowledgeBaseId/:pageKey" element={<PublicWikiPage />} />
+        </Route>
+      </Routes>
+    </MemoryRouter>,
+  )
+}
+
+describe("Wiki 链接复制", () => {
+  it("剪贴板完成写入后才提示成功", async () => {
+    const written = deferred<void>()
+    const writeText = vi.fn(() => written.promise)
+    vi.stubGlobal("navigator", { clipboard: { writeText } })
+    api.detail.mockResolvedValue({ data: page("first") })
+    renderDetail()
+    await screen.findByText("正文 first")
+
+    fireEvent.click(screen.getByRole("button", { name: "复制链接" }))
+    expect(writeText).toHaveBeenCalledWith(window.location.href)
+    expect(screen.queryByRole("button", { name: "已复制" })).toBeNull()
+    await act(async () => written.resolve())
+    expect(screen.getByRole("button", { name: "已复制" })).toBeTruthy()
+    expect(notifications.error).not.toHaveBeenCalled()
+  })
+
+  it("剪贴板不可用或拒绝权限时提示失败，允许用户重试", async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error("没有剪贴板权限"))
+    vi.stubGlobal("navigator", { clipboard: { writeText } })
+    api.detail.mockResolvedValue({ data: page("first") })
+    renderDetail()
+    await screen.findByText("正文 first")
+
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "复制链接" })))
+    expect(screen.queryByRole("button", { name: "已复制" })).toBeNull()
+    expect(notifications.error).toHaveBeenCalledWith("复制失败，请手动复制地址栏链接")
+
+    writeText.mockResolvedValue(undefined)
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "复制链接" })))
+    expect(screen.getByRole("button", { name: "已复制" })).toBeTruthy()
+  })
+})
 
 describe("Wiki 左侧切换", () => {
   it("列表进入尚未下载的详情模块时只展示左侧骨架，标题和导航持续挂载", async () => {

@@ -1,13 +1,31 @@
 "use client"
 
 import * as React from "react"
-import { ArrowRight, BookOpen } from "@/components/iconimate"
+import {
+  ArrowLeft,
+  Check,
+  Clock,
+  Copy,
+  List,
+  RefreshCw,
+  Sparkles,
+  Tags,
+} from "@/components/iconimate"
 import { Link, useParams } from "react-router-dom"
+import { toast } from "sonner"
 
+import { useCopyToClipboard } from "@/components/tool-ui/shared/use-copy-to-clipboard"
 import { wikiScribbleStyle } from "@/components/markdown/wiki-scribble"
 import { PlateMarkdownPreview } from "@/components/plate/PlateMarkdownPreview"
 import { preparePublicWikiMarkdown } from "@/features/pages/knowledge/knowledge-wiki-markdown"
-import { publicWikiApi, type PublicWikiNeighborPage, type PublicWikiPageDetail } from "@/lib/api"
+import {
+  MobileTocDrawer,
+  PublicArticleFloatingToc,
+} from "@/features/pages/public/PublicArticlePanels"
+import { buildToc, scrollToHeading } from "@/features/pages/public/public-article-utils"
+import { usePublicArticleActiveHeading } from "@/features/pages/public/usePublicArticleActiveHeading"
+import { publicWikiApi, type PublicWikiPageDetail } from "@/lib/api"
+import { cn } from "@/lib/utils"
 import { usePublicPageMeta } from "@/features/pages/public-page-meta"
 import {
   PublicWikiBreadcrumbs,
@@ -15,42 +33,7 @@ import {
   resolvePublicWikiError,
 } from "./PublicWikiLayout"
 import { PublicWikiLoading } from "./PublicWikiLoading"
-
-const kindLabels: Record<string, string> = {
-  source: "来源摘要",
-  concept: "概念",
-  entity: "实体",
-  comparison: "对比",
-  answer: "答案",
-}
-
-const relationLabels: Record<string, string> = {
-  related: "相关", mentions: "提及", extracts: "摘录", contains: "包含",
-  part_of: "属于", compares: "对比", answers: "解答", index: "收录",
-}
-
-function RelationList({ title, items }: { title: string; items: PublicWikiNeighborPage[] }) {
-  if (items.length === 0) return null
-  return (
-    <section className="mt-9" aria-labelledby={`relation-${title}`}>
-      <h2 id={`relation-${title}`} className="retypeset-font-navbar text-sm font-bold">{title}</h2>
-      <ul className="mt-3 grid gap-3 sm:grid-cols-2">
-        {items.map((item) => (
-          <li key={`${item.pageKey}-${item.linkType}`}>
-            <Link to={item.href || `#wiki-page=${encodeURIComponent(item.pageKey)}`} className="group flex h-full flex-col border border-current/15 p-4 hover:border-current/35 hover:bg-white/5">
-              <span className="flex items-center justify-between gap-3">
-                <span className="retypeset-c-primary text-xs font-semibold">{relationLabels[item.linkType] || item.linkType || "相关"}</span>
-                <ArrowRight className="size-3.5 opacity-45 motion-safe:transition-transform motion-safe:group-hover:translate-x-0.5" aria-hidden="true" />
-              </span>
-              <strong className="mt-2 break-words text-sm"><span style={wikiScribbleStyle(item.pageKey)}>{item.title}</span></strong>
-              {item.summary ? <span className="mt-1 line-clamp-2 text-xs leading-5 opacity-65">{item.summary}</span> : null}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </section>
-  )
-}
+import { formatWikiDate, wikiKindConfig } from "./public-wiki-presentation"
 
 function WikiDetailContent({ detail }: { detail: PublicWikiPageDetail }) {
   const markdown = React.useMemo(() => {
@@ -60,49 +43,182 @@ function WikiDetailContent({ detail }: { detail: PublicWikiPageDetail }) {
     return preparePublicWikiMarkdown(detail.contentMd, detail.title, detail.knowledgeBaseId, targets)
   }, [detail])
 
+  const tocAll = React.useMemo(() => buildToc(markdown), [markdown])
+  const navToc = React.useMemo(
+    () => tocAll.filter((item) => item.level >= 2 && item.level <= 4),
+    [tocAll],
+  )
+  const [mobileTocOpen, setMobileTocOpen] = React.useState(false)
+  const { activeHeadingId, setActiveHeadingId } = usePublicArticleActiveHeading({
+    tab: "article",
+    navToc,
+    scrollOffsetPx: 48,
+  })
+
+  const handleTocClick = React.useCallback(
+    (id: string, behavior?: ScrollBehavior) => {
+      scrollToHeading(id, behavior)
+      setActiveHeadingId(id)
+    },
+    [setActiveHeadingId],
+  )
+
+  const kindConfig = wikiKindConfig[detail.kind]
+  const KindIcon = kindConfig?.icon || Tags
+
   return (
-    <>
-      <header className="mb-8">
-        <div className="retypeset-decorative-line" aria-hidden="true" />
+    <div className="public-article--retypeset space-y-8">
+      {/* 头部元信息与标题 */}
+      <header className="space-y-3.5">
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="retypeset-font-navbar retypeset-c-primary font-bold">{kindLabels[detail.kind] || detail.kind}</span>
-          {detail.categoryPath.length > 0 ? <span className="opacity-55">{detail.categoryPath.join(" / ")}</span> : null}
+          <span
+            className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium ${
+              kindConfig?.badgeClass || "border-white/15 bg-white/10 text-white/80"
+            }`}
+          >
+            <KindIcon className="size-3" />
+            {kindConfig?.label || detail.kind}
+          </span>
+          {detail.categoryPath.length > 0 ? (
+            <span className="break-words text-white/45">
+              {detail.categoryPath.join(" / ")}
+            </span>
+          ) : null}
+          <span className="text-white/30">·</span>
+          <span className="inline-flex items-center gap-1 text-white/45">
+            <Clock className="size-3 opacity-60" />
+            更新于 {formatWikiDate(detail.updatedAt)}
+          </span>
         </div>
-        <h1 className="retypeset-font-title mt-3 break-words text-3xl font-bold sm:text-4xl">{detail.title}</h1>
-        {detail.summary ? <p className="mt-4 text-sm leading-7 opacity-75">{detail.summary}</p> : null}
+
+        <h1 className="break-words text-2xl font-bold tracking-tight text-white sm:text-3xl lg:text-4xl">
+          {detail.title}
+        </h1>
+
+        {/* 别名微标签群 */}
         {detail.aliases.length > 0 ? (
-          <p className="retypeset-font-navbar mt-3 text-xs opacity-55">别名：{detail.aliases.join("、")}</p>
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-xs text-white/60">
+            <span className="text-white/40">别名：</span>
+            {detail.aliases.map((alias) => (
+              <span
+                key={alias}
+                className="rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[11px] text-white/70"
+              >
+                {alias}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {/* 核心导读卡片 */}
+        {detail.summary ? (
+          <div className="relative mt-4 overflow-hidden rounded-xl border border-white/15 bg-white/[0.03] p-4.5 backdrop-blur-xs">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-white/75">
+              <Sparkles className="size-3.5 text-yellow-300/80" />
+              导读摘要
+            </div>
+            <p className="mt-2 text-sm leading-relaxed text-white/80">
+              {detail.summary}
+            </p>
+          </div>
         ) : null}
       </header>
 
-      <article className="public-article public-article--retypeset min-w-0 border-y border-current/15 py-8">
+      {/* 正文 Markdown 区域 */}
+      <article className="public-article public-article--retypeset min-w-0 rounded-2xl border border-white/[0.08] bg-white/[0.015] p-6 sm:p-8">
         <PlateMarkdownPreview
           markdown={markdown}
+          headings={tocAll}
           publicMediaAccess
           publicMediaAccessToken={detail.mediaAccessToken}
         />
       </article>
 
-      <RelationList title="关联知识" items={detail.links} />
-      <RelationList title="引用此页" items={detail.inLinks} />
-
-      {detail.sourceArticles.length > 0 ? (
-        <section className="mt-9" aria-labelledby="wiki-source-articles">
-          <h2 id="wiki-source-articles" className="retypeset-font-navbar flex items-center gap-2 text-sm font-bold">
-            <BookOpen className="size-4" aria-hidden="true" />
-            来源文章
-          </h2>
-          <ul className="mt-3 divide-y divide-current/15 border-y border-current/15">
-            {detail.sourceArticles.map((source) => (
-              <li key={source.articleId} className="py-3">
-                <Link className="retypeset-highlight-hover text-sm font-semibold" to={source.href}>{source.title}</Link>
-                {source.note ? <p className="mt-1 text-xs leading-5 opacity-65">{source.note}</p> : null}
-              </li>
+      {/* 关联知识、被引用与来源文档 */}
+      {(detail.links.length > 0 || detail.inLinks.length > 0 || detail.sourceArticles.length > 0) ? (
+        <section className="mt-10 border-t border-white/[0.08] pt-6 text-sm">
+          <dl className="space-y-4 sm:space-y-5">
+            {[
+              { label: "关联知识", items: detail.links },
+              { label: "被引用", items: detail.inLinks },
+            ].map((group) => group.items.length === 0 ? null : (
+              <div key={group.label} className="flex flex-col gap-2 sm:flex-row sm:gap-6">
+                <dt className="shrink-0 pt-0.5 text-xs font-semibold text-white/45 sm:w-20 sm:text-sm">
+                  {group.label}
+                </dt>
+                <dd className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-3.5 text-sm">
+                  {group.items.map((item) => (
+                    <Link
+                      key={`${group.label}-${item.pageKey}-${item.linkType}`}
+                      to={item.href || `#wiki-page=${encodeURIComponent(item.pageKey)}`}
+                      title={item.summary || undefined}
+                      className="min-w-0 break-words cursor-pointer font-medium text-white/85 no-underline transition-colors hover:text-white"
+                      style={{ ...wikiScribbleStyle(item.pageKey), textDecoration: "none" }}
+                    >
+                      {item.title}
+                    </Link>
+                  ))}
+                </dd>
+              </div>
             ))}
-          </ul>
+
+            {/* 来源文档 */}
+            {detail.sourceArticles.length > 0 ? (
+              <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
+                <dt className="shrink-0 pt-0.5 text-xs font-semibold text-white/45 sm:w-20 sm:text-sm">
+                  来源文档
+                </dt>
+                <dd className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-3.5 text-sm">
+                  {detail.sourceArticles.map((article) => (
+                    <Link
+                      key={article.articleId}
+                      to={article.href}
+                      title={article.note || undefined}
+                      className="min-w-0 break-words cursor-pointer font-medium text-white/85 no-underline transition-colors hover:text-white"
+                      style={{ ...wikiScribbleStyle(article.articleId), textDecoration: "none" }}
+                    >
+                      {article.title}
+                    </Link>
+                  ))}
+                </dd>
+              </div>
+            ) : null}
+          </dl>
         </section>
       ) : null}
-    </>
+
+      {/* 浮动大纲（桌面端右侧线条 + 展开浮动卡片；移动端左下角悬浮按钮 + 抽屉） */}
+      {navToc.length > 0 ? (
+        <>
+          <PublicArticleFloatingToc
+            navToc={navToc}
+            activeHeadingId={activeHeadingId}
+            onTocClick={handleTocClick}
+          />
+          <button
+            type="button"
+            aria-label="打开目录"
+            onClick={() => setMobileTocOpen(true)}
+            className={cn(
+              "public-article-mobile-toc-trigger fixed bottom-6 left-6 z-50 flex h-9 items-center gap-1.5 rounded-full border",
+              "border-white/20 bg-[#0044cc]/90 px-3 text-sm font-medium text-white shadow-md backdrop-blur-sm",
+              "transition-[background-color,color,box-shadow] duration-300 hover:bg-yellow-300 hover:text-blue-950 hover:shadow-lg",
+              "lg:hidden",
+            )}
+          >
+            <List className="size-4" />
+            <span>目录</span>
+          </button>
+          <MobileTocDrawer
+            open={mobileTocOpen}
+            onClose={() => setMobileTocOpen(false)}
+            navToc={navToc}
+            activeHeadingId={activeHeadingId}
+            onTocClick={handleTocClick}
+          />
+        </>
+      ) : null}
+    </div>
   )
 }
 
@@ -111,6 +227,10 @@ export function PublicWikiPage() {
   const [detail, setDetail] = React.useState<PublicWikiPageDetail | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
+  const { copiedId, copy } = useCopyToClipboard()
+  const shareUrl = typeof window === "undefined" ? "" : window.location.href
+  const copied = copiedId === shareUrl
+
   usePublicPageMeta(
     `${detail?.title || "知识页"} · Petrichor Wiki`,
     detail?.summary || "阅读公开 Wiki 知识页、关联页面与来源文章。",
@@ -140,30 +260,80 @@ export function PublicWikiPage() {
     return () => { canceled = true }
   }, [load])
 
+  const copyUrl = async () => {
+    if (!await copy(shareUrl, shareUrl)) {
+      toast.error("复制失败，请手动复制地址栏链接")
+    }
+  }
+
   return (
-    <>
-      <PublicWikiBreadcrumbs items={[
-        { label: "首页", href: "/" },
-        { label: "Wiki", href: "/wiki" },
-        { label: detail?.title || "知识页" },
-      ]} />
+    <div>
+      {/* 顶部导航与快捷操作栏 */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <PublicWikiBreadcrumbs
+          items={[
+            { label: "首页", href: "/" },
+            { label: "Wiki", href: "/wiki" },
+            { label: detail?.title || "知识页" },
+          ]}
+        />
+        <div className="flex items-center gap-2">
+          <Link
+            to="/wiki"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <ArrowLeft className="size-3.5" />
+            返回 Wiki
+          </Link>
+          <button
+            type="button"
+            onClick={() => void copyUrl()}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            {copied ? (
+              <>
+                <Check className="size-3.5 text-emerald-400" />
+                <span className="text-emerald-300">已复制</span>
+              </>
+            ) : (
+              <>
+                <Copy className="size-3.5" />
+                <span>复制链接</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
 
       {loading ? (
         <PublicWikiLoading />
       ) : error || !detail ? (
         <PublicWikiStatus
+          icon={<RefreshCw className="size-5 text-white/70" />}
           title="无法打开这个 Wiki 页面"
           detail={error}
-          action={(
-            <div className="flex justify-center gap-4 text-sm">
-              <Link className="retypeset-highlight-hover" to="/wiki">返回 Wiki</Link>
-              <button className="retypeset-highlight-hover font-semibold" onClick={() => void load()}>重试</button>
+          action={
+            <div className="flex justify-center gap-3 text-xs">
+              <Link
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-4 py-1.5 font-medium text-white/80 transition-colors hover:bg-white/15 hover:text-white"
+                to="/wiki"
+              >
+                返回 Wiki
+              </Link>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/10 px-4 py-1.5 font-semibold text-white transition-colors hover:bg-white/20"
+                onClick={() => void load()}
+              >
+                <RefreshCw className="size-3.5" />
+                重试
+              </button>
             </div>
-          )}
+          }
         />
       ) : (
         <WikiDetailContent detail={detail} />
       )}
-    </>
+    </div>
   )
 }
