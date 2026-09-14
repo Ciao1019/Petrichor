@@ -1,12 +1,10 @@
 // Package uploadsvc 提供上传、下载和本地对象访问：
-// 上传预签名（S3 SigV4 PUT / 本地 ticket 双模式）、下载预签名与本地对象直传/公开读取。
+// 同源上传、下载预签名与本地对象读取。
 package uploadsvc
 
 import (
 	"errors"
-	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"strings"
@@ -38,29 +36,6 @@ func guessMimeFromObjectKey(objectKey string) string {
 	return "application/octet-stream"
 }
 
-// localObjectURL 构造本地对象访问地址：/api/upload/local/<encoded objectKey>。
-func localObjectURL(c *gin.Context, objectKey string) string {
-	scheme := "http"
-	if c.Request.TLS != nil {
-		scheme = "https"
-	}
-	if proto := c.GetHeader("X-Forwarded-Proto"); proto != "" {
-		scheme = proto
-	}
-	parts := strings.Split(objectKey, "/")
-	for i, part := range parts {
-		parts[i] = urlPathEscape(part)
-	}
-	return scheme + "://" + c.Request.Host + "/api/upload/local/" + strings.Join(parts, "/")
-}
-
-// urlPathEscape 复刻 encodeURIComponent 的路径段编码。
-func urlPathEscape(v string) string {
-	escaped := strings.ReplaceAll(url.QueryEscape(v), "+", "%20")
-	replacer := strings.NewReplacer("%21", "!", "%27", "'", "%28", "(", "%29", ")", "%2A", "*")
-	return replacer.Replace(escaped)
-}
-
 // resolveLocalObjectKey 校验并归一化本地对象键：拒绝空键、空段与相对段。
 // 注意 gin 的 *param 会带前导斜杠，与 Next.js catch-all 拼接行为不同，这里统一剥掉。
 func resolveLocalObjectKey(rawKey string) (string, error) {
@@ -88,7 +63,7 @@ func getS3ConfigOrThrow() (*config.S3Config, error) {
 }
 
 // PresignPutObject POST /api/upload/presign-put：
-// 登录后生成上传预签名。本地存储模式返回内部上传 ticket 地址；否则走 S3 SigV4 PUT。
+// 保留接口字段名；只返回 Go 上传地址，S3 凭证与签名不交给浏览器。
 func PresignPutObject(c *gin.Context) {
 	var req struct {
 		Filename string `json:"filename"`
@@ -106,25 +81,14 @@ func PresignPutObject(c *gin.Context) {
 	user := auth.CurrentUser(c)
 	objectKey := storage.BuildS3ObjectKey(filename, user.ID, "")
 
-	if storage.LocalEnabled() {
-		httpx.OK(c, gin.H{
-			"objectKey":    objectKey,
-			"presignedUrl": localObjectURL(c, objectKey),
-		})
-		return
+	if !storage.LocalEnabled() {
+		if _, err := getS3ConfigOrThrow(); err != nil {
+			httpx.HandleError(c, err)
+			return
+		}
 	}
-
-	cfg, err := getS3ConfigOrThrow()
-	if err != nil {
-		httpx.HandleError(c, err)
-		return
-	}
-	signedURL, uerr := storage.CreateS3PresignedUrl(cfg, "PUT", objectKey, cfg.UploadExpireSeconds, now())
-	if uerr != nil {
-		httpx.HandleError(c, uerr)
-		return
-	}
-	httpx.OK(c, gin.H{"objectKey": objectKey, "presignedUrl": signedURL})
+	uploadURL := strings.Replace(storage.LocalObjectURL(objectKey), "/upload/local/", "/upload/object/", 1)
+	httpx.OK(c, gin.H{"objectKey": objectKey, "presignedUrl": uploadURL})
 }
 
 // PresignGetObject POST /api/upload/presign-get：
@@ -150,7 +114,7 @@ func PresignGetObject(c *gin.Context) {
 			httpx.HandleError(c, kerr)
 			return
 		}
-		httpx.OK(c, gin.H{"url": localObjectURL(c, localKey)})
+		httpx.OK(c, gin.H{"url": storage.LocalObjectURL(localKey)})
 		return
 	}
 
@@ -170,22 +134,7 @@ func PresignGetObject(c *gin.Context) {
 // UploadLocalObject PUT /api/upload/local/*objectKey：
 // 需登录；请求体原始字节写入本地对象存储。
 func UploadLocalObject(c *gin.Context) {
-	rawKey := c.Param("objectKey")
-	objectKey, err := resolveLocalObjectKey(rawKey)
-	if err != nil {
-		httpx.HandleError(c, err)
-		return
-	}
-	data, rerr := io.ReadAll(c.Request.Body)
-	if rerr != nil {
-		httpx.HandleError(c, httpx.BadRequest("请求体读取失败"))
-		return
-	}
-	if werr := storage.SaveLocalObject(objectKey, data); werr != nil {
-		httpx.HandleError(c, werr)
-		return
-	}
-	c.Status(http.StatusNoContent)
+	UploadObject(c)
 }
 
 // ServeLocalObject GET /api/upload/local/*objectKey：

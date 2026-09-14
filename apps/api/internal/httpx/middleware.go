@@ -54,7 +54,7 @@ func RequestBodyLimit(jsonLimit, uploadLimit int64) gin.HandlerFunc {
 		}
 		limit := jsonLimit
 		contentType := strings.ToLower(c.GetHeader("Content-Type"))
-		if strings.HasPrefix(c.Request.URL.Path, "/api/upload/local/") || strings.HasPrefix(contentType, "multipart/form-data") {
+		if strings.HasPrefix(c.Request.URL.Path, "/api/upload/local/") || strings.HasPrefix(c.Request.URL.Path, "/api/upload/object/") || strings.HasPrefix(contentType, "multipart/form-data") {
 			limit = uploadLimit
 		}
 		if c.Request.ContentLength > limit {

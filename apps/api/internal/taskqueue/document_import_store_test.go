@@ -96,7 +96,7 @@ func TestDocumentImportStoreRunnableAndLock(t *testing.T) {
 	ctx := context.Background()
 	job, err := store.Create(ctx, DocumentImportJob{
 		UserID: 1, KnowledgeBaseID: 2, FileName: "a.pdf", Title: "A",
-	})
+	}, DocumentImportPage{PageNo: 1, Status: "done", ExtractedBy: "direct"})
 	if err != nil {
 		t.Fatal(err)
 	}

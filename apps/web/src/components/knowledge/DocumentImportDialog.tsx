@@ -1,148 +1,36 @@
 "use client"
 
 import * as React from "react"
-import { CheckCircle2, FileText, Loader2, RotateCcw, UploadCloud, X } from "@/components/iconimate"
+import { RotateCcw, UploadCloud } from "@/components/iconimate"
 import { toast } from "sonner"
-
-import { cn } from "@/lib/utils"
 import { ModalShell } from "@/components/petrichor-ui/modal-shell"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   BATCH_IMPORT_MAX_FILES,
+  DOCUMENT_IMPORT_ACCEPT,
   dedupeImportFiles,
-  resolveDocumentImportKind,
   removeDocumentImportFileExtension,
   validateDocumentImportFile,
 } from "@/components/knowledge/article-editor-utils"
-import { rasterizePdfPages } from "@/components/knowledge/document-rasterizer"
+import { DocumentImportFileRow } from "./document-import-file-row"
+import { useDocumentImport, type ImportItem } from "./use-document-import"
+import { IMAGE_POLICY_LABELS, IMAGE_POLICY_DESCRIPTIONS } from "./document-import-policy"
+import { isDemoMode } from "@/lib/demo/demo-mode"
 import {
-  aiModelApi,
-  aiBindingApi,
-  documentImportApi,
-  knowledgeBaseNodeApi,
-  uploadApi,
-  type AiModelResponse,
-  type KnowledgeBaseTreeNode,
+  aiModelApi, aiBindingApi, knowledgeBaseNodeApi,
+  type AiModelResponse, type KnowledgeBaseTreeNode, type DocumentImportImagePolicy,
 } from "@/lib/api"
 
-type ImportItemStatus =
-  | "pending"
-  | "uploading"
-  | "extracting"
-  | "rendering"
-  | "sending"
-  | "done"
-  | "failed"
-
-interface ImportItem {
-  id: string
-  file: File
-  title: string
-  status: ImportItemStatus
-  pageDone: number
-  pageTotal: number
-  jobId?: string
-  /** 需要多模态兜底的扫描页数；0 表示纯本地抽取完成 */
-  ocrPages?: number
-  /** 无扫描页时服务端已直接生成文章 */
-  articleId?: string | null
-  error?: string
-}
-
-interface ImportItemResult {
-  ok: boolean
-  /** 需要多模态兜底的页数，0 表示纯本地抽取 */
-  ocrPages: number
-}
-
-interface FlatFolderOption {
-  id: string
-  label: string
-}
-
-const ITEM_STATUS_LABEL: Record<ImportItemStatus, string> = {
-  pending: "等待中",
-  uploading: "上传文档中",
-  extracting: "本地解析中",
-  rendering: "渲染扫描页",
-  sending: "提交识别任务",
-  done: "已完成",
-  failed: "失败",
-}
-
-let importItemSeq = 0
-function nextImportItemId(): string {
-  importItemSeq += 1
-  return `import-item-${Date.now()}-${importItemSeq}`
-}
-
-function resolveApiErrorMessage(error: unknown, fallback: string): string {
-  if (typeof error === "object" && error && "response" in error) {
-    const response = (error as { response?: { data?: { msg?: unknown } } }).response
-    const apiMsg = response?.data?.msg
-    if (typeof apiMsg === "string" && apiMsg) return apiMsg
-  }
-  if (error instanceof Error && error.message) return error.message
-  return fallback
-}
-
+interface FlatFolderOption { id: string; label: string }
 function flattenFolders(nodes: KnowledgeBaseTreeNode[], depth = 0, acc: FlatFolderOption[] = []): FlatFolderOption[] {
   for (const node of nodes) {
     if (node.type !== "FOLDER") continue
     acc.push({ id: node.id, label: `${"　".repeat(depth)}${node.name}` })
-    if (node.children?.length) {
-      flattenFolders(node.children, depth + 1, acc)
-    }
+    if (node.children?.length) flattenFolders(node.children, depth + 1, acc)
   }
   return acc
-}
-
-async function putToStorage(filename: string, body: Blob, contentType: string, label: string): Promise<string> {
-  const presign = await uploadApi.presignPut({ filename })
-  const putResponse = await fetch(presign.data.presignedUrl, {
-    method: "PUT",
-    body,
-    headers: { "Content-Type": contentType },
-  })
-  if (!putResponse.ok) {
-    throw new Error(`${label}上传失败：HTTP ${putResponse.status}`)
-  }
-  return presign.data.objectKey
-}
-
-function uploadSourcePdf(file: File): Promise<string> {
-  return putToStorage(file.name, file, "application/pdf", "文档")
-}
-
-function uploadPageBlob(blob: Blob, pageNo: number): Promise<string> {
-  return putToStorage(`import-page-${pageNo}.jpg`, blob, "image/jpeg", `第 ${pageNo} 页图片`)
-}
-
-const CONCURRENCY_OPTIONS = [1, 2, 3, 4, 6, 8]
-const DEFAULT_CONCURRENCY = 4
-
-/** 固定并发度的任务池：最多 limit 个 worker 同时执行，按需从队列取下一项 */
-async function runPool<T>(items: T[], limit: number, worker: (item: T) => Promise<void>): Promise<void> {
-  let cursor = 0
-  const size = Math.max(1, Math.min(limit, items.length))
-  const runners = Array.from({ length: size }, async () => {
-    while (cursor < items.length) {
-      const current = items[cursor]
-      cursor += 1
-      if (current === undefined) return
-      await worker(current)
-    }
-  })
-  await Promise.all(runners)
 }
 
 export interface DocumentImportDialogProps {
@@ -154,573 +42,167 @@ export interface DocumentImportDialogProps {
   onViewJobs?: () => void
 }
 
-export function DocumentImportDialog({
-  open,
-  onOpenChange,
-  knowledgeBaseId,
-  defaultParentId = null,
-  onJobCreated,
-  onViewJobs,
-}: DocumentImportDialogProps) {
-  const [items, setItems] = React.useState<ImportItem[]>([])
+export function DocumentImportDialog({ open, onOpenChange, knowledgeBaseId, defaultParentId = null, onJobCreated, onViewJobs }: DocumentImportDialogProps) {
   const [parentId, setParentId] = React.useState<string | null>(defaultParentId)
   const [modelConfigId, setModelConfigId] = React.useState<string | null>(null)
-  const [concurrency, setConcurrency] = React.useState(DEFAULT_CONCURRENCY)
-
+  const [concurrency, setConcurrency] = React.useState(4)
+  const [imagePolicy, setImagePolicy] = React.useState<DocumentImportImagePolicy>("keep_and_recognize")
+  const skipRecognition = imagePolicy === "images_only"
   const [folders, setFolders] = React.useState<FlatFolderOption[]>([])
   const [models, setModels] = React.useState<AiModelResponse[]>([])
   const [modelsLoading, setModelsLoading] = React.useState(false)
-
-  const [running, setRunning] = React.useState(false)
-  const [notice, setNotice] = React.useState<{ articles: number; queued: number } | null>(null)
+  const [notice, setNotice] = React.useState<{ completed: number; submitted: number } | null>(null)
   const fileInputRef = React.useRef<HTMLInputElement | null>(null)
-
-  const busy = running
+  const { items, setItems, running: busy, capacityError, updateItem, runImport } = useDocumentImport({
+    knowledgeBaseId, parentId, modelConfigId, concurrency, imagePolicy, onJobCreated,
+  })
   const failedCount = items.filter((item) => item.status === "failed").length
-  const doneCount = items.filter((item) => item.status === "done").length
   const pendingCount = items.filter((item) => item.status === "pending").length
-
-  const resetState = React.useCallback(() => {
-    setItems([])
-    setParentId(defaultParentId)
-    setRunning(false)
-    if (fileInputRef.current) fileInputRef.current.value = ""
-  }, [defaultParentId])
+  const submittedCount = items.filter((item) => item.status === "submitted").length
+  const completedCount = items.filter((item) => item.status === "done").length
 
   React.useEffect(() => {
     if (!open) return
     let canceled = false
-    void (async () => {
-      setParentId(defaultParentId)
-      try {
-        const res = await knowledgeBaseNodeApi.tree(knowledgeBaseId)
-        if (!canceled) setFolders(flattenFolders(res.data.roots || []))
-      } catch {
-        if (!canceled) setFolders([])
-      }
-    })()
-    void (async () => {
-      setModelsLoading(true)
-      try {
-        // 可选项 = 所有已启用的语言模型；默认项 = VISION 用途当前绑定的模型
-        const [modelRes, bindingRes] = await Promise.all([
-          aiModelApi.list({ kind: "LANGUAGE", enabledOnly: true }),
-          aiBindingApi.list(),
-        ])
-        if (canceled) return
-        const rows = modelRes.data.items || []
-        setModels(rows)
-        const boundId = bindingRes.data.items.find((slot) => slot.purpose === "VISION")?.binding?.modelRefId
-        const preferred = rows.find((row) => row.id === boundId) || rows[0]
-        setModelConfigId((prev: string | null) => prev ?? (preferred ? preferred.id : null))
-      } catch {
-        if (!canceled) setModels([])
-      } finally {
-        if (!canceled) setModelsLoading(false)
-      }
-    })()
-    return () => {
-      canceled = true
-    }
+    setParentId(defaultParentId)
+    void knowledgeBaseNodeApi.tree(knowledgeBaseId).then((res) => {
+      if (!canceled) setFolders(flattenFolders(res.data.roots || []))
+    }).catch(() => { if (!canceled) setFolders([]) })
+    setModelsLoading(true)
+    void Promise.all([
+      aiModelApi.list({ kind: "LANGUAGE", enabledOnly: true }), aiBindingApi.list(),
+    ]).then(([modelRes, bindingRes]) => {
+      if (canceled) return
+      const rows = modelRes.data.items || []
+      setModels(rows)
+      const boundId = bindingRes.data.items.find((slot) => slot.purpose === "VISION")?.binding?.modelRefId
+      setModelConfigId((prev) => prev ?? rows.find((row) => row.id === boundId)?.id ?? null)
+    }).catch(() => { if (!canceled) setModels([]) })
+      .finally(() => { if (!canceled) setModelsLoading(false) })
+    return () => { canceled = true }
   }, [open, knowledgeBaseId, defaultParentId])
 
-  const updateItem = React.useCallback((id: string, patch: Partial<ImportItem>) => {
-    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)))
-  }, [])
-
-  const handlePickFiles = React.useCallback((picked: File[]) => {
-    if (picked.length === 0) return
-
+  const handlePickFiles = (picked: File[]) => {
+    if (busy) return
     const valid: File[] = []
-    let invalidCount = 0
+    const errors = new Set<string>()
     for (const file of picked) {
-      const validationError = validateDocumentImportFile(file)
-      if (validationError) {
-        invalidCount += 1
-        continue
-      }
-      valid.push(file)
+      const error = validateDocumentImportFile(file)
+      if (error) errors.add(error)
+      else valid.push(file)
     }
-    if (invalidCount > 0) {
-      toast.error(`已忽略 ${invalidCount} 个不支持的文件（仅支持 .pdf，单个 ≤ 100MB）`)
+    if (errors.size) toast.error([...errors].join("；"))
+    const { added, duplicateCount } = dedupeImportFiles(items.map((item) => item.file), valid)
+    if (duplicateCount) toast.info(`已忽略 ${duplicateCount} 个重复文件`)
+    const available = Math.max(0, BATCH_IMPORT_MAX_FILES - items.length)
+    if (added.length > available) toast.error(`一次最多导入 ${BATCH_IMPORT_MAX_FILES} 个文件`)
+    setItems((prev) => [...prev, ...added.slice(0, available).map((file): ImportItem => ({
+      id: crypto.randomUUID(), file, title: removeDocumentImportFileExtension(file.name), status: "pending",
+    }))])
+  }
+
+  const start = async (status: "pending" | "failed") => {
+    if (busy) return
+    setNotice(null)
+    const result = await runImport(items.filter((item) => item.status === status))
+    if (!result) return
+    if (result.failed) toast.error(`已完成 ${result.completed} 个，已提交 ${result.submitted} 个，失败 ${result.failed} 个，可安全重试失败项`)
+    else {
+      setNotice({ completed: result.completed, submitted: result.submitted })
+      toast.success(`已完成 ${result.completed} 个，已提交后台 ${result.submitted} 个，可关闭页面`)
     }
-    if (valid.length === 0) return
-
-    setItems((prev) => {
-      const { added, duplicateCount } = dedupeImportFiles(
-        prev.map((item) => item.file),
-        valid
-      )
-      if (duplicateCount > 0) {
-        toast.info(`已忽略 ${duplicateCount} 个重复文件`)
-      }
-      if (added.length === 0) {
-        return prev
-      }
-      let accepted = added
-      if (prev.length + added.length > BATCH_IMPORT_MAX_FILES) {
-        const allowed = Math.max(0, BATCH_IMPORT_MAX_FILES - prev.length)
-        if (allowed < added.length) {
-          toast.error(`一次最多导入 ${BATCH_IMPORT_MAX_FILES} 个文件，已截断多余文件`)
-        }
-        accepted = added.slice(0, allowed)
-      }
-      if (accepted.length === 0) {
-        return prev
-      }
-      return [
-        ...prev,
-        ...accepted.map((file) => ({
-          id: nextImportItemId(),
-          file,
-          title: removeDocumentImportFileExtension(file.name),
-          status: "pending" as ImportItemStatus,
-          pageDone: 0,
-          pageTotal: 0,
-        })),
-      ]
-    })
-  }, [])
-
-  const removeItem = React.useCallback((id: string) => {
-    setItems((prev) => prev.filter((item) => item.id !== id))
-  }, [])
-
-  const processItem = React.useCallback(
-    async (item: ImportItem): Promise<ImportItemResult> => {
-      if (!resolveDocumentImportKind(item.file.name)) {
-        updateItem(item.id, { status: "failed", error: "仅支持 .pdf 格式" })
-        return { ok: false, ocrPages: 0 }
-      }
-      const trimmedTitle = item.title.trim() || removeDocumentImportFileExtension(item.file.name) || "未命名文档"
-
-      try {
-        // 1) 原始 PDF 直传对象存储，服务端据此做本地抽取
-        updateItem(item.id, { status: "uploading", pageDone: 0, pageTotal: 0, error: undefined })
-        const sourceKey = await uploadSourcePdf(item.file)
-
-        // 2) 服务端 pdf-inspector 逐页抽取；无扫描页时这一步就已经生成文章
-        updateItem(item.id, { status: "extracting" })
-        const createRes = await documentImportApi.createJob({
-          knowledgeBaseId,
-          parentId,
-          fileName: item.file.name,
-          title: trimmedTitle,
-          sourceKey,
-          modelConfigId,
-          concurrency,
-        })
-        const { job, ocrPageNos, articleId } = createRes.data
-        const jobId = job.id
-        onJobCreated?.(jobId)
-
-        if (ocrPageNos.length === 0) {
-          updateItem(item.id, {
-            status: "done",
-            jobId,
-            ocrPages: 0,
-            articleId,
-            title: trimmedTitle,
-            pageDone: job.totalPages,
-            pageTotal: job.totalPages,
-            error: undefined,
-          })
-          return { ok: true, ocrPages: 0 }
-        }
-
-        // 3) 只有扫描页需要栅格化 + 走多模态
-        if (!modelConfigId) {
-          throw new Error(
-            `该文档有 ${ocrPageNos.length} 页是扫描件，需要多模态模型识别，请先选择模型`
-          )
-        }
-
-        updateItem(item.id, { status: "rendering", pageTotal: ocrPageNos.length, pageDone: 0 })
-        const rendered = await rasterizePdfPages(item.file, ocrPageNos, {
-          onProgress: (done, total) => {
-            updateItem(item.id, { pageDone: done, pageTotal: total })
-          },
-        })
-        if (rendered.length === 0) {
-          throw new Error("扫描页渲染失败，未能生成任何页面图片")
-        }
-
-        updateItem(item.id, { status: "sending", pageTotal: rendered.length, pageDone: 0 })
-        const pages: { pageNo: number; imageKey: string }[] = []
-        let uploaded = 0
-        await runPool(rendered, concurrency, async (page) => {
-          const imageKey = await uploadPageBlob(page.blob, page.pageNo)
-          pages.push({ pageNo: page.pageNo, imageKey })
-          uploaded += 1
-          updateItem(item.id, { pageDone: uploaded })
-        })
-        pages.sort((a, b) => a.pageNo - b.pageNo)
-
-        await documentImportApi.attachOcrPages({ jobId, pages, concurrency })
-        updateItem(item.id, {
-          status: "done",
-          jobId,
-          ocrPages: ocrPageNos.length,
-          articleId: null,
-          title: trimmedTitle,
-          error: undefined,
-        })
-        return { ok: true, ocrPages: ocrPageNos.length }
-      } catch (error) {
-        const message = resolveApiErrorMessage(error, "导入失败")
-        updateItem(item.id, { status: "failed", error: message })
-        return { ok: false, ocrPages: 0 }
-      }
-    },
-    [concurrency, knowledgeBaseId, modelConfigId, onJobCreated, parentId, updateItem]
-  )
-
-  const runImport = React.useCallback(
-    async (targets: ImportItem[]) => {
-      if (targets.length === 0) return
-      // 不强制要求选模型：纯文字 PDF 走本地抽取，只有出现扫描页时才会在 processItem 里报错。
-
-      setRunning(true)
-      setItems((prev) =>
-        prev.map((item) =>
-          targets.some((target) => target.id === item.id)
-            ? { ...item, status: "pending", pageDone: 0, pageTotal: 0, error: undefined }
-            : item
-        )
-      )
-
-      let articles = 0
-      let queued = 0
-      let failed = 0
-      // 文件之间串行处理，单个文件内部的扫描页按 concurrency 并行上传
-      for (const target of targets) {
-        const result = await processItem(target)
-        if (!result.ok) failed += 1
-        else if (result.ocrPages > 0) queued += 1
-        else articles += 1
-      }
-
-      setRunning(false)
-
-      if (failed === 0) {
-        toast.success(
-          queued === 0
-            ? `已导入 ${articles} 篇文章`
-            : `已完成 ${articles + queued} 个文档，其中 ${queued} 个含扫描页需后台识别`
-        )
-        setNotice({ articles, queued })
-        onOpenChange(false)
-        resetState()
-      } else {
-        toast.error(`成功 ${articles + queued} 个，失败 ${failed} 个，可重试失败项`)
-      }
-    },
-    [onOpenChange, processItem, resetState]
-  )
-
-  const handleStart = React.useCallback(() => {
-    const targets = items.filter((item) => item.status !== "done")
-    if (targets.length === 0) {
-      toast.error("请先选择 PDF 文档")
-      return
-    }
-    void runImport(targets)
-  }, [items, runImport])
-
-  const handleRetryFailed = React.useCallback(() => {
-    const targets = items.filter((item) => item.status === "failed")
-    if (targets.length === 0) return
-    void runImport(targets)
-  }, [items, runImport])
+  }
+  const close = () => {
+    if (busy) return
+    // 仅保留未确认提交项供本标签页重试；已确认任务不再需要原文件。
+    setItems((prev) => prev.filter((item) => !item.jobId && (item.status === "failed" || item.status === "pending")))
+    setNotice(null)
+    onOpenChange(false)
+  }
 
   return (
     <>
-    <ModalShell
-      open={open}
-      onOpenChange={(next) => {
-        if (busy) return
-        if (!next) resetState()
-        onOpenChange(next)
-      }}
-      title="导入文档（PDF）"
-      description="文字版 PDF 直接在服务端本地抽取，不消耗模型额度；只有扫描页才会交给多模态模型识别。"
-      disableClose={busy}
-      contentClassName="sm:max-w-xl"
-      footer={
-        <div className="flex w-full items-center justify-end gap-2">
-          {failedCount > 0 && !busy ? (
-            <Button variant="outline" onClick={handleRetryFailed}>
-              <RotateCcw className="mr-2 size-4" />
-              重试失败（{failedCount}）
-            </Button>
-          ) : null}
-          <Button
-            variant="outline"
-            disabled={busy}
-            onClick={() => {
-              resetState()
-              onOpenChange(false)
-            }}
-          >
-            关闭
-          </Button>
-          <Button onClick={handleStart} disabled={busy || pendingCount === 0}>
-            {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-            {busy ? "导入中…" : pendingCount > 0 ? `开始导入（${pendingCount}）` : "开始导入"}
-          </Button>
-        </div>
-      }
-    >
-      <div className="flex flex-col gap-4 px-1 py-1">
-        <div className="space-y-2">
-          <Label>文档文件</Label>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept=".pdf,application/pdf"
-            className="hidden"
-            onChange={(e) => {
-              handlePickFiles(Array.from(e.target.files ?? []))
-              e.currentTarget.value = ""
-            }}
-          />
-
-          {items.length > 0 ? (
-            <div className="space-y-2">
-              <div className="flex flex-col gap-2 max-h-64 overflow-auto app-scrollbar pr-1">
-                {items.map((item) => (
-                  <ImportItemRow
-                    key={item.id}
-                    item={item}
-                    busy={busy}
-                    onTitleChange={(title) => updateItem(item.id, { title })}
-                    onRemove={() => removeItem(item.id)}
-                  />
-                ))}
-              </div>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => fileInputRef.current?.click()}
-                className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <UploadCloud className="size-4" />
-                继续添加文件
-              </button>
-              <p className="text-xs text-muted-foreground">
-                共 {items.length} 个文件{doneCount > 0 ? `，已创建 ${doneCount} 个` : ""}
-                {failedCount > 0 ? `，失败 ${failedCount} 个` : ""}。
-              </p>
+      <ModalShell
+        open={open}
+        onOpenChange={(next) => { if (!next) close(); else onOpenChange(true) }}
+        title="导入外部文档"
+        description="上传文档并选择图片处理方式。提交成功后可关闭页面，后台会继续处理并生成文章。"
+        disableClose={busy}
+        contentClassName="sm:max-w-xl"
+        footer={
+          <div className="flex w-full flex-wrap items-center justify-end gap-2">
+            {failedCount > 0 ? <Button variant="outline" disabled={busy} onClick={() => void start("failed")}><RotateCcw className="mr-2 size-4" />重试失败（{failedCount}）</Button> : null}
+            <Button variant="outline" disabled={busy} onClick={close}>关闭</Button>
+            <Button disabled={busy || pendingCount === 0} onClick={() => void start("pending")}>{busy ? "上传 / 提交中…" : `开始导入${pendingCount ? `（${pendingCount}）` : ""}`}</Button>
+          </div>
+        }
+      >
+        <div className="flex min-w-0 flex-col gap-4 px-1 py-1">
+          {isDemoMode() ? <p role="note" className="rounded-md border p-3 text-sm text-muted-foreground">演示模式：仅在本标签页内存模拟上传及创建任务，不读取或上传文件内容，不调用解析 / OCR 服务，也不会生成真实文章；刷新后清空。</p> : null}
+          <div className="space-y-2">
+            <Label>文档文件</Label>
+            <input ref={fileInputRef} type="file" multiple accept={DOCUMENT_IMPORT_ACCEPT} className="hidden" onChange={(event) => {
+              handlePickFiles(Array.from(event.target.files ?? []))
+              event.currentTarget.value = ""
+            }} />
+            <div className="app-scrollbar flex max-h-64 flex-col gap-2 overflow-auto pr-1">
+              {items.map((item) => <DocumentImportFileRow key={item.id} item={item} busy={busy} onTitleChange={(title) => updateItem(item.id, { title })} onRemove={() => setItems((prev) => prev.filter((row) => row.id !== item.id))} />)}
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex w-full flex-col items-center gap-2 rounded-md border border-dashed px-4 py-6 text-sm text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground"
-            >
-              <UploadCloud className="size-6" />
-              点击选择 PDF 文档（可多选，单个 ≤ 100MB）
+            <button type="button" disabled={busy} onClick={() => fileInputRef.current?.click()} className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground hover:border-primary/60 hover:text-foreground disabled:opacity-60">
+              <UploadCloud className="size-5 shrink-0" />{items.length ? "继续添加文件" : "选择文档（可多选，单个 ≤ 100MB）"}
             </button>
-          )}
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label>导入到文件夹</Label>
-            <Select
-              value={parentId ?? "__root__"}
-              disabled={busy}
-              onValueChange={(v) => setParentId(v === "__root__" ? null : v)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="知识库根目录" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__root__">知识库根目录</SelectItem>
-                {folders.map((folder) => (
-                  <SelectItem key={folder.id} value={folder.id}>
-                    {folder.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <p className="text-xs text-muted-foreground">支持 PDF、Markdown、Word、Excel、PowerPoint、OpenDocument、RTF、EPUB、CSV。</p>
+            {capacityError ? <p role="alert" className="text-xs text-destructive">{capacityError}</p> : null}
+            {items.length > 0 ? <p className="text-xs text-muted-foreground">共 {items.length} 个 · 已完成 {completedCount} · 已提交 {submittedCount} · 失败 {failedCount}</p> : null}
           </div>
-
-          <div className="space-y-2">
-            <Label>多模态模型（扫描页兜底）</Label>
-            <Select
-              value={modelConfigId ?? ""}
-              disabled={busy || modelsLoading}
-              onValueChange={(v) => setModelConfigId(v)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={modelsLoading ? "加载中…" : "选择多模态模型"} />
-              </SelectTrigger>
-              <SelectContent>
-                {models.map((model) => (
-                  <SelectItem key={model.id} value={model.id}>
-                    {model.displayName || model.modelId}
-                    {model.providerName ? ` · ${model.providerName}` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
+          <div className="min-w-0 space-y-2">
+            <Label htmlFor="import-image-policy">PDF 图片处理</Label>
+            <Select value={imagePolicy} disabled={busy} onValueChange={(value) => setImagePolicy(value as DocumentImportImagePolicy)}>
+              <SelectTrigger id="import-image-policy" aria-describedby="import-image-policy-hint" className="w-full min-w-0"><SelectValue /></SelectTrigger>
+              <SelectContent>{Object.entries(IMAGE_POLICY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}{value === "keep_and_recognize" ? "（默认）" : ""}</SelectItem>)}</SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
-              仅用于识别扫描页。纯文字 PDF 不会调用模型。
-            </p>
-            {!modelsLoading && models.length === 0 ? (
-              <p className="text-xs text-destructive">
-                还没有可用的语言模型，遇到扫描件会导入失败，可到「模型配置 → 供应商」接入后在「用途绑定」里绑定多模态。
-              </p>
-            ) : null}
+            <p id="import-image-policy-hint" className="text-xs text-muted-foreground">{IMAGE_POLICY_DESCRIPTIONS[imagePolicy]}PDF 原生正文始终保留；此选项不改变其他格式的解析方式。</p>
           </div>
-
-          <div className="space-y-2">
-            <Label>扫描页并发数</Label>
-            <Select
-              value={String(concurrency)}
-              disabled={busy}
-              onValueChange={(v) => setConcurrency(Number(v))}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CONCURRENCY_OPTIONS.map((n) => (
-                  <SelectItem key={n} value={String(n)}>
-                    {n} 页并行
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              同时识别的扫描页数。本地 Ollama 受 OLLAMA_NUM_PARALLEL 限制，过高不会更快。
-            </p>
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+            <div className="min-w-0 space-y-2">
+              <Label htmlFor="import-folder">导入到文件夹</Label>
+              <Select value={parentId ?? "__root__"} disabled={busy} onValueChange={(value) => setParentId(value === "__root__" ? null : value)}>
+                <SelectTrigger id="import-folder" className="w-full min-w-0"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="__root__">知识库根目录</SelectItem>{folders.map((folder) => <SelectItem key={folder.id} value={folder.id}>{folder.label}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="min-w-0 space-y-2">
+              <Label htmlFor="import-model">多模态模型（可选）</Label>
+              <Select value={modelConfigId ?? "__none__"} disabled={busy || modelsLoading || skipRecognition} onValueChange={(value) => setModelConfigId(value === "__none__" ? null : value)}>
+                <SelectTrigger id="import-model" className="w-full min-w-0"><SelectValue placeholder={modelsLoading ? "加载中…" : "不指定模型"} /></SelectTrigger>
+                <SelectContent><SelectItem value="__none__">不指定模型</SelectItem>{models.map((model) => <SelectItem key={model.id} value={model.id}>{model.displayName || model.modelId}{model.providerName ? ` · ${model.providerName}` : ""}</SelectItem>)}</SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{skipRecognition ? "仅保留图片，无需配置识别模型。" : "未指定时使用已绑定的视觉模型。需要 OCR 或图片描述时，必须有可用的多模态模型。"}</p>
+            </div>
+            <div className="min-w-0 space-y-2">
+              <Label htmlFor="import-concurrency">服务端 OCR 并发数</Label>
+              <Select value={String(concurrency)} disabled={busy || skipRecognition} onValueChange={(value) => setConcurrency(Number(value))}>
+                <SelectTrigger id="import-concurrency" className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>{[1, 2, 3, 4, 6, 8].map((value) => <SelectItem key={value} value={String(value)}>{value} 个并行</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
           </div>
-        </div>
-      </div>
-    </ModalShell>
-    <ModalShell
-      open={notice != null}
-      onOpenChange={(next) => {
-        if (!next) setNotice(null)
-      }}
-      title="导入完成"
-      description="文字页已本地抽取完成；含扫描页的文档会在后台继续识别。"
-      contentClassName="sm:max-w-md"
-      footer={
-        <div className="flex w-full items-center justify-end gap-2">
-          <Button variant="outline" onClick={() => setNotice(null)}>
-            知道了
-          </Button>
-          <Button
-            onClick={() => {
-              setNotice(null)
-              onViewJobs?.()
-            }}
-          >
-            查看导入任务列表
-          </Button>
-        </div>
-      }
-    >
-      <div className="space-y-2 px-1 py-1 text-sm text-muted-foreground">
-        {notice && notice.articles > 0 ? (
-          <p>{`${notice.articles} 个文档已本地抽取完成并直接生成文章，未调用多模态模型。`}</p>
-        ) : null}
-        {notice && notice.queued > 0 ? (
-          <p>{`${notice.queued} 个文档含扫描页，正在后台排队识别，全部页面成功后会自动生成文章。`}</p>
-        ) : null}
-        <p>
-          进度、目标知识库、目标文件夹和失败页重试都可以在左侧菜单的「导入任务列表」中查看。
-        </p>
-      </div>
-    </ModalShell>
-    </>
-  )
-}
-
-function ImportItemRow({
-  item,
-  busy,
-  onTitleChange,
-  onRemove,
-}: {
-  item: ImportItem
-  busy: boolean
-  onTitleChange: (title: string) => void
-  onRemove: () => void
-}) {
-  const active =
-    item.status === "uploading" ||
-    item.status === "extracting" ||
-    item.status === "rendering" ||
-    item.status === "sending"
-  const progressPercent =
-    item.pageTotal > 0 ? Math.round((item.pageDone / item.pageTotal) * 100) : item.status === "extracting" ? 60 : 0
-
-  return (
-    <div className="rounded-md border px-3 py-2 text-sm">
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex min-w-0 items-center gap-2">
-          {item.status === "done" ? (
-            <CheckCircle2 className="size-4 shrink-0 text-emerald-500" />
-          ) : active ? (
-            <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
-          ) : (
-            <FileText className="size-4 shrink-0 text-muted-foreground" />
-          )}
-          <span className="truncate">{item.file.name}</span>
-        </span>
-        <span className="flex shrink-0 items-center gap-2">
-          <span
-            className={cn(
-              "text-xs",
-              item.status === "failed" ? "text-destructive" : "text-muted-foreground"
-            )}
-          >
-            {ITEM_STATUS_LABEL[item.status]}
-            {(item.status === "rendering" || item.status === "sending") && item.pageTotal > 0
-              ? ` ${item.pageDone}/${item.pageTotal}`
-              : ""}
-          </span>
-          {!busy && item.status !== "done" ? (
-            <button
-              type="button"
-              className="text-muted-foreground hover:text-foreground"
-              aria-label={`移除 ${item.file.name}`}
-              onClick={onRemove}
-            >
-              <X className="size-4" />
-            </button>
+          <div className="space-y-2 rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+            <p>anydoc 直接解析正文；PDF 图片按所选策略独立处理。PDF 按物理页处理，其他格式按文档单元处理。</p>
+            {!skipRecognition ? <p>anydoc 提示需要 OCR 时，仅调用多模态模型；图片描述也使用该模型，可能消耗模型额度。识别失败可重试。</p> : null}
+            <p>上传原件 → 提交任务 → 服务端解析 / 必要时栅格化及 OCR → 自动生成文章。提交成功即可关闭页面，后台会继续处理。</p>
+            <p>上传或提交失败可在本标签页安全重试，原件上传成功后不重复上传。首次提交的标题和选项将锁定，重试不受后续选项修改影响。未确认项仅保留在当前标签页，刷新或关闭会丢失重试上下文。</p>
+          </div>
+          {busy ? <p role="status" className="text-sm text-amber-700 dark:text-amber-400">原文件上传或任务提交尚未结束，暂不能关闭。成功提交后即可关闭弹窗和页面，无需等待解析或生成文章。</p> : null}
+          {notice ? (
+            <div role="status" className="space-y-2 rounded-md border p-3 text-sm">
+              <p>已完成 {notice.completed} 个；已提交后台 {notice.submitted} 个，可关闭页面。提交不代表文章已生成。</p>
+              {onViewJobs ? <Button size="sm" variant="outline" disabled={busy} onClick={() => { setNotice(null); close(); onViewJobs() }}>查看导入任务列表</Button> : null}
+            </div>
           ) : null}
-        </span>
-      </div>
-
-      {item.status !== "done" && item.status !== "failed" ? (
-        <Input
-          value={item.title}
-          disabled={busy}
-          placeholder="导入后生成的文章标题"
-          className="mt-2 h-8"
-          onChange={(e) => onTitleChange(e.target.value)}
-        />
-      ) : null}
-
-      {active ? (
-        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-primary transition-all"
-            style={{ width: `${item.status === "uploading" ? 20 : progressPercent}%` }}
-          />
         </div>
-      ) : null}
-
-      {item.status === "failed" && item.error ? (
-        <p className="mt-1.5 text-xs text-destructive">{item.error}</p>
-      ) : null}
-    </div>
+      </ModalShell>
+    </>
   )
 }
 

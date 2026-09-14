@@ -71,6 +71,7 @@ func TestRouteRegistryHasNoDuplicatesAndKeepsCriticalContracts(t *testing.T) {
 		"POST /api/assistant/chat",
 		"POST /api/mcp",
 		"PUT /api/upload/local/*objectKey",
+		"PUT /api/upload/object/*objectKey",
 	}
 	for _, key := range critical {
 		if _, exists := seen[key]; !exists {
@@ -78,6 +79,9 @@ func TestRouteRegistryHasNoDuplicatesAndKeepsCriticalContracts(t *testing.T) {
 		}
 	}
 
+	if _, exists := seen["POST /api/kb/import/attach-ocr"]; exists {
+		t.Error("浏览器补图端点不应继续注册")
+	}
 	for key := range seen {
 		if key == "GET /api/public/site-graph" || key == "POST /api/public/site-graph" ||
 			strings.Contains(key, " /api/admin/site-graph") {

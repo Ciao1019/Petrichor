@@ -14,6 +14,8 @@ import (
 
 type deadLetterJob struct {
 	Kind            string     `json:"kind"`
+	Stage           string     `json:"stage"`
+	PrepareAttempt  int32      `json:"prepareAttempt"`
 	ID              string     `json:"id"`
 	UserID          string     `json:"userId"`
 	KnowledgeBaseID string     `json:"knowledgeBaseId"`
@@ -65,7 +67,8 @@ func loadDeadLetterJobs(ctx context.Context, limit int) ([]deadLetterJob, error)
 			KnowledgeBaseID: strconv.FormatInt(job.KnowledgeBaseID, 10),
 			Title:           job.Title, ReplayCount: job.ReplayCount,
 			LastError: job.Error, DeadLetteredAt: job.DeadLetteredAt, UpdatedAt: job.UpdatedAt,
-			MaxAttempts: 5,
+			MaxAttempts: job.PrepareMaxAttempts, AttemptCount: job.PrepareAttempt,
+			Stage: job.Stage, PrepareAttempt: job.PrepareAttempt,
 		}
 		if job.ArticleID != nil {
 			value := strconv.FormatInt(*job.ArticleID, 10)
@@ -100,7 +103,7 @@ func AdminReplayDeadLetter(c *gin.Context) {
 	if request.Kind != "document_import" {
 		err = &httpx.HttpError{Status: 400, Message: "只支持重放视觉导入死信"}
 	} else {
-		err = replayDocumentImportDeadLetter(c.Request.Context(), request.ID)
+		err = replayDocumentImportDeadLetter(c.Request.Context(), request.ID, c.Query("reset") == "1")
 	}
 	if err != nil {
 		httpx.HandleError(c, err)
@@ -109,7 +112,10 @@ func AdminReplayDeadLetter(c *gin.Context) {
 	httpx.OK(c, map[string]any{"kind": request.Kind, "id": request.ID, "status": "pending"})
 }
 
-func replayDocumentImportDeadLetter(ctx context.Context, rawID string) error {
+func replayDocumentImportDeadLetter(ctx context.Context, rawID string, reset ...bool) error {
+	canReplay := func(status string) bool {
+		return status == "dead_letter" || (len(reset) > 0 && reset[0] && status == "failed")
+	}
 	id, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil || id <= 0 {
 		return &httpx.HttpError{Status: 400, Message: "id 必须是正整数"}
@@ -125,42 +131,44 @@ func replayDocumentImportDeadLetter(ctx context.Context, rawID string) error {
 	if err != nil {
 		return err
 	}
-	if job.Status != "dead_letter" {
+	if !canReplay(job.Status) {
 		return &httpx.HttpError{Status: 409, Message: "任务不在死信状态"}
 	}
-	now := time.Now().UTC()
-	_, err = store.UpdatePages(ctx, id, func(pages []*taskqueue.DocumentImportPage) error {
+	pages, err := store.UpdateJobPages(ctx, id, func(current *taskqueue.DocumentImportJob, pages []*taskqueue.DocumentImportPage) error {
+		if !canReplay(current.Status) {
+			return &httpx.HttpError{Status: 409, Message: "任务不在死信状态"}
+		}
 		for _, page := range pages {
 			if page.Status != "dead_letter" && page.Status != "failed" && page.Status != "processing" {
 				continue
 			}
-			page.Status = "pending"
-			page.AttemptCount = 0
-			page.NextAttemptAt = now
-			page.Error = nil
-			page.LastError = nil
-			page.DeadLetteredAt = nil
+			taskqueue.ResetDocumentImportPageRetry(page)
 		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	_, err = store.UpdateJob(ctx, id, func(current *taskqueue.DocumentImportJob) error {
-		if current.Status != "dead_letter" {
-			return &httpx.HttpError{Status: 409, Message: "任务不在死信状态"}
-		}
+		taskqueue.ResetDocumentImportTaskRetry(current)
 		current.Status = "processing"
+		current.ProcessedPages = 0
+		for _, page := range pages {
+			if page.Status == "done" {
+				current.ProcessedPages++
+			}
+		}
 		current.Error = nil
 		current.DeadLetteredAt = nil
 		current.ReplayCount++
 		return nil
 	})
+	if errors.Is(err, taskqueue.ErrDocumentImportEnded) {
+		return &httpx.HttpError{Status: 409, Message: "任务已结束，不能重放"}
+	}
 	if err != nil {
 		return err
 	}
-	if err := store.SetRunnable(ctx, id, true); err != nil {
+	job, err = store.Get(ctx, id)
+	if err != nil {
 		return err
+	}
+	if !taskqueue.DocumentImportRunnable(job, pages) {
+		return nil
 	}
 	if err := taskqueue.EnqueueDocumentImport(ctx, id); err != nil {
 		return &httpx.HttpError{Status: 503, Message: "视觉导入队列暂不可用；Redis 补偿任务会自动重试入队"}

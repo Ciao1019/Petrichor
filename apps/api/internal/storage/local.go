@@ -2,7 +2,9 @@
 package storage
 
 import (
+	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,6 +48,57 @@ func ReadLocalObject(objectKey string) ([]byte, error) {
 		return nil, err
 	}
 	return os.ReadFile(p)
+}
+
+var ErrObjectTooLarge = errors.New("对象超过读取上限")
+
+// ReadLocalObjectLimited 仅供有界读取场景使用，不改变普通文档下载限制。
+func ReadLocalObjectLimited(ctx context.Context, objectKey string, maxBytes int64) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if maxBytes <= 0 || maxBytes == 1<<63-1 {
+		return nil, errors.New("读取上限无效")
+	}
+	p, err := resolveObjectPath(objectKey)
+	if err != nil {
+		return nil, err
+	}
+	file, err := os.Open(p)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("对象不是普通文件")
+	}
+	if info.Size() > maxBytes {
+		return nil, ErrObjectTooLarge
+	}
+	data, err := io.ReadAll(io.LimitReader(localContextReader{ctx: ctx, reader: file}, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, ErrObjectTooLarge
+	}
+	return data, ctx.Err()
+}
+
+type localContextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r localContextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(p)
 }
 
 // DeleteLocalObject 删除对象及其空父目录。

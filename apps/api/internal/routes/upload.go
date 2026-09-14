@@ -12,6 +12,7 @@ func registerUploadRoutes(rg *gin.RouterGroup) {
 	g := rg.Group("/upload")
 	g.POST("/presign-put", auth.RequireUser(), uploadsvc.PresignPutObject)
 	g.POST("/presign-get", auth.RequireUser(), uploadsvc.PresignGetObject)
+	g.PUT("/object/*objectKey", auth.RequireUser(), uploadsvc.UploadObject)
 
 	local := g.Group("/local")
 	local.PUT("/*objectKey", auth.RequireUser(), uploadsvc.UploadLocalObject)

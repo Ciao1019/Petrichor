@@ -1,4 +1,5 @@
 import { api } from "@/lib/api-client"
+import { resetAuthSession } from "@/lib/auth-session-events"
 
 export interface LoginRequest {
   email: string
@@ -59,17 +60,29 @@ export interface ChangePasswordRequest {
   newPassword: string
 }
 
+async function resetSessionOnSuccess<T>(request: Promise<T>): Promise<T> {
+  const response = await request
+  resetAuthSession()
+  return response
+}
+
 export const authApi = {
   setupStatus: () => api.get<SetupStatusResponse>("/auth/setup/status"),
-  setup: (data: SetupRequest) => api.post<AuthResponse>("/auth/setup", data),
-  login: (data: LoginRequest) => api.post<AuthResponse>("/auth/login", data),
-  register: (data: RegisterRequest) => api.post<AuthResponse>("/auth/register", data),
-  logout: () => api.post("/auth/logout"),
+  setup: (data: SetupRequest) => resetSessionOnSuccess(api.post<AuthResponse>("/auth/setup", data)),
+  login: (data: LoginRequest) => resetSessionOnSuccess(api.post<AuthResponse>("/auth/login", data)),
+  register: (data: RegisterRequest) => resetSessionOnSuccess(api.post<AuthResponse>("/auth/register", data)),
+  logout: async () => {
+    try {
+      return await api.post("/auth/logout")
+    } finally {
+      resetAuthSession()
+    }
+  },
   me: () => api.get<UserResponse>("/auth/me"),
   profile: () => api.get<UserProfileResponse>("/auth/profile"),
   updateProfile: (data: UserProfileUpdateRequest) => api.post<UserProfileResponse>("/auth/profile/update", data),
   changePassword: (data: ChangePasswordRequest) => api.post<void>("/auth/password/change", data),
-  linuxDoCallback: (code: string, state?: string | null) => api.post<AuthResponse>("/auth/linuxdo/callback", { code, state }),
+  linuxDoCallback: (code: string, state?: string | null) => resetSessionOnSuccess(api.post<AuthResponse>("/auth/linuxdo/callback", { code, state })),
 }
 
 // 登录会话（多地登录）管理相关类型

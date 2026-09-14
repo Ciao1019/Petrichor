@@ -31,6 +31,17 @@
 供应商目录定义在 `apps/api/internal/aisvc/catalog.go`；协议实现集中在
 `apps/api/internal/aicore/`，新增供应商时需同步目录、协议能力和测试。
 
+## 文档导入 OCR
+
+外部文档由服务端 Asynq Worker 先直接解析，浏览器只上传原件，不要求必须配置视觉模型。
+anydoc 提示需要 OCR 时，只调用本次选择的多模态模型，未指定时使用 `VISION` 用途绑定。
+该模型必须实际支持图片输入，`VISION` 是用途而不是模型类型。
+PDF 导入还可选择「仅识别文字」或「仅保留图片」；仅保留图片时完全跳过模型调用。
+
+没有备用 OCR 供应商或优先级配置。模型不可用时明确失败，临时故障按原有页级策略重试。
+所选模型的供应商 BaseUrl 决定图片发送到本机还是远程服务。
+详细配置及统计口径参见 [外部文档导入](./document-import.md)。
+
 ## 接口协议：chat completions 与 responses
 
 语言模型有两套 HTTP 协议：

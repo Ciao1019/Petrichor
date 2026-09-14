@@ -9,12 +9,16 @@ import type {
   AiModelResponse,
   AiProviderResponse,
   NotificationItem,
+  DocumentImportFinalizeResponse,
+  DocumentImportJobResponse,
+  DocumentImportPageResponse,
   SystemRole,
 } from "@/lib/api"
 
-import type { DemoHandler, DemoHandlerResult } from "./demo-adapter"
+import { createDemoUpload, type DemoHandler, type DemoHandlerResult } from "./demo-adapter"
 import { DEMO_ABOUT_PROFILE, DEMO_PROJECT_SHOWCASE } from "./demo-public-data"
 import { DEMO_USER } from "./demo-store"
+import { resolveDocumentImportKind } from "@/components/knowledge/article-editor-utils"
 
 /* 最新工作台附加数据：覆盖文档库、视觉导入、模型、Agent 与系统管理。
  * 所有写操作只更新当前标签页内存，刷新后恢复种子数据。 */
@@ -201,8 +205,11 @@ let documents: DemoDocument[] = [
   },
 ]
 
-const importJobs = [
+const importJobs: DocumentImportJobResponse[] = [
   {
+    pageUnit: "page",
+    actualMethods: ["direct", "multimodal"],
+    directPages: 3, multimodalPages: 3,
     id: "demo-import-1",
     knowledgeBaseId: "demo-kb-product",
     knowledgeBaseName: "开源命令行工具手册",
@@ -226,6 +233,9 @@ const importJobs = [
     updatedAt: recentTime,
   },
   {
+    pageUnit: "page",
+    actualMethods: ["direct", "multimodal"],
+    directPages: 1, multimodalPages: 2,
     id: "demo-import-2",
     knowledgeBaseId: "demo-kb-product",
     knowledgeBaseName: "开源命令行工具手册",
@@ -250,19 +260,43 @@ const importJobs = [
   },
 ]
 
-function importPages(jobId: string) {
+const officeImport: DocumentImportJobResponse = {
+  id: "demo-import-office", knowledgeBaseId: "demo-kb-product", knowledgeBaseName: "开源命令行工具手册",
+  parentNodeId: null, parentFolderName: null, sourceType: "docx", fileName: "mole-guide.docx", title: "Mole 使用指南（Office）",
+  totalPages: 1, processedPages: 1, donePages: 1, failedPages: 0, pendingPages: 0,
+  status: "processing", modelConfigId: null, articleId: null, error: null, deadLetteredAt: null, replayCount: 0,
+  createdAt: seedTime, updatedAt: recentTime, pageUnit: "document",
+  actualMethods: ["direct"], directPages: 1, multimodalPages: 0,
+}
+const preparingImport: DocumentImportJobResponse = {
+  ...officeImport, id: "demo-import-parsing", title: "服务端解析中（总量待确认）",
+  status: "processing", stage: "parsing", totalPages: 0, processedPages: 0, donePages: 0,
+  actualMethods: [], directPages: 0,
+}
+importJobs.push({ ...officeImport, stage: "finalizing" }, {
+  ...officeImport, id: "demo-import-markdown", sourceType: "md", fileName: "fastfetch-notes.md",
+  title: "Fastfetch 笔记（Markdown）", status: "completed", stage: "completed", articleId: "demo-a-fastfetch",
+}, preparingImport, {
+  ...preparingImport, id: "demo-import-parse-failed", title: "服务端解析失败（可直接重试）",
+  status: "failed", error: "演示解析失败：任务尚未生成页计划，可重试服务端解析，无需重新上传原件。",
+})
+const importRequests = new Map<string, { fingerprint: string; job: DocumentImportJobResponse }>()
+
+function importPages(jobId: string): DocumentImportPageResponse[] {
   const job = importJobs.find((item) => item.id === jobId)
   if (!job) return []
-  return Array.from({ length: job.totalPages }, (_, index) => {
+  return Array.from({ length: job.totalPages }, (_, index): DocumentImportPageResponse => {
     const failed = job.id === "demo-import-2" && index === job.totalPages - 1
+    const extractedBy = failed ? "ocr" : index < job.directPages ? "direct"
+      : "multimodal"
     return {
       pageNo: index + 1,
-      imageKey: failed ? "demo/mole-page-4.webp" : null,
-      extractedBy: failed ? "vision" : "pdf",
+      imageKey: extractedBy === "direct" ? null : `demo/import-page-${index + 1}.jpg`,
+      extractedBy,
       status: failed ? "dead_letter" : "done",
-      markdown: failed ? null : `## 第 ${index + 1} 页\n\n已提取的演示 Markdown 内容。`,
+      markdown: failed ? null : `## 第 ${index + 1} ${job.pageUnit === "document" ? "文档单元" : "页"}\n\n已提取的演示 Markdown 内容。`,
       error: failed ? "图像文字置信度不足" : null,
-      attemptCount: failed ? 3 : 1,
+      attemptCount: failed ? 3 : extractedBy === "direct" ? 0 : 1,
       maxAttempts: 3,
       nextAttemptAt: recentTime,
       lastError: failed ? "图像文字置信度不足" : null,
@@ -404,25 +438,73 @@ const handlers: Record<string, DemoHandler> = {
     documents = documents.filter((item) => item.id !== id)
     return ok({ id, storageCleanup: { deletedObjectKeys: objectKey ? [objectKey] : [], failedObjectKeys: [] } })
   },
+  "POST /upload/presign-put": (body) => ok(createDemoUpload(str(body.filename))),
   "POST /upload/presign-get": (body) => {
     const objectKey = str(body.objectKey)
     return ok({ url: objectKey.includes("fastfetch") ? "/demo/fastfetch-modules.xlsx" : "/demo/mole-commands.xlsx" })
   },
 
-  /* 视觉导入 */
+  /* 仅演示模式的内存任务，不上传 / 解析文件，也不请求真实 Go 服务。 */
+  "POST /kb/import/create": (body) => {
+    const key = str(body.idempotencyKey)
+    const sourceType = resolveDocumentImportKind(str(body.fileName))
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key) || !sourceType || !str(body.sourceKey) || "pages" in body) {
+      return { status: 400, data: { code: 400, msg: "需要原件 key、稳定 UUID 和文件名，不接受浏览器页计划" } }
+    }
+    const imagePolicy = body.imagePolicy ?? "keep_and_recognize"
+    if (imagePolicy !== "keep_and_recognize" && imagePolicy !== "text_only" && imagePolicy !== "images_only") {
+      return { status: 400, data: { code: 400, msg: "图片处理策略无效" } }
+    }
+    const params: Record<string, unknown> = { ...body, imagePolicy }
+    const fingerprint = JSON.stringify(Object.keys(params).sort().map((field) => [field, params[field]]))
+    const previous = importRequests.get(key)
+    if (previous) return previous.fingerprint === fingerprint ? ok({ job: previous.job, articleId: previous.job.articleId })
+      : { status: 409, data: { code: 409, msg: "同一请求标识的参数不可更改" } }
+    const job: DocumentImportJobResponse = {
+      ...preparingImport, id: `demo-import-${key}`, knowledgeBaseId: str(body.knowledgeBaseId),
+      parentNodeId: str(body.parentId) || null, fileName: str(body.fileName), title: str(body.title), sourceType,
+      pageUnit: sourceType === "pdf" ? "page" : "document", status: "pending", stage: "preparing",
+      modelConfigId: str(body.modelConfigId) || null,
+      imagePolicy,
+      createdAt: now(), updatedAt: now(),
+    }
+    importJobs.unshift(job)
+    importRequests.set(key, { fingerprint, job })
+    return ok({ job, articleId: null })
+  },
   "POST /kb/import/list": (body) => {
     const knowledgeBaseId = str(body.knowledgeBaseId)
     const rows = importJobs.filter((item) => !knowledgeBaseId || item.knowledgeBaseId === knowledgeBaseId)
-    return ok({ total: rows.length, rows, code: 200, msg: "ok" })
+    const pageNum = Math.max(1, Math.floor(Number(body.pageNum) || 1))
+    const pageSize = Math.min(100, Math.max(1, Math.floor(Number(body.pageSize) || 10)))
+    return ok({ total: rows.length, rows: rows.slice((pageNum - 1) * pageSize, pageNum * pageSize), code: 200, msg: "ok" })
   },
   "POST /kb/import/detail": (body) => {
     const job = importJobs.find((item) => item.id === str(body.jobId))
     return job ? ok({ job, pages: importPages(job.id) }) : notFound("导入任务不存在")
   },
   "POST /kb/import/retry-page": (body) => ok({ page: importPages(str(body.jobId)).find((item) => item.pageNo === Number(body.pageNo)), processedPages: 4, status: "processing" }),
-  "POST /kb/import/retry-failed": () => ok({ retried: 1, status: "processing" }),
+  "POST /kb/import/retry-failed": (body) => {
+    const job = importJobs.find((item) => item.id === str(body.jobId))
+    if (!job) return notFound("导入任务不存在")
+    if (job.totalPages === 0 && (job.status === "failed" || job.status === "dead_letter")) {
+      Object.assign(job, { status: "pending", stage: "preparing", error: null, updatedAt: now() })
+      return ok({ retried: 0, reset: 1, status: job.status })
+    }
+    return ok({ retried: 1, reset: 0, status: "processing" })
+  },
   "POST /kb/import/cancel": (body) => ok({ id: str(body.jobId), status: "canceled" }),
-  "POST /kb/import/finalize": () => ok({ articleId: "demo-a-mole", nodeId: "demo-node-mole" }),
+  "POST /kb/import/finalize": (body) => {
+    const job = importJobs.find((item) => item.id === str(body.jobId))
+    if (!job) return notFound("导入任务不存在")
+    if (job.articleId) return ok({ job, articleId: job.articleId } satisfies DocumentImportFinalizeResponse)
+    if (job.status === "canceled" || job.totalPages <= 0 || job.donePages !== job.totalPages) {
+      return { status: 400, data: { code: 400, msg: "任务尚未满足生成文章条件" } }
+    }
+    // 只模拟提交后台任务，不创建文章 / 节点，也不把排队误报为完成。
+    Object.assign(job, { status: "pending", stage: "finalizing", error: null, updatedAt: now() })
+    return ok({ job, articleId: null } satisfies DocumentImportFinalizeResponse)
+  },
   "POST /kb/import/delete": (body) => ok({ deleted: strings(body.ids) }),
 
   /* AI 模型中心 */

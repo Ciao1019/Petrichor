@@ -49,7 +49,6 @@ func registerKBRoutes(rg *gin.RouterGroup) {
 
 	// PDF 导入
 	kbGroup.POST("/import/create", func(c *gin.Context) { kb.CreateImportJob(c) })
-	kbGroup.POST("/import/attach-ocr", func(c *gin.Context) { kb.AttachImportOcrPages(c) })
 	kbGroup.POST("/import/finalize", func(c *gin.Context) { kb.FinalizeImportJob(c) })
 	kbGroup.POST("/import/cancel", func(c *gin.Context) { kb.CancelImportJob(c) })
 	kbGroup.POST("/import/retry-page", func(c *gin.Context) { kb.RetryImportPage(c) })

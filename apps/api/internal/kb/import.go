@@ -7,8 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
-
 	"petrichor/api/internal/taskqueue"
 )
 
@@ -38,37 +36,6 @@ func parseCreateJobInput(raw map[string]any) (kbID int64, parentID *int64, fileN
 		return
 	}
 	modelConfigID = parseOptionalID(raw, "modelConfigId")
-	return
-}
-
-func parseAttachOcrPagesInput(raw map[string]any) (jobID int64, pages []map[string]any, err error) {
-	jobID, err = reqID(raw["jobId"], "ID 必须是正整数")
-	if err != nil {
-		return
-	}
-	list, _ := raw["pages"].([]any)
-	if len(list) < 1 || len(list) > 2000 {
-		err = badReq("pages 数量必须在 1 到 2000 之间")
-		return
-	}
-	for _, item := range list {
-		pageRaw, ok := item.(map[string]any)
-		if !ok {
-			err = badReq("请求参数错误")
-			return
-		}
-		pageNo, perr := parsePositiveInt(pageRaw["pageNo"])
-		if perr != nil {
-			err = badReq("pageNo 必须是正整数")
-			return
-		}
-		imageKey := trimmedString(pageRaw, "imageKey")
-		if imageKey == "" {
-			err = badReq("imageKey 不能为空")
-			return
-		}
-		pages = append(pages, map[string]any{"pageNo": pageNo, "imageKey": imageKey})
-	}
 	return
 }
 
@@ -151,6 +118,9 @@ type importPageStats struct {
 	failedPages     int32
 	pendingPages    int32
 	deadLetterPages int32
+	directPages     int32
+	multimodalPages int32
+	actualMethods   []string
 }
 
 func emptyPageStats(totalPages int32) importPageStats {
@@ -158,11 +128,23 @@ func emptyPageStats(totalPages int32) importPageStats {
 }
 
 func buildPageStats(pages []JobPageRow) importPageStats {
-	stats := importPageStats{}
+	stats := importPageStats{actualMethods: []string{}}
+	methods := map[string]bool{}
 	for i := range pages {
-		switch pages[i].Status {
+		page := pages[i]
+		switch page.Status {
 		case "done":
 			stats.donePages++
+			switch page.ExtractedBy {
+			case "multimodal":
+				stats.multimodalPages++
+			default:
+				stats.directPages++
+			}
+			if !methods[page.ExtractedBy] {
+				methods[page.ExtractedBy] = true
+				stats.actualMethods = append(stats.actualMethods, page.ExtractedBy)
+			}
 		case "failed":
 			stats.failedPages++
 		case "dead_letter":
@@ -180,28 +162,41 @@ func toJobResponse(job *JobRow, extraKBName, extraFolderName *string, stats *imp
 	if stats != nil {
 		pageStats = *stats
 	}
+	status := job.Status
+	if status == "completed" && job.ArticleID == nil {
+		status = "processing"
+	}
 	return map[string]any{
-		"id":                strconv.FormatInt(job.ID, 10),
-		"knowledgeBaseId":   strconv.FormatInt(job.KnowledgeBaseID, 10),
-		"knowledgeBaseName": extraKBName,
-		"parentNodeId":      nullableIDString(job.ParentNodeID),
-		"parentFolderName":  extraFolderName,
-		"sourceType":        job.SourceType,
-		"fileName":          job.FileName,
-		"title":             job.Title,
-		"totalPages":        job.TotalPages,
-		"processedPages":    job.ProcessedPages,
-		"donePages":         pageStats.donePages,
-		"failedPages":       pageStats.failedPages,
-		"pendingPages":      pageStats.pendingPages,
-		"status":            job.Status,
-		"modelConfigId":     nullableIDString(job.ModelConfigID),
-		"articleId":         nullableIDString(job.ArticleID),
-		"error":             job.Error,
-		"deadLetteredAt":    isoPtr(job.DeadLetteredAt),
-		"replayCount":       job.ReplayCount,
-		"createdAt":         iso(job.CreatedAt),
-		"updatedAt":         iso(job.UpdatedAt),
+		"id":                   strconv.FormatInt(job.ID, 10),
+		"knowledgeBaseId":      strconv.FormatInt(job.KnowledgeBaseID, 10),
+		"knowledgeBaseName":    extraKBName,
+		"parentNodeId":         nullableIDString(job.ParentNodeID),
+		"parentFolderName":     extraFolderName,
+		"sourceType":           job.SourceType,
+		"imagePolicy":          taskqueue.EffectiveDocumentImagePolicy(job.ImagePolicy),
+		"pageUnit":             job.PageUnit,
+		"actualMethods":        append([]string{}, pageStats.actualMethods...),
+		"directPages":          pageStats.directPages,
+		"multimodalPages":      pageStats.multimodalPages,
+		"fileName":             job.FileName,
+		"title":                job.Title,
+		"totalPages":           job.TotalPages,
+		"processedPages":       job.ProcessedPages,
+		"donePages":            pageStats.donePages,
+		"failedPages":          pageStats.failedPages,
+		"pendingPages":         pageStats.pendingPages,
+		"status":               status,
+		"stage":                job.Stage,
+		"prepareAttempt":       job.PrepareAttempt,
+		"prepareMaxAttempts":   job.PrepareMaxAttempts,
+		"prepareNextAttemptAt": iso(job.PrepareNextAttemptAt),
+		"modelConfigId":        nullableIDString(job.ModelConfigID),
+		"articleId":            nullableIDString(job.ArticleID),
+		"error":                job.Error,
+		"deadLetteredAt":       isoPtr(job.DeadLetteredAt),
+		"replayCount":          job.ReplayCount,
+		"createdAt":            iso(job.CreatedAt),
+		"updatedAt":            iso(job.UpdatedAt),
 	}
 }
 
@@ -209,6 +204,7 @@ func toPageResponse(page *JobPageRow) map[string]any {
 	return map[string]any{
 		"pageNo":         page.PageNo,
 		"imageKey":       page.ImageKey,
+		"assets":         page.Assets,
 		"extractedBy":    page.ExtractedBy,
 		"status":         page.Status,
 		"markdown":       page.Markdown,
@@ -328,7 +324,8 @@ func deriveJobStatus(pages []JobPageRow) string {
 	if hasFailed {
 		return "failed"
 	}
-	return "completed"
+	// 页完成仅代表可成文，文章事务成功后才允许 completed。
+	return "processing"
 }
 
 func countProcessedPages(pages []JobPageRow) int32 {
@@ -353,11 +350,11 @@ func refreshJobProgress(ctx context.Context, jobID int64) (int32, string, error)
 		return 0, "", err
 	}
 	_, err = store.UpdateJob(ctx, jobID, func(job *JobRow) error {
-		if job.Status == "canceled" || job.ArticleID != nil {
+		if documentImportWorkerStopped(job) {
 			return nil
 		}
 		job.ProcessedPages = processed
-		job.Status = status
+		// 终态由 Worker 以当前完整页快照收敛，单页进度不能抢先结束混合任务。
 		return nil
 	})
 	return processed, status, err
@@ -372,51 +369,4 @@ func mergePageMarkdown(pages []JobPageRow) string {
 		}
 	}
 	return strings.Join(parts, "\n\n")
-}
-
-func switchJobToDefaultVisionModel(ctx context.Context, q execQuerier, userID int64, job *JobRow) (*JobRow, error) {
-	resolved, err := resolveVisionModelRefID(ctx, q, userID, job.ModelConfigID)
-	if err != nil {
-		return nil, err
-	}
-	if resolved != nil && job.ModelConfigID != nil && *resolved == *job.ModelConfigID {
-		return job, nil
-	}
-	store, err := taskqueue.DocumentImports()
-	if err != nil {
-		return nil, err
-	}
-	return store.UpdateJob(ctx, job.ID, func(current *JobRow) error {
-		current.ModelConfigID = resolved
-		return nil
-	})
-}
-
-func resolveVisionModelRefID(ctx context.Context, q execQuerier, userID int64, pinned *int64) (*int64, error) {
-	if pinned != nil {
-		var kind string
-		var enabled bool
-		err := q.QueryRow(ctx,
-			`SELECT m.kind, m.enabled FROM petrichor_ai_model m
-			 JOIN petrichor_ai_provider p ON p.id = m.provider_id
-			 WHERE m.id = $1 AND m.user_id = $2 AND p.enabled = true LIMIT 1`, *pinned, userID).
-			Scan(&kind, &enabled)
-		if err == nil && enabled && kind == "VISION" {
-			return pinned, nil
-		}
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return nil, err
-		}
-	}
-	var modelRefID int64
-	err := q.QueryRow(ctx,
-		`SELECT model_ref_id FROM petrichor_ai_binding WHERE user_id = $1 AND purpose = 'VISION' LIMIT 1`,
-		userID).Scan(&modelRefID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, badReq("未配置多模态模型，请前往「模型配置 → 用途绑定」为多模态选择一个模型")
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &modelRefID, nil
 }

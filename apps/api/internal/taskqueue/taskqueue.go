@@ -80,7 +80,7 @@ func Initialize(ctx context.Context) error {
 	options.DialTimeout = cfg.DialTimeout
 	options.ReadTimeout = cfg.ReadTimeout
 	options.WriteTimeout = cfg.WriteTimeout
-	candidate := redis.NewClient(options)
+	candidate := newQueueRedisClient(options)
 	if err := candidate.Ping(ctx).Err(); err != nil {
 		_ = candidate.Close()
 		return fmt.Errorf("连接 Asynq Redis 失败: %w", err)
@@ -126,6 +126,14 @@ func NewServer(cfg asynq.Config) (*asynq.Server, error) {
 	rdb, _, _, err := dependencies()
 	if err != nil {
 		return nil, err
+	}
+	baseContext := cfg.BaseContext
+	cfg.BaseContext = func() context.Context {
+		ctx := context.Background()
+		if baseContext != nil {
+			ctx = baseContext()
+		}
+		return WithDocumentImportExecution(ctx)
 	}
 	return asynq.NewServerFromRedisClient(rdb, cfg), nil
 }
@@ -220,6 +228,24 @@ func EnqueueDocumentImport(ctx context.Context, jobID int64) error {
 	if err != nil {
 		return err
 	}
+	store, err := DocumentImports()
+	if err != nil {
+		return err
+	}
+	job, err := store.Get(ctx, jobID)
+	if errors.Is(err, ErrDocumentImportNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	pages, err := store.Pages(ctx, jobID)
+	if err != nil {
+		return err
+	}
+	if !DocumentImportRunnable(job, pages) {
+		return nil
+	}
 	taskID := documentImportTaskID(jobID)
 	if info, infoErr := inspector.GetTaskInfo(QueueDocumentImport, taskID); infoErr == nil {
 		if taskIsActive(info) {
@@ -241,7 +267,17 @@ func EnqueueDocumentImport(ctx context.Context, jobID int64) error {
 		asynq.Timeout(DocumentImportTimeout),
 		asynq.Retention(DocumentImportRetention),
 	)
-	_, err = client.EnqueueContext(ctx, task, asynq.TaskID(taskID))
+	options := []asynq.Option{asynq.TaskID(taskID)}
+	if DocumentImportNeedsPreparation(job) {
+		next := job.PrepareNextAttemptAt
+		if job.PrepareLeaseUntil.After(next) {
+			next = job.PrepareLeaseUntil
+		}
+		if next.After(time.Now()) {
+			options = append(options, asynq.ProcessAt(next))
+		}
+	}
+	_, err = client.EnqueueContext(ctx, task, options...)
 	if errors.Is(err, asynq.ErrTaskIDConflict) {
 		return nil
 	}

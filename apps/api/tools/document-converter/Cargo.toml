@@ -1,0 +1,24 @@
+[package]
+name = "petrichor-doc-convert"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+publish = false
+
+[dependencies]
+anydoc = "=0.2.4"
+calamine = "=0.36.1"
+serde_json = "=1.0.145"
+lopdf = { version = "=0.42.0", default-features = false }
+# 与 anydoc v0.2.4 官方锁文件保持同一 PDF 引擎，避免传递依赖漂移。
+pdf-inspector = "=1.14.2"
+zip = { version = "=8.6.0", default-features = false, features = ["deflate"] }
+libc = "=0.2.177"
+cfb = "=0.14.0"
+# 复用锁文件已有版本，仅用于 anydoc 电子表格丢内容风险的结构预检。
+quick-xml = "=0.41.0"
+
+[profile.release]
+lto = "thin"
+strip = "symbols"

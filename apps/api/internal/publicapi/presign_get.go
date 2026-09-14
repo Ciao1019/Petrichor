@@ -4,7 +4,6 @@ package publicapi
 
 import (
 	"errors"
-	"net/url"
 	"regexp"
 	"strings"
 
@@ -23,33 +22,10 @@ func getS3ConfigOrThrow() (*config.S3Config, error) {
 	return cfg, nil
 }
 
-// localObjectURL 构造本地对象访问地址（与 uploadsvc 同款）。
-func localObjectURL(c *gin.Context, objectKey string) string {
-	scheme := "http"
-	if c.Request.TLS != nil {
-		scheme = "https"
-	}
-	if proto := c.GetHeader("X-Forwarded-Proto"); proto != "" {
-		scheme = proto
-	}
-	parts := strings.Split(objectKey, "/")
-	for i, part := range parts {
-		parts[i] = encodeURIComponentPath(part)
-	}
-	return scheme + "://" + c.Request.Host + "/api/upload/local/" + strings.Join(parts, "/")
-}
-
-// encodeURIComponentPath 复刻 encodeURIComponent 的路径段编码。
-func encodeURIComponentPath(v string) string {
-	escaped := strings.ReplaceAll(url.QueryEscape(v), "+", "%20")
-	replacer := strings.NewReplacer("%21", "!", "%27", "'", "%28", "(", "%29", ")", "%2A", "*")
-	return replacer.Replace(escaped)
-}
-
 // resolveObjectURL 公开读取地址：本地存储 → 站内 URL；否则 S3 GET 预签名。
 func resolveObjectURL(c *gin.Context, objectKey string) (string, error) {
 	if storage.LocalEnabled() {
-		return localObjectURL(c, objectKey), nil
+		return storage.LocalObjectURL(objectKey), nil
 	}
 	cfg, err := getS3ConfigOrThrow()
 	if err != nil {

@@ -1,4 +1,6 @@
 .git
 config.toml
+**/.env*
+**/target
 *.log
 tmp

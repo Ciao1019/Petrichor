@@ -73,7 +73,7 @@ func TestDeriveImportJobStatusIncludesProcessingAndDeadLetter(t *testing.T) {
 		{name: "processing wins", pages: []JobPageRow{{Status: "processing"}, {Status: "failed"}}, want: "processing"},
 		{name: "dead letter", pages: []JobPageRow{{Status: "done"}, {Status: "dead_letter"}}, want: "dead_letter"},
 		{name: "failed", pages: []JobPageRow{{Status: "done"}, {Status: "failed"}}, want: "failed"},
-		{name: "completed", pages: []JobPageRow{{Status: "done"}}, want: "completed"},
+		{name: "awaiting finalize", pages: []JobPageRow{{Status: "done"}}, want: "processing"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

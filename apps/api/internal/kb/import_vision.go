@@ -5,10 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -16,9 +13,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 
-	"petrichor/api/internal/config"
 	httpx "petrichor/api/internal/httpx"
-	"petrichor/api/internal/storage"
 	"petrichor/api/internal/taskqueue"
 )
 
@@ -37,9 +32,8 @@ const documentVisionSystemPrompt = `你是一个把文档页面图片转写为 M
 1. 严格保留原文语言、文字内容与阅读顺序，不要翻译、不要总结、不要补充原文没有的内容。
 2. 还原结构：标题用 #/##/###，列表用 -/1.，引用用 >，代码用围栏代码块，表格用 Markdown 表格。
 3. 数学公式用 LaTeX：行内用 $...$，独立公式用 $$...$$。
-4. 页面里的照片、插图、图表、示意图等无法用文字表达的图像，用一行斜体说明代替，格式为 ` + "`*（图：简要描述）*`" + `。
-   不要输出任何 Markdown 图片语法（不要写 ` + "`![...](...)`" + `），因为没有可引用的图片地址。
-   图表中如果有可读的数据表，优先按 Markdown 表格转写出来，再补一行图说明。
+4. 原页和图形已由系统独立保存并插入文章。你只负责文字转写，不能用说明替代图片，也不要编造图片地址。
+   图表中如果有可读的数据表，可按 Markdown 表格转写。
 5. 页眉、页脚、页码等与正文无关的边角信息可以忽略。
 6. 不要输出任何解释性文字、不要用 ` + "```markdown" + ` 包裹整体，直接输出 Markdown 正文本身。
 7. 如果该页为空白页，输出空字符串。`
@@ -49,15 +43,11 @@ const documentVisionUserPrompt = "请把这一页转写为 Markdown。"
 const VisionImportWorkerConcurrency = 2
 
 var (
-	s3DownloadClient   = &http.Client{Timeout: 120 * time.Second}
 	mdFenceWrapRe      = regexp.MustCompile("(?is)^```(?:markdown|md)?\\s*\\n([\\s\\S]*?)\\n```$")
 	errPageNotRunnable = errors.New("视觉导入页当前不可运行")
 )
 
 func RunVisionPageConversion(ctx context.Context, userID, jobID, pageNo int64) (string, error) {
-	if VisionChatInvoker == nil {
-		return "", &httpx.HttpError{Status: 503, Message: "AI 服务未就绪"}
-	}
 	job, err := loadJobOwned(ctx, userID, jobID)
 	if err != nil {
 		return "", err
@@ -66,80 +56,21 @@ func RunVisionPageConversion(ctx context.Context, userID, jobID, pageNo int64) (
 	if err != nil {
 		return "", err
 	}
-	if page.ExtractedBy != "vision" {
-		return "", badReq("该页由 PDF 本地抽取，无需模型识别")
+	if page.Status == "done" || page.ExtractedBy == "direct" {
+		return derefStr(page.Markdown), nil
+	}
+	if job.Status == "canceled" {
+		return "", badReq("任务已取消")
+	}
+	if len(page.Assets) > 0 {
+		return derefStr(page.Markdown), nil
 	}
 	imageKey := derefStr(page.ImageKey)
 	if imageKey == "" {
 		return "", badReq("该页尚未上传整页图片")
 	}
-	return convertVisionPage(ctx, job, pageNo, imageKey)
-}
-
-func fetchObjectBytes(ctx context.Context, objectKey string) ([]byte, string, error) {
-	key := storage.StripS4KeyPrefix(objectKey)
-	var data []byte
-	var err error
-	if storage.LocalEnabled() {
-		data, err = storage.ReadLocalObject(key)
-	} else {
-		data, err = downloadPresignedObject(ctx, key)
-	}
-	if err != nil {
-		return nil, "", err
-	}
-	return data, detectImageMIME(data, key), nil
-}
-
-func downloadPresignedObject(ctx context.Context, key string) ([]byte, error) {
-	s3cfg := config.Get().S3
-	if s3cfg == nil {
-		return nil, fmt.Errorf("对象存储未配置")
-	}
-	url, err := storage.CreateS3PresignedUrl(s3cfg, "GET", key, s3cfg.DownloadExpireSecond, time.Now())
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	response, err := s3DownloadClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-	if response.StatusCode >= 400 {
-		return nil, fmt.Errorf("对象下载失败(HTTP %d)", response.StatusCode)
-	}
-	data, err := io.ReadAll(response.Body)
-	if err != nil {
-		return nil, err
-	}
-	if len(data) == 0 {
-		return nil, fmt.Errorf("对象内容为空")
-	}
-	return data, nil
-}
-
-func detectImageMIME(data []byte, objectKey string) string {
-	sniffed := http.DetectContentType(data)
-	switch sniffed {
-	case "image/png", "image/jpeg", "image/gif", "image/webp":
-		return sniffed
-	}
-	switch strings.ToLower(filepath.Ext(objectKey)) {
-	case ".png":
-		return "image/png"
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".gif":
-		return "image/gif"
-	case ".webp":
-		return "image/webp"
-	default:
-		return "image/png"
-	}
+	result, err := convertImportPage(ctx, job, imageKey)
+	return result.Markdown, err
 }
 
 func normalizeVisionMarkdown(raw string) string {
@@ -166,13 +97,17 @@ func HandleDocumentImportTask(ctx context.Context, task *asynq.Task) error {
 	if err != nil {
 		return errors.New("读取视觉导入 Redis 状态失败")
 	}
-	// asynqmon 对归档任务执行 Run/Retry 时自动恢复 Redis 业务死信。
+	// 技术重试不能隐式重放永久失败页；仅 API 重试/管理员重放可恢复业务终态。
 	if job.Status == "failed" || job.Status == "dead_letter" {
-		if err := resetDocumentImportForReplay(ctx, job.ID); err != nil {
-			return errors.New("恢复视觉导入死信失败")
-		}
+		return &skipTaskRetryError{message: "任务已失败，请通过重试页面或管理员重放恢复"}
+	}
+	if documentImportJobTerminal(job) {
+		return nil
 	}
 	if err := recoverInterruptedImportPages(ctx, payload.JobID); err != nil {
+		if errors.Is(err, taskqueue.ErrDocumentImportEnded) || errors.Is(err, taskqueue.ErrDocumentImportNotFound) {
+			return nil
+		}
 		return errors.New("恢复中断的视觉导入页面失败")
 	}
 	startedAt := time.Now()
@@ -253,7 +188,15 @@ func EnqueueRunnableDocumentImports(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if documentImportJobTerminal(job) {
+		if documentImportWorkerStopped(job) {
+			_ = store.SetRunnable(ctx, id, false)
+			continue
+		}
+		pages, err := store.Pages(ctx, id)
+		if err != nil {
+			return err
+		}
+		if !taskqueue.DocumentImportRunnable(job, pages) {
 			_ = store.SetRunnable(ctx, id, false)
 			continue
 		}
@@ -306,11 +249,17 @@ func processImportJobBackground(ctx context.Context, jobID int64) error {
 	if err != nil {
 		return err
 	}
-	if documentImportJobTerminal(job) {
-		_ = store.SetRunnable(ctx, job.ID, false)
+	if documentImportWorkerStopped(job) {
 		return nil
 	}
+	prepared, err := prepareImportJob(ctx, store, job)
+	if err != nil || !prepared {
+		return err
+	}
 	job, err = store.UpdateJob(ctx, job.ID, func(current *JobRow) error {
+		if documentImportWorkerStopped(current) {
+			return nil
+		}
 		current.Status = "processing"
 		current.Error = nil
 		return nil
@@ -318,9 +267,15 @@ func processImportJobBackground(ctx context.Context, jobID int64) error {
 	if err != nil {
 		return err
 	}
+	if documentImportWorkerStopped(job) {
+		return nil
+	}
 	pages, err := loadJobPages(ctx, job.ID)
 	if err != nil {
 		return err
+	}
+	if !taskqueue.DocumentImportRunnable(job, pages) {
+		return store.SetRunnable(ctx, job.ID, false)
 	}
 	if err := runImportWorkerPool(ctx, job, pages); err != nil {
 		return err
@@ -328,52 +283,22 @@ func processImportJobBackground(ctx context.Context, jobID int64) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	job, err = store.Get(ctx, jobID)
-	if errors.Is(err, taskqueue.ErrDocumentImportNotFound) {
-		return nil
-	}
-	if err != nil || documentImportJobTerminal(job) {
+	ready, err := settleImportJobProgress(ctx, store, jobID)
+	if err != nil || !ready {
 		return err
 	}
-	pages, err = store.Pages(ctx, job.ID)
-	if err != nil {
-		return err
-	}
-	stats := buildPageStats(pages)
-	switch {
-	case stats.deadLetterPages > 0:
-		message := fmt.Sprintf("有 %d 页连续失败，任务已进入死信队列，可由管理员或 asynqmon 重放。", stats.deadLetterPages)
-		now := time.Now().UTC()
-		_, err = store.UpdateJob(ctx, job.ID, func(current *JobRow) error {
-			current.Status = "dead_letter"
-			current.Error = &message
-			current.DeadLetteredAt = &now
-			current.ProcessedPages = countProcessedPages(pages)
+	err = finalizeImportJobToArticle(ctx, jobID)
+	if err != nil && !errors.Is(err, taskqueue.ErrDocumentImportLockBusy) {
+		_, _ = store.UpdateJob(ctx, jobID, func(current *JobRow) error {
+			if documentImportWorkerStopped(current) {
+				return nil
+			}
+			message := documentImportTaskErrorMessage(err)
+			current.Stage, current.Error = "finalizing", &message
 			return nil
 		})
-		return err
-	case stats.failedPages > 0:
-		message := fmt.Sprintf("有 %d 页转 Markdown 失败，请重试失败页。", stats.failedPages)
-		_, err = store.UpdateJob(ctx, job.ID, func(current *JobRow) error {
-			current.Status = "failed"
-			current.Error = &message
-			current.ProcessedPages = countProcessedPages(pages)
-			return nil
-		})
-		return err
-	case stats.pendingPages > 0:
-		_, err = store.UpdateJob(ctx, job.ID, func(current *JobRow) error {
-			current.Status = "processing"
-			current.ProcessedPages = countProcessedPages(pages)
-			return nil
-		})
-		if err == nil {
-			err = store.SetRunnable(ctx, job.ID, hasRunnableImportPage(pages))
-		}
-		return err
-	default:
-		return finalizeImportJobToArticle(ctx, job.ID)
 	}
+	return err
 }
 
 func runImportWorkerPool(ctx context.Context, job *JobRow, pages []JobPageRow) error {
@@ -382,7 +307,10 @@ func runImportWorkerPool(ctx context.Context, job *JobRow, pages []JobPageRow) e
 			return ctx.Err()
 		}
 		page := pages[i]
-		if page.Status != "pending" || page.ExtractedBy != "vision" || page.ImageKey == nil || derefStr(page.ImageKey) == "" {
+		if page.Status == "done" {
+			cleanupTextOnlyImportImages(ctx, job, &page)
+		}
+		if page.Status != "pending" || page.ExtractedBy == "direct" || page.ImageKey == nil || derefStr(page.ImageKey) == "" || page.NextAttemptAt.After(time.Now()) {
 			continue
 		}
 		latest, err := loadJobByID(ctx, job.ID)
@@ -392,7 +320,7 @@ func runImportWorkerPool(ctx context.Context, job *JobRow, pages []JobPageRow) e
 		if err != nil {
 			return err
 		}
-		if documentImportJobTerminal(latest) {
+		if documentImportWorkerStopped(latest) {
 			return nil
 		}
 		if err := transcribePageBackground(ctx, latest, int64(page.PageNo), *page.ImageKey); err != nil {
@@ -408,28 +336,46 @@ func transcribePageBackground(ctx context.Context, job *JobRow, pageNo int64, im
 		return err
 	}
 	page, err := store.UpdatePage(ctx, job.ID, pageNo, func(current *JobPageRow) error {
-		if current.Status != "pending" || current.AttemptCount >= current.MaxAttempts {
+		if current.Status != "pending" || current.ExtractedBy == "direct" || current.AttemptCount >= current.MaxAttempts ||
+			current.NextAttemptAt.After(time.Now()) || derefStr(current.ImageKey) != imageKey {
 			return errPageNotRunnable
 		}
+		current.NextAttemptAt = time.Now().UTC() // 本轮领取标识，拒绝重试之后的旧结果覆盖。
 		current.Status = "processing"
 		current.AttemptCount++
 		current.Error = nil
 		current.DeadLetteredAt = nil
 		return nil
 	})
-	if errors.Is(err, errPageNotRunnable) {
+	if errors.Is(err, errPageNotRunnable) || errors.Is(err, taskqueue.ErrDocumentImportEnded) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	markdown, conversionErr := convertVisionPage(ctx, job, pageNo, imageKey)
+	if page.Status != "processing" {
+		return nil
+	}
+	var result importOCRResult
+	var conversionErr error
+	if len(page.Assets) > 0 {
+		result, conversionErr = convertImportAssets(ctx, store, job, page)
+	} else {
+		result, conversionErr = convertImportPage(ctx, job, imageKey)
+	}
 	if conversionErr != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		message := truncateRunes(conversionErr.Error(), 500)
 		_, err = store.UpdatePage(ctx, job.ID, pageNo, func(current *JobPageRow) error {
+			if current.Status != "processing" || current.AttemptCount != page.AttemptCount || !current.NextAttemptAt.Equal(page.NextAttemptAt) {
+				return nil
+			}
+			applyImportOCRResult(current, result)
+			if len(current.Assets) == 0 {
+				current.Markdown = nil
+			}
 			status := workerFailureStatus(conversionErr, page.AttemptCount, page.MaxAttempts)
 			current.Status = status
 			current.Error = &message
@@ -446,14 +392,22 @@ func transcribePageBackground(ctx context.Context, job *JobRow, pageNo int64, im
 			return nil
 		})
 	} else {
-		_, err = store.UpdatePage(ctx, job.ID, pageNo, func(current *JobPageRow) error {
+		var saved *JobPageRow
+		saved, err = store.UpdatePage(ctx, job.ID, pageNo, func(current *JobPageRow) error {
+			if current.Status != "processing" || current.AttemptCount != page.AttemptCount || !current.NextAttemptAt.Equal(page.NextAttemptAt) {
+				return nil
+			}
+			applyImportOCRResult(current, result)
 			current.Status = "done"
-			current.Markdown = &markdown
+			current.Markdown = &result.Markdown
 			current.Error = nil
 			current.LastError = nil
 			current.DeadLetteredAt = nil
 			return nil
 		})
+		if err == nil {
+			cleanupTextOnlyImportImages(ctx, job, saved)
+		}
 	}
 	if err != nil {
 		return err
@@ -462,34 +416,20 @@ func transcribePageBackground(ctx context.Context, job *JobRow, pageNo int64, im
 	return err
 }
 
-func convertVisionPage(ctx context.Context, job *JobRow, _ int64, imageKey string) (string, error) {
-	if VisionChatInvoker == nil {
-		return "", &httpx.HttpError{Status: 503, Message: "AI 服务未就绪"}
-	}
-	data, mime, err := fetchObjectBytes(ctx, imageKey)
-	if err != nil {
-		return "", fmt.Errorf("读取页面图片失败：%w", err)
-	}
-	answer, err := VisionChatInvoker(ctx, job.UserID, job.ModelConfigID,
-		documentVisionSystemPrompt, documentVisionUserPrompt,
-		VisionImageInput{Data: data, MIMEType: mime})
-	if err != nil {
-		return "", err
-	}
-	return normalizeVisionMarkdown(answer), nil
-}
-
 // finalizeImportJobToArticle 用 Redis 锁和预留文章 ID 跨系统幂等成文，不依赖 PostgreSQL 任务表。
 func finalizeImportJobToArticle(ctx context.Context, jobID int64) error {
 	store, err := taskqueue.DocumentImports()
 	if err != nil {
 		return err
 	}
-	release, err := store.AcquireJobLock(ctx, jobID, 10*time.Minute)
+	release, err := store.AcquireJobLock(ctx, jobID, taskqueue.DocumentImportFinalizeLockTTL)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = release(context.WithoutCancel(ctx)) }()
+	// 数据库事务的截止时间早于锁租约，避免长事务越过互斥窗口。
+	ctx, cancel := context.WithTimeout(ctx, taskqueue.DocumentImportFinalizeLockTTL-time.Minute)
+	defer cancel()
 
 	job, err := store.Get(ctx, jobID)
 	if errors.Is(err, taskqueue.ErrDocumentImportNotFound) {
@@ -508,11 +448,8 @@ func finalizeImportJobToArticle(ctx context.Context, jobID int64) error {
 	if err != nil {
 		return err
 	}
-	if len(pages) == 0 {
-		return badReq("任务没有可合并的页面")
-	}
-	if notDone := countNotDonePages(pages); notDone > 0 {
-		return badReq(fmt.Sprintf("仍有 %d 页未成功转换，请先重试失败页", notDone))
+	if err := validateImportFinalization(job, pages); err != nil {
+		return err
 	}
 	q := pool()
 	if _, err := assertKnowledgeBaseOwner(ctx, q, job.UserID, job.KnowledgeBaseID); err != nil {
@@ -581,9 +518,13 @@ func finalizeImportJobToArticle(ctx context.Context, jobID int64) error {
 
 func completeDocumentImport(ctx context.Context, store *taskqueue.DocumentImportStore, jobID, articleID int64) error {
 	_, err := store.UpdateJob(ctx, jobID, func(job *JobRow) error {
+		if job.Status == "canceled" {
+			return badReq("任务已取消，不能覆盖成文状态；请联系管理员核对预留文章")
+		}
 		job.ArticleID = &articleID
 		job.PendingArticleID = nil
 		job.Status = "completed"
+		job.Stage = "completed"
 		job.Error = nil
 		job.DeadLetteredAt = nil
 		job.ProcessedPages = job.TotalPages
@@ -595,40 +536,11 @@ func completeDocumentImport(ctx context.Context, store *taskqueue.DocumentImport
 	return err
 }
 
-func resetDocumentImportForReplay(ctx context.Context, jobID int64) error {
-	store, err := taskqueue.DocumentImports()
-	if err != nil {
-		return err
-	}
-	_, err = store.UpdatePages(ctx, jobID, func(pages []*JobPageRow) error {
-		for _, page := range pages {
-			if page.Status == "failed" || page.Status == "dead_letter" || page.Status == "processing" {
-				resetDocumentImportPage(page)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	_, err = store.UpdateJob(ctx, jobID, func(job *JobRow) error {
-		job.Status = "processing"
-		job.Error = nil
-		job.DeadLetteredAt = nil
-		job.ReplayCount++
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	return store.SetRunnable(ctx, jobID, true)
-}
-
 func hasRunnableImportPage(pages []JobPageRow) bool {
 	for i := range pages {
 		page := pages[i]
 		if page.Status == "pending" && page.AttemptCount < page.MaxAttempts &&
-			page.ExtractedBy == "vision" && page.ImageKey != nil && strings.TrimSpace(*page.ImageKey) != "" {
+			page.ExtractedBy != "direct" && page.ImageKey != nil && strings.TrimSpace(*page.ImageKey) != "" {
 			return true
 		}
 	}
@@ -636,7 +548,7 @@ func hasRunnableImportPage(pages []JobPageRow) bool {
 }
 
 func documentImportJobTerminal(job *JobRow) bool {
-	return job.Status == "completed" || job.Status == "canceled" || job.ArticleID != nil
+	return job.Status == "canceled" || job.Status == "completed" || job.ArticleID != nil
 }
 
 func countNotDonePages(pages []JobPageRow) int {
@@ -655,10 +567,12 @@ func failImportJobWithContext(ctx context.Context, jobID int64, message string) 
 		return
 	}
 	_, _ = store.UpdateJob(ctx, jobID, func(job *JobRow) error {
+		if documentImportWorkerStopped(job) {
+			return nil
+		}
 		value := truncateRunes(message, 500)
 		job.Status = "failed"
 		job.Error = &value
 		return nil
 	})
-	_ = store.SetRunnable(ctx, jobID, false)
 }

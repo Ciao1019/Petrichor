@@ -56,20 +56,36 @@ export function isPdfFileName(fileName: string): boolean {
   return /\.pdf$/i.test(fileName.trim())
 }
 
-/** 知识库文档导入只支持 PDF：文字层由 pdf-inspector 本地抽取，扫描页才走多模态兜底。 */
-export type DocumentImportKind = "pdf"
+/** 扩展名同时作为来源类型；选择器、校验与标题清理共用这份白名单。 */
+export const DOCUMENT_IMPORT_EXTENSIONS = [
+  "doc", "docx", "docm", "ppt", "pps", "pot", "pptx", "pptm", "ppsx", "ppsm",
+  "xls", "xlsx", "xlsm", "xlsb", "odt", "ods", "odp", "rtf", "epub", "csv", "pdf",
+  "md", "markdown",
+] as const
+
+export type DocumentImportKind = (typeof DOCUMENT_IMPORT_EXTENSIONS)[number]
+export const DOCUMENT_IMPORT_ACCEPT = DOCUMENT_IMPORT_EXTENSIONS.map((ext) => `.${ext}`).join(",")
+export const DOCUMENT_IMPORT_FORMAT_DESCRIPTION = DOCUMENT_IMPORT_EXTENSIONS.map((ext) => `.${ext}`).join("、")
+export const DOCUMENT_IMPORT_MAX_PAGES = 500
+export const DOCUMENT_IMPORT_DESCRIPTION =
+  `支持 ${DOCUMENT_IMPORT_FORMAT_DESCRIPTION}；单个文件不超过 100 MB，PDF 不超过 ${DOCUMENT_IMPORT_MAX_PAGES} 页。上传提交后由 Go 服务端完成解析、栅格化、OCR 和生成文章，可关闭页面；页数限制由服务端校验。`
 
 export function resolveDocumentImportKind(fileName: string): DocumentImportKind | null {
-  return isPdfFileName(fileName) ? "pdf" : null
+  const name = fileName.trim().split(/[\\/]/).pop() ?? ""
+  const extension = /\.([^.]+)$/.exec(name)?.[1]?.toLowerCase()
+  return DOCUMENT_IMPORT_EXTENSIONS.find((kind) => kind === extension) ?? null
 }
 
-/** 校验「文档导入」入口的文件（仅 PDF） */
+/** 校验「文档导入」入口；编辑器单独导入 Markdown / DOCX 的限制保持不变。 */
 export function validateDocumentImportFile(file: { name: string; size: number }): string | null {
   if (!resolveDocumentImportKind(file.name)) {
-    return "请选择 .pdf 格式的文档"
+    return `请选择支持的文档格式：${DOCUMENT_IMPORT_FORMAT_DESCRIPTION}`
   }
   if (file.size > DOCUMENT_IMPORT_MAX_FILE_BYTES) {
     return "文档过大，单个文件不能超过 100 MB"
+  }
+  if (!Number.isSafeInteger(file.size) || file.size < 0) {
+    return "文档大小无效，无法导入"
   }
   if (file.size === 0) {
     return "文档为空，无法导入"
@@ -78,8 +94,9 @@ export function validateDocumentImportFile(file: { name: string; size: number })
 }
 
 export function removeDocumentImportFileExtension(fileName: string): string {
-  const name = fileName.split(/[\\/]/).pop() || fileName
-  return name.replace(/\.pdf$/i, "").trim()
+  const name = (fileName.split(/[\\/]/).pop() || fileName).trim()
+  const kind = resolveDocumentImportKind(name)
+  return (kind ? name.slice(0, -(kind.length + 1)) : name).trim()
 }
 
 export function validateMarkdownImportFile(file: { name: string; size: number }): string | null {

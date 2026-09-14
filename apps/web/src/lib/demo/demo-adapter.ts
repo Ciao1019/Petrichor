@@ -16,6 +16,29 @@ export interface DemoHandlerResult {
 
 export type DemoHandler = (body: Record<string, unknown>) => DemoHandlerResult
 
+// 只登记一次性凭据，不读取、复制或保存文件内容，也不生成可联网的上传地址。
+const pendingUploads = new Map<string, string>()
+export function createDemoUpload(filename: string) {
+    if (!isDemoMode()) throw new Error("演示上传仅在演示模式可用")
+    const token = crypto.randomUUID()
+    const presignedUrl = `demo-upload:${token}`
+    const objectKey = `demo/uploads/${token}/${filename}`
+    pendingUploads.set(presignedUrl, objectKey)
+    return { presignedUrl, objectKey }
+}
+
+/** 上传传输层的内存适配；演示状态或凭据异常时失败关闭，绝不回退到真实 PUT。 */
+export function completeDemoUpload(presignedUrl: string, objectKey: string, signal?: AbortSignal, onProgress?: (value: number) => void): boolean {
+    if (!isDemoMode() && !presignedUrl.startsWith("demo-upload:")) return false
+    signal?.throwIfAborted()
+    if (!isDemoMode() || pendingUploads.get(presignedUrl) !== objectKey) {
+        throw new Error("演示上传凭据无效，请重新选择文件；演示模式不会上传真实文件")
+    }
+    pendingUploads.delete(presignedUrl)
+    onProgress?.(100)
+    return true
+}
+
 function parseBody(config: InternalAxiosRequestConfig): Record<string, unknown> {
     const raw = config.data
     if (raw == null) return {}

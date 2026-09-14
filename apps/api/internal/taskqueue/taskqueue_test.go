@@ -71,13 +71,21 @@ func TestDocumentImportTaskEnqueueIsStable(t *testing.T) {
 	installTestRuntime(t)
 
 	ctx := context.Background()
-	if err := EnqueueDocumentImport(ctx, 42); err != nil {
+	store, err := DocumentImports()
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := EnqueueDocumentImport(ctx, 42); err != nil {
+	job, err := store.Create(ctx, preparingTestJob())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := EnqueueDocumentImport(ctx, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnqueueDocumentImport(ctx, job.ID); err != nil {
 		t.Fatalf("重复入队应复用稳定任务: %v", err)
 	}
-	info, err := runtime.inspector.GetTaskInfo(QueueDocumentImport, documentImportTaskID(42))
+	info, err := runtime.inspector.GetTaskInfo(QueueDocumentImport, documentImportTaskID(job.ID))
 	if err != nil {
 		t.Fatal(err)
 	}

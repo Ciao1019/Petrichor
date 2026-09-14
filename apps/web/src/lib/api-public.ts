@@ -1,4 +1,4 @@
-import type { AxiosResponse } from "axios"
+import type { AxiosRequestConfig, AxiosResponse } from "axios"
 
 import { api } from "@/lib/api-client"
 import type { ProjectShowcaseResponse, SiteFilingResponse, TableDataInfo } from "@/lib/api-core"
@@ -326,9 +326,9 @@ export interface PresignGetResponse {
 }
 
 export const uploadApi = {
-  /** 获取预签名上传 URL，前端直接 PUT 文件到 S3 */
-  presignPut: (data: PresignPutRequest) =>
-    api.post<PresignPutResponse>("/upload/presign-put", data),
+  /** 获取同源 Go 上传地址；由 Go 保存文件到对象存储 */
+  presignPut: (data: PresignPutRequest, config?: AxiosRequestConfig) =>
+    api.post<PresignPutResponse>("/upload/presign-put", data, config),
 
   /** 获取具有时效的预签名下载 URL（防盗链，需要登录） */
   presignGet: (objectKey: string) =>
@@ -342,12 +342,18 @@ export const uploadApi = {
     }),
 }
 
-// ===== 文档导入（PDF / Word → 多模态 → 文章） =====
+// ===== 文档导入（上传原件 → Go / Asynq 解析、栅格化、OCR、生成文章） =====
 
-export type DocumentImportSourceType = "pdf"
+export type DocumentImportSourceType =
+  | "pdf" | "md" | "markdown" | "doc" | "docx" | "docm"
+  | "ppt" | "pps" | "pot" | "pptx" | "pptm" | "ppsx" | "ppsm"
+  | "xls" | "xlsx" | "xlsm" | "xlsb" | "odt" | "ods" | "odp"
+  | "rtf" | "epub" | "csv"
 
-/** 页内容来源：pdf = pdf-inspector 本地抽取，vision = 多模态识别兜底 */
-export type DocumentImportExtractedBy = "pdf" | "vision"
+export type DocumentImportMethod = "direct" | "multimodal"
+/** ocr 仅表示待识别，不能作为已使用多模态模型的依据。 */
+export type DocumentImportExtractedBy = DocumentImportMethod | "ocr"
+export type DocumentImportImagePolicy = "keep_and_recognize" | "text_only" | "images_only"
 
 export type DocumentImportJobStatus =
   | "pending"
@@ -357,6 +363,7 @@ export type DocumentImportJobStatus =
   | "dead_letter"
   | "canceled"
 
+export type DocumentImportJobStage = "preparing" | "parsing" | "rendering" | "ocr" | "finalizing" | "completed"
 export type DocumentImportPageStatus = "pending" | "processing" | "done" | "failed" | "dead_letter"
 
 export interface DocumentImportJobResponse {
@@ -366,6 +373,13 @@ export interface DocumentImportJobResponse {
   parentNodeId: string | null
   parentFolderName: string | null
   sourceType: DocumentImportSourceType
+  /** PDF 图片策略；历史任务缺省为保留并识别。 */
+  imagePolicy?: DocumentImportImagePolicy
+  pageUnit: "page" | "document"
+  /** 成功单元的实际来源；仅统计 status=done。 */
+  actualMethods: DocumentImportMethod[]
+  directPages: number
+  multimodalPages: number
   fileName: string
   title: string
   totalPages: number
@@ -374,6 +388,8 @@ export interface DocumentImportJobResponse {
   failedPages: number
   pendingPages: number
   status: DocumentImportJobStatus
+  /** 历史任务可缺省；准备 / 解析期 totalPages=0，不代表完成。 */
+  stage?: DocumentImportJobStage
   modelConfigId: string | null
   articleId: string | null
   error: string | null
@@ -385,8 +401,10 @@ export interface DocumentImportJobResponse {
 
 export interface DocumentImportPageResponse {
   pageNo: number
-  /** 仅 OCR 兜底页有整页图，本地抽取的文字页为 null */
+  /** OCR 兜底页由服务端生成整页图，直接解析的文字页为 null。 */
   imageKey: string | null
+  /** 图片保留与内容识别独立；旧任务可能没有此字段。 */
+  assets?: DocumentImportAssetResponse[] | null
   extractedBy: DocumentImportExtractedBy
   status: DocumentImportPageStatus
   markdown: string | null
@@ -398,24 +416,43 @@ export interface DocumentImportPageResponse {
   deadLetteredAt: string | null
 }
 
+export interface DocumentImportAssetResponse {
+  id: string
+  imageKey: string
+  kind: "region" | "page"
+  bounds: [number, number, number, number]
+  placement: "anchor" | "page"
+  status: "pending" | "done" | "failed" | "skipped"
+  contentType?: "screenshot" | "scan" | "photo" | "chart" | "diagram" | "unknown"
+  recognition?: "ocr" | "describe"
+  markdown?: string
+  method?: string
+  error?: string
+}
+
 export interface DocumentImportCreateRequest {
+  /** 稳定 UUID；网络失败重试必须保持整个请求不变。 */
+  idempotencyKey: string
   knowledgeBaseId: string
   parentId?: string | null
   fileName: string
   title: string
-  /** 原始 PDF 预签名直传后的对象 key */
+  /** 原始文档预签名直传后的对象 key */
   sourceKey: string
+  imagePolicy?: DocumentImportImagePolicy
   modelConfigId?: string | null
   concurrency?: number
 }
 
 export interface DocumentImportCreateResponse {
   job: DocumentImportJobResponse
-  /** 需要多模态兜底的 1-indexed 页码；为空表示本地抽取已全量完成 */
-  ocrPageNos: number[]
-  /** 检测到表格或多栏排版 */
-  isComplex: boolean
-  /** 无 OCR 页时服务端已直接生成文章 */
+  /** 只有存在文章 ID 或 job.status=completed 才表示完成。 */
+  articleId: string | null
+}
+
+export interface DocumentImportFinalizeResponse {
+  job: DocumentImportJobResponse
+  /** null 表示仅已提交后台生成任务，需继续轮询详情。 */
   articleId: string | null
 }
 
@@ -426,31 +463,27 @@ export interface DocumentImportConvertResponse {
 }
 
 export const documentImportApi = {
-  createJob: (data: DocumentImportCreateRequest) =>
-    api.post<DocumentImportCreateResponse>("/kb/import/create", data),
-  attachOcrPages: (data: {
-    jobId: string
-    pages: { pageNo: number; imageKey: string }[]
-    concurrency?: number
-  }) => api.post<{ attached: number; status: DocumentImportJobStatus }>("/kb/import/attach-ocr", data),
+  createJob: (data: DocumentImportCreateRequest, config?: AxiosRequestConfig) =>
+    api.post<DocumentImportCreateResponse>("/kb/import/create", data, config),
   convertPage: (data: { jobId: string; pageNo: number }) =>
     api.post<DocumentImportConvertResponse>("/kb/import/page-convert", data),
   retryPage: (data: { jobId: string; pageNo: number }) =>
     api.post<DocumentImportConvertResponse>("/kb/import/retry-page", data),
   retryFailedPages: (data: { jobId: string }) =>
-    api.post<{ retried: number; status: DocumentImportJobStatus }>("/kb/import/retry-failed", data),
+    api.post<{ retried: number; reset?: number; status: DocumentImportJobStatus }>("/kb/import/retry-failed", data),
   finalize: (data: { jobId: string }) =>
-    api.post<{ articleId: string; nodeId: string | null }>("/kb/import/finalize", data),
+    api.post<DocumentImportFinalizeResponse>("/kb/import/finalize", data),
   cancel: (data: { jobId: string }) =>
     api.post<{ id: string; status: DocumentImportJobStatus }>("/kb/import/cancel", data),
   deleteMany: (data: { ids: string[] }) =>
     api.post<{ deleted: string[] }>("/kb/import/delete", data),
   list: (data: { knowledgeBaseId?: string; pageNum?: number; pageSize?: number }) =>
     api.post<TableDataInfo<DocumentImportJobResponse>>("/kb/import/list", data),
-  detail: (data: { jobId: string }) =>
+  detail: (data: { jobId: string }, config?: AxiosRequestConfig) =>
     api.post<{ job: DocumentImportJobResponse; pages: DocumentImportPageResponse[] }>(
       "/kb/import/detail",
       data,
+      config,
     ),
 }
 

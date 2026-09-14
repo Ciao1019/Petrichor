@@ -6,7 +6,6 @@ import type { ColumnDef, PaginationState, RowSelectionState, SortingState } from
 import {
   flexRender,
   getCoreRowModel,
-  getPaginationRowModel,
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
@@ -24,6 +23,8 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { AppPagination } from "@/components/app-pagination"
 import { ModalShell } from "@/components/petrichor-ui/modal-shell"
@@ -37,34 +38,58 @@ import {
 } from "@/lib/api"
 import {
   StatusBadge,
+  STATUS_META,
+  isJobActive,
   formatDateTime,
   resolveApiErrorMessage,
-  resolveProgressPercent,
   resolveTargetText,
 } from "@/features/pages/knowledge/document-import-job-shared"
+import { DocumentImportMethods, DocumentImportProgress } from "./document-import-job-components"
 
 export function DocumentImportJobsPage() {
   const { knowledgeBaseId: routeKnowledgeBaseId } = useParams<{ knowledgeBaseId: string }>()
-  const navigate = useNavigate()
+  return <DocumentImportJobsTable key={routeKnowledgeBaseId ?? "all"} routeKnowledgeBaseId={routeKnowledgeBaseId} />
+}
 
+function DocumentImportJobsTable({ routeKnowledgeBaseId }: { routeKnowledgeBaseId?: string }) {
+  const navigate = useNavigate()
   const [jobs, setJobs] = React.useState<DocumentImportJobResponse[]>([])
+  const [total, setTotal] = React.useState(0)
   const [loading, setLoading] = React.useState(false)
+  const [pagination, setPagination] = React.useState<PaginationState>({ pageIndex: 0, pageSize: 10 })
+  const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({})
+  const [keyword, setKeyword] = React.useState("")
+  const [statusFilter, setStatusFilter] = React.useState("all")
+  const { pageIndex, pageSize } = pagination
+  const scope = React.useMemo(() => ({
+    query: { knowledgeBaseId: routeKnowledgeBaseId, pageNum: pageIndex + 1, pageSize },
+    active: false, request: 0,
+  }), [routeKnowledgeBaseId, pageIndex, pageSize])
+  React.useLayoutEffect(() => {
+    scope.active = true
+    setJobs([])
+    setRowSelection({})
+    return () => { scope.active = false; scope.request += 1 }
+  }, [scope])
 
   const fetchJobs = React.useCallback(async () => {
+    if (!scope.active) return
+    const request = ++scope.request
+    const isCurrent = () => scope.active && request === scope.request
     setLoading(true)
     try {
-      const res = await documentImportApi.list({
-        knowledgeBaseId: routeKnowledgeBaseId,
-        pageNum: 1,
-        pageSize: 100,
-      })
-      setJobs(res.data.rows || [])
+      const res = await documentImportApi.list(scope.query)
+      if (!isCurrent()) return
+      setTotal(res.data.total)
+      const lastPage = Math.max(0, Math.ceil(res.data.total / pageSize) - 1)
+      if (pageIndex > lastPage) setPagination((current) => ({ ...current, pageIndex: lastPage }))
+      else setJobs(res.data.rows || [])
     } catch (error) {
-      toast.error(resolveApiErrorMessage(error, "加载导入任务失败"))
+      if (isCurrent()) toast.error(resolveApiErrorMessage(error, "加载导入任务失败"))
     } finally {
-      setLoading(false)
+      if (isCurrent()) setLoading(false)
     }
-  }, [routeKnowledgeBaseId])
+  }, [pageIndex, pageSize, scope])
 
   React.useEffect(() => {
     void (async () => {
@@ -77,7 +102,7 @@ export function DocumentImportJobsPage() {
   }, [navigate])
 
   React.useEffect(() => {
-    if (!jobs.some((job) => job.status === "pending" || job.status === "processing")) {
+    if (!jobs.some(isJobActive)) {
       return
     }
     const timer = window.setInterval(() => {
@@ -87,8 +112,11 @@ export function DocumentImportJobsPage() {
   }, [jobs, fetchJobs])
 
   const [sorting, setSorting] = React.useState<SortingState>([{ id: "createdAt", desc: true }])
-  const [pagination, setPagination] = React.useState<PaginationState>({ pageIndex: 0, pageSize: 10 })
-  const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({})
+  const filteredJobs = React.useMemo(() => {
+    const query = keyword.trim().toLocaleLowerCase()
+    return jobs.filter((job) => (statusFilter === "all" || job.status === statusFilter)
+      && (!query || `${job.title} ${job.fileName}`.toLocaleLowerCase().includes(query)))
+  }, [jobs, keyword, statusFilter])
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
 
@@ -142,27 +170,13 @@ export function DocumentImportJobsPage() {
       header: "进度",
       id: "progress",
       enableSorting: false,
-      cell: ({ row }) => {
-        const job = row.original
-        const unfinishedPages = Math.max(0, job.totalPages - job.donePages)
-        return (
-          <div className="w-40 max-w-full space-y-1">
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>{resolveProgressPercent(job)}%</span>
-              <span className="tabular-nums">{job.donePages}/{job.totalPages}</span>
-            </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className={cn("h-full rounded-full", job.failedPages > 0 ? "bg-destructive" : "bg-primary")}
-                style={{ width: `${resolveProgressPercent(job)}%` }}
-              />
-            </div>
-            <div className="text-[11px] text-muted-foreground">
-              未完成 {unfinishedPages} 页{job.failedPages > 0 ? ` · 失败 ${job.failedPages} 页` : ""}
-            </div>
-          </div>
-        )
-      },
+      cell: ({ row }) => <div className="w-48 max-w-full"><DocumentImportProgress job={row.original} /></div>,
+    },
+    {
+      header: "识别来源",
+      id: "methods",
+      enableSorting: false,
+      cell: ({ row }) => <div className="w-60 max-w-full"><DocumentImportMethods job={row.original} /></div>,
     },
     {
       header: "状态",
@@ -198,7 +212,7 @@ export function DocumentImportJobsPage() {
   ], [openDetail])
 
   const table = useReactTable({
-    data: jobs,
+    data: filteredJobs,
     columns,
     getRowId: (row) => row.id,
     getCoreRowModel: getCoreRowModel(),
@@ -207,7 +221,8 @@ export function DocumentImportJobsPage() {
     enableSortingRemoval: false,
     enableRowSelection: true,
     onRowSelectionChange: setRowSelection,
-    getPaginationRowModel: getPaginationRowModel(),
+    manualPagination: true,
+    rowCount: total,
     onPaginationChange: setPagination,
     state: { sorting, pagination, rowSelection },
   })
@@ -238,7 +253,7 @@ export function DocumentImportJobsPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold">文档导入任务</h1>
-          <p className="text-sm text-muted-foreground">查看 PDF 导入进度，重试失败的扫描页或手动合并文章。</p>
+          <p className="text-sm text-muted-foreground">查看自己已提交的文档，在详情中重试失败步骤。自动重试耗尽的任务也会进入管理员死信队列。</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {selectedIds.length > 0 ? (
@@ -268,6 +283,14 @@ export function DocumentImportJobsPage() {
       </div>
 
       <div className="w-full space-y-4">
+        <div className="flex flex-wrap gap-2">
+          <Input className="w-full sm:w-72" aria-label="筛选当前页标题或文件名" placeholder="筛选当前页标题或文件名" value={keyword} onChange={(event) => { setKeyword(event.target.value); setRowSelection({}) }} />
+          <Select value={statusFilter} onValueChange={(value) => { setStatusFilter(value); setRowSelection({}) }}>
+            <SelectTrigger className="w-48" aria-label="筛选当前页状态"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="all">当前页全部状态</SelectItem>{Object.entries(STATUS_META).map(([value, meta]) => <SelectItem key={value} value={value}>{meta.label}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <p className="text-xs text-muted-foreground">筛选与排序仅作用于当前页（匹配 {filteredJobs.length} / {jobs.length} 条）；下方总数为全部任务，可翻页继续查找及进入详情重试。</p>
         <div className="overflow-x-auto rounded-md border">
           <Table>
             <TableHeader>
@@ -322,7 +345,7 @@ export function DocumentImportJobsPage() {
               ) : (
                 <TableRow>
                   <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
-                    暂无导入任务
+                    {jobs.length > 0 ? "当前页无匹配任务，可清除筛选或翻页查找" : "暂无导入任务"}
                   </TableCell>
                 </TableRow>
               )}
@@ -333,7 +356,8 @@ export function DocumentImportJobsPage() {
         <AppPagination
           page={table.getState().pagination.pageIndex}
           totalPages={Math.max(1, table.getPageCount())}
-          total={table.getRowCount()}
+          total={total}
+          disabled={loading || deleting}
           pageSize={table.getState().pagination.pageSize}
           onChange={(nextPageIndex) => table.setPageIndex(nextPageIndex)}
         />

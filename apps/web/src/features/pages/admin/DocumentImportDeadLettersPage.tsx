@@ -63,7 +63,7 @@ export function DocumentImportDeadLettersPage() {
         <div>
           <h1 className="text-2xl font-semibold">视觉导入死信队列</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            查看耗尽自动重试的视觉导入任务，并将任务原子重放到持久队列。
+            集中处理所有用户已耗尽自动重试的导入任务；与「导入任务」共用同一条任务记录。
           </p>
         </div>
         <Button variant="outline" onClick={() => void load()} disabled={loading}>
@@ -75,7 +75,7 @@ export function DocumentImportDeadLettersPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">待处理死信</CardTitle>
-          <CardDescription>重放会清零本轮尝试次数，但保留 replayCount 作为审计计数。</CardDescription>
+          <CardDescription>重放仅重新执行失败步骤，保留成功结果和原文件。上传尚未成功的文件，请回到导入弹窗重新上传。</CardDescription>
         </CardHeader>
         <CardContent>
           {loading && items.length === 0 ? (

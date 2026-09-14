@@ -18,6 +18,7 @@ import (
 	"petrichor/api/internal/cache"
 	"petrichor/api/internal/config"
 	"petrichor/api/internal/db"
+	"petrichor/api/internal/documentparse"
 	"petrichor/api/internal/kb"
 	"petrichor/api/internal/taskqueue"
 )
@@ -38,6 +39,14 @@ func run() error {
 
 	startupCtx, cancelStartup := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancelStartup()
+	// 解析完全由 Worker 承担；在连接数据库和消费任务前确认转换器及 PDF 工具可用。
+	parserConfig := documentparse.Config{
+		Command: cfg.DocumentImport.Parser.Command,
+		Timeout: cfg.DocumentImport.Parser.Timeout,
+	}
+	if err := documentparse.CheckRuntime(startupCtx, parserConfig); err != nil {
+		return fmt.Errorf("文档导入运行环境不可用: %w", err)
+	}
 	if err := db.Initialize(startupCtx); err != nil {
 		return fmt.Errorf("初始化数据库连接池失败: %w", err)
 	}

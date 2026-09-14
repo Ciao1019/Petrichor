@@ -33,6 +33,11 @@ question_batch_concurrency = 8
 page_batch_concurrency = 8
 model_concurrency = 64
 
+# 服务端原件解析命令（不通过 shell 执行），超时覆盖解析与逐页渲染/上传。
+[document_import.parser]
+command = "petrichor-doc-convert"
+timeout_seconds = 300
+
 [auth]
 session_expire_seconds = 172800
 register_enabled = false

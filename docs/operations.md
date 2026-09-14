@@ -95,6 +95,13 @@ API 与 Worker 已通过 Redis 解耦，API 可以横向扩容。增加 Worker �
 
 ## 视觉导入业务状态
 
+外部文档导入现在支持 anydoc 的 Office、PDF、OpenDocument、RTF、EPUB、CSV 格式及 Markdown。
+浏览器只上传原件并提交幂等任务；Asynq Worker 负责下载、直接解析、PDF 拆页/渲染、OCR 和成文。
+anydoc 提示需要 OCR 的页仅调用多模态模型；上传并成功入队后即可关闭页面，文章落库后才完成。
+Worker 镜像包含 Rust anydoc/Calamine 转换器、Poppler、资源限制工具及字体，并在启动时检查依赖。
+配置、隐私、阶段状态和三种方式统计参见 [外部文档导入](./document-import.md)。
+转换器配置为 `[document_import.parser]`；OCR 使用所选多模态模型或 `VISION` 用途绑定，失败按页重试，不切换供应商。
+
 视觉导入任务、页面进度、失败原因和管理员死信全部以 Redis 为事实来源；PostgreSQL 只保存最终文章等业务数据：
 
 1. Asynq 负责排队、在途任务、崩溃恢复和重试时间，`petrichor:document-import:*` 保存领域状态；
@@ -102,7 +109,8 @@ API 与 Worker 已通过 Redis 解耦，API 可以横向扩容。增加 Worker �
 2. 页面默认最多尝试 5 次，与任务首次执行加 4 次重试一致；
 3. 成功页立即写为 `done`，任务重放不会重复调用模型；
 4. 明确业务失败写为 `failed`，重试耗尽写为 `dead_letter`；
-5. 超级管理员可在“导入死信”页面重放；也可在 asynqmon 重试归档任务，Worker 会自动重置对应死信页。
+5. 准备阶段失败即使尚无页记录也可重试；超级管理员可在“导入死信”页面重放。
+   asynqmon 的 Run/Retry 仅重投技术任务，不会自动重置领域失败状态。
 
 排障时先打开 `http://127.0.0.1:8081` 查看 asynqmon，再检查 `/api/admin/runtime/metrics` 的队列与
 业务状态计数，并按日志中的 `requestId`、`taskId`、`jobId`、`runId` 检索。不要直接手工修改视觉

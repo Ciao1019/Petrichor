@@ -141,6 +141,7 @@ type Config struct {
 	MigrationDatabaseURL string
 	DatabasePool         DatabasePoolConfig
 	KnowledgeBuild       KnowledgeBuildConfig
+	DocumentImport       DocumentImportConfig
 	LocalStorageDir      string
 	S3                   *S3Config
 	SessionExpire        time.Duration
@@ -161,6 +162,7 @@ type fileConfig struct {
 	Storage        storageFileConfig        `toml:"storage"`
 	Cache          cacheFileConfig          `toml:"cache"`
 	KnowledgeBuild knowledgeBuildFileConfig `toml:"knowledge_build"`
+	DocumentImport documentImportFileConfig `toml:"document_import"`
 	Agent          agentFileConfig          `toml:"agent"`
 }
 
@@ -374,6 +376,10 @@ func normalizeAndValidate(raw fileConfig, path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	documentImport, err := normalizeDocumentImport(raw.DocumentImport)
+	if err != nil {
+		return nil, err
+	}
 	sessionExpire := raw.Auth.SessionExpireSecond
 	if sessionExpire == 0 {
 		sessionExpire = DefaultSessionExpireSecs
@@ -424,6 +430,7 @@ func normalizeAndValidate(raw fileConfig, path string) (*Config, error) {
 		MigrationDatabaseURL: strings.TrimSpace(raw.Database.MigrationURL),
 		DatabasePool:         databasePool,
 		KnowledgeBuild:       knowledgeBuild,
+		DocumentImport:       documentImport,
 		LocalStorageDir:      strings.TrimSpace(raw.Storage.LocalDirectory),
 		S3:                   s3,
 		SessionExpire:        time.Duration(sessionExpire) * time.Second,
