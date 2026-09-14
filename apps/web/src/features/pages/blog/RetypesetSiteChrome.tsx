@@ -29,7 +29,6 @@ const retypesetSiteCopy = {
     navPosts: "文章",
     navAsk: "问答",
     navProjects: "开源",
-    navPetrichor: "项目",
     navAbout: "关于",
     searchTrigger: "搜索文章",
     githubTrigger: "GitHub 仓库",
@@ -41,7 +40,6 @@ const retypesetSiteNavItems: RetypesetSiteNavItem[] = [
     { section: "articles", href: "/#articles", label: retypesetSiteCopy.navPosts, internal: true },
     { section: "wiki", href: "/wiki", label: "Wiki", internal: true },
     { section: "projects", href: "/projects", label: retypesetSiteCopy.navProjects, internal: true },
-    { section: "petrichor", href: "/petrichor", label: retypesetSiteCopy.navPetrichor, internal: true },
     { section: "about", href: "/about", label: retypesetSiteCopy.navAbout, internal: true },
 ] as const
 
