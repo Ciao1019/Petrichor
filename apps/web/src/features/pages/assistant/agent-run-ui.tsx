@@ -13,7 +13,7 @@ import { markRetry, useAgentRunsStore } from "@/features/agent-runs/store"
 import { selectCitedEvidenceSources, shouldShowCitationSources } from "@/features/agent-runs/selectors"
 import { isAgentStreamEvent, shouldShowExecutionPanel } from "@/features/agent-runs/types"
 import type { AgentRunViewModel } from "@/features/agent-runs/types"
-import { QaStreamingMarkdown } from "@/features/pages/knowledge/QaMarkdown"
+import { QaPreparing, QaStreamingMarkdown } from "@/features/pages/knowledge/QaMarkdown"
 import { annotateNormalQaWikiMentions } from "@/lib/wiki-mentions"
 
 /**
@@ -50,6 +50,15 @@ function useMessageRunId(): string | null {
 export function useCurrentAgentRun(): AgentRunViewModel | null {
     const runId = useMessageRunId()
     return useAgentRunsStore((state) => (runId ? state.runs[runId] ?? null : null))
+}
+
+/** 首段正文或执行轨迹出现后，让位给实际进度。 */
+export function AssistantPreparingStatus() {
+    const run = useCurrentAgentRun()
+    // Agent delta 先写入 Run Store，标准 text part 要等回答完成才到达。
+    // 因此不能仅靠消息 parts 判断是否仍在等待首字。
+    if (run?.answer.trim() || shouldShowExecutionPanel(run)) return null
+    return <QaPreparing label="准备响应中" state="connecting" />
 }
 
 /**

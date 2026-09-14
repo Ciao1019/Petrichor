@@ -16,7 +16,6 @@ import {
   MessagePrimitive,
   SimpleImageAttachmentAdapter,
   SimpleTextAttachmentAdapter,
-  SuggestionPrimitive,
   ThreadPrimitive,
   useAuiState,
   useMessageTiming,
@@ -35,7 +34,6 @@ import { Button } from "@/components/ui/button"
 import { AssistantTaskRail, TASK_TOOL_NAMES } from "@/features/pages/assistant/AssistantTaskRail"
 import {
   QaMarkdownScope,
-  QaPreparing,
   WikiLinkClickProvider,
 } from "@/features/pages/knowledge/QaMarkdown"
 import {
@@ -47,17 +45,18 @@ import {
 } from "@/lib/api"
 import { dashboardRoutes } from "@/lib/dashboard-routes"
 import { isDemoMode } from "@/lib/demo/demo-mode"
+import { cn } from "@/lib/utils"
 
 import { consumePendingRetryRunId, useAgentRunsStore } from "@/features/agent-runs/store"
-import { shouldShowExecutionPanel } from "@/features/agent-runs/types"
 import {
   AgentAnswerText,
   AgentCitationBar,
   AgentRunPanel,
   AgentStreamingAnswer,
-  useCurrentAgentRun,
+  AssistantPreparingStatus,
 } from "./agent-run-ui"
 import { GrokComposer } from "./assistant-composer"
+import { AssistantWelcomeComposer } from "./assistant-welcome"
 import {
   type AssistantFocusSelection,
   type AssistantUIMessage,
@@ -107,6 +106,12 @@ export function QaChatPanel({
   onComposerFocus?: () => void
 }) {
   const [wikiPreviewKey, setWikiPreviewKey] = React.useState<string | null>(null)
+  // 切换对话后，旧请求返回的 threadId 不再改变主区的当前对话。
+  const mountedRef = React.useRef(true)
+  React.useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
   const focusBody = React.useMemo(
     () => focusToRequestBody(focusSelection),
     [focusSelection],
@@ -141,7 +146,7 @@ export function QaChatPanel({
         const { demoAssistantChatResponse } = await import("@/lib/demo/demo-chat")
         const demoResponse = await demoAssistantChatResponse(nextInit)
         const demoThreadId = demoResponse.headers.get(CHAT_THREAD_HEADER)
-        if (demoThreadId) onThreadKnown(demoThreadId)
+        if (demoThreadId && mountedRef.current) onThreadKnown(demoThreadId)
         return demoResponse
       }
       const response = await fetch(input, nextInit)
@@ -158,43 +163,17 @@ export function QaChatPanel({
         })
       }
       const remoteThreadId = response.headers.get(CHAT_THREAD_HEADER)
-      if (remoteThreadId) {
+      if (remoteThreadId && mountedRef.current) {
         onThreadKnown(remoteThreadId)
       }
       return response
     }) as typeof fetch,
   }), [focusBody, onThreadKnown, selectedConfigId, threadId])
 
-  const suggestions = React.useMemo(() => {
-    if (focusSelection.kind === "none") {
-      return [
-        { prompt: "Mole 第一次清理前需要注意什么？" },
-        { prompt: "怎样定制 Fastfetch 的显示模块？" },
-        { prompt: "对比 Mole 和 Fastfetch 的用途与使用边界。" },
-        { prompt: "从现有资料中提炼可以长期复用的操作原则，并给出来源。" },
-      ]
-    }
-    if (focusSelection.kind === "doc_library") {
-      return [
-        { prompt: `概括「${scopeName ?? "当前文档库"}」最近收录的核心内容。` },
-        { prompt: "这批资料里有哪些高风险操作需要提前确认？" },
-        { prompt: "整理一份可以直接照做的操作清单。" },
-        { prompt: "哪些结论有原文依据？请标明来源。" },
-      ]
-    }
-    return [
-      { prompt: `概括「${scopeName ?? "当前知识库"}」的核心主题和内容边界。` },
-      { prompt: "找出几条可以直接用于实践的结论。" },
-      { prompt: "哪些内容之间存在关联？请结合原文说明。" },
-      { prompt: "给我一条从入门到深入的阅读路径。" },
-    ]
-  }, [focusSelection.kind, scopeName])
-
   const runtime = useChatRuntime({
     id: threadId ?? `assistant-${focusSelection.kind}-draft`,
     messages: initialMessages,
     transport,
-    suggestions,
     adapters: {
       attachments: new CompositeAttachmentAdapter([
         new SimpleImageAttachmentAdapter(),
@@ -284,7 +263,7 @@ function GrokThread({
   threadId: string | null
   onPlanPatched?: (plan: AssistantPersistedPlan) => void
 }) {
-  const isUnscoped = focusSelection.kind === "none"
+  const isEmpty = useAuiState((s) => s.thread.isEmpty)
   const scopeLabel =
     focusSelection.kind === "none"
       ? "全部资料"
@@ -305,20 +284,10 @@ function GrokThread({
 
   return (
     <ThreadPrimitive.Root
-      className="relative flex h-full flex-col items-stretch bg-[#fdfdfd] px-3 dark:bg-[#141414] md:px-4"
+      className={cn("relative flex h-full min-h-0 flex-col items-stretch bg-[#fdfdfd] px-3 dark:bg-[#141414] md:px-4", isEmpty && "overflow-y-auto")}
     >
-      <AuiIf condition={(s) => s.thread.isEmpty}>
-        {/* 空状态：建议居中，输入框贴底，避免手机端垂直居中造成大块空白 */}
-        <div className="flex h-full min-h-0 flex-col items-center">
-          <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center">
-            <ThreadSuggestions />
-          </div>
-          <GrokComposer placeholder={isUnscoped ? "问点什么？在知识库和文档库里寻找答案..." : `在「${scopeLabel}」里问点什么？`} {...composerProps} />
-        </div>
-      </AuiIf>
-
       <AuiIf condition={(s) => s.thread.isEmpty === false}>
-        <ThreadPrimitive.Viewport className="qa-thread-viewport flex grow flex-col overflow-y-auto pt-10">
+        <ThreadPrimitive.Viewport className="qa-thread-viewport flex min-h-0 grow flex-col overflow-y-auto pt-3">
           <ThreadPrimitive.Messages>
             {() => <ChatMessage />}
           </ThreadPrimitive.Messages>
@@ -329,7 +298,14 @@ function GrokThread({
           onPlanPatched={onPlanPatched}
         />
         <QaThreadToc />
-        <GrokComposer placeholder={isUnscoped ? "继续提问..." : `继续在「${scopeLabel}」里提问...`} {...composerProps} />
+      </AuiIf>
+      <AssistantWelcomeComposer isEmpty={isEmpty} scopeName={scopeName}>
+        <GrokComposer
+          placeholder={isEmpty ? "输入你的问题..." : "继续提问..."}
+          {...composerProps}
+        />
+      </AssistantWelcomeComposer>
+      <AuiIf condition={(s) => s.thread.isEmpty === false}>
         <p className="mx-auto w-full max-w-3xl pb-2 text-center text-[#9a9a9a] text-xs">
           回答由 AI 生成，请自行核验关键信息。
         </p>
@@ -337,30 +313,6 @@ function GrokThread({
     </ThreadPrimitive.Root>
   )
 }
-
-function ThreadSuggestions() {
-  return (
-    <div className="flex w-full max-w-3xl flex-wrap justify-center gap-2 px-4">
-      <ThreadPrimitive.Suggestions>
-        {() => <SuggestionChip />}
-      </ThreadPrimitive.Suggestions>
-    </div>
-  )
-}
-
-function SuggestionChip() {
-  return (
-    <SuggestionPrimitive.Trigger send asChild>
-      <Button
-        variant="outline"
-        className="h-auto whitespace-normal rounded-full border-[#e5e5e5] bg-white px-3.5 py-1.5 text-left font-normal text-sm text-[#6b6b6b] shadow-none transition-colors hover:bg-[#f5f5f5] hover:text-[#0d0d0d] dark:border-[#2a2a2a] dark:bg-[#1a1a1a] dark:text-[#9a9a9a] dark:hover:bg-[#252525] dark:hover:text-white"
-      >
-        <SuggestionPrimitive.Title />
-      </Button>
-    </SuggestionPrimitive.Trigger>
-  )
-}
-
 
 function ChatMessage() {
   // data-qa-msg-id 是对话大纲（QaThreadToc）定位/滚动的 DOM 锚点
@@ -428,22 +380,6 @@ function UserMessageBubble() {
       </div>
     </div>
   )
-}
-
-/**
- * 开跑到第一条执行轨迹之间的占位状态。
- *
- * 全程只允许有一个"正在…"在屏幕上。执行轨迹一出现就让位——轨迹行自带状态点和
- * 当前活动文案，两个一起就是两行几乎一样的话。
- *
- * 之所以会撞上，是两边信号源不同：轨迹读 Run Store 的 tool_started（工具一开始
- * 就到），而本组件外层的门是消息里的 tool-call part（要等工具执行完才发），
- * 工具执行中的那几秒两个条件同时成立。
- */
-function AssistantPreparingStatus() {
-  const run = useCurrentAgentRun()
-  if (shouldShowExecutionPanel(run)) return null
-  return <QaPreparing label="准备响应中" state="connecting" />
 }
 
 function AssistantMessageBubble() {

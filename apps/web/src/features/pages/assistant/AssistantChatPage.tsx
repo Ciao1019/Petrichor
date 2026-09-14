@@ -5,7 +5,6 @@ import {
   Loader2,
   MessageSquarePlus,
   PanelLeftClose,
-  PanelLeftOpen,
   Search,
   Trash2,
   TriangleAlert,
@@ -63,6 +62,7 @@ import {
   toInitialMessages
 } from "./assistant-message-utils"
 import { QaChatPanel } from "./AssistantChatPanel"
+import { AssistantChatToolbar } from "./assistant-chat-toolbar"
 import { InfiniteSentinel, ThreadGroup } from "./assistant-thread-list"
 import { EmptyHint, LoadingRows } from "./assistant-tool-renders"
 
@@ -101,6 +101,8 @@ export function AssistantChatPage() {
   const [skipNextConfirm, setSkipNextConfirm] = React.useState(false)
   const skipConfirmRef = React.useRef(false)
   const fetchTokenRef = React.useRef(0)
+  const threadRequestRef = React.useRef(0)
+  const chatAreaRef = React.useRef<HTMLDivElement>(null)
 
   React.useEffect(() => {
     if (typeof window === "undefined") return
@@ -240,9 +242,11 @@ export function AssistantChatPage() {
   }, [])
 
   const loadThread = React.useCallback(async (threadId: string) => {
+    const request = ++threadRequestRef.current
     setThreadLoading(true)
     try {
       const response = await assistantApi.threadDetail(threadId)
+      if (request !== threadRequestRef.current) return
       setActiveThreadId(response.data.thread.id)
       setFocusSelection(focusFromThread(response.data.thread.focus))
       setInitialMessages(toInitialMessages(response.data.messages))
@@ -252,18 +256,22 @@ export function AssistantChatPage() {
       setRuntimeSeed((value) => value + 1)
       if (isMobile) setSidebarOpen(false)
     } catch (error) {
-      toast.error(resolveApiErrorMessage(error, "加载对话失败"))
+      if (request === threadRequestRef.current) toast.error(resolveApiErrorMessage(error, "加载对话失败"))
     } finally {
-      setThreadLoading(false)
+      if (request === threadRequestRef.current) setThreadLoading(false)
     }
   }, [isMobile])
 
   const handleNewThread = React.useCallback(() => {
+    // 使尚未返回的历史请求失效，避免覆盖刚打开的新对话。
+    threadRequestRef.current += 1
+    setThreadLoading(false)
     setActiveThreadId(null)
     setInitialMessages([])
     setPersistedPlans([])
     setRuntimeSeed((value) => value + 1)
-    if (isMobile) setSidebarOpen(false)
+    setSidebarOpen(false)
+    if (!isMobile) requestAnimationFrame(() => chatAreaRef.current?.querySelector("textarea")?.focus({ preventScroll: true }))
   }, [isMobile])
 
   const performDeleteThread = React.useCallback(async (thread: AssistantThreadSummary) => {
@@ -425,7 +433,7 @@ export function AssistantChatPage() {
     }
     const tween = gsap.to(el, {
       width: targetWidth,
-      duration: 0.42,
+      duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 0.42,
       ease: "power2.inOut",
       overwrite: "auto",
     })
@@ -510,12 +518,12 @@ export function AssistantChatPage() {
                       size="icon"
                       className="size-8 rounded-md text-muted-foreground hover:text-foreground"
                       onClick={handleNewThread}
+                      aria-label="新建对话"
                     >
                       <MessageSquarePlus className="size-3.5" />
-                      <span className="sr-only">新对话</span>
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom">新对话</TooltipContent>
+                  <TooltipContent side="bottom">新建对话</TooltipContent>
                 </Tooltip>
                 {threads.length > 0 ? (
                   <Tooltip>
@@ -621,6 +629,8 @@ export function AssistantChatPage() {
       ) : (
         <aside
           ref={sidebarRef}
+          inert={!sidebarOpen}
+          aria-hidden={!sidebarOpen}
           className="flex h-full shrink-0 flex-col overflow-hidden border-r border-border/60 bg-muted/30 will-change-[width] dark:bg-[#0e0e0e]"
         >
           {threadSidebarBody}
@@ -629,32 +639,15 @@ export function AssistantChatPage() {
 
       {/* Main column */}
       <main className="relative flex min-w-0 flex-1 flex-col bg-[#fdfdfd] dark:bg-[#141414]">
-        {!sidebarOpen ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="absolute left-3 top-3 z-10 size-9 rounded-md text-muted-foreground hover:text-foreground"
-                onClick={() => setSidebarOpen(true)}
-              >
-                <PanelLeftOpen className="size-4" />
-                <span className="sr-only">展开对话列表</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">展开对话列表</TooltipContent>
-          </Tooltip>
-        ) : null}
-        {threadLoading ? (
-          <div className="pointer-events-none absolute right-3 top-3 z-10 flex items-center gap-1 text-[11px] text-muted-foreground">
-            <Loader2 className="size-3 animate-spin" />
-            加载中
-          </div>
-        ) : null}
+        <AssistantChatToolbar
+          sidebarOpen={sidebarOpen}
+          loading={threadLoading}
+          onOpenSidebar={() => setSidebarOpen(true)}
+          onNewThread={handleNewThread}
+        />
 
         {/* Chat area */}
-        <div className="relative min-h-0 flex-1" onPointerDownCapture={hideThreadSidebar}>
+        <div ref={chatAreaRef} className="relative min-h-0 flex-1" onPointerDownCapture={hideThreadSidebar}>
           <QaChatPanel
             key={runtimeSeed}
             focusSelection={focusSelection}

@@ -97,6 +97,7 @@ export function GrokComposer({
             <ComposerPrimitive.Input
               id="kb-qa-composer-input"
               name="message"
+              aria-label="消息"
               placeholder={placeholder}
               minRows={1}
               onFocus={onComposerFocus}
@@ -118,6 +119,7 @@ export function GrokComposer({
                 className="absolute inset-0"
               >
                 <ComposerPrimitive.Send
+                  aria-label="发送消息"
                   className="flex h-full w-full items-center justify-center disabled:opacity-40"
                   disabled={isEmpty}
                 >
@@ -129,7 +131,7 @@ export function GrokComposer({
                 visible={isRunning}
                 className="absolute inset-0"
               >
-                <ComposerPrimitive.Cancel className="flex h-full w-full items-center justify-center">
+                <ComposerPrimitive.Cancel aria-label="停止生成" className="flex h-full w-full items-center justify-center">
                   <Square className="size-3.5 fill-current" />
                 </ComposerPrimitive.Cancel>
               </GsapFade>
