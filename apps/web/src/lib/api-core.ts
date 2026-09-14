@@ -443,6 +443,12 @@ export interface PublicWikiPageListItem {
   aliases: string[]
   categoryPath: string[]
   sourceCount: number
+  relatedPages?: PublicWikiNeighborPage[]
+  sourceArticles?: Array<{
+    articleId: string
+    title: string
+    href: string
+  }>
   updatedAt: string
   href: string
 }

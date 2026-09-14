@@ -464,22 +464,50 @@ export function demoPublicWikiPageList(params: {
   const keyword = params.q?.trim().toLowerCase() ?? ""
   const kind = params.kind && params.kind !== "all" ? params.kind : ""
   const knowledgeBaseIds = params.knowledgeBaseId ? [params.knowledgeBaseId] : Object.keys(WIKI_BY_KB)
-  const filtered = knowledgeBaseIds.flatMap(demoPublicWikiPagesOf).filter((page) =>
+  const publicPages = knowledgeBaseIds.flatMap(demoPublicWikiPagesOf)
+  const publicTargets = new Set(publicPages.map((page) => `${page.knowledgeBaseId}/${page.pageKey}`))
+  const filtered = publicPages.filter((page) =>
     (!kind || page.kind === kind)
     && (!keyword || `${page.title} ${page.summary ?? ""} ${page.contentMd}`.toLowerCase().includes(keyword)))
   const offset = Math.max(0, params.offset ?? 0)
   const limit = Math.max(1, params.limit ?? 50)
-  const items = filtered.slice(offset, offset + limit).map((page) => ({
-    pageKey: page.pageKey,
-    title: page.title,
-    kind: page.kind,
-    summary: page.summary ?? "",
-    aliases: page.aliases,
-    categoryPath: page.categoryPath,
-    sourceCount: demoWikiPageDetail(page.knowledgeBaseId, page.pageKey)?.sourceRefs.length ?? 0,
-    updatedAt: page.updatedAt ?? new Date().toISOString(),
-    href: `/wiki/${page.knowledgeBaseId}/${encodeURIComponent(page.pageKey)}`,
-  }))
+  const items = filtered.slice(offset, offset + limit).map((page) => {
+    const detail = demoWikiPageDetail(page.knowledgeBaseId, page.pageKey)
+    const relatedPages = (detail?.links ?? [])
+      .filter((link) => publicTargets.has(`${page.knowledgeBaseId}/${link.toPageKey}`))
+      .map((link) => ({
+        pageKey: link.toPageKey,
+        title: link.toPageTitle,
+        kind: link.toPageKind ?? null,
+        summary: link.toPageSummary ?? null,
+        linkType: link.linkType,
+        href: `/wiki/${page.knowledgeBaseId}/${encodeURIComponent(link.toPageKey)}`,
+      }))
+    const seenArticleIds = new Set<string>()
+    const sourceArticles = (detail?.sourceRefs ?? []).flatMap((ref) => {
+      const shareCode = demoShareCodeForArticle(ref.articleId)
+      if (!shareCode || seenArticleIds.has(ref.articleId)) return []
+      seenArticleIds.add(ref.articleId)
+      return [{
+        articleId: ref.articleId,
+        title: ref.articleTitle,
+        href: `/p/${encodeURIComponent(shareCode)}`,
+      }]
+    })
+    return {
+      pageKey: page.pageKey,
+      title: page.title,
+      kind: page.kind,
+      summary: page.summary ?? "",
+      aliases: page.aliases,
+      categoryPath: page.categoryPath,
+      sourceCount: detail?.sourceRefs.length ?? 0,
+      relatedPages,
+      sourceArticles,
+      updatedAt: page.updatedAt ?? new Date().toISOString(),
+      href: `/wiki/${page.knowledgeBaseId}/${encodeURIComponent(page.pageKey)}`,
+    }
+  })
   return {
     knowledgeBaseId: params.knowledgeBaseId || "0",
     knowledgeBaseName: knowledgeBase?.name || "公开 Wiki",

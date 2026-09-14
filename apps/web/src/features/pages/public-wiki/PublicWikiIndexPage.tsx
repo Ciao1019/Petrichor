@@ -15,7 +15,11 @@ import {
   X,
 } from "@/components/iconimate"
 import { Link, useSearchParams } from "react-router-dom"
+import { Token, type TokenColor } from "@astryxdesign/core/Token"
+import { Stack } from "@astryxdesign/core/Layout"
+import { Text } from "@astryxdesign/core/Text"
 
+import { AstryxProvider } from "@/components/astryx/astryx-provider"
 import { publicWikiApi, type PublicWikiPageListResponse } from "@/lib/api"
 import { usePublicPageMeta } from "@/features/pages/public-page-meta"
 import {
@@ -39,6 +43,19 @@ const wikiKinds: WikiKindItem[] = [
   { key: "entity", label: "实体", icon: Tags },
   { key: "source", label: "来源摘要", icon: BookOpen },
 ]
+
+const KIND_TOKEN_COLORS: Record<string, TokenColor> = {
+  concept: "purple",
+  entity: "blue",
+  source: "orange",
+  comparison: "pink",
+  answer: "green",
+}
+
+function resolveWikiTokenColor(kind?: string | null): TokenColor {
+  if (!kind) return "cyan"
+  return KIND_TOKEN_COLORS[kind] ?? "cyan"
+}
 
 function parsePage(value: string | null) {
   const page = Number(value)
@@ -169,9 +186,8 @@ export function PublicWikiIndexPage() {
             const KindIcon = config?.icon || Tags
             return (
               <li key={item.href}>
-                <Link
-                  to={item.href}
-                  className="group relative flex flex-col rounded-xl border border-white/[0.08] bg-white/[0.02] p-5 transition-all duration-200 motion-safe:hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/[0.05] hover:shadow-xl hover:shadow-black/25"
+                <div
+                  className="group relative flex min-w-0 flex-col rounded-xl bg-white/[0.02] p-5 transition-all duration-200 motion-safe:hover:-translate-y-0.5 hover:bg-white/[0.05] hover:shadow-xl hover:shadow-black/25"
                 >
                   {/* 顶部类型徽标与路径 */}
                   <div className="flex items-center justify-between gap-3">
@@ -198,7 +214,12 @@ export function PublicWikiIndexPage() {
 
                   {/* 标题 */}
                   <h2 className="mt-2.5 break-words text-base font-bold text-white/95 transition-colors group-hover:text-white sm:text-lg">
-                    {item.title}
+                    <Link
+                      to={item.href}
+                      className="after:absolute after:inset-0 after:rounded-xl focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-white/30"
+                    >
+                      {item.title}
+                    </Link>
                   </h2>
 
                   {/* 摘要 */}
@@ -206,6 +227,60 @@ export function PublicWikiIndexPage() {
                     <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-white/60">
                       {item.summary}
                     </p>
+                  ) : null}
+
+                  {/* 关联数据（Token 展示） */}
+                  {((item.relatedPages && item.relatedPages.length > 0) ||
+                    (item.sourceArticles && item.sourceArticles.length > 0)) ? (
+                    <div
+                      className="relative z-10 mt-3.5 border-t border-white/[0.06] pt-3"
+                    >
+                      <AstryxProvider mode="dark">
+                        <Stack direction="vertical" gap={3} width="100%">
+                          {item.relatedPages && item.relatedPages.length > 0 ? (
+                            <Stack direction="vertical" gap={2}>
+                              <Text type="supporting" color="secondary">
+                                关联知识
+                              </Text>
+                              <Stack direction="horizontal" gap={1} wrap="wrap">
+                                {item.relatedPages.map((rel) => (
+                                  <Link
+                                    key={`${rel.pageKey}-${rel.linkType}`}
+                                    to={rel.href || item.href}
+                                    className="inline-flex max-w-full rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+                                  >
+                                    <Token
+                                      label={rel.title}
+                                      color={resolveWikiTokenColor(rel.kind)}
+                                      size="sm"
+                                    />
+                                  </Link>
+                                ))}
+                              </Stack>
+                            </Stack>
+                          ) : null}
+
+                          {item.sourceArticles && item.sourceArticles.length > 0 ? (
+                            <Stack direction="vertical" gap={2}>
+                              <Text type="supporting" color="secondary">
+                                来源文档
+                              </Text>
+                              <Stack direction="horizontal" gap={1} wrap="wrap">
+                                {item.sourceArticles.map((src) => (
+                                  <Link
+                                    key={src.articleId}
+                                    to={src.href}
+                                    className="inline-flex max-w-full rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+                                  >
+                                    <Token label={src.title} color="teal" size="sm" />
+                                  </Link>
+                                ))}
+                              </Stack>
+                            </Stack>
+                          ) : null}
+                        </Stack>
+                      </AstryxProvider>
+                    </div>
                   ) : null}
 
                   {/* 元数据底部栏 */}
@@ -232,7 +307,7 @@ export function PublicWikiIndexPage() {
                       </div>
                     ) : null}
                   </div>
-                </Link>
+                </div>
               </li>
             )
           })}

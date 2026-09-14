@@ -236,34 +236,134 @@ func WikiPageList(c *gin.Context) {
 	}
 	defer rows.Close()
 
-	items := []map[string]any{}
+	type pageEntry struct {
+		page        *wikiPageRecord
+		sourceCount int64
+	}
+	pageEntries := []pageEntry{}
+	pageIDs := []int64{}
 	for rows.Next() {
 		page, sourceCount, err := scanPublicWikiListRow(rows)
 		if err != nil {
 			httpx.HandleError(c, err)
 			return
 		}
+		pageEntries = append(pageEntries, pageEntry{page: page, sourceCount: sourceCount})
+		pageIDs = append(pageIDs, page.id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		httpx.HandleError(c, err)
+		return
+	}
+
+	relatedPagesByPageID := make(map[int64][]map[string]any)
+	sourceArticlesByPageID := make(map[int64][]map[string]any)
+	if len(pageIDs) > 0 {
+		linkRows, err := pool().Query(ctx,
+			`SELECT l.from_page_id, l.to_page_key, l.link_type,
+			        target.title, target.kind, target.knowledge_base_id
+			 FROM petrichor_kb_wiki_link l
+			 JOIN petrichor_kb_wiki_page target
+			   ON target.user_id = l.user_id
+			  AND target.knowledge_base_id = l.knowledge_base_id
+			  AND target.page_key = l.to_page_key
+			 WHERE l.from_page_id = ANY($1)
+			   AND target.id = ANY($2)
+			 ORDER BY l.id ASC`, pageIDs, safePageIDs)
+		if err != nil {
+			httpx.HandleError(c, err)
+			return
+		}
+		for linkRows.Next() {
+			var fromPageID, targetKbID int64
+			var toPageKey, linkType, targetTitle, targetKind string
+			if err := linkRows.Scan(&fromPageID, &toPageKey, &linkType, &targetTitle, &targetKind, &targetKbID); err != nil {
+				linkRows.Close()
+				httpx.HandleError(c, err)
+				return
+			}
+			relatedPagesByPageID[fromPageID] = append(relatedPagesByPageID[fromPageID], map[string]any{
+				"pageKey":  toPageKey,
+				"title":    targetTitle,
+				"kind":     targetKind,
+				"summary":  nil,
+				"linkType": linkType,
+				"href":     publicWikiPageHref(targetKbID, toPageKey),
+			})
+		}
+		linkRows.Close()
+		if err := linkRows.Err(); err != nil {
+			httpx.HandleError(c, err)
+			return
+		}
+
+		scope, err := publicscope.LoadArticles(ctx)
+		if err != nil {
+			httpx.HandleError(c, err)
+			return
+		}
+		refRows, err := pool().Query(ctx,
+			`SELECT page_id, article_id FROM petrichor_kb_wiki_source_ref
+			 WHERE page_id = ANY($1)
+			 GROUP BY page_id, article_id ORDER BY MIN(id) ASC`, pageIDs)
+		if err != nil {
+			httpx.HandleError(c, err)
+			return
+		}
+		for refRows.Next() {
+			var pageID, articleID int64
+			if err := refRows.Scan(&pageID, &articleID); err != nil {
+				refRows.Close()
+				httpx.HandleError(c, err)
+				return
+			}
+			if article, ok := scope[articleID]; ok {
+				sourceArticlesByPageID[pageID] = append(sourceArticlesByPageID[pageID], map[string]any{
+					"articleId": formatInt(article.ArticleID),
+					"title":     article.Title,
+					"href":      "/p/" + url.PathEscape(article.ShareCode),
+				})
+			}
+		}
+		refRows.Close()
+		if err := refRows.Err(); err != nil {
+			httpx.HandleError(c, err)
+			return
+		}
+	}
+
+	items := []map[string]any{}
+	for _, entry := range pageEntries {
+		page := entry.page
+		sourceCount := entry.sourceCount
 		sanitizePublicWikiPage(page, targets)
 		metadata := readPublicWikiMetadata(page.frontmatterJSON)
 		summary := strings.TrimSpace(derefStr(page.summary))
 		if summary == "" {
 			summary = summarizeWikiContent(page.contentMd, 180)
 		}
+		relatedPages := relatedPagesByPageID[page.id]
+		if relatedPages == nil {
+			relatedPages = []map[string]any{}
+		}
+		sourceArticles := sourceArticlesByPageID[page.id]
+		if sourceArticles == nil {
+			sourceArticles = []map[string]any{}
+		}
 		items = append(items, map[string]any{
-			"pageKey":      page.pageKey,
-			"title":        page.title,
-			"kind":         page.kind,
-			"summary":      summary,
-			"aliases":      metadata.Aliases,
-			"categoryPath": metadata.CategoryPath,
-			"sourceCount":  sourceCount,
-			"updatedAt":    httpx.FormatISO(page.updatedAt),
-			"href":         publicWikiPageHref(page.knowledgeBaseID, page.pageKey),
+			"pageKey":        page.pageKey,
+			"title":          page.title,
+			"kind":           page.kind,
+			"summary":        summary,
+			"aliases":        metadata.Aliases,
+			"categoryPath":   metadata.CategoryPath,
+			"sourceCount":    sourceCount,
+			"relatedPages":   relatedPages,
+			"sourceArticles": sourceArticles,
+			"updatedAt":      httpx.FormatISO(page.updatedAt),
+			"href":           publicWikiPageHref(page.knowledgeBaseID, page.pageKey),
 		})
-	}
-	if err := rows.Err(); err != nil {
-		httpx.HandleError(c, err)
-		return
 	}
 
 	c.Header("Cache-Control", publicWikiCacheControl)

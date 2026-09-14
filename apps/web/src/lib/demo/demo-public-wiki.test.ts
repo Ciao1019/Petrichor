@@ -27,6 +27,12 @@ describe("公开 Wiki 演示契约", () => {
       expect(detail.href).toBe(item.href)
       expect(detail.sourceArticles.length).toBeGreaterThan(0)
       expect(detail.sourceArticles.every((article) => article.href.startsWith("/p/"))).toBe(true)
+      expect(item.sourceArticles?.length).toBeGreaterThan(0)
+      expect(new Set(item.sourceArticles?.map((article) => article.articleId)).size).toBe(item.sourceArticles?.length)
+      expect(item.sourceArticles?.every((article) => article.href.startsWith("/p/share-"))).toBe(true)
+      for (const link of item.relatedPages ?? []) {
+        expect(demoPublicWikiPage(link.pageKey, kb)?.href).toBe(link.href)
+      }
       for (const link of [...detail.links, ...detail.inLinks]) {
         expect(demoPublicWikiPage(link.pageKey, kb)?.href).toBe(link.href)
       }
