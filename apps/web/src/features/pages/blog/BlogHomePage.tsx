@@ -5,7 +5,7 @@ import { Link } from "react-router-dom"
 
 import { publicArticleShareApi, type PublicArticleListItem } from "@/lib/api"
 import { ArticleStatusBadges } from "@/features/pages/blog/ArticleStatusBadges"
-import { RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
+import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import { usePublicPageMeta } from "@/features/pages/public-page-meta"
 
 type HomepageArticle = PublicArticleListItem
@@ -184,12 +184,13 @@ function ArticleIndexFrame({
     return (
         <section id="articles" ref={sectionRef} className="retypeset-home relative z-10 min-h-screen overflow-hidden">
             <div className="blog-home-grid pointer-events-none absolute inset-0 z-0" />
-            <div className="relative z-10 mx-auto min-h-dvh w-full max-w-[51.462rem] px-[min(7.25vw,3.731rem)] py-10 lg:mx-[max(5.75rem,calc(50vw-34.25rem))] lg:my-20 lg:min-h-full lg:max-w-[min(calc(75vw-16rem),44rem)] lg:p-0">
+            <div className="relative z-10 mx-auto flex min-h-dvh w-full max-w-[51.462rem] flex-col px-[min(7.25vw,3.731rem)] py-10 lg:mx-[max(5.75rem,calc(50vw-34.25rem))] lg:my-20 lg:min-h-full lg:max-w-[min(calc(75vw-16rem),44rem)] lg:p-0">
                 <RetypesetSiteHeader dockVisible={dockVisible} />
                 <RetypesetSiteNav activeSection="articles" dockVisible={dockVisible} />
                 <main id="article-index-list" className="mb-12">
                     {children}
                 </main>
+                <RetypesetSiteFooter dockVisible={dockVisible} className="px-0 pb-0" />
             </div>
         </section>
     )

@@ -2,7 +2,7 @@
 
 import * as React from "react"
 
-import { RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
+import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 
 import { BlueNote, DateTag, HandStamp, HandUnderline, MarkerHighlight, type MarkerColor } from "../about/DeskAccents"
 
@@ -527,6 +527,7 @@ export function PetrichorPage() {
                 </div>
             </section>
 
+            <RetypesetSiteFooter />
         </main>
     )
 }

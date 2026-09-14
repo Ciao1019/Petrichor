@@ -97,7 +97,7 @@ export function SiteFilingConfigPage() {
             备案管理
           </h1>
           <p className="text-sm text-muted-foreground">
-            配置 ICP 与公安备案信息。启用后会展示在所有前台公开页面的导航区域。
+            配置 ICP 与公安备案信息。启用后会展示在前台公开页面：手机端位于内容底部，桌面端位于侧栏底部。
           </p>
         </div>
         <div className="flex gap-2">
@@ -116,7 +116,7 @@ export function SiteFilingConfigPage() {
         <CardHeader>
           <CardTitle className="text-base">前台展示</CardTitle>
           <CardDescription>
-            关闭后会保留已填写的信息，但前台导航区不会显示备案链接。
+            关闭后会保留已填写的信息，但前台页面不会显示备案链接。
           </CardDescription>
         </CardHeader>
         <CardContent>

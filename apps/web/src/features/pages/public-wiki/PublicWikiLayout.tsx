@@ -5,6 +5,7 @@ import { useLayoutEffect } from "react"
 import { Link, useLocation } from "react-router-dom"
 
 import {
+  RetypesetSiteFooter,
   RetypesetSiteHeader,
   RetypesetSiteNav,
   type RetypesetSiteActiveSection,
@@ -37,6 +38,7 @@ export function PublicWikiLayout({
       >
         {children}
       </section>
+      <RetypesetSiteFooter />
     </main>
   )
 }

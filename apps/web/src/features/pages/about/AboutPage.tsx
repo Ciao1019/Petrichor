@@ -2,7 +2,7 @@
 
 import * as React from "react"
 
-import { RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
+import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import { publicAboutProfileApi, type AboutAccent, type AboutProfileResponse } from "@/lib/api"
 
 import { BlueNote, HandUnderline, MarkerHighlight } from "./DeskAccents"
@@ -248,6 +248,7 @@ export function AboutPage() {
                 </div>
             </section>
 
+            <RetypesetSiteFooter />
         </main>
     )
 }

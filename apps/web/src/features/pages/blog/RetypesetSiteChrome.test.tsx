@@ -27,15 +27,16 @@ vi.mock("@/lib/demo/demo-mode", () => ({
     isDemoOnlyBuild: () => false,
 }))
 
-import { RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
+import { RetypesetSiteFooter, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 
 afterEach(cleanup)
 
 describe("RetypesetSiteNav", () => {
-    it("将备案信息放在首屏导航整体内", () => {
+    it("将备案信息独立于首屏导航，保留桌面侧栏定位", () => {
         const { container } = render(
             <MemoryRouter>
                 <RetypesetSiteNav activeSection="articles" dockVisible />
+                <RetypesetSiteFooter />
             </MemoryRouter>,
         )
 
@@ -44,7 +45,7 @@ describe("RetypesetSiteNav", () => {
         const navigationGroup = container.querySelector<HTMLElement>("[data-public-site-navigation]")
 
         expect(navigationGroup?.contains(navigation)).toBe(true)
-        expect(navigationGroup?.contains(filing)).toBe(true)
+        expect(navigationGroup?.contains(filing)).toBe(false)
         expect(filing?.classList.contains("lg:fixed")).toBe(true)
         expect(filing?.classList.contains("lg:bottom-20")).toBe(true)
         expect(filing?.classList.contains("fixed")).toBe(false)

@@ -7,7 +7,7 @@ import { ChevronUp, GalleryHorizontalEnd, ImageIcon } from "@/components/iconima
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
+import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import { PublicArticleErrorCard, PublicArticlePasswordCard } from "@/features/pages/public/PublicArticleChrome"
 import { PublicArticleComments } from "@/features/pages/public/PublicArticleComments"
 import { PublicArticlePanel, PublicMindmapPanel } from "@/features/pages/public/PublicArticlePanels"
@@ -114,7 +114,7 @@ export function PublicArticlePageView({ model }: { model: PublicArticlePageModel
         {showLoadingCard ? <PublicArticleLoadingCard /> : null}
         {showArticleBody ? <PublicArticleBody model={model} /> : null}
       </section>
-
+      <RetypesetSiteFooter />
 
       <BackToTopButton />
     </main>

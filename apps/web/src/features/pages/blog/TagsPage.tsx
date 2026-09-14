@@ -4,7 +4,7 @@ import * as React from "react"
 import { Link } from "react-router-dom"
 
 import { ArticleStatusBadges } from "@/features/pages/blog/ArticleStatusBadges"
-import { RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
+import { RetypesetSiteFooter, RetypesetSiteHeader, RetypesetSiteNav } from "@/features/pages/blog/RetypesetSiteChrome"
 import { buildPublicTagGroups, resolveSelectedPublicTagGroup, type PublicTagGroup } from "@/features/pages/blog/tags-page-utils"
 import { publicArticleShareApi, type PublicArticleListItem } from "@/lib/api"
 
@@ -50,7 +50,7 @@ function TagsPageChrome({ children }: { children: React.ReactNode }) {
             </div>
 
             {children}
-
+            <RetypesetSiteFooter />
         </main>
     )
 }

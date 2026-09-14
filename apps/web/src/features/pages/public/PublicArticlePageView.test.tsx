@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 vi.mock("@/features/pages/blog/RetypesetSiteChrome", () => ({
   RetypesetSiteHeader: () => null,
   RetypesetSiteNav: () => null,
+  RetypesetSiteFooter: () => null,
 }))
 
 import {

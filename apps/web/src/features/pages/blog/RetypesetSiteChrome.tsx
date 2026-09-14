@@ -8,6 +8,7 @@ import { BlogSearchDialog, useBlogSearchHotkey } from "@/components/blog-search-
 import { PublicSiteFooter } from "@/components/public-site-footer"
 import { StaticNoise } from "@/cuicui/other/creative-effects/animated-noise/static-noise"
 import { isDemoOnlyBuild } from "@/lib/demo/demo-mode"
+import { cn } from "@/lib/utils"
 
 export type RetypesetSiteActiveSection = "articles" | "tags" | "wiki" | "search" | "ask" | "projects" | "petrichor" | "about"
 type RetypesetSiteNavSection = RetypesetSiteActiveSection
@@ -184,11 +185,27 @@ export function RetypesetSiteNav({
                         </a>
                     </div>
                 </nav>
-                <PublicSiteFooter
-                    className={`${dockVisibilityClass} mt-2 transition-opacity duration-150 lg:fixed lg:right-[max(5rem,calc(50vw-35rem))] lg:bottom-20 lg:z-30 lg:mt-0 lg:w-56`}
-                />
             </div>
             <BlogSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
         </div>
+    )
+}
+
+/** 放在页面内容之后：手机端随文档流显示，桌面端固定在侧栏底部。 */
+export function RetypesetSiteFooter({
+    dockVisible = true,
+    className,
+}: {
+    dockVisible?: boolean
+    className?: string
+}) {
+    return (
+        <PublicSiteFooter
+            className={cn(
+                getDockVisibilityClass(dockVisible),
+                "mx-auto mt-auto max-w-[51.462rem] shrink-0 px-[min(7.25vw,3.731rem)] pb-10 transition-opacity duration-150 lg:fixed lg:right-[max(5rem,calc(50vw-35rem))] lg:bottom-20 lg:z-30 lg:m-0 lg:w-56 lg:p-0",
+                className,
+            )}
+        />
     )
 }
