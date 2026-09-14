@@ -2,19 +2,14 @@
 
 import * as React from "react"
 import {
-  ArrowLeft,
-  Check,
   Clock,
-  Copy,
   List,
   RefreshCw,
   Sparkles,
   Tags,
 } from "@/components/iconimate"
 import { Link, useParams } from "react-router-dom"
-import { toast } from "sonner"
 
-import { useCopyToClipboard } from "@/components/tool-ui/shared/use-copy-to-clipboard"
 import { wikiScribbleStyle } from "@/components/markdown/wiki-scribble"
 import { PlateMarkdownPreview } from "@/components/plate/PlateMarkdownPreview"
 import { preparePublicWikiMarkdown } from "@/features/pages/knowledge/knowledge-wiki-markdown"
@@ -28,7 +23,6 @@ import { publicWikiApi, type PublicWikiPageDetail } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { usePublicPageMeta } from "@/features/pages/public-page-meta"
 import {
-  PublicWikiBreadcrumbs,
   PublicWikiStatus,
   resolvePublicWikiError,
 } from "./PublicWikiLayout"
@@ -227,9 +221,6 @@ export function PublicWikiPage() {
   const [detail, setDetail] = React.useState<PublicWikiPageDetail | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
-  const { copiedId, copy } = useCopyToClipboard()
-  const shareUrl = typeof window === "undefined" ? "" : window.location.href
-  const copied = copiedId === shareUrl
 
   usePublicPageMeta(
     `${detail?.title || "知识页"} · Petrichor Wiki`,
@@ -260,51 +251,8 @@ export function PublicWikiPage() {
     return () => { canceled = true }
   }, [load])
 
-  const copyUrl = async () => {
-    if (!await copy(shareUrl, shareUrl)) {
-      toast.error("复制失败，请手动复制地址栏链接")
-    }
-  }
-
   return (
     <div>
-      {/* 顶部导航与快捷操作栏 */}
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <PublicWikiBreadcrumbs
-          items={[
-            { label: "首页", href: "/" },
-            { label: "Wiki", href: "/wiki" },
-            { label: detail?.title || "知识页" },
-          ]}
-        />
-        <div className="flex items-center gap-2">
-          <Link
-            to="/wiki"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-          >
-            <ArrowLeft className="size-3.5" />
-            返回 Wiki
-          </Link>
-          <button
-            type="button"
-            onClick={() => void copyUrl()}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-          >
-            {copied ? (
-              <>
-                <Check className="size-3.5 text-emerald-400" />
-                <span className="text-emerald-300">已复制</span>
-              </>
-            ) : (
-              <>
-                <Copy className="size-3.5" />
-                <span>复制链接</span>
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-
       {loading ? (
         <PublicWikiLoading />
       ) : error || !detail ? (
