@@ -23,6 +23,10 @@ vi.mock("@/components/public-site-footer", () => ({
     ),
 }))
 
+vi.mock("@/components/public-site-author", () => ({
+    PublicSiteAuthor: () => <a href="/about">作者</a>,
+}))
+
 vi.mock("@/lib/demo/demo-mode", () => ({
     isDemoOnlyBuild: () => false,
 }))

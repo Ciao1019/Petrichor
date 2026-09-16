@@ -1,5 +1,8 @@
+import type { AxiosResponse } from "axios"
+
 import { api } from "@/lib/api-client"
 import { resetAuthSession } from "@/lib/auth-session-events"
+import { isDemoMode } from "@/lib/demo/demo-mode"
 
 export interface LoginRequest {
   email: string
@@ -224,13 +227,53 @@ export interface AboutProfileUpdateRequest {
   contactHref: string
 }
 
+type AboutProfileCache = {
+  response: AxiosResponse<AboutProfileResponse> | null
+  request: Promise<AxiosResponse<AboutProfileResponse>> | null
+}
+
+// 作者资料在本次访问中保持稳定；演示资料与真实站点分别缓存。
+const publicAboutProfileCaches = new Map<boolean, AboutProfileCache>()
+
+function getPublicAboutProfileCache(demo = isDemoMode()): AboutProfileCache {
+  let cache = publicAboutProfileCaches.get(demo)
+  if (!cache) {
+    cache = { response: null, request: null }
+    publicAboutProfileCaches.set(demo, cache)
+  }
+  return cache
+}
+
 export const publicAboutProfileApi = {
-  detail: () => api.get<AboutProfileResponse>("/public/about/profile"),
+  detail: () => {
+    const cache = getPublicAboutProfileCache()
+    if (cache.response) return Promise.resolve(cache.response)
+    if (cache.request) return cache.request
+
+    cache.request = api.get<AboutProfileResponse>("/public/about/profile")
+      .then((response) => {
+        cache.response = response
+        return response
+      })
+      .finally(() => {
+        cache.request = null
+      })
+    return cache.request
+  },
+  getCachedDetail: () => getPublicAboutProfileCache().response?.data ?? null,
+  invalidateClientCache: () => publicAboutProfileCaches.clear(),
 }
 
 export const adminAboutProfileApi = {
   detail: () => api.get<AboutProfileResponse>("/admin/about/profile"),
-  update: (data: AboutProfileUpdateRequest) => api.post<AboutProfileResponse>("/admin/about/profile", data),
+  update: (data: AboutProfileUpdateRequest) => {
+    const demo = isDemoMode()
+    return api.post<AboutProfileResponse>("/admin/about/profile", data).then((response) => {
+      // 替换缓存对象，避免保存前尚未完成的读取覆盖刚更新的资料。
+      publicAboutProfileCaches.set(demo, { response, request: null })
+      return response
+    })
+  },
 }
 
 // 开源项目展示页：手绘马克笔圈词的墨色，与正文注记同色板。

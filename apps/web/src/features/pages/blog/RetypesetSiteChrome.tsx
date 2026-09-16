@@ -5,6 +5,7 @@ import { Github, MessageCircleQuestion, Search } from "@/components/iconimate"
 import { Link } from "react-router-dom"
 
 import { BlogSearchDialog, useBlogSearchHotkey } from "@/components/blog-search-dialog"
+import { PublicSiteAuthor } from "@/components/public-site-author"
 import { PublicSiteFooter } from "@/components/public-site-footer"
 import { StaticNoise } from "@/cuicui/other/creative-effects/animated-noise/static-noise"
 import { isDemoOnlyBuild } from "@/lib/demo/demo-mode"
@@ -181,6 +182,9 @@ export function RetypesetSiteNav({
                             <Github className="size-4" aria-hidden="true" />
                             <span className="sr-only">{retypesetSiteCopy.githubTrigger}</span>
                         </a>
+                    </div>
+                    <div className="mt-4 w-56 max-w-full lg:absolute lg:left-0 lg:top-full" data-public-site-author>
+                        <PublicSiteAuthor />
                     </div>
                 </nav>
             </div>

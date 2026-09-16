@@ -36,6 +36,22 @@ export type HighlighterProps = React.HTMLAttributes<HTMLSpanElement> & {
   isView?: boolean;
 };
 
+function readAnnotationRects(element: HTMLElement, multiline: boolean) {
+  const container = element.offsetParent;
+  const origin = container?.getBoundingClientRect();
+  const rects = multiline
+    ? Array.from(element.getClientRects())
+    : [element.getBoundingClientRect()];
+
+  // 标注与文字共用定位容器，整段随总结下移时，相对坐标并没有变化。
+  return rects.flatMap((rect) => [
+    rect.left - (origin?.left ?? 0) + (container?.scrollLeft ?? 0),
+    rect.top - (origin?.top ?? 0) + (container?.scrollTop ?? 0),
+    rect.width,
+    rect.height,
+  ]);
+}
+
 const Highlighter = React.forwardRef<HTMLSpanElement, HighlighterProps>(
   (
     {
@@ -89,6 +105,7 @@ const Highlighter = React.forwardRef<HTMLSpanElement, HighlighterProps>(
           type: action,
           color,
           strokeWidth,
+          animate: !prefersReducedMotion && resolvedDuration > 0,
           animationDuration: resolvedDuration,
           iterations,
           padding,
@@ -96,14 +113,21 @@ const Highlighter = React.forwardRef<HTMLSpanElement, HighlighterProps>(
         });
         annotation = currentAnnotation;
         currentAnnotation.show();
+        let previousRects = readAnnotationRects(element, multiline);
 
         resizeObserver = new ResizeObserver(() => {
-          currentAnnotation.hide();
+          const nextRects = readAnnotationRects(element, multiline);
+          if (
+            nextRects.length === previousRects.length &&
+            nextRects.every((value, index) => Math.abs(value - previousRects[index]!) < 0.5)
+          ) return;
+          previousRects = nextRects;
+          // 已显示的标注直接 show() 会无动画校正；hide() 后再 show() 会重播。
           currentAnnotation.show();
         });
 
         resizeObserver.observe(element);
-        resizeObserver.observe(document.body);
+        resizeObserver.observe(element.offsetParent ?? document.body);
       }
 
       return () => {
@@ -115,6 +139,7 @@ const Highlighter = React.forwardRef<HTMLSpanElement, HighlighterProps>(
       action,
       color,
       strokeWidth,
+      prefersReducedMotion,
       resolvedDuration,
       iterations,
       padding,
