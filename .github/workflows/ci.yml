@@ -51,7 +51,7 @@ jobs:
           bun run --cwd tools/pi-agent typecheck
           bun run --cwd tools/pi-agent test
           bun run --cwd tools/pi-agent build
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: apps/api/go.mod
           cache-dependency-path: apps/api/go.sum
