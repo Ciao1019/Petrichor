@@ -12,6 +12,7 @@ import { Link, useParams } from "react-router-dom"
 
 import { wikiScribbleStyle } from "@/components/markdown/wiki-scribble"
 import { PlateMarkdownPreview } from "@/components/plate/PlateMarkdownPreview"
+import { SelectionAsk } from "@/components/public/selection-ask"
 import { preparePublicWikiMarkdown } from "@/features/pages/knowledge/knowledge-wiki-markdown"
 import {
   MobileTocDrawer,
@@ -120,12 +121,14 @@ function WikiDetailContent({ detail }: { detail: PublicWikiPageDetail }) {
 
       {/* 正文 Markdown 区域 */}
       <article className="public-article public-article--retypeset min-w-0 rounded-2xl border border-white/[0.08] bg-white/[0.015] p-6 sm:p-8">
-        <PlateMarkdownPreview
-          markdown={markdown}
-          headings={tocAll}
-          publicMediaAccess
-          publicMediaAccessToken={detail.mediaAccessToken}
-        />
+        <SelectionAsk source={{ kind: "wiki", knowledgeBaseId: detail.knowledgeBaseId, pageKey: detail.pageKey }}>
+          <PlateMarkdownPreview
+            markdown={markdown}
+            headings={tocAll}
+            publicMediaAccess
+            publicMediaAccessToken={detail.mediaAccessToken}
+          />
+        </SelectionAsk>
       </article>
 
       {/* 关联知识、被引用与来源文档 */}

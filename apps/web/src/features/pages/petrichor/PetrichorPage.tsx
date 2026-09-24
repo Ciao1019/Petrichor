@@ -196,7 +196,7 @@ const DEPLOY_LINES: { text: string; prompt?: boolean; muted?: boolean; caret?: b
 ]
 
 const handwritingStyle: React.CSSProperties = {
-    fontFamily: '"Caveat", ui-sans-serif, cursive',
+    fontFamily: "var(--font-luo)",
 }
 
 function SectionHeading({ index, label, title }: { index: string; label: string; title: string }) {

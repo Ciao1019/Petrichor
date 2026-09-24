@@ -123,6 +123,7 @@ type AgentTokenUsage struct {
 
 // AgentState 统一 Agent 状态。可序列化，不依赖 LLM chat history 即可恢复。
 type AgentState struct {
+	ControlSequence int64              `json:"controlSequence,omitempty"`
 	RunID           string             `json:"runId"`
 	ConversationID  string             `json:"conversationId"`
 	UserID          string             `json:"userId"`

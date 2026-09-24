@@ -4,7 +4,6 @@ import * as React from "react"
 import {
   makeAssistantDataUI,
   makeAssistantToolUI,
-  ComposerPrimitive,
   useAuiState,
   type ToolCallMessagePartStatus,
 } from "@assistant-ui/react"
@@ -15,12 +14,7 @@ import {
   CircleAlert,
   Compass,
   FileText,
-  Gauge,
-  ListTree,
   Loader2,
-  Pencil,
-  Search,
-  Square,
 } from "@/components/iconimate"
 import { toast } from "sonner"
 
@@ -43,74 +37,7 @@ import {
   toInternalAppPath,
   toolStatusLabel,
 } from "./assistant-message-utils"
-import { ProcessToolGroup } from "./process-tool-group"
 import { StepBudgetNotice } from "./step-budget-notice"
-
-const SUBAGENT_BUDGET_LABEL = "最多 6 步 · 超时 90s"
-const FANOUT_BUDGET_LABEL = "最多 3 路并行 · 每路 6 步 / 90s"
-
-function isSpawnRunning(status?: ToolCallMessagePartStatus) {
-  return status?.type === "running" || status?.type === "incomplete"
-}
-
-function SpawnBudgetBar({
-  label,
-  status,
-  errorCode,
-}: {
-  label: string
-  status?: ToolCallMessagePartStatus
-  errorCode?: string | null
-}) {
-  const running = isSpawnRunning(status)
-  return (
-    <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
-      <span className="inline-flex items-center gap-1">
-        <Gauge className="size-3 opacity-70" aria-hidden />
-        {running ? `进行中 · ${label}` : label}
-        {errorCode === "aborted" ? " · 已取消" : null}
-        {errorCode === "tool_timeout" ? " · 已超时" : null}
-      </span>
-      {running ? (
-        <ComposerPrimitive.Cancel asChild>
-          <Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2 text-[11px]">
-            <Square className="size-3 fill-current" />
-            停止
-          </Button>
-        </ComposerPrimitive.Cancel>
-      ) : null}
-    </div>
-  )
-}
-
-function SubagentStepsList({ steps }: { steps: unknown }) {
-  if (!Array.isArray(steps) || steps.length === 0) return null
-  return (
-    <Collapsible className="mb-2 rounded-md border border-border/50 bg-muted/20 px-2 py-1.5">
-      <CollapsibleTrigger className="group/steps flex w-full items-center gap-1 text-[11px] text-muted-foreground">
-        <ChevronDown className="size-3 transition-transform group-data-[state=closed]/steps:-rotate-90" />
-        子步骤 · {steps.length}
-      </CollapsibleTrigger>
-      <CollapsibleContent className="mt-1.5 space-y-0.5 data-[state=closed]:hidden">
-        {steps.map((item, index) => {
-          const row = asRecord(item)
-          const name = typeof row?.toolName === "string" ? row.toolName : `step-${index + 1}`
-          const ok = row?.ok !== false
-          const errorCode = typeof row?.errorCode === "string" ? row.errorCode : null
-          return (
-            <div key={`${name}-${index}`} className="flex items-center gap-1.5 text-[11px]">
-              {ok
-                ? <CheckCircle2 className="size-3 shrink-0 text-emerald-600/80" />
-                : <CircleAlert className="size-3 shrink-0 text-amber-600/80" />}
-              <span className="truncate font-mono">{name}</span>
-              {errorCode ? <span className="text-muted-foreground">· {errorCode}</span> : null}
-            </div>
-          )
-        })}
-      </CollapsibleContent>
-    </Collapsible>
-  )
-}
 
 export const PlanToolUI = makeAssistantToolUI({
   toolName: "upsert_plan",
@@ -261,38 +188,6 @@ export const DataTableToolUI = makeAssistantToolUI({
   },
 })
 
-/* 以下 6 个「过程类」工具统一走 ProcessToolGroup：合并成一段单行过程日志，
-   由该组首条调用渲染全部，其余返回 null（外层 empty:hidden 兜住空 div）。 */
-export const ListSystemOverviewToolUI = makeAssistantToolUI({
-  toolName: "list_system_overview",
-  render: ({ toolCallId }) => <ProcessToolGroup toolCallId={toolCallId} />,
-})
-
-export const ListKbToolUI = makeAssistantToolUI({
-  toolName: "list_knowledge_bases",
-  render: ({ toolCallId }) => <ProcessToolGroup toolCallId={toolCallId} />,
-})
-
-export const ListDocLibrariesToolUI = makeAssistantToolUI({
-  toolName: "list_doc_libraries",
-  render: ({ toolCallId }) => <ProcessToolGroup toolCallId={toolCallId} />,
-})
-
-export const ReadKnowledgeToolUI = makeAssistantToolUI({
-  toolName: "read_knowledge_node",
-  render: ({ toolCallId }) => <ProcessToolGroup toolCallId={toolCallId} />,
-})
-
-export const ReadDocumentToolUI = makeAssistantToolUI({
-  toolName: "read_document",
-  render: ({ toolCallId }) => <ProcessToolGroup toolCallId={toolCallId} />,
-})
-
-export const SaveArtifactToolUI = makeAssistantToolUI({
-  toolName: "save_answer_artifact",
-  render: ({ toolCallId }) => <ProcessToolGroup toolCallId={toolCallId} />,
-})
-
 export const PreviewArticleUpdateToolUI = makeAssistantToolUI({
   toolName: "preview_article_update",
   render: ({ result, status }) => {
@@ -324,172 +219,6 @@ export const PreviewArticleUpdateToolUI = makeAssistantToolUI({
             {typeof payload.message === "string" ? payload.message : "无正文变更"}
           </p>
         )}
-      </ToolStatusCard>
-    )
-  },
-})
-
-function SpawnCitationsBlock({ citations }: { citations: unknown }) {
-  const navigate = useNavigate()
-  const parsed = Array.isArray(citations)
-    ? citations.map((item) => safeParseSerializableCitation(item)).filter(isPresent)
-    : []
-  const handleNavigate = React.useCallback(async (href: string) => {
-    const legacyDocumentId = parseLegacyDocumentHref(href)
-    if (legacyDocumentId) {
-      try {
-        const res = await knowledgeBaseArticleApi.detail(legacyDocumentId)
-        navigate(knowledgeBaseArticlePath(res.data.knowledgeBaseId, res.data.articleId))
-      } catch {
-        toast.error("无法打开引用文档")
-      }
-      return
-    }
-    const internalPath = toInternalAppPath(href)
-    if (internalPath) {
-      navigate(internalPath)
-      return
-    }
-    if (typeof window !== "undefined") {
-      window.open(href, "_blank", "noopener,noreferrer")
-    }
-  }, [navigate])
-  if (parsed.length === 0) return null
-  return (
-    <div className="mt-2">
-      <CitationList
-        id="spawn-citations"
-        citations={parsed}
-        variant="stacked"
-        onNavigate={handleNavigate}
-      />
-    </div>
-  )
-}
-
-export const SpawnResearchSubagentToolUI = makeAssistantToolUI({
-  toolName: "spawn_research_subagent",
-  render: ({ args, result, status }) => {
-    const input = asRecord(args)
-    const payload = asRecord(result)
-    const goal = typeof input?.goal === "string" ? input.goal : "深度检索"
-    const ok = payload?.ok === true
-    const summary = typeof payload?.summary === "string" ? payload.summary : ""
-    const usage = asRecord(payload?.usage)
-    const errorCode = typeof payload?.errorCode === "string" ? payload.errorCode : null
-    return (
-      <ToolStatusCard
-        title={`子检索：${goal}`}
-        status={status}
-        icon={<Search className="size-4" />}
-        collapsible
-        defaultOpen={isSpawnRunning(status) || errorCode === "aborted"}
-      >
-        <SpawnBudgetBar label={SUBAGENT_BUDGET_LABEL} status={status} errorCode={errorCode} />
-        <SubagentStepsList steps={payload?.steps} />
-        {usage ? (
-          <p className="mb-2 text-[11px] text-muted-foreground">
-            {typeof usage.calls === "number" ? `${usage.calls} 次工具` : null}
-            {typeof usage.totalTokens === "number" ? ` · ${usage.totalTokens} tok` : null}
-            {ok === false && errorCode !== "aborted" ? " · 未完成" : null}
-          </p>
-        ) : null}
-        {summary ? <p className="line-clamp-4 text-sm text-muted-foreground">{summary}</p> : null}
-        <SpawnCitationsBlock citations={payload?.citations} />
-      </ToolStatusCard>
-    )
-  },
-})
-
-export const SpawnWriteSubagentToolUI = makeAssistantToolUI({
-  toolName: "spawn_write_subagent",
-  render: ({ args, result, status }) => {
-    const input = asRecord(args)
-    const payload = asRecord(result)
-    const goal = typeof input?.goal === "string" ? input.goal : "写入规划"
-    const summary = typeof payload?.summary === "string" ? payload.summary : ""
-    const actions = Array.isArray(payload?.proposedActions) ? payload.proposedActions : []
-    const errorCode = typeof payload?.errorCode === "string" ? payload.errorCode : null
-    return (
-      <ToolStatusCard
-        title={`写子代理：${goal}`}
-        status={status}
-        icon={<Pencil className="size-4" />}
-        collapsible
-        defaultOpen={isSpawnRunning(status) || errorCode === "aborted"}
-      >
-        <SpawnBudgetBar label={SUBAGENT_BUDGET_LABEL} status={status} errorCode={errorCode} />
-        <SubagentStepsList steps={payload?.steps} />
-        {actions.length > 0 ? (
-          <p className="mb-2 text-[11px] text-muted-foreground">{actions.length} 条提案</p>
-        ) : null}
-        {summary ? <p className="line-clamp-4 text-sm text-muted-foreground">{summary}</p> : null}
-      </ToolStatusCard>
-    )
-  },
-})
-
-export const SpawnResearchFanoutToolUI = makeAssistantToolUI({
-  toolName: "spawn_research_fanout",
-  render: ({ args, result, status }) => {
-    const input = asRecord(args)
-    const payload = asRecord(result)
-    const tasks = Array.isArray(input?.tasks) ? input.tasks : []
-    const results = Array.isArray(payload?.results) ? payload.results : []
-    const usage = asRecord(payload?.usage)
-    const errorCode = typeof payload?.errorCode === "string" ? payload.errorCode : null
-    const mergedCitations = results.flatMap((item) => {
-      const row = asRecord(item)
-      return Array.isArray(row?.citations) ? row.citations : []
-    })
-    return (
-      <ToolStatusCard
-        title={`并行子检索：${tasks.length || results.length || "?"} 路`}
-        status={status}
-        icon={<ListTree className="size-4" />}
-        collapsible
-        defaultOpen={isSpawnRunning(status) || errorCode === "aborted"}
-      >
-        <SpawnBudgetBar label={FANOUT_BUDGET_LABEL} status={status} errorCode={errorCode} />
-        {results.length > 0 ? (
-          <div className="mb-2 space-y-2">
-            {results.map((item, index) => {
-              const row = asRecord(item)
-              const goal = typeof asRecord(tasks[index])?.goal === "string"
-                ? String(asRecord(tasks[index])?.goal)
-                : `第 ${index + 1} 路`
-              return (
-                <div key={index} className="rounded-md border border-border/40 px-2 py-1.5">
-                  <p className="mb-1 truncate text-[11px] font-medium">{goal}</p>
-                  <SubagentStepsList steps={row?.steps} />
-                  {typeof row?.summary === "string" ? (
-                    <p className="line-clamp-2 text-[11px] text-muted-foreground">{row.summary}</p>
-                  ) : null}
-                </div>
-              )
-            })}
-          </div>
-        ) : null}
-        {usage ? (
-          <p className="mb-2 text-[11px] text-muted-foreground">
-            {typeof usage.succeeded === "number" && typeof usage.tasks === "number"
-              ? `${usage.succeeded}/${usage.tasks} 成功`
-              : null}
-            {typeof usage.totalTokens === "number" ? ` · ${usage.totalTokens} tok` : null}
-          </p>
-        ) : null}
-        <ul className="space-y-1 text-sm text-muted-foreground">
-          {results.slice(0, 3).map((item, index) => {
-            const row = asRecord(item)
-            const summary = typeof row?.summary === "string" ? row.summary : ""
-            return (
-              <li key={index} className="line-clamp-2">
-                {index + 1}. {summary || (row?.ok === false ? "失败" : "…")}
-              </li>
-            )
-          })}
-        </ul>
-        <SpawnCitationsBlock citations={mergedCitations} />
       </ToolStatusCard>
     )
   },

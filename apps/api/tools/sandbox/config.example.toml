@@ -1,0 +1,6 @@
+listen = "127.0.0.1:8099"
+# 用随机生成的至少 32 字符密钥替换；与 API 中的 sandbox.token 相同。
+token = ""
+command = "docker"
+image = "petrichor-sandbox:local"
+timeout_seconds = 20

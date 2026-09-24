@@ -13,6 +13,16 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     && cp target/release/petrichor-doc-convert /out/petrichor-doc-convert \
     && strip /out/petrichor-doc-convert
 
+FROM oven/bun:1.3.14-alpine AS pi-agent-builder
+
+WORKDIR /agent
+COPY tools/pi-agent/package.json tools/pi-agent/bun.lock ./
+RUN bun install --frozen-lockfile --ignore-scripts
+COPY tools/pi-agent/src ./src
+COPY tools/pi-agent/scripts ./scripts
+COPY tools/pi-agent/THIRD_PARTY_NOTICES.md ./
+RUN bun run build
+
 FROM golang:1.26.6-alpine AS builder
 
 WORKDIR /src
@@ -36,7 +46,7 @@ FROM alpine:3.22 AS runtime-base
 
 # Poppler 只负责服务端 PDF 拆页/栅格化；prlimit 限制不可信文件的子进程资源。
 # Noto/CJK 字体为未嵌入字体的文档提供渲染回退，不依赖宿主机字体。
-RUN apk add --no-cache ca-certificates tzdata poppler-utils=25.04.0-r0 util-linux font-noto font-noto-cjk \
+RUN apk add --no-cache ca-certificates tzdata poppler-utils=25.04.0-r0 util-linux font-noto font-noto-cjk libstdc++ libgcc \
     && addgroup -S petrichor \
     && adduser -S -G petrichor petrichor \
     && mkdir -p /app /data \
@@ -44,7 +54,13 @@ RUN apk add --no-cache ca-certificates tzdata poppler-utils=25.04.0-r0 util-linu
 
 WORKDIR /app
 
-FROM runtime-base
+FROM runtime-base AS pi-runtime
+
+COPY --from=pi-agent-builder /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=pi-agent-builder --chown=petrichor:petrichor /agent/dist/index.js /app/pi-agent/index.js
+COPY --from=pi-agent-builder /agent/dist/THIRD_PARTY_NOTICES.md /usr/share/licenses/petrichor-pi-agent/THIRD_PARTY_NOTICES.md
+
+FROM pi-runtime
 
 COPY --from=document-converter-builder /out/petrichor-doc-convert /usr/local/bin/petrichor-doc-convert
 COPY tools/document-converter/LICENSE tools/document-converter/THIRD_PARTY_NOTICES.md /usr/share/licenses/petrichor-doc-convert/
@@ -53,6 +69,7 @@ COPY --from=builder --chown=petrichor:petrichor /out/petrichor-api ./petrichor-a
 COPY --from=builder --chown=petrichor:petrichor /out/petrichor-worker ./petrichor-worker
 COPY --from=builder --chown=petrichor:petrichor /out/petrichor-migrate ./petrichor-migrate
 COPY --chown=petrichor:petrichor docker-entrypoint.sh ./docker-entrypoint.sh
+COPY --chown=petrichor:petrichor agent-skills/ ./agent-skills/
 
 USER petrichor
 EXPOSE 8080

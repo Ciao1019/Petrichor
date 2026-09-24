@@ -80,6 +80,7 @@ type knowledgeRecallDiagnostics struct {
 	Degraded             map[string]string
 	RetrievalMs          int64
 	RerankMs             int64
+	RerankStrategy       string
 }
 
 // executeKnowledgeSearchV2 保留原工具输入/输出字段，同时补齐 TS 版本的召回质量链路。
@@ -216,7 +217,7 @@ func executeKnowledgeSearchV2(ctx *rt.ToolExecutionContext, input any) (any, err
 	if rerankCount > len(articleCandidates) {
 		rerankCount = len(articleCandidates)
 	}
-	reranked := rerankKnowledgeLocally(query, append([]chunkHit{}, articleCandidates[:rerankCount]...))
+	reranked := rerankKnowledge(toolContext(ctx), query, append([]chunkHit{}, articleCandidates[:rerankCount]...), &diagnostics)
 	rerankApplied := rerankCount > 1
 	diagnostics.RerankMs = time.Since(rerankStartedAt).Milliseconds()
 

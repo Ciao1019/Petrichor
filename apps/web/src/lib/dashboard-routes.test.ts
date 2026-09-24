@@ -16,11 +16,11 @@ describe("dashboard routes", () => {
         expect(dashboardRoutes).toMatchObject({
             root: "/dashboard",
             account: "/dashboard/account",
-            notifications: "/dashboard/notifications",
             knowledge: "/dashboard/knowledge",
             adminUsers: "/dashboard/admin/users",
             aiConfig: "/dashboard/ai/config",
             assistant: "/dashboard/assistant",
+            settings: "/dashboard/settings",
             metrics: "/dashboard/metrics",
         })
     })

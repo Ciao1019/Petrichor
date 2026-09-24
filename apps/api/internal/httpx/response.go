@@ -4,7 +4,9 @@ package httpx
 import (
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -112,6 +114,12 @@ func ErrorLogger() gin.HandlerFunc {
 	}
 }
 
+// RetryAfterError 可提示客户端等待时长的错误（如限流），HandleError 会写出 Retry-After 响应头。
+type RetryAfterError interface {
+	error
+	RetryAfter() time.Duration
+}
+
 // HandleError 统一错误出口（对应 toErrorResponse）。
 func HandleError(c *gin.Context, err error) {
 	if err == nil {
@@ -120,6 +128,12 @@ func HandleError(c *gin.Context, err error) {
 	// 交给 ErrorLogger 在请求结束后统一输出，避免各 handler 重复、遗漏或只打印
 	// 一行没有 method/path/status 的裸错误。
 	_ = c.Error(err)
+	var retry RetryAfterError
+	if errors.As(err, &retry) {
+		if seconds := int64(math.Ceil(retry.RetryAfter().Seconds())); seconds > 0 {
+			c.Header("Retry-After", strconv.FormatInt(seconds, 10))
+		}
+	}
 	var he *HttpError
 	if errors.As(err, &he) {
 		ErrorJSON(c, he.Status, he.Message)

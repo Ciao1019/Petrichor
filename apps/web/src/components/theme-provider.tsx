@@ -14,8 +14,7 @@ type ThemeProviderState = {
   theme: Theme
   /**
    * 实际生效的主题：已解析 'system'、且已应用 forcedTheme。
-   * 判断"现在到底是不是暗色"必须用它——前台公开页强制暗色，
-   * 但用户 localStorage 里可能存着 'light'，读 theme 会得到错误结论。
+   * 判断当前明暗必须用它，theme 只表示用户保存的偏好。
    */
   resolvedTheme: Exclude<Theme, 'system'>
   setTheme: (theme: Theme) => void
@@ -34,7 +33,14 @@ export function ThemeProvider({
       if (typeof window === 'undefined') {
         return defaultTheme
       }
-      return (window.localStorage.getItem(storageKey) as Theme) || defaultTheme
+      try {
+        const storedTheme = window.localStorage.getItem(storageKey)
+        return storedTheme === 'dark' || storedTheme === 'light' || storedTheme === 'system'
+          ? storedTheme
+          : defaultTheme
+      } catch {
+        return defaultTheme
+      }
     }
   )
 
@@ -59,20 +65,17 @@ export function ThemeProvider({
 
   useLayoutEffect(() => {
     const root = window.document.documentElement
+    let cancelled = false
 
     const applyTheme = () => {
+      if (cancelled) return
       root.classList.remove('light', 'dark')
-      if (effectiveTheme === 'system') {
-        const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches
-          ? 'dark'
-          : 'light'
-        root.classList.add(systemTheme)
-      } else {
-        root.classList.add(effectiveTheme)
-      }
+      root.classList.add(resolvedTheme)
+      root.style.colorScheme = resolvedTheme
     }
 
-    if (typeof document.startViewTransition === 'function') {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (!root.classList.contains(resolvedTheme) && !reducedMotion && typeof document.startViewTransition === 'function') {
       try {
         const transition = document.startViewTransition(applyTheme)
         transition.ready?.catch(() => {
@@ -84,20 +87,29 @@ export function ThemeProvider({
         transition.finished.catch(() => {
           // 新的 ViewTransition 会取消旧的 transition，这里忽略取消异常
         })
+        return () => {
+          // 快速连续切换时，旧快照回调不能覆盖最新选择。
+          cancelled = true
+          transition.skipTransition()
+        }
       } catch {
         applyTheme()
       }
     } else {
       applyTheme()
     }
-  }, [effectiveTheme])
+  }, [resolvedTheme])
 
   const value = {
     theme,
     resolvedTheme,
     setTheme: (theme: Theme) => {
       if (typeof window !== 'undefined') {
-        window.localStorage.setItem(storageKey, theme)
+        try {
+          window.localStorage.setItem(storageKey, theme)
+        } catch {
+          // 隐私模式或存储不可用时，仍允许当前页面切换主题。
+        }
       }
       setTheme(theme)
     },

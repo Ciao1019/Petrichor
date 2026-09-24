@@ -17,13 +17,14 @@
 - `apps/web` 是 Bun + React + Vite + TypeScript 客户端 SPA，入口为
   `apps/web/src/main.tsx`，页面路由由 `react-router-dom` 管理。
 - `apps/api` 是 Go + Gin API 服务，接管 `/api/*` 和 `/healthz`。
+- 全部 Agent 工具循环统一使用 Pi Agent Core；Go 的 `internal/piruntime` 通过私有 stdio 调用 `tools/pi-agent`，保留模型凭据、权限、证据与业务工具。API/Worker 镜像均内置运行器。
 - 生产环境由 `apps/web/Caddyfile` 托管 Vite 静态资源并反代 Go API；`apps/web/server.ts` 仅用于本地 Bun 运行。
 - 数据层使用启用 `pg_trgm` 与 `vector` 扩展的 PostgreSQL 16+，完整结构由
   `apps/api/migrations/202608270002_init.sql` 定义，并由 Go 服务启动时自动执行。
 - 认证使用 Sa-Token-Go 的 Gin 集成，token 状态由 `sa_token_storage` 持久化到 PostgreSQL；
   业务用户只保存在 `petrichor_user`。
 - 上传和公开文件访问使用 S3 兼容对象存储。
-- 生产部署统一使用根目录 `compose.yaml`：Caddy、Go API、统一 Asynq Worker、本地 Redis 与仅回环地址开放的 asynqmon；Redis 使用 `go-redis/v9`，通过 Asynq 承载知识构建和视觉导入队列，并保存视觉导入任务、页进度和死信状态。
+- 生产部署统一使用根目录 `compose.yaml`：Caddy、Go API、统一 Asynq Worker、本地 Redis 与仅回环地址开放的 asynqmon；Redis 使用 `go-redis/v9`，通过 Asynq 承载知识构建和视觉导入队列，并保存视觉导入任务、页进度和死信状态；前台问答、正文划词问 AI 与语义检索的 IP/浏览器指纹限流由 `internal/ratelimit`（ulule/limiter）计数在同一 Redis。
 
 ## 常用命令
 
@@ -31,6 +32,7 @@
 
 ```bash
 bun install --cwd apps/web
+bun run install:agent
 bun dev
 cd apps/api && go run ./cmd/server
 bun run build
@@ -62,6 +64,7 @@ cd apps/api && go run ./cmd/migrate status
 - `apps/api/cmd/migrate/`：Goose 数据库迁移命令入口。
 - `apps/api/cmd/worker/`：统一 Asynq Worker 入口，分别消费知识构建与视觉文档导入队列。
 - `apps/api/internal/`：Go 鉴权、业务、数据库、存储、缓存和 Agent 实现。
+- `apps/api/tools/pi-agent/`：Pi TypeScript 运行器、独立 `bun.lock` 与消息协议测试。
 - `apps/api/migrations/`：随 Go 二进制内嵌的 Goose 初始化 SQL。
 - `apps/api/config.example.toml`：Go 运行配置模板；本地真实配置为忽略提交的 `config.toml`。
 - `apps/web/src/main.tsx`：Vite 客户端入口。
@@ -129,6 +132,9 @@ bun run test
 bun run typecheck
 bun run lint
 bun run build
+bun run typecheck:agent
+bun run test:agent
+bun run build:agent
 ./scripts/check-file-size.sh
 cd apps/api && go test ./... && go vet ./...
 ```

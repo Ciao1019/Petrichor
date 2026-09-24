@@ -29,6 +29,8 @@ Skill 只扩大“可见能力”，不会绕过权限，也不会赋予子 Agen
 | `documents` | 文档库搜索/读写、导出、移动、分享与确认入口 |
 | `admin` | 模型绑定、Agent Key 与公开问答状态管理 |
 | `system` | 系统概览 |
+| `external` | 外部 MCP 服务发现、白名单读取及写操作确认，含浏览器交互 |
+| `computation` | 隔离 Python/JavaScript 数据计算 |
 
 Soft Router 的领域提示可预加载对应 Skill：
 
@@ -45,6 +47,8 @@ system                  -> system
 这只是提示与预加载映射，最终仍由 Runtime 的工具解析和权限检查决定可执行范围。
 
 ## 3. 注册新 Skill
+
+已有工具组合可直接放进文件化 `SKILL.md`；支持助手技能及 Wiki 文档规则，配置方法见 [Agent 扩展配置](extensions.md)。加载文件技能仍经过同一权限与子任务约束。
 
 先注册 Skill 引用的工具，再在 `registerBuiltinSkills` 中注册 Skill。例如：
 

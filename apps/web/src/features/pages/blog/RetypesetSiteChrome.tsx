@@ -1,12 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { Github, MessageCircleQuestion, Search } from "@/components/iconimate"
+import { Github, MessageCircleQuestion } from "@/components/iconimate"
 import { Link } from "react-router-dom"
 
 import { BlogSearchDialog, useBlogSearchHotkey } from "@/components/blog-search-dialog"
 import { PublicSiteAuthor } from "@/components/public-site-author"
 import { PublicSiteFooter } from "@/components/public-site-footer"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { StaticNoise } from "@/cuicui/other/creative-effects/animated-noise/static-noise"
 import { isDemoOnlyBuild } from "@/lib/demo/demo-mode"
 import { cn } from "@/lib/utils"
@@ -31,7 +32,6 @@ const retypesetSiteCopy = {
     navAsk: "问答",
     navProjects: "开源",
     navAbout: "关于",
-    searchTrigger: "搜索文章",
     githubTrigger: "GitHub 仓库",
 } as const
 
@@ -79,9 +79,8 @@ export function RetypesetSiteHeader({ dockVisible }: { dockVisible: boolean }) {
 
     return (
         <div className="retypeset-home contents">
-            {/* 噪点纹理：与后台右侧内容区（SidebarInset）同一组件、同一档透明度，
-                前台整页铺满故改为 fixed。头部在每个公开页都渲染，挂这里即全站覆盖。 */}
-            <StaticNoise opacity={0.08} className="fixed" />
+            {/* 复用后台噪点，前台以 fixed 铺满页面；浅色模式降低强度，保留纸张质感。 */}
+            <StaticNoise opacity={0.08} className="retypeset-paper-noise fixed" />
 
             <header
                 className={`${dockVisibilityClass} retypeset-c-secondary mb-[2.625rem] transition-opacity duration-150 lg:fixed lg:right-[max(5rem,calc(50vw-35rem))] lg:top-20 lg:z-30 lg:mb-0 lg:w-56`}
@@ -151,22 +150,13 @@ export function RetypesetSiteNav({
                         ) : null}
                     </ul>
                     <div className="mt-3 flex items-center gap-3 lg:mt-4">
-                        <button
-                            type="button"
-                            onClick={openSearch}
-                            aria-label={retypesetSiteCopy.searchTrigger}
-                            title={retypesetSiteCopy.searchTrigger}
-                            className="retypeset-c-secondary inline-flex size-7 cursor-pointer items-center justify-center rounded-full"
-                        >
-                            <Search className="size-4" aria-hidden="true" />
-                            <span className="sr-only">{retypesetSiteCopy.searchTrigger}</span>
-                        </button>
+                        <ThemeToggle className="size-10 [--theme-toggle-cutout:var(--retypeset-background)] lg:size-7" />
                         <Link
                             to="/ask"
                             aria-label={retypesetSiteCopy.navAsk}
                             aria-current={activeSection === "ask" ? "page" : undefined}
                             title={retypesetSiteCopy.navAsk}
-                            className={`${activeSection === "ask" ? "retypeset-c-primary" : "retypeset-c-secondary"} inline-flex size-7 cursor-pointer items-center justify-center rounded-full transition-colors`}
+                            className={`${activeSection === "ask" ? "retypeset-c-primary" : "retypeset-c-secondary"} inline-flex size-10 cursor-pointer items-center justify-center rounded-full transition-colors lg:size-7`}
                         >
                             <MessageCircleQuestion className="size-4" aria-hidden="true" />
                             <span className="sr-only">{retypesetSiteCopy.navAsk}</span>
@@ -177,7 +167,7 @@ export function RetypesetSiteNav({
                             rel="noopener noreferrer"
                             aria-label={retypesetSiteCopy.githubTrigger}
                             title={retypesetSiteCopy.githubTrigger}
-                            className="retypeset-c-secondary inline-flex size-7 cursor-pointer items-center justify-center rounded-full"
+                            className="retypeset-c-secondary inline-flex size-10 cursor-pointer items-center justify-center rounded-full lg:size-7"
                         >
                             <Github className="size-4" aria-hidden="true" />
                             <span className="sr-only">{retypesetSiteCopy.githubTrigger}</span>

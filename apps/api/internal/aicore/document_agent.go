@@ -3,16 +3,8 @@ package aicore
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
-	"sync"
-
-	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/adk/filesystem"
-	"github.com/cloudwego/eino/adk/middlewares/summarization"
-	"github.com/cloudwego/eino/adk/prebuilt/deep"
 
 	"petrichor/api/internal/kb"
 )
@@ -22,96 +14,6 @@ const (
 	documentAgentMaxIteration = 48
 	documentAgentResultPath   = "/output/result.json"
 )
-
-type trackedDocumentBackend struct {
-	*filesystem.InMemoryBackend
-	mu              sync.Mutex
-	expectedLines   map[string]int
-	readLines       map[string]map[int]struct{}
-	completedPaths  map[string]struct{}
-	onPartCompleted func(completed, total int)
-	onPartVerified  func(path string, completed, total int)
-}
-
-func newTrackedDocumentBackend(callbacks ...func(completed, total int)) *trackedDocumentBackend {
-	var callback func(completed, total int)
-	if len(callbacks) > 0 {
-		callback = callbacks[0]
-	}
-	return &trackedDocumentBackend{
-		InMemoryBackend: filesystem.NewInMemoryBackend(),
-		expectedLines:   map[string]int{},
-		readLines:       map[string]map[int]struct{}{},
-		completedPaths:  map[string]struct{}{},
-		onPartCompleted: callback,
-	}
-}
-
-func (b *trackedDocumentBackend) expect(path, content string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.expectedLines[normalizeDocumentAgentPath(path)] = strings.Count(content, "\n") + 1
-}
-
-func (b *trackedDocumentBackend) Read(ctx context.Context, req *filesystem.ReadRequest) (*filesystem.FileContent, error) {
-	content, err := b.InMemoryBackend.Read(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	path := normalizeDocumentAgentPath(req.FilePath)
-	b.mu.Lock()
-	completed, total := 0, len(b.expectedLines)
-	shouldNotify := false
-	if totalLines, ok := b.expectedLines[path]; ok && content.Content != "" {
-		start := req.Offset
-		if start < 1 {
-			start = 1
-		}
-		readCount := strings.Count(content.Content, "\n") + 1
-		if b.readLines[path] == nil {
-			b.readLines[path] = map[int]struct{}{}
-		}
-		for line := start; line < start+readCount && line <= totalLines; line++ {
-			b.readLines[path][line] = struct{}{}
-		}
-		if len(b.readLines[path]) >= totalLines {
-			if _, exists := b.completedPaths[path]; !exists {
-				b.completedPaths[path] = struct{}{}
-				shouldNotify = true
-			}
-		}
-	}
-	completed = len(b.completedPaths)
-	callback := b.onPartCompleted
-	verifiedCallback := b.onPartVerified
-	b.mu.Unlock()
-	if shouldNotify && callback != nil {
-		callback(completed, total)
-	}
-	if shouldNotify && verifiedCallback != nil {
-		verifiedCallback(path, completed, total)
-	}
-	return content, nil
-}
-
-func normalizeDocumentAgentPath(path string) string {
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-	return filepath.Clean(path)
-}
-
-func (b *trackedDocumentBackend) unreadCount() int {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return len(b.expectedLines) - len(b.completedPaths)
-}
-
-func (b *trackedDocumentBackend) expectedCount() int {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return len(b.expectedLines)
-}
 
 type documentAgentPart struct {
 	path   string
@@ -129,7 +31,7 @@ func runKnowledgeDocumentAgent(ctx context.Context, request kb.DocumentAgentRequ
 
 	activityTracker := newDocumentAgentActivityTracker(request)
 	activityTracker.notify(kb.DocumentAgentActivity{
-		ID: "adk-workspace", Kind: "lifecycle", Status: "running",
+		ID: "pi-workspace", Kind: "lifecycle", Status: "running",
 		Title: "创建隔离文档工作区", Detail: fmt.Sprintf("正在准备 %d 个文档切片", len(request.Chunks)),
 	})
 	backend := newTrackedDocumentBackend(func(completed, total int) {
@@ -146,89 +48,32 @@ func runKnowledgeDocumentAgent(ctx context.Context, request kb.DocumentAgentRequ
 	})
 	backend.onPartVerified = activityTracker.partVerified
 	if err := prepareDocumentAgentWorkspace(ctx, backend, request); err != nil {
-		activityTracker.fail("adk-workspace", "隔离文档工作区创建失败")
+		activityTracker.fail("pi-workspace", "隔离文档工作区创建失败")
 		return "", err
 	}
-	activityTracker.complete("adk-workspace", "隔离文档工作区准备完成",
+	activityTracker.complete("pi-workspace", "隔离文档工作区准备完成",
 		fmt.Sprintf("已生成 %d 个正文分卷和既有 Wiki 摘要索引", backend.expectedCount()))
 	notifyDocumentAgentProgress(request, "文档工作区准备完成，Agent 开始阅读全文", 0, backend.expectedCount(), 0)
-	chatModel := newEinoToolCallingModel(resolved)
-	summaryRetries := 1
-	summaryHandler, err := summarization.New(ctx, &summarization.Config{
-		Model: chatModel,
-		Trigger: &summarization.TriggerCondition{
-			ContextTokens: documentAgentSummaryTokenLimit(resolved.ContextWindow),
-		},
-		UserInstruction:    "压缩当前长文档抽取上下文。必须保留已完整读取的分卷路径与 chunkKey、所有候选名称/pageKey/别名/摘要/sourceChunkKeys、关系、尚未读取的分卷和最终结果文件契约。",
-		Retry:              &summarization.RetryConfig{MaxRetries: &summaryRetries},
-		EmitInternalEvents: true,
-	})
+	finalAnswer, err := executeDocumentPiAgent(ctx, resolved, request, backend, activityTracker)
 	if err != nil {
-		return "", fmt.Errorf("创建文档 Agent 上下文压缩器失败: %w", err)
-	}
-	instruction := documentAgentInstruction(request)
-	agent, err := deep.New(ctx, &deep.Config{
-		Name:             "knowledge-document-extractor",
-		Description:      "遍历完整长文档并生成可追溯的 Wiki 实体、概念和关系",
-		ChatModel:        chatModel,
-		Instruction:      instruction,
-		MaxIteration:     documentAgentMaxIteration,
-		Backend:          backend,
-		Handlers:         []adk.ChatModelAgentMiddleware{summaryHandler},
-		ModelRetryConfig: &adk.ModelRetryConfig{MaxRetries: 2},
-	})
-	if err != nil {
-		return "", fmt.Errorf("创建文档 Agent 失败: %w", err)
-	}
-
-	activityTracker.notify(kb.DocumentAgentActivity{
-		ID: "adk-runtime", Kind: "lifecycle", Status: "running",
-		Title: "启动文档抽取 Agent", Detail: fmt.Sprintf("最多执行 %d 轮", documentAgentMaxIteration),
-		AgentName: "主 Agent",
-	})
-	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent, EnableStreaming: false})
-	iterator := runner.Query(ctx, strings.Join([]string{
-		"请分析知识库「" + request.KnowledgeBaseName + "」中的文章「" + request.ArticleTitle + "」。",
-		"正文不在本消息里；从 /document/manifest.md 开始，遍历工作区中的完整文档。",
-		"完成后把唯一结果写入 " + documentAgentResultPath + "。",
-	}, "\n"))
-	finalAnswer := ""
-	for {
-		event, ok := iterator.Next()
-		if !ok {
-			break
-		}
-		activityTracker.handle(event)
-		if event.Err != nil {
-			var retryNotice *adk.WillRetryError
-			if !errors.As(event.Err, &retryNotice) {
-				activityTracker.fail("adk-runtime", "文档抽取 Agent 执行失败")
-				return "", event.Err
-			}
-		}
-		if event.Output == nil || event.Output.MessageOutput == nil {
-			continue
-		}
-		message := event.Output.MessageOutput.Message
-		if message != nil && message.Role == "assistant" && trimAgentText(message.Content) != "" {
-			finalAnswer = message.Content
-		}
+		activityTracker.fail("pi-runtime", "文档抽取 Agent 执行失败")
+		return "", err
 	}
 	if unread := backend.unreadCount(); unread > 0 {
-		activityTracker.fail("adk-runtime", "Agent 未完整阅读全部正文分卷")
+		activityTracker.fail("pi-runtime", "Agent 未完整阅读全部正文分卷")
 		return "", fmt.Errorf("文档 Agent 跳过了 %d 个正文分卷", unread)
 	}
 
-	result, readErr := backend.Read(ctx, &filesystem.ReadRequest{FilePath: documentAgentResultPath})
+	result, readErr := backend.Read(ctx, &documentReadRequest{FilePath: documentAgentResultPath})
 	if readErr == nil && result != nil && trimAgentText(result.Content) != "" {
-		activityTracker.complete("adk-runtime", "文档抽取 Agent 执行完成", "已读取最终结果文件")
+		activityTracker.complete("pi-runtime", "文档抽取 Agent 执行完成", "已读取最终结果文件")
 		return result.Content, nil
 	}
 	if trimAgentText(finalAnswer) != "" {
-		activityTracker.complete("adk-runtime", "文档抽取 Agent 执行完成", "使用 Agent 最终响应进行结果校验")
+		activityTracker.complete("pi-runtime", "文档抽取 Agent 执行完成", "使用 Agent 最终响应进行结果校验")
 		return finalAnswer, nil
 	}
-	activityTracker.fail("adk-runtime", "Agent 未生成最终抽取结果")
+	activityTracker.fail("pi-runtime", "Agent 未生成最终抽取结果")
 	return "", fmt.Errorf("文档 Agent 没有生成结果文件")
 }
 
@@ -253,8 +98,8 @@ func documentAgentSummaryTokenLimit(contextWindow int64) int {
 	if limit > 120_000 {
 		limit = 120_000
 	}
-	if limit < 8_000 {
-		limit = 8_000
+	if limit < 256 {
+		limit = 256
 	}
 	return int(limit)
 }
@@ -281,13 +126,13 @@ func prepareDocumentAgentWorkspace(ctx context.Context, backend *trackedDocument
 			)
 		}
 		content := strings.Join(body, "\n")
-		if err := backend.Write(ctx, &filesystem.WriteRequest{FilePath: part.path, Content: content}); err != nil {
+		if err := backend.Write(ctx, &documentWriteRequest{FilePath: part.path, Content: content}); err != nil {
 			return err
 		}
 		backend.expect(part.path, content)
 		manifest = append(manifest, "- `"+part.path+"`："+strings.Join(keys, "、"))
 	}
-	if err := backend.Write(ctx, &filesystem.WriteRequest{
+	if err := backend.Write(ctx, &documentWriteRequest{
 		FilePath: "/document/manifest.md", Content: strings.Join(manifest, "\n"),
 	}); err != nil {
 		return err
@@ -297,7 +142,7 @@ func prepareDocumentAgentWorkspace(ctx context.Context, backend *trackedDocument
 	if err != nil {
 		return err
 	}
-	return backend.Write(ctx, &filesystem.WriteRequest{
+	return backend.Write(ctx, &documentWriteRequest{
 		FilePath: "/knowledge-base/existing-pages.json", Content: string(existingJSON),
 	})
 }

@@ -5,7 +5,6 @@ import { ChevronDown, ChevronUp, Loader2, Package, Plus, RefreshCw, Save, Trash2
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -179,12 +178,12 @@ export function ProjectsConfigPage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <Card>
-          <CardHeader>
-            <CardTitle>页头</CardTitle>
-            <CardDescription>标题与副标题展示在 `/projects` 纸面清单顶部。副标题留空即隐藏。</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-base font-semibold">页头设置</h3>
+            <p className="text-sm text-muted-foreground">标题与副标题展示在 `/projects` 纸面清单顶部。副标题留空即隐藏。</p>
+          </div>
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="projects-heading">标题</Label>
               <Input
@@ -205,45 +204,54 @@ export function ProjectsConfigPage() {
                 placeholder="一些我做过、正在做的东西。"
               />
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>发布状态</CardTitle>
-            <CardDescription>公开页面读取当前单例配置。</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-muted-foreground">更新时间</span>
-              <span className="text-right">{formatDateTime(updatedAt)}</span>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-muted-foreground">项目数量</span>
-              <span className="text-right">{items.length}</span>
-            </div>
-            <Button type="button" variant="outline" className="w-full" asChild>
-              <a href="/projects" target="_blank" rel="noopener noreferrer">
-                预览公开页面
-              </a>
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="space-y-3 rounded-xl border border-border/40 bg-muted/20 p-4 text-sm h-fit">
+          <div>
+            <h3 className="font-medium">发布状态</h3>
+            <p className="text-xs text-muted-foreground">公开页面读取当前单例配置。</p>
+          </div>
+          <div className="flex items-center justify-between gap-4 pt-1">
+            <span className="text-muted-foreground">更新时间</span>
+            <span className="text-right font-medium">{formatDateTime(updatedAt)}</span>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-muted-foreground">项目数量</span>
+            <span className="text-right font-medium">{items.length}</span>
+          </div>
+          <Button type="button" variant="outline" size="sm" className="w-full mt-2" asChild>
+            <a href="/projects" target="_blank" rel="noopener noreferrer">
+              预览公开页面
+            </a>
+          </Button>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>项目列表</CardTitle>
-          <CardDescription>
-            按此处顺序在前台从上到下展示，用「上移 / 下移」调整。技术栈用逗号分隔；「标签词」是项目名右侧那圈手绘马克笔圈词（如 popular / new / WIP），留空则不画圈；描述、链接均可留空。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {items.length === 0 ? (
-            <p className="text-sm text-muted-foreground">暂无项目，点击下方「添加项目」。</p>
-          ) : (
-            items.map((item, index) => (
-              <div key={index} className="space-y-4 rounded-lg border p-4">
+      <div className="border-t border-border/40" />
+
+      <div className="space-y-4">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-base font-semibold">项目列表 ({items.length})</h3>
+            <p className="text-sm text-muted-foreground">
+              按此处顺序在前台从上到下展示，用「上移 / 下移」调整。技术栈用逗号分隔；「标签词」是项目名右侧那圈手绘马克笔圈词（如 popular / new / WIP），留空则不画圈；描述、链接均可留空。
+            </p>
+          </div>
+          <Button type="button" variant="outline" size="sm" className="shrink-0 self-start sm:self-auto" disabled={loading} onClick={addItem}>
+            <Plus className="mr-2 size-4" />
+            添加项目
+          </Button>
+        </div>
+
+        {items.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border/60 py-8 text-center text-sm text-muted-foreground">
+            暂无项目，点击上方或下方「添加项目」。
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {items.map((item, index) => (
+              <div key={index} className="space-y-4 rounded-xl border border-border/50 bg-card/60 p-4 transition-colors hover:border-border">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-medium text-muted-foreground">#{index + 1}</span>
                   <div className="flex items-center gap-1">
@@ -273,7 +281,7 @@ export function ProjectsConfigPage() {
                       size="icon"
                       disabled={loading}
                       onClick={() => removeItem(index)}
-                      aria-label="删除该项目"
+                      aria-label="删除项目"
                     >
                       <Trash2 className="size-4" />
                     </Button>
@@ -381,14 +389,17 @@ export function ProjectsConfigPage() {
                   </div>
                 </div>
               </div>
-            ))
-          )}
+            ))}
+          </div>
+        )}
+
+        {items.length > 0 && (
           <Button type="button" variant="outline" size="sm" disabled={loading} onClick={addItem}>
             <Plus className="mr-2 size-4" />
             添加项目
           </Button>
-        </CardContent>
-      </Card>
+        )}
+      </div>
     </div>
   )
 }

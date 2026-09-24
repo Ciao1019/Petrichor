@@ -1,5 +1,4 @@
 import { api } from "@/lib/api-client"
-import type { TableDataInfo } from "@/lib/api-core"
 
 // ===== AI 模型接入：凭证 / 供应商 / 模型 / 用途绑定 =====
 
@@ -261,58 +260,4 @@ export const aiBindingApi = {
   list: () => api.post<{ items: AiBindingSlot[] }>("/ai/binding/list", {}),
   set: (data: AiBindingSetRequest) => api.post<AiBindingResponse>("/ai/binding/set", data),
   clear: (data: { purpose: AiPurpose }) => api.post<void>("/ai/binding/clear", data),
-}
-
-export interface NotificationSummaryResponse {
-  unreadCount: number
-  latestUnreadId?: string | null
-}
-
-export type NotificationReadStatus = "ALL" | "UNREAD" | "READ"
-
-export interface NotificationListRequest {
-  pageNum?: number
-  pageSize?: number
-  orderByColumn?: string
-  isAsc?: string
-  category?: string
-  readStatus?: NotificationReadStatus
-}
-
-export interface NotificationItem {
-  id: string
-  category: string
-  bizType: string
-  bizId: string
-  title: string
-  content: string
-  payload: Record<string, unknown>
-  read: boolean
-  readAt?: string | null
-  createdAt: string
-}
-
-export interface NotificationReadRequest {
-  notificationId: string
-}
-
-export interface NotificationReadResponse {
-  notificationId: string
-  readAt?: string | null
-}
-
-export interface NotificationReadAllRequest {
-  category?: string
-}
-
-export interface NotificationReadAllResponse {
-  updatedCount: number
-  readAt?: string | null
-}
-
-export const notificationApi = {
-  summary: () => api.get<NotificationSummaryResponse>("/notification/summary"),
-  list: (data: NotificationListRequest) => api.post<TableDataInfo<NotificationItem>>("/notification/list", data),
-  read: (data: NotificationReadRequest) => api.post<NotificationReadResponse>("/notification/read", data),
-  readAll: (data: NotificationReadAllRequest) => api.post<NotificationReadAllResponse>("/notification/read-all", data),
 }

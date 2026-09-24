@@ -24,21 +24,6 @@ function normalizeAxiosError(error: unknown, fallback: string): string {
   return fallback
 }
 
-function SetupLoading({ silent = false }: { silent?: boolean }) {
-  if (silent) {
-    return <div className="min-h-screen bg-background" aria-hidden="true" />
-  }
-
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4" role="status" aria-live="polite">
-      <div className="flex items-center gap-3 text-sm text-muted-foreground">
-        <span className="size-2 rounded-full bg-primary motion-safe:animate-pulse" />
-        正在检查站点状态…
-      </div>
-    </div>
-  )
-}
-
 function SetupCheckError({ onRetry }: { onRetry: () => void }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
@@ -190,10 +175,8 @@ function SetupForm({ onInitialized }: { onInitialized: () => void }) {
 
 export function SiteSetupGate({
   children,
-  silentChecking = false,
 }: {
   children: React.ReactNode
-  silentChecking?: boolean
 }) {
   const navigate = useNavigate()
   // /demo 要在路由组件渲染后才写 sessionStorage，因此入口路径也需直接放行。
@@ -225,7 +208,6 @@ export function SiteSetupGate({
   }, [checkSetup, skipSetupCheck])
 
   if (skipSetupCheck) return children
-  if (state === "checking") return <SetupLoading silent={silentChecking} />
   if (state === "error") return <SetupCheckError onRetry={checkSetup} />
   if (state === "required") {
     return (
@@ -237,5 +219,6 @@ export function SiteSetupGate({
       />
     )
   }
+  // 站点初始化检查在后台执行，页面框架和路由资源可立即加载。
   return children
 }

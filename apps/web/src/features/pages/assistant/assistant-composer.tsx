@@ -66,6 +66,8 @@ export function GrokComposer({
   selectedConfigId,
   onConfigChange,
   onComposerFocus,
+  allowAttachments = true,
+  allScopeLabel = "全部资料",
 }: {
   placeholder: string
   knowledgeBases: KnowledgeBaseQaSummary[]
@@ -77,6 +79,10 @@ export function GrokComposer({
   selectedConfigId: string | null
   onConfigChange: (next: string) => void
   onComposerFocus?: () => void
+  /** 前台匿名访客不开放附件上传。 */
+  allowAttachments?: boolean
+  /** 范围选择里「全部」一项的名称。 */
+  allScopeLabel?: string
 }) {
   const isEmpty = useAuiState((s) => s.composer.isEmpty)
   const isRunning = useAuiState((s) => s.thread.isRunning)
@@ -90,10 +96,10 @@ export function GrokComposer({
       data-running={isRunning}
     >
       <div className="overflow-hidden rounded-[24px] bg-[#f8f8f8] shadow-xs ring-1 ring-[#e5e5e5] ring-inset transition-shadow focus-within:ring-[#d0d0d0] dark:bg-[#212121] dark:ring-[#2a2a2a] dark:focus-within:ring-[#3a3a3a]">
-        <ComposerPrimitive.AttachmentDropzone className="block">
-          <ComposerAttachments className="px-3 pt-2.5" />
-          <div className="flex items-center gap-1 px-2 py-1.5">
-            <ComposerAddAttachment />
+        <ComposerPrimitive.AttachmentDropzone className="block" disabled={!allowAttachments}>
+          {allowAttachments ? <ComposerAttachments className="px-3 pt-2.5" /> : null}
+          <div className={cn("flex items-center gap-1 px-2 py-1.5", !allowAttachments && "pl-3")}>
+            {allowAttachments ? <ComposerAddAttachment /> : null}
             <ComposerPrimitive.Input
               id="kb-qa-composer-input"
               name="message"
@@ -110,10 +116,12 @@ export function GrokComposer({
               value={focusSelection}
               onChange={onFocusChange}
               scopeLabel={scopeLabel}
+              allScopeLabel={allScopeLabel}
               isEmpty={isEmpty}
             />
 
-            <div className="relative size-8 shrink-0 rounded-full bg-[#0d0d0d] text-white dark:bg-[#e8e8e8] dark:text-[#0d0d0d]">
+            {/* 用 text-[#fff] 而非 text-white：前台主题会把 .text-white 重映射为正文色，发送箭头会隐形。 */}
+            <div className="relative size-8 shrink-0 rounded-full bg-[#0d0d0d] text-[#fff] dark:bg-[#e8e8e8] dark:text-[#0d0d0d]">
               <GsapFade
                 visible={!isRunning}
                 className="absolute inset-0"
@@ -176,6 +184,7 @@ export function InlineScopeSelector({
   value,
   onChange,
   scopeLabel,
+  allScopeLabel = "全部资料",
   isEmpty,
 }: {
   knowledgeBases: KnowledgeBaseQaSummary[]
@@ -183,6 +192,7 @@ export function InlineScopeSelector({
   value: AssistantFocusSelection
   onChange: (next: AssistantFocusSelection) => void
   scopeLabel: string
+  allScopeLabel?: string
   isEmpty: boolean
 }) {
   const [open, setOpen] = React.useState(false)
@@ -259,19 +269,19 @@ export function InlineScopeSelector({
       </PopoverTrigger>
       <PopoverContent align="end" side="top" sideOffset={8} className="w-[min(320px,calc(100vw-2rem))] p-0">
         <Command>
-          <CommandInput placeholder="搜索知识库或文档库..." />
+          <CommandInput placeholder={docLibraries.length > 0 ? "搜索知识库或文档库..." : "搜索知识库..."} />
           <CommandList>
             <CommandEmpty>没有找到范围</CommandEmpty>
             <CommandGroup heading="范围">
               <CommandItem
-                value="all all-sources 全部资料"
+                value={`all all-sources ${allScopeLabel}`}
                 onSelect={() => {
                   onChange({ kind: "none" })
                   setOpen(false)
                 }}
               >
                 <Globe2 className="size-3.5 text-violet-600 dark:text-violet-300" />
-                <span className="flex-1">全部资料</span>
+                <span className="flex-1">{allScopeLabel}</span>
                 {isAll ? <Check className="size-3.5 text-primary" /> : null}
               </CommandItem>
             </CommandGroup>

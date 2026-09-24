@@ -15,11 +15,17 @@
           const path = location.pathname.replace(/(.)\/$/, "$1") || "/"
           const privatePrefixes = ["/dashboard", "/login", "/auth", "/demo"]
           const isPublic = !privatePrefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))
-          let theme = isPublic ? "dark" : localStorage.getItem("ui-theme") || "system"
+          document.documentElement.toggleAttribute("data-public-site", isPublic)
+          let theme = "system"
+          try {
+            const storedTheme = localStorage.getItem("ui-theme")
+            if (["light", "dark", "system"].includes(storedTheme)) theme = storedTheme
+          } catch {}
           if (theme === "system") {
             theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
           }
           document.documentElement.classList.add(theme)
+          document.documentElement.style.colorScheme = theme
         } catch {}
       })()
     </script>

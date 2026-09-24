@@ -6,11 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/adk/filesystem"
-	"github.com/cloudwego/eino/schema"
-
 	"petrichor/api/internal/kb"
+	"petrichor/api/internal/piruntime"
 )
 
 func TestPrepareDocumentAgentWorkspaceKeepsWholeDocumentAndTracksReads(t *testing.T) {
@@ -34,7 +31,7 @@ func TestPrepareDocumentAgentWorkspaceKeepsWholeDocumentAndTracksReads(t *testin
 	if backend.unreadCount() != 3 {
 		t.Fatalf("未读正文分卷=%d，期望 3", backend.unreadCount())
 	}
-	if _, err := backend.Read(context.Background(), &filesystem.ReadRequest{
+	if _, err := backend.Read(context.Background(), &documentReadRequest{
 		FilePath: "/document/parts/part-001.md", Limit: 1,
 	}); err != nil {
 		t.Fatal(err)
@@ -43,7 +40,7 @@ func TestPrepareDocumentAgentWorkspaceKeepsWholeDocumentAndTracksReads(t *testin
 		t.Fatal("只读取正文分卷第一行不能算作完整覆盖")
 	}
 
-	manifest, err := backend.Read(context.Background(), &filesystem.ReadRequest{FilePath: "/document/manifest.md"})
+	manifest, err := backend.Read(context.Background(), &documentReadRequest{FilePath: "/document/manifest.md"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +54,7 @@ func TestPrepareDocumentAgentWorkspaceKeepsWholeDocumentAndTracksReads(t *testin
 	}
 	markers := []string{"甲", "乙", "丙"}
 	for index, path := range paths {
-		content, readErr := backend.Read(context.Background(), &filesystem.ReadRequest{FilePath: path})
+		content, readErr := backend.Read(context.Background(), &documentReadRequest{FilePath: path})
 		if readErr != nil {
 			t.Fatal(readErr)
 		}
@@ -72,7 +69,7 @@ func TestPrepareDocumentAgentWorkspaceKeepsWholeDocumentAndTracksReads(t *testin
 		t.Fatalf("分卷读取进度=%v", progress)
 	}
 
-	existing, err := backend.Read(context.Background(), &filesystem.ReadRequest{FilePath: "/knowledge-base/existing-pages.json"})
+	existing, err := backend.Read(context.Background(), &documentReadRequest{FilePath: "/knowledge-base/existing-pages.json"})
 	if err != nil || !strings.Contains(existing.Content, `"pageKey": "concept-existing"`) {
 		t.Fatalf("既有页面目录异常：content=%q err=%v", existing.Content, err)
 	}
@@ -85,21 +82,10 @@ func TestDocumentAgentActivityTrackerReportsToolsWithoutLeakingArguments(t *test
 			activities = append(activities, activity)
 		},
 	})
-	tracker.handle(&adk.AgentEvent{
-		AgentName: "knowledge-document-extractor",
-		Output: &adk.AgentOutput{MessageOutput: &adk.MessageVariant{Message: &schema.Message{
-			Role: schema.Assistant,
-			ToolCalls: []schema.ToolCall{{ID: "call-read", Function: schema.FunctionCall{
-				Name: "read_file", Arguments: `{"file_path":"/document/parts/part-002.md","offset":100,"limit":50}`,
-			}}},
-		}}},
+	tracker.startTool("knowledge-document-extractor", 1, piruntime.ToolCall{
+		ID: "call-read", Name: "read_file", Arguments: `{"file_path":"/document/parts/part-002.md","offset":100,"limit":50}`,
 	})
-	tracker.handle(&adk.AgentEvent{
-		AgentName: "knowledge-document-extractor",
-		Output: &adk.AgentOutput{MessageOutput: &adk.MessageVariant{Message: &schema.Message{
-			Role: schema.Tool, ToolCallID: "call-read", ToolName: "read_file", Content: "机密正文",
-		}}},
-	})
+	tracker.completeTool("call-read", "read_file", "knowledge-document-extractor")
 
 	if len(activities) != 2 {
 		t.Fatalf("activities=%#v", activities)
@@ -138,7 +124,7 @@ func TestDocumentAgentSummaryTokenLimitUsesModelContextWindow(t *testing.T) {
 		{contextWindow: 0, want: 64_000},
 		{contextWindow: 60_000, want: 40_000},
 		{contextWindow: 1_000_000, want: 120_000},
-		{contextWindow: 6_000, want: 8_000},
+		{contextWindow: 6_000, want: 4_000},
 	}
 	for _, current := range cases {
 		if got := documentAgentSummaryTokenLimit(current.contextWindow); got != current.want {

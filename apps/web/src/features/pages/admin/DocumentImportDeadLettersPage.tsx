@@ -4,7 +4,6 @@ import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { adminRuntimeJobsApi, type AdminDeadLetterJob } from "@/lib/api"
 
 function formatDateTime(value: string | null) {
@@ -58,7 +57,7 @@ export function DocumentImportDeadLettersPage() {
   }, [])
 
   return (
-    <div className="flex flex-1 flex-col gap-5 p-4 md:p-6">
+    <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">视觉导入死信队列</h1>
@@ -72,50 +71,53 @@ export function DocumentImportDeadLettersPage() {
         </Button>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">待处理死信</CardTitle>
-          <CardDescription>重放仅重新执行失败步骤，保留成功结果和原文件。上传尚未成功的文件，请回到导入弹窗重新上传。</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading && items.length === 0 ? (
-            <div className="flex min-h-32 items-center justify-center text-sm text-muted-foreground">
-              <Loader2 className="mr-2 size-4 animate-spin" />加载中…
-            </div>
-          ) : items.length === 0 ? (
-            <div className="min-h-32 content-center text-center text-sm text-muted-foreground">当前没有死信任务</div>
-          ) : (
-            <div className="divide-y rounded-lg border">
-              {items.map((job) => {
-                const key = `${job.kind}:${job.id}`
-                const busy = replaying === key
-                return (
-                  <div key={key} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="outline">视觉导入</Badge>
-                        <span className="truncate font-medium">{job.title}</span>
-                        <span className="font-mono text-xs text-muted-foreground">#{job.id}</span>
-                      </div>
-                      <p className="mt-2 line-clamp-2 text-sm text-destructive">{job.lastError || "未记录错误"}</p>
-                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                        <span>尝试 {job.attemptCount}/{job.maxAttempts}</span>
-                        <span>历史重放 {job.replayCount} 次</span>
-                        <span>用户 #{job.userId}</span>
-                        <span>死信时间 {formatDateTime(job.deadLetteredAt)}</span>
-                      </div>
+      <div className="space-y-3">
+        <div>
+          <h2 className="text-base font-semibold">待处理死信</h2>
+          <p className="text-sm text-muted-foreground">
+            重放仅重新执行失败步骤，保留成功结果和原文件。上传尚未成功的文件，请回到导入弹窗重新上传。
+          </p>
+        </div>
+
+        {loading && items.length === 0 ? (
+          <div className="flex min-h-32 items-center justify-center rounded-xl border border-border/40 py-8 text-sm text-muted-foreground">
+            <Loader2 className="mr-2 size-4 animate-spin" />加载中…
+          </div>
+        ) : items.length === 0 ? (
+          <div className="flex min-h-32 items-center justify-center rounded-xl border border-dashed border-border/60 py-8 text-sm text-muted-foreground">
+            当前没有死信任务
+          </div>
+        ) : (
+          <div className="divide-y divide-border/40 rounded-xl border border-border/50 bg-card/60">
+            {items.map((job) => {
+              const key = `${job.kind}:${job.id}`
+              const busy = replaying === key
+              return (
+                <div key={key} className="flex flex-col gap-3 p-4 transition-colors hover:bg-muted/20 lg:flex-row lg:items-center">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline">视觉导入</Badge>
+                      <span className="truncate font-medium">{job.title}</span>
+                      <span className="font-mono text-xs text-muted-foreground">#{job.id}</span>
                     </div>
-                    <Button size="sm" onClick={() => void replay(job)} disabled={replaying !== null}>
-                      {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : <RotateCcw className="mr-2 size-4" />}
-                      重放
-                    </Button>
+                    <p className="mt-2 line-clamp-2 text-sm text-destructive">{job.lastError || "未记录错误"}</p>
+                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <span>尝试 {job.attemptCount}/{job.maxAttempts}</span>
+                      <span>历史重放 {job.replayCount} 次</span>
+                      <span>用户 #{job.userId}</span>
+                      <span>死信时间 {formatDateTime(job.deadLetteredAt)}</span>
+                    </div>
                   </div>
-                )
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                  <Button size="sm" onClick={() => void replay(job)} disabled={replaying !== null}>
+                    {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : <RotateCcw className="mr-2 size-4" />}
+                    重放
+                  </Button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

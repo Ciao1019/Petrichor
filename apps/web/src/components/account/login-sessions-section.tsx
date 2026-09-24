@@ -120,20 +120,20 @@ export function LoginSessionsSection() {
   }
 
   return (
-    <div className="rounded-lg border px-4 py-4">
+    <div className="space-y-3 pt-2">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 space-y-1">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <Monitor className="h-4 w-4" />
+        <div className="min-w-0 space-y-0.5">
+          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+            <Monitor className="h-3.5 w-3.5" />
             登录设备与地点
           </div>
-          <div className="text-sm text-muted-foreground">
+          <div className="text-xs text-muted-foreground">
             查看当前账户的所有登录会话，发现异地登录可下线对应设备。
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => void fetchSessions()} disabled={loading}>
-            <RefreshCw className="h-4 w-4 mr-1" />
+          <Button type="button" variant="ghost" size="sm" onClick={() => void fetchSessions()} disabled={loading}>
+            <RefreshCw className="h-3.5 w-3.5 mr-1" />
             刷新
           </Button>
           <Button
@@ -143,20 +143,20 @@ export function LoginSessionsSection() {
             onClick={openRevokeOthers}
             disabled={loading || otherSessions.length === 0}
           >
-            <LogOut className="h-4 w-4 mr-1" />
+            <LogOut className="h-3.5 w-3.5 mr-1" />
             一键下线其他设备
           </Button>
         </div>
       </div>
 
-      <div className="mt-4 space-y-3">
+      <div className="mt-2 divide-y divide-border/40">
         {loading && sessions.length === 0 ? (
-          <>
-            <Skeleton className="h-16 w-full" />
-            <Skeleton className="h-16 w-full" />
-          </>
+          <div className="space-y-3 py-2">
+            <Skeleton className="h-14 w-full" />
+            <Skeleton className="h-14 w-full" />
+          </div>
         ) : sessions.length === 0 ? (
-          <div className="rounded-md border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
+          <div className="py-6 text-center text-sm text-muted-foreground">
             暂无登录会话记录。
           </div>
         ) : (
@@ -166,10 +166,12 @@ export function LoginSessionsSection() {
             return (
               <div
                 key={session.id}
-                className="flex flex-col gap-3 rounded-lg border px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="flex min-w-0 items-start gap-3">
-                  <DeviceIcon className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+                  <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                    <DeviceIcon className="h-4 w-4" />
+                  </div>
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium">{device}</span>
@@ -177,25 +179,27 @@ export function LoginSessionsSection() {
                         <Badge variant="secondary" className="text-xs">当前设备</Badge>
                       ) : null}
                     </div>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <MapPin className="h-3 w-3" />
-                      <span className="break-all">IP：{session.ip || "未知"}</span>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      最近活跃：{formatDateTime(session.lastSeenAt ?? session.updatedAt)}
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span className="inline-flex items-center gap-1">
+                        <MapPin className="h-3 w-3" />
+                        <span className="break-all">IP：{session.ip || "未知"}</span>
+                      </span>
+                      <span>·</span>
+                      <span>最近活跃：{formatDateTime(session.lastSeenAt ?? session.updatedAt)}</span>
                     </div>
                   </div>
                 </div>
                 {session.current ? (
-                  <span className="text-xs text-muted-foreground">本次登录</span>
+                  <span className="text-xs text-muted-foreground self-end sm:self-center">本次登录</span>
                 ) : (
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
+                    className="text-xs text-destructive hover:bg-destructive/10 hover:text-destructive self-end sm:self-center"
                     onClick={() => openRevokeSingle(session)}
                   >
-                    <LogOut className="h-4 w-4 mr-1" />
+                    <LogOut className="h-3.5 w-3.5 mr-1" />
                     下线
                   </Button>
                 )}

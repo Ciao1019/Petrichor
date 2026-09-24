@@ -5,10 +5,13 @@ import { cn } from "@/lib/utils"
 export function AssistantWelcomeComposer({
   isEmpty,
   scopeName,
+  description = "从一个问题开始，让知识库和文档里的线索连起来。",
   children,
 }: {
   isEmpty: boolean
   scopeName: string | null
+  /** 未选定范围时的引导语。 */
+  description?: string
   children: React.ReactNode
 }) {
   const rootRef = React.useRef<HTMLDivElement>(null)
@@ -53,7 +56,7 @@ export function AssistantWelcomeComposer({
         <div data-welcome-intro className="mx-auto mb-6 max-w-xl px-3 text-center md:mb-8">
           <h1 className="text-xl font-semibold tracking-tight text-foreground md:text-2xl">今天想了解些什么？</h1>
           <p className="mt-2 break-words text-sm leading-relaxed text-muted-foreground">
-            {scopeName ? `从「${scopeName}」开始，聊聊你的问题。` : "从一个问题开始，让知识库和文档里的线索连起来。"}
+            {scopeName ? `从「${scopeName}」开始，聊聊你的问题。` : description}
           </p>
         </div>
       ) : null}

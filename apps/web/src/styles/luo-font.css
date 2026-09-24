@@ -1,0 +1,19 @@
+/* Luo 落文：用户指定 main 资源的 v0.4.11 正体，来源与授权见 public/fonts/luo/README.md。 */
+/* 仅承担中文及中文标点，英文和数字沿用项目原有的 Maple Mono。 */
+@font-face {
+  font-family: "Luo";
+  src: url("/fonts/luo/Luo-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+4E00-9FFF, U+3400-4DBF, U+3000-303F, U+FF00-FFEF;
+}
+
+:root {
+  --font-luo:
+    "Luo", "Maple Mono", Seravek, Candara, Optima, "Iowan Old Style", Charter, Georgia,
+    "Avenir Next", "Noto Sans CJK SC", sans-serif;
+  /* Pierre 的代码区位于 Shadow DOM，需通过公开变量继承字体。 */
+  --diffs-font-family: var(--font-luo);
+  --diffs-header-font-family: var(--font-luo);
+}

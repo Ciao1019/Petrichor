@@ -1,4 +1,5 @@
 import type { TCodeBlockElement } from 'platejs';
+import { LUO_FONT_FAMILY } from '@/lib/typography';
 
 import {
   type SlateElementProps,
@@ -64,7 +65,8 @@ export function CodeLineElementDocx(props: SlateElementProps) {
       {...props}
       as="p"
       style={{
-        fontFamily: "'Courier New', Consolas, monospace",
+        fontFamily: LUO_FONT_FAMILY,
+        fontWeight: 400,
         fontSize: '10pt',
         margin: 0,
         padding: 0,
@@ -120,7 +122,6 @@ export function CodeSyntaxLeafDocx(props: SlateLeafProps) {
 
   // Extract color from className
   let color: string | undefined;
-  let fontWeight: string | undefined;
   let fontStyle: string | undefined;
 
   if (tokenClassName) {
@@ -128,9 +129,6 @@ export function CodeSyntaxLeafDocx(props: SlateLeafProps) {
     for (const cls of classes) {
       if (syntaxColors[cls]) {
         color = syntaxColors[cls];
-      }
-      if (cls === 'hljs-strong' || cls === 'hljs-section') {
-        fontWeight = 'bold';
       }
       if (cls === 'hljs-emphasis') {
         fontStyle = 'italic';
@@ -147,10 +145,10 @@ export function CodeSyntaxLeafDocx(props: SlateLeafProps) {
       data-slate-leaf="true"
       style={{
         color,
-        fontFamily: "'Courier New', Consolas, monospace",
+        fontFamily: LUO_FONT_FAMILY,
         fontSize: '10pt',
         fontStyle,
-        fontWeight,
+        fontWeight: 400,
       }}
     >
       {preservedText}

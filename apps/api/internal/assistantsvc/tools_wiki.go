@@ -221,42 +221,8 @@ func registerWikiTools(registry interface {
 			"输出：分组页面目录。已知 pageKey 时可直接 read_wiki_page_detail。",
 		InputSchema: schemaJSON(`{"type":"object","properties":{"knowledgeBaseId":{"type":"string","description":"可选，限定知识库"}}}`),
 		RiskLevel:   rt.RiskLow, Tags: wikiTag,
-		Execute: executeWikiOverview,
-		Normalize: func(output any, _ any) rt.ToolNormalizerResult {
-			raw, _ := json.Marshal(output)
-			var parsed struct {
-				Total  int `json:"total"`
-				Groups []struct {
-					Key   string           `json:"key"`
-					Label string           `json:"label"`
-					Pages []map[string]any `json:"pages"`
-				} `json:"groups"`
-			}
-			_ = json.Unmarshal(raw, &parsed)
-			if parsed.Total == 0 {
-				return rt.ToolNormalizerResult{Summary: "当前范围内还没有可用的 Wiki 页面"}
-			}
-			pages := []map[string]any{}
-			labels := []string{}
-			for _, group := range parsed.Groups {
-				for _, page := range group.Pages {
-					if len(pages) < 60 {
-						pages = append(pages, map[string]any{
-							"pageKey": page["pageKey"], "title": page["title"],
-							"kind": page["kind"], "summary": page["summary"],
-						})
-					}
-				}
-				labels = append(labels, fmt.Sprintf("%s%d", group.Label, len(group.Pages)))
-			}
-			data, _ := json.Marshal(map[string]any{"total": parsed.Total, "pages": pages})
-			return rt.ToolNormalizerResult{
-				Summary:          "Wiki 共 " + itoa(parsed.Total) + " 个页面：" + joinStrings(labels, "、"),
-				Data:             data,
-				SuggestedActions: []string{"search_wiki_pages", "read_wiki_page_detail"},
-				Progress:         boolPtr(true),
-			}
-		},
+		Execute:   executeWikiOverview,
+		Normalize: normalizeWikiOverview,
 	})
 
 	registry.Register(&rt.AgentToolDefinition{
@@ -279,6 +245,43 @@ func registerWikiTools(registry interface {
 		Execute:   executeWikiReadPage,
 		Normalize: normalizeWikiPageRead,
 	})
+}
+
+// normalizeWikiOverview 归一化 Wiki 概览：分组计数进摘要，页面清单进观察数据。
+func normalizeWikiOverview(output any, _ any) rt.ToolNormalizerResult {
+	raw, _ := json.Marshal(output)
+	var parsed struct {
+		Total  int `json:"total"`
+		Groups []struct {
+			Key   string           `json:"key"`
+			Label string           `json:"label"`
+			Pages []map[string]any `json:"pages"`
+		} `json:"groups"`
+	}
+	_ = json.Unmarshal(raw, &parsed)
+	if parsed.Total == 0 {
+		return rt.ToolNormalizerResult{Summary: "当前范围内还没有可用的 Wiki 页面"}
+	}
+	pages := []map[string]any{}
+	labels := []string{}
+	for _, group := range parsed.Groups {
+		for _, page := range group.Pages {
+			if len(pages) < 60 {
+				pages = append(pages, map[string]any{
+					"pageKey": page["pageKey"], "title": page["title"],
+					"kind": page["kind"], "summary": page["summary"],
+				})
+			}
+		}
+		labels = append(labels, fmt.Sprintf("%s%d", group.Label, len(group.Pages)))
+	}
+	data, _ := json.Marshal(map[string]any{"total": parsed.Total, "pages": pages})
+	return rt.ToolNormalizerResult{
+		Summary:          "Wiki 共 " + itoa(parsed.Total) + " 个页面：" + joinStrings(labels, "、"),
+		Data:             data,
+		SuggestedActions: []string{"search_wiki_pages", "read_wiki_page_detail"},
+		Progress:         boolPtr(true),
+	}
 }
 
 func executeWikiOverview(ctx *rt.ToolExecutionContext, input any) (any, error) {

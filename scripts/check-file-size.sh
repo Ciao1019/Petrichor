@@ -24,7 +24,9 @@ cd "$ROOT"
 # collect_sources 列出参与检查的源文件，路径相对仓库根。
 collect_sources() {
   {
-    find apps/api -name '*.go' ! -name '*_test.go'
+    find apps/api -type d -name node_modules -prune -o -name '*.go' ! -name '*_test.go' -print
+    find apps/api/tools/pi-agent/src -name '*.ts' ! -name '*.test.ts'
+    find apps/api/tools/pi-agent/scripts -name '*.ts' ! -name '*.test.ts'
     find apps/web/src \( -name '*.ts' -o -name '*.tsx' \) \
       ! -name '*.test.ts' ! -name '*.test.tsx' \
       ! -path 'apps/web/src/components/ui/*' \

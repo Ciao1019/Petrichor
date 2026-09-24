@@ -8,6 +8,14 @@ const developmentAssetsUrl = normalizeOrigin(process.env.PETRICHOR_VITE_DEV_SERV
 const goApiUrl = normalizeOrigin(process.env.PETRICHOR_GO_API_URL) ?? "http://127.0.0.1:8080"
 const proxyTimeoutMs = positiveNumber(process.env.PETRICHOR_PROXY_TIMEOUT_MS, 15 * 60 * 1000)
 const isProduction = process.env.NODE_ENV === "production"
+const connectSources = ["'self'", "https:", "wss:"]
+
+if (!isProduction && developmentAssetsUrl) {
+    // 浏览器直连 Vite 的热更新端口；只放行当前开发服务的 WebSocket 来源。
+    const developmentWebSocketUrl = new URL(developmentAssetsUrl)
+    developmentWebSocketUrl.protocol = developmentWebSocketUrl.protocol === "https:" ? "wss:" : "ws:"
+    connectSources.push(developmentWebSocketUrl.origin)
+}
 
 const securityHeaders = {
     "X-DNS-Prefetch-Control": "on",
@@ -26,7 +34,7 @@ const securityHeaders = {
         "font-src 'self' data:",
         "img-src 'self' data: blob: https:",
         "media-src 'self' blob: https:",
-        "connect-src 'self' https: wss:",
+        `connect-src ${connectSources.join(" ")}`,
         "frame-src 'self' https:",
         "worker-src 'self' blob:",
     ].join("; "),

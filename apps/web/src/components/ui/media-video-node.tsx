@@ -2,7 +2,6 @@
 
 import * as React from 'react';
 import LiteYouTubeEmbed from 'react-lite-youtube-embed';
-import ReactPlayer from 'react-player';
 
 import type { TResizableProps, TVideoElement } from 'platejs';
 import type { PlateElementProps } from 'platejs/react';
@@ -26,6 +25,8 @@ import {
   protectedMediaContainerProps,
   protectedVideoProps,
 } from './protected-media';
+
+const ReactPlayer = React.lazy(() => import('react-player'));
 
 export const VideoElement = withHOC(
   ResizableProvider,
@@ -115,14 +116,16 @@ export const VideoElement = withHOC(
 
               {(isUpload || isS4Key(unsafeUrl)) && isEditorMounted && (
                 <div ref={handleRef} {...protectedMediaContainerProps}>
-                  <ReactPlayer
-                    {...protectedVideoProps}
-                    ref={attachProtectedVideoRef}
-                    height="100%"
-                    src={videoSrc}
-                    width="100%"
-                    controls
-                  />
+                  <React.Suspense fallback={<div role="status" className="aspect-video rounded-sm bg-muted p-4 text-sm text-muted-foreground">正在加载视频…</div>}>
+                    <ReactPlayer
+                      {...protectedVideoProps}
+                      ref={attachProtectedVideoRef}
+                      height="100%"
+                      src={videoSrc}
+                      width="100%"
+                      controls
+                    />
+                  </React.Suspense>
                 </div>
               )}
             </div>

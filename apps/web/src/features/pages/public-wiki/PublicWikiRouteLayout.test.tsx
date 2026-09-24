@@ -32,6 +32,10 @@ vi.mock("@/components/iconimate", () => {
     X: Dummy,
   }
 })
+// 划词问 AI 有独立测试；这里只验证页面切换与正文渲染。
+vi.mock("@/components/public/selection-ask", () => ({
+  SelectionAsk: ({ children }: { children: React.ReactNode }) => children,
+}))
 vi.mock("@/components/plate/PlateMarkdownPreview", () => ({
   PlateMarkdownPreview: ({ markdown }: { markdown: string }) => <p>{markdown}</p>,
 }))

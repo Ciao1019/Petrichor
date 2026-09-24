@@ -29,7 +29,6 @@ func TestRouteRegistryHasNoDuplicatesAndKeepsCriticalContracts(t *testing.T) {
 	api := engine.Group("/api")
 	RegisterPublic(api)
 	RegisterAuth(api)
-	RegisterNotification(api)
 	RegisterDashboard(api)
 	RegisterKB(api)
 	RegisterDocLibrary(api)
@@ -61,10 +60,24 @@ func TestRouteRegistryHasNoDuplicatesAndKeepsCriticalContracts(t *testing.T) {
 		"HEAD /api/public/feed/rss.xml",
 		"GET /api/public/feed/atom.xml",
 		"HEAD /api/public/feed/atom.xml",
+		"POST /api/public/qa/selection",
 		"POST /api/auth/setup",
 		"POST /api/auth/login",
 		"GET /api/auth/me",
 		"POST /api/kb/wiki/export",
+		"POST /api/inbox/list",
+		"POST /api/inbox/create",
+		"POST /api/inbox/update",
+		"POST /api/inbox/archive",
+		"POST /api/inbox/pin",
+		"POST /api/inbox/delete",
+		"POST /api/inbox/capture/config",
+		"POST /api/inbox/capture/create",
+		"POST /api/inbox/capture/list",
+		"POST /api/inbox/capture/lookup",
+		"POST /api/inbox/capture/result",
+		"POST /api/inbox/capture/cancel",
+		"POST /api/inbox/capture/regenerate",
 		"GET /api/admin/runtime/metrics",
 		"GET /api/admin/runtime/dead-letters",
 		"POST /api/admin/runtime/dead-letters/replay",

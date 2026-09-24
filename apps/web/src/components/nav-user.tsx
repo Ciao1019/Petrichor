@@ -1,7 +1,6 @@
 import {
   IconDotsVertical,
   IconLogout,
-  IconNotification,
   IconUserCircle,
 } from "@/components/iconimate"
 import { useNavigate } from "react-router-dom"
@@ -102,10 +101,6 @@ export function NavUser({
               <DropdownMenuItem onClick={() => navigate(dashboardRoutes.account)}>
                 <IconUserCircle />
                 个人中心
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate(dashboardRoutes.notifications)}>
-                <IconNotification />
-                消息中心
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />

@@ -13,7 +13,7 @@ func registerAgentMetaTools(registry interface {
 	registry.Register(&rt.AgentToolDefinition{
 		ID: "agent.load_skill", Name: "load_skill", Namespace: rt.NamespaceAgent,
 		Description: "加载一个能力包（技能），获得对应工具集与操作说明。",
-		InputSchema: schemaJSON(`{"type":"object","properties":{"skill":{"type":"string","minLength":1,"maxLength":64,"enum":["knowledge","research","memory","writer","documents","admin","system"]},"skillId":{"type":"string","minLength":1,"maxLength":64,"description":"兼容旧调用；优先使用 skill"}},"anyOf":[{"required":["skill"]},{"required":["skillId"]}]}`),
+		InputSchema: schemaJSON(`{"type":"object","properties":{"skill":{"type":"string","minLength":1,"maxLength":64},"skillId":{"type":"string","minLength":1,"maxLength":64,"description":"兼容旧调用；优先使用 skill"}},"anyOf":[{"required":["skill"]},{"required":["skillId"]}]}`),
 		RiskLevel:   rt.RiskLow, Core: true, AllowedInSubAgent: toolPtr(false),
 		Execute: executeLoadSkill,
 		Normalize: func(_ any, input any) rt.ToolNormalizerResult {
@@ -191,8 +191,9 @@ func executeUpdatePlan(ctx *rt.ToolExecutionContext, input any) (any, error) {
 
 // ===== 内置技能 =====
 
-func registerBuiltinSkills(skills interface{ Register(skill rt.AgentSkill) }) {
-	skills.Register(rt.AgentSkill{
+// knowledgeSkill 知识库检索技能；后台助手与前台公开问答共用同一份说明与工具清单。
+func knowledgeSkill() rt.AgentSkill {
+	return rt.AgentSkill{
 		ID: "knowledge", Name: "知识库", Description: "检索并深读站内知识库内容",
 		Instructions: joinStrings([]string{
 			"## 知识库检索与阅读",
@@ -211,7 +212,11 @@ func registerBuiltinSkills(skills interface{ Register(skill rt.AgentSkill) }) {
 		ToolIDs: []string{"knowledge.lookup", "knowledge.search", "knowledge.outline",
 			"knowledge.read_many", "knowledge.read", "knowledge.list_bases"},
 		Tags: []string{"retrieval"},
-	})
+	}
+}
+
+func registerBuiltinSkills(skills interface{ Register(skill rt.AgentSkill) }) {
+	skills.Register(knowledgeSkill())
 
 	skills.Register(rt.AgentSkill{
 		ID: "documents", Name: "文档与内容管理", Description: "文档检索、阅读、文章创建更新、移动与分享",
@@ -239,8 +244,9 @@ func registerBuiltinSkills(skills interface{ Register(skill rt.AgentSkill) }) {
 			"2. 不要只凭搜索摘要下重要结论：关键结论必须 fetch 原文后再判断。",
 			"3. 涉及\"最新 / 当前 / 官方推荐\"的问题，优先官方文档与一手来源，并留意发布时间。",
 			"4. 单个来源抓取失败不要放弃整个任务，换一个来源继续。",
+			"5. 需要渲染网页或用户要求保存采集原文时使用 research.capture，再用 research.capture_result 分段读取；这些任务出现在随笔网页采集记录中。抓取可能计费，不重复创建相同任务。",
 		}, "\n"),
-		ToolIDs: []string{"research.search", "research.fetch", "research.extract"},
+		ToolIDs: []string{"research.search", "research.fetch", "research.extract", "research.capture", "research.capture_result"},
 		Tags:    []string{"external"},
 	})
 

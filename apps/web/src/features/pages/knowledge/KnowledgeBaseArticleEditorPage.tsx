@@ -12,6 +12,7 @@ import { ArticleChunkDialog } from "@/components/knowledge/ArticleChunkDialog"
 import { ArticleShareDialog } from "@/components/knowledge/ArticleShareDialog"
 import { BurnLinkDialog } from "@/components/knowledge/BurnLinkDialog"
 import { PlateMarkdownEditor, type PlateMarkdownEditorHandle } from "@/components/plate/PlateMarkdownEditor"
+import { DocxExportKit } from "@/components/editor/plugins/docx-export-kit"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -748,8 +749,7 @@ export function KnowledgeBaseArticleEditorPage() {
 
       {/* Editor — wrapped so we can measure its right edge for TOC positioning */}
       <div ref={editorWrapperRef}>
-        <PlateMarkdownEditor
-          ref={markdownEditorRef}
+        <PlateMarkdownEditor ref={markdownEditorRef} extraPlugins={DocxExportKit}
           key={`${loaded?.articleId ?? `pending-${articleId ?? "unknown"}`}:${currentUser?.id ?? 'anon'}`}
           currentUser={currentUser ?? undefined}
           initialMarkdown={contentMd}

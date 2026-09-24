@@ -612,5 +612,8 @@ func (diagnostics knowledgeRecallDiagnostics) toMap(rerankApplied bool) map[stri
 	if diagnostics.TreeReason != "" {
 		result["treeReason"] = diagnostics.TreeReason
 	}
+	if diagnostics.RerankStrategy != "" {
+		result["rerankStrategy"] = diagnostics.RerankStrategy
+	}
 	return result
 }

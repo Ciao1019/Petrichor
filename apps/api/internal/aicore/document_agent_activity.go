@@ -2,82 +2,41 @@ package aicore
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
 
-	"github.com/cloudwego/eino/adk"
-	"github.com/cloudwego/eino/adk/middlewares/summarization"
-	"github.com/cloudwego/eino/schema"
-
 	"petrichor/api/internal/kb"
+	"petrichor/api/internal/piruntime"
 )
 
-// documentAgentActivityTracker 把 ADK 原始事件翻译为可公开的业务动作。
+// documentAgentActivityTracker 把 Pi 原始事件翻译为可公开的业务动作。
 // 工具参数只提取虚拟路径、行区间和数量，绝不透传正文、Prompt、工具结果或模型思维链。
 type documentAgentActivityTracker struct {
-	mu              sync.Mutex
-	request         kb.DocumentAgentRequest
-	sequence        int
-	round           int
-	pending         map[string]kb.DocumentAgentActivity
-	summarizationID map[string]string
+	mu       sync.Mutex
+	notifyMu sync.Mutex
+	request  kb.DocumentAgentRequest
+	sequence int
+	round    int
+	pending  map[string]kb.DocumentAgentActivity
 }
 
 func newDocumentAgentActivityTracker(request kb.DocumentAgentRequest) *documentAgentActivityTracker {
 	return &documentAgentActivityTracker{
 		request: request, pending: map[string]kb.DocumentAgentActivity{},
-		summarizationID: map[string]string{},
 	}
 }
 
-func (t *documentAgentActivityTracker) handle(event *adk.AgentEvent) {
-	if event == nil {
-		return
-	}
-	t.handleSummarization(event)
-	if event.Err != nil {
-		var retry *adk.WillRetryError
-		if errors.As(event.Err, &retry) {
-			t.notify(kb.DocumentAgentActivity{
-				ID: t.nextID("retry"), Kind: "retry", Status: "running",
-				Title: "模型调用正在重试", Detail: fmt.Sprintf("第 %d 次局部重试", retry.RetryAttempt),
-				AgentName: documentAgentDisplayName(event.AgentName),
-			})
-		}
-	}
-	if event.Output == nil || event.Output.MessageOutput == nil {
-		return
-	}
-	message := event.Output.MessageOutput.Message
-	if message == nil {
-		return
-	}
-	switch message.Role {
-	case schema.Assistant:
-		if len(message.ToolCalls) == 0 {
-			return
-		}
-		round := t.nextRound()
-		for _, call := range message.ToolCalls {
-			t.startTool(event.AgentName, round, call)
-		}
-	case schema.Tool:
-		t.completeTool(message.ToolCallID, message.ToolName, event.AgentName)
-	}
-}
-
-func (t *documentAgentActivityTracker) startTool(agentName string, round int, call schema.ToolCall) {
-	activity := describeDocumentAgentTool(call.Function.Name, call.Function.Arguments)
+func (t *documentAgentActivityTracker) startTool(agentName string, round int, call piruntime.ToolCall) {
+	activity := describeDocumentAgentTool(call.Name, call.Arguments)
 	activity.ID = strings.TrimSpace(call.ID)
 	if activity.ID == "" {
 		activity.ID = t.nextID("tool")
 	}
 	activity.Status = "running"
 	activity.AgentName = documentAgentDisplayName(agentName)
-	activity.ToolName = safeDocumentAgentToolName(call.Function.Name)
+	activity.ToolName = safeDocumentAgentToolName(call.Name)
 	activity.Round = round
 
 	t.mu.Lock()
@@ -110,38 +69,14 @@ func (t *documentAgentActivityTracker) completeTool(callID, toolName, agentName 
 	t.notify(activity)
 }
 
-func (t *documentAgentActivityTracker) handleSummarization(event *adk.AgentEvent) {
-	if event.Action == nil || event.Action.CustomizedAction == nil {
-		return
-	}
-	action, ok := event.Action.CustomizedAction.(*summarization.CustomizedAction)
-	if !ok || action == nil {
-		return
-	}
-	agentName := documentAgentDisplayName(event.AgentName)
-	switch action.Type {
-	case summarization.ActionTypeBeforeSummarize:
-		id := t.nextID("context")
-		t.mu.Lock()
-		t.summarizationID[agentName] = id
-		t.mu.Unlock()
-		t.notify(kb.DocumentAgentActivity{
-			ID: id, Kind: "context", Status: "running",
-			Title: "压缩 Agent 上下文", Detail: "保留已读分卷、候选、来源和待办后继续执行",
-			AgentName: agentName,
-		})
-	case summarization.ActionTypeAfterSummarize:
-		t.mu.Lock()
-		id := t.summarizationID[agentName]
-		delete(t.summarizationID, agentName)
-		t.mu.Unlock()
-		if id == "" {
-			id = t.nextID("context")
-		}
-		t.notify(kb.DocumentAgentActivity{
-			ID: id, Kind: "context", Status: "completed",
-			Title: "Agent 上下文压缩完成", AgentName: agentName,
-		})
+func (t *documentAgentActivityTracker) failTool(callID string) {
+	t.mu.Lock()
+	activity, ok := t.pending[callID]
+	delete(t.pending, callID)
+	t.mu.Unlock()
+	if ok {
+		activity.Status = "failed"
+		t.notify(activity)
 	}
 }
 
@@ -162,6 +97,8 @@ func (t *documentAgentActivityTracker) fail(id, title string) {
 }
 
 func (t *documentAgentActivityTracker) notify(activity kb.DocumentAgentActivity) {
+	t.notifyMu.Lock()
+	defer t.notifyMu.Unlock()
 	if t.request.Activity != nil {
 		t.request.Activity(activity)
 	}
@@ -171,7 +108,7 @@ func (t *documentAgentActivityTracker) nextID(prefix string) string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.sequence++
-	return fmt.Sprintf("adk-%s-%d", prefix, t.sequence)
+	return fmt.Sprintf("pi-%s-%d", prefix, t.sequence)
 }
 
 func (t *documentAgentActivityTracker) nextRound() int {
@@ -323,7 +260,7 @@ func documentAgentDisplayName(name string) string {
 	if strings.TrimSpace(name) != "" {
 		return "子 Agent"
 	}
-	return "ADK"
+	return "Pi"
 }
 
 func truncateDocumentAgentActivity(value string, limit int) string {

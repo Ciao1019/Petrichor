@@ -11,16 +11,22 @@ import (
 
 	httpx "petrichor/api/internal/httpx"
 	"petrichor/api/internal/publicscope"
+	"petrichor/api/internal/ratelimit"
 )
 
 const (
-	publicPortalSearchDefaultLimit  = int64(20)
-	publicPortalSearchMaxLimit      = int64(50)
-	publicSearchMaxOffset           = int64(1000)
-	publicSearchCandidateCap        = 1200
-	publicSemanticSearchHourlyLimit = 120
-	publicSemanticSearchTimeout     = 8 * time.Second
+	publicPortalSearchDefaultLimit = int64(20)
+	publicPortalSearchMaxLimit     = int64(50)
+	publicSearchMaxOffset          = int64(1000)
+	publicSearchCandidateCap       = 1200
+	publicSemanticSearchTimeout    = 8 * time.Second
 )
+
+// 语义检索会调用向量模型，按 IP 每小时限 120 次；全文检索不计数。
+var publicSemanticSearchRule = ratelimit.Rule{
+	Name: "public-search:ip", Limit: 120, Period: time.Hour,
+	Message: "语义检索次数已达每小时 120 次的上限",
+}
 
 type publicSearchHit struct {
 	key               string
@@ -159,18 +165,8 @@ func searchTypeEnabled(filter, resultType string) bool {
 }
 
 func consumePublicSemanticSearchQuota(ctx context.Context, ip string) error {
-	if strings.TrimSpace(ip) == "" {
-		return nil
-	}
-	now := timeNow()
-	count, err := bumpBucket(ctx, "public-search-ip:"+ip+":"+hourBucket(now), now)
-	if err != nil {
-		return err
-	}
-	if count > publicSemanticSearchHourlyLimit {
-		return httpx.TooManyRequests("本小时语义检索次数已达上限，请稍后再试")
-	}
-	return nil
+	_, err := ratelimit.Consume(ctx, ratelimit.Key{Rule: publicSemanticSearchRule, Value: ip})
+	return err
 }
 
 func searchHitKey(resultType string, id int64) string {

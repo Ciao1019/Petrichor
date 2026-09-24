@@ -235,7 +235,7 @@ export function PublicWikiIndexPage() {
                     <div
                       className="relative z-10 mt-3.5 border-t border-white/[0.06] pt-3"
                     >
-                      <AstryxProvider mode="dark">
+                      <AstryxProvider>
                         <Stack direction="vertical" gap={3} width="100%">
                           {item.relatedPages && item.relatedPages.length > 0 ? (
                             <Stack direction="vertical" gap={2}>

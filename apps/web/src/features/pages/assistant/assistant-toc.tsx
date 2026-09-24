@@ -18,14 +18,14 @@ const QA_TOC_CLICK_OFFSET = 16
 const QA_TOC_LINE_W: Record<number, number> = { 2: 14, 3: 10 }
 const QA_TOC_LINE_W_ACTIVE: Record<number, number> = { 2: 22, 3: 18 }
 
-type QaTocItem = { id: string; level: number; text: string }
+export type QaTocItem = { id: string; level: number; text: string }
 
 export function getQaViewport(): HTMLElement | null {
   return document.querySelector<HTMLElement>(QA_TOC_VIEWPORT_SELECTOR)
 }
 
 /** 滚动聊天视口到指定消息锚点（data-qa-msg-id） */
-export function scrollQaViewportToMessage(messageId: string) {
+export function scrollQaViewportToMessage(messageId: string, behavior: ScrollBehavior = "smooth") {
   const viewport = getQaViewport()
   if (!viewport) return false
   const target = viewport.querySelector<HTMLElement>(`[data-qa-msg-id="${CSS.escape(messageId)}"]`)
@@ -34,11 +34,12 @@ export function scrollQaViewportToMessage(messageId: string) {
     - viewport.getBoundingClientRect().top
     + viewport.scrollTop
     - QA_TOC_CLICK_OFFSET
-  viewport.scrollTo({ top: Math.max(0, top), behavior: "smooth" })
+  viewport.scrollTo({ top: Math.max(0, top), behavior })
   return true
 }
 
-export function QaThreadToc() {
+/** 对话大纲状态：条目、随聊天视口滚动的激活项与点击定位；后台悬浮目录与前台文章式目录共用。 */
+export function useQaThreadToc() {
   const messages = useAuiState((s) => s.thread.messages)
   const items = React.useMemo<QaTocItem[]>(() => {
     const list: QaTocItem[] = []
@@ -55,9 +56,6 @@ export function QaThreadToc() {
   const hasItems = items.length > 0
 
   const [activeId, setActiveId] = React.useState("")
-  // null = 未测量；测好定位再渲染，避免首帧闪位
-  const [tocRight, setTocRight] = React.useState<number | null>(null)
-  const [tocTop, setTocTop] = React.useState<number | null>(null)
 
   React.useEffect(() => {
     if (!hasItems) { setActiveId(""); return }
@@ -68,6 +66,56 @@ export function QaThreadToc() {
       return items.some((item) => item.id === prev) ? prev : firstItem.id
     })
   }, [hasItems, items])
+
+  // 滚动跟踪激活项：滚动源是聊天视口而非 window，其余与文档页一致
+  React.useEffect(() => {
+    if (!hasItems) return
+    const viewport = getQaViewport()
+    if (!viewport) return
+    let ticking = false
+
+    const updateActive = () => {
+      const nodes = Array.from(viewport.querySelectorAll<HTMLElement>("[data-qa-msg-id]"))
+      if (!nodes.length) return
+      const threshold = viewport.getBoundingClientRect().top + QA_TOC_ACTIVE_OFFSET
+      let active = nodes[0]
+      if (!active) return
+      for (const node of nodes) {
+        if (node.getBoundingClientRect().top <= threshold) active = node
+      }
+      // 滚到底时末尾较短的消息永远越不过判定线，直接激活最后一项
+      if (viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 2) active = nodes[nodes.length - 1] ?? active
+      const id = active.dataset.qaMsgId
+      if (id) setActiveId(id)
+    }
+
+    updateActive()
+    const requestUpdate = () => {
+      if (ticking) return
+      ticking = true
+      window.requestAnimationFrame(() => { ticking = false; updateActive() })
+    }
+    viewport.addEventListener("scroll", requestUpdate, { passive: true })
+    window.addEventListener("resize", requestUpdate)
+    return () => {
+      viewport.removeEventListener("scroll", requestUpdate)
+      window.removeEventListener("resize", requestUpdate)
+    }
+  }, [hasItems])
+
+  const selectItem = React.useCallback((id: string, behavior?: ScrollBehavior) => {
+    if (!scrollQaViewportToMessage(id, behavior)) return
+    setActiveId(id)
+  }, [])
+
+  return { items, activeId, selectItem }
+}
+
+export function QaThreadToc() {
+  const { items, activeId, selectItem } = useQaThreadToc()
+  // null = 未测量；测好定位再渲染，避免首帧闪位
+  const [tocRight, setTocRight] = React.useState<number | null>(null)
+  const [tocTop, setTocTop] = React.useState<number | null>(null)
 
   // 定位：贴聊天视口右缘，顶部按视口高度 20% 并夹在视口范围内
   React.useLayoutEffect(() => {
@@ -91,53 +139,14 @@ export function QaThreadToc() {
     }
   }, [])
 
-  // 滚动跟踪激活项：滚动源是聊天视口而非 window，其余与文档页一致
-  React.useEffect(() => {
-    if (!hasItems) return
-    const viewport = getQaViewport()
-    if (!viewport) return
-    let ticking = false
-
-    const updateActive = () => {
-      const nodes = Array.from(viewport.querySelectorAll<HTMLElement>("[data-qa-msg-id]"))
-      if (!nodes.length) return
-      const threshold = viewport.getBoundingClientRect().top + QA_TOC_ACTIVE_OFFSET
-      let active = nodes[0]
-      if (!active) return
-      for (const node of nodes) {
-        if (node.getBoundingClientRect().top <= threshold) active = node
-      }
-      const id = active.dataset.qaMsgId
-      if (id) setActiveId(id)
-    }
-
-    updateActive()
-    const requestUpdate = () => {
-      if (ticking) return
-      ticking = true
-      window.requestAnimationFrame(() => { ticking = false; updateActive() })
-    }
-    viewport.addEventListener("scroll", requestUpdate, { passive: true })
-    window.addEventListener("resize", requestUpdate)
-    return () => {
-      viewport.removeEventListener("scroll", requestUpdate)
-      window.removeEventListener("resize", requestUpdate)
-    }
-  }, [hasItems])
-
-  const handleTocClick = React.useCallback((id: string) => {
-    if (!scrollQaViewportToMessage(id)) return
-    setActiveId(id)
-  }, [])
-
-  if (!hasItems || tocRight === null || tocTop === null) return null
+  if (items.length === 0 || tocRight === null || tocTop === null) return null
   return (
     <QaTocOverlay
       items={items}
       activeId={activeId}
       rightOffset={tocRight}
       topOffset={tocTop}
-      onTocClick={handleTocClick}
+      onTocClick={selectItem}
     />
   )
 }

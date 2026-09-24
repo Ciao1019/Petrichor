@@ -21,7 +21,7 @@ type compiledToolSchema struct {
 var toolSchemaCache sync.Map
 
 // validateToolInput 在权限检查后、执行工具前统一验证模型参数。
-// Eino 负责把 Schema 告诉模型，但模型输出仍然是不可信输入，必须在执行边界复核。
+// Pi 与模型网关负责把 Schema 告诉模型，但模型输出仍然是不可信输入，必须在执行边界复核。
 func validateToolInput(rawSchema json.RawMessage, input any) error {
 	if len(bytes.TrimSpace(rawSchema)) == 0 {
 		return nil

@@ -90,14 +90,13 @@ const QA_MARKDOWN_COMPONENTS: NonNullable<MarkdownProps["components"]> = {
   a: QaMarkdownAnchor,
 }
 
-// 允许调用方（如前台 /ask 蓝底页面）强制明暗，覆盖 app 主题判断。
+// 允许局部内容区按需强制明暗，默认跟随 app 主题。
 const QaForcedDarkContext = React.createContext<boolean | null>(null)
 
 /** 解析当前明暗：优先用强制模式，否则跟随 app 的 theme-provider（system 时再跟随系统）。 */
 function useIsDark() {
   const forced = React.useContext(QaForcedDarkContext)
-  // 必须用 resolvedTheme：它已解析 system 且已应用 forcedTheme，
-  // 而 theme 只是用户偏好，在强制暗色的前台页上会得出相反结论
+  // resolvedTheme 已解析 system 和 forcedTheme，theme 只表示用户偏好。
   const { resolvedTheme } = useTheme()
   if (forced != null) return forced
   return resolvedTheme === "dark"
@@ -130,6 +129,7 @@ function QaMarkdownThemeShell({ children }: { children: React.ReactNode }) {
       themeMode={isDark ? "dark" : "light"}
       enableCustomFonts={false}
       enableGlobalStyle={false}
+      theme={{ token: { fontFamily: "var(--font-luo)", fontFamilyCode: "var(--font-luo)", fontWeightStrong: 400 } }}
       // ThemeProvider 内部的 antd <App> 包裹层默认只有 minHeight:inherit，
       // 会打断外层 h-full 高度链，这里补回 100% 高度。
       style={{ height: "100%", minHeight: 0 }}

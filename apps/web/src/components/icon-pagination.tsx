@@ -328,7 +328,7 @@ export function IconPagination({
         <span
           style={{
             fontSize: 11,
-            fontWeight: 450,
+            fontWeight: 400,
             color: `rgba(var(--ip-ink),.3)`,
             fontVariantNumeric: "tabular-nums",
             letterSpacing: "0.02em",

@@ -92,7 +92,7 @@ func attachKnowledgeCandidateSources(candidates []knowledgeCandidate, parsed map
 	return out
 }
 
-// extractDocumentCandidates 对所有文档都优先交给 ADK Agent 自主遍历全文；
+// extractDocumentCandidates 对所有文档都优先交给 Pi Agent 自主遍历全文；
 // Agent 不可用或覆盖校验失败时再对全部连续分段执行确定性抽取。
 func extractDocumentCandidates(ctx context.Context, userID int64, profile compileProfile, articleTitle string, chunks []wfChunk, existingPages []existingKnowledgePage) (string, []knowledgeCandidate, []knowledgeRelation, []string) {
 	batches := batchChunksByBudget(chunks, knowledgeExtractionBatchMaxChars, knowledgeExtractionBatchMaxItems)

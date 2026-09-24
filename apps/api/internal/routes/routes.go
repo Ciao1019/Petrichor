@@ -21,9 +21,6 @@ func RegisterPublicFeeds(router gin.IRoutes) {
 // RegisterAuth 认证组。
 func RegisterAuth(rg *gin.RouterGroup) { registerAuthRoutes(rg) }
 
-// RegisterNotification 通知组。
-func RegisterNotification(rg *gin.RouterGroup) { registerNotificationRoutes(rg) }
-
 // RegisterDashboard 控制台总览。
 func RegisterDashboard(rg *gin.RouterGroup) { registerDashboardRoutes(rg) }
 

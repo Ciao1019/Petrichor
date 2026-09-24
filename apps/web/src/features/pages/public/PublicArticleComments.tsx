@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useTheme } from "@/components/theme-provider"
 
 /**
  * giscus 评论区（GitHub Discussions 驱动）。
@@ -24,12 +25,35 @@ const GISCUS_ENABLED = Boolean(
     GISCUS_CONFIG.repo && GISCUS_CONFIG.repoId && GISCUS_CONFIG.category && GISCUS_CONFIG.categoryId,
 )
 
+function updateGiscusTheme(container: HTMLDivElement | null, theme: "light" | "dark") {
+    container?.querySelector<HTMLIFrameElement>("iframe.giscus-frame")?.contentWindow?.postMessage(
+        { giscus: { setConfig: { theme } } },
+        "https://giscus.app",
+    )
+}
+
 export function PublicArticleComments({ shareCode }: { shareCode: string | undefined }) {
+    const { resolvedTheme } = useTheme()
     const containerRef = React.useRef<HTMLDivElement | null>(null)
+    const themeRef = React.useRef(resolvedTheme)
+
+    React.useEffect(() => {
+        themeRef.current = resolvedTheme
+        // 直接更新现有 iframe，保留用户尚未提交的评论内容。
+        updateGiscusTheme(containerRef.current, resolvedTheme)
+    }, [resolvedTheme])
 
     React.useEffect(() => {
         const container = containerRef.current
         if (!GISCUS_ENABLED || !container || !shareCode) return
+
+        // 评论懒加载期间可能已切换主题，iframe 加载完成后同步最新值。
+        const syncLoadedFrame = (event: Event) => {
+            if (event.target instanceof HTMLIFrameElement) {
+                updateGiscusTheme(container, themeRef.current)
+            }
+        }
+        container.addEventListener("load", syncLoadedFrame, true)
 
         const script = document.createElement("script")
         script.src = "https://giscus.app/client.js"
@@ -47,7 +71,7 @@ export function PublicArticleComments({ shareCode }: { shareCode: string | undef
             "data-reactions-enabled": "1",
             "data-emit-metadata": "0",
             "data-input-position": "top",
-            "data-theme": "light",
+            "data-theme": themeRef.current,
             "data-lang": "zh-CN",
             "data-loading": "lazy",
         }
@@ -57,6 +81,7 @@ export function PublicArticleComments({ shareCode }: { shareCode: string | undef
         container.appendChild(script)
 
         return () => {
+            container.removeEventListener("load", syncLoadedFrame, true)
             container.replaceChildren()
         }
     }, [shareCode])

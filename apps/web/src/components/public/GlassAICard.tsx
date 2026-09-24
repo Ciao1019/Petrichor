@@ -195,7 +195,7 @@ const BUTTON_STYLE: React.CSSProperties = {
   background: "transparent",
   cursor: "pointer",
   fontSize: 13,
-  fontWeight: 500,
+  fontWeight: 400,
   color: "var(--gc-hi)",
   overflow: "hidden",
 }

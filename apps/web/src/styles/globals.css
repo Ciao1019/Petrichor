@@ -1,12 +1,15 @@
+@layer reset, theme, base, components, utilities;
+
 @import "tailwindcss";
 
 @plugin "tailwind-scrollbar-hide";
 @import "tw-animate-css";
 @import "./plate-article.css";
 @import "./public-article.css";
+@import "./luo-font.css";
 @import "./maple-font.css";
-@import "./retypeset-fonts.css";
 @import "./retypeset-home.css";
+@import "./public-theme.css";
 @import "./about-desk.css";
 @import "./project-promo.css";
 @import "./site-graph.css";
@@ -15,6 +18,15 @@
 @import "@astryxdesign/theme-neutral/theme.css";
 
 @custom-variant dark (&:is(.dark *));
+
+/* 中文使用 Luo，英文和数字使用 Maple Mono；保留原有正斜体规则并统一常规字重。
+   数学公式的专用字形属于公式排版，不参与界面字体替换。 */
+:where(body, body *):not(:where(.katex, .katex *, .katex-display, .katex-display *)) {
+  font-family: var(--font-luo) !important;
+  font-weight: 400 !important;
+  font-synthesis: none;
+  font-variant-caps: normal;
+}
 
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
@@ -80,16 +92,19 @@
   --color-brand: var(--brand);
   --color-highlight: var(--highlight);
 
-  /* Maple Mono 作为全站 sans / serif / mono 字体（中文回退系统字体）。 */
-  --font-sans:
-    "Maple Mono", ui-monospace, SFMono-Regular, "PingFang SC", "Hiragino Sans GB",
-    "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
-  --font-serif:
-    "Maple Mono", ui-serif, "Songti SC", "Noto Serif CJK SC", Georgia, "Times New Roman",
-    serif;
-  --font-mono:
-    "Maple Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
-    monospace;
+  /* 前后台、代码与编辑器统一使用中英文混排字体栈。 */
+  --font-sans: var(--font-luo);
+  --font-serif: var(--font-luo);
+  --font-mono: var(--font-luo);
+  --font-weight-thin: 400;
+  --font-weight-extralight: 400;
+  --font-weight-light: 400;
+  --font-weight-normal: 400;
+  --font-weight-medium: 400;
+  --font-weight-semibold: 400;
+  --font-weight-bold: 400;
+  --font-weight-extrabold: 400;
+  --font-weight-black: 400;
   --button-py-sm: 0.5rem;
   --button-px-sm: 1rem;
   --button-text-sm: 0.875rem;
@@ -198,7 +213,15 @@
   --rainbow-speed: 2s;
 }
 
+/* 生产构建（Lightning CSS）会把 light-dark() 降级为 --lightningcss-light/dark 变量，
+   只识别样式表中声明的 color-scheme。站点主题写在 html 的 light/dark 类名上，
+   须在此同步声明；否则 Astryx 等依赖 light-dark() 的组件会跟随系统而不是站点主题。 */
+html.light {
+  color-scheme: light;
+}
+
 .dark {
+  color-scheme: dark;
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -296,6 +319,12 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -349,9 +378,7 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: var(--font-maple);
-    font-feature-settings: "calt" 1;
-    font-variant-ligatures: contextual;
+    font-family: var(--font-luo);
   }
 
   html.retypeset-scrollbar-hidden,

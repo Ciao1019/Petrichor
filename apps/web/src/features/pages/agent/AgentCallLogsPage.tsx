@@ -17,7 +17,6 @@ import { toast } from "sonner"
 import { agentApi, type AgentCallLogItem } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { CodeBlock, CodeBlockCode } from "@/components/ui/code-block"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -89,11 +88,11 @@ export function AgentCallLogsPage() {
         description="展示最近 100 条 Agent API 调用（含 MCP 工具调用），包含接口、状态与耗时。点击「详情」查看完整入参/出参。"
       />
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <CardTitle className="text-base">调用记录</CardTitle>
-            <CardDescription>共 {filteredLogs.length} 条记录</CardDescription>
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-base font-semibold">调用记录</h2>
+            <p className="text-xs text-muted-foreground">共 {filteredLogs.length} 条记录</p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <Input
@@ -107,8 +106,9 @@ export function AgentCallLogsPage() {
               刷新
             </Button>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
+        </div>
+
+        <div className="overflow-hidden rounded-xl border border-border/50 bg-card/60">
           <div className="overflow-x-auto">
             <Table className="w-full table-fixed">
               <TableHeader>
@@ -117,7 +117,7 @@ export function AgentCallLogsPage() {
                   <TableHead>接口</TableHead>
                   <TableHead className="w-[90px]">状态</TableHead>
                   <TableHead className="w-[90px] text-right">耗时</TableHead>
-                  <TableHead className="w-[180px]">Key / IP</TableHead>
+                  <TableHead className="w-[200px]">Key / IP</TableHead>
                   <TableHead className="w-[64px] text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
@@ -171,24 +171,25 @@ export function AgentCallLogsPage() {
                           <Badge
                             variant="outline"
                             className={cn(
-                              "border font-normal",
-                              isFailure
-                                ? "bg-destructive/10 text-destructive border-destructive/30"
-                                : "bg-emerald-500/10 text-emerald-700 border-emerald-200 dark:text-emerald-400 dark:border-emerald-800",
+                              "font-mono text-[11px]",
+                              isFailure ? "border-destructive/30 text-destructive" : "border-muted-foreground/30 text-muted-foreground",
                             )}
                           >
-                            {isFailure ? "失败" : "成功"}
+                            {log.statusCode}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">
-                          <span className="font-mono text-xs">{log.durationMs}ms</span>
+                        <TableCell className="text-right font-mono text-xs text-muted-foreground">
+                          {log.durationMs}ms
                         </TableCell>
-                        <TableCell className="space-y-1">
-                          <div className="truncate font-mono text-[11px] text-muted-foreground" title={log.apiKeyPrefix}>
-                            {log.apiKeyPrefix}
-                          </div>
-                          <div className="truncate font-mono text-[11px] text-muted-foreground" title={log.ip || "-"}>
-                            {log.ip || "-"}
+                        <TableCell className="min-w-0">
+                          <div className="flex items-center gap-1.5 font-mono text-xs">
+                            <KeyRound className="size-3 shrink-0 text-muted-foreground" />
+                            <span className="truncate text-muted-foreground">{log.apiKeyPrefix}</span>
+                            {log.ip ? (
+                              <span className="truncate text-[11px] text-muted-foreground/60" title={log.ip}>
+                                ({log.ip})
+                              </span>
+                            ) : null}
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
@@ -215,18 +216,18 @@ export function AgentCallLogsPage() {
               </TableBody>
             </Table>
           </div>
+        </div>
 
-          {filteredLogs.length > 0 ? (
-            <AppPagination
-              page={currentPage - 1}
-              totalPages={pageCount}
-              total={filteredLogs.length}
-              pageSize={PAGE_SIZE}
-              onChange={(nextPageIndex) => setPage(nextPageIndex + 1)}
-            />
-          ) : null}
-        </CardContent>
-      </Card>
+        {filteredLogs.length > 0 ? (
+          <AppPagination
+            page={currentPage - 1}
+            totalPages={pageCount}
+            total={filteredLogs.length}
+            pageSize={PAGE_SIZE}
+            onChange={(nextPageIndex) => setPage(nextPageIndex + 1)}
+          />
+        ) : null}
+      </div>
 
       <CallLogDetailDialog log={activeLog} onClose={() => setActiveLog(null)} />
     </div>

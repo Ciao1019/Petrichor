@@ -5,7 +5,6 @@ import { Eye, Loader2, Plus, RefreshCw, Save, Trash2 } from "@/components/iconim
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -193,15 +192,17 @@ export function AboutProfileConfigPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card>
-          <CardHeader>
-            <CardTitle>页面内容</CardTitle>
-            <CardDescription>
+      <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_360px]">
+        {/* 左侧：页面主内容 */}
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-base font-semibold">页面内容</h3>
+            <p className="text-sm text-muted-foreground">
               名称、副标题、自我介绍与 quote 会直接展示在 `/about` 页面。
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
+            </p>
+          </div>
+
+          <div className="space-y-5">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="about-display-name">名称</Label>
@@ -250,9 +251,9 @@ export function AboutProfileConfigPage() {
               />
             </div>
 
-            <div className="space-y-4 rounded-lg border border-dashed p-4">
+            <div className="space-y-4 rounded-xl border border-dashed border-border/70 bg-muted/15 p-4">
               <div className="space-y-1">
-                <Label>联系方式（蓝色便签）</Label>
+                <Label className="font-medium">联系方式（蓝色便签）</Label>
                 <p className="text-xs text-muted-foreground">
                   显示在 quote 下方。三项任一留空即隐藏对应部分；「链接文字」与「链接地址」需同时填写才会渲染为可点击链接。
                 </p>
@@ -290,75 +291,82 @@ export function AboutProfileConfigPage() {
                 </div>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
+        {/* 右侧：Expertise / Toolkit / 发布状态 */}
         <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Expertise</CardTitle>
-              <CardDescription>每行一项，保存时会过滤空行。</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Textarea
-                value={expertiseLines}
-                disabled={loading}
-                onChange={(event) => setExpertiseLines(event.target.value)}
-                rows={8}
-                placeholder="Frontend Architecture"
-              />
-            </CardContent>
-          </Card>
+          <div className="space-y-2">
+            <div>
+              <h3 className="text-base font-semibold">Expertise</h3>
+              <p className="text-xs text-muted-foreground">每行一项，保存时会过滤空行。</p>
+            </div>
+            <Textarea
+              value={expertiseLines}
+              disabled={loading}
+              onChange={(event) => setExpertiseLines(event.target.value)}
+              rows={7}
+              placeholder="Frontend Architecture"
+            />
+          </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Toolkit</CardTitle>
-              <CardDescription>每行一项，前台会渲染为标签。</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Textarea
-                value={toolkitLines}
-                disabled={loading}
-                onChange={(event) => setToolkitLines(event.target.value)}
-                rows={8}
-                placeholder="TypeScript"
-              />
-            </CardContent>
-          </Card>
+          <div className="space-y-2">
+            <div>
+              <h3 className="text-base font-semibold">Toolkit</h3>
+              <p className="text-xs text-muted-foreground">每行一项，前台会渲染为标签。</p>
+            </div>
+            <Textarea
+              value={toolkitLines}
+              disabled={loading}
+              onChange={(event) => setToolkitLines(event.target.value)}
+              rows={7}
+              placeholder="TypeScript"
+            />
+          </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>发布状态</CardTitle>
-              <CardDescription>公开页面读取当前单例配置。</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">更新时间</span>
-                <span className="text-right">{formatDateTime(profile.updatedAt)}</span>
-              </div>
-              <Button type="button" variant="outline" className="w-full" asChild>
-                <a href="/about" target="_blank" rel="noopener noreferrer">
-                  预览公开页面
-                </a>
-              </Button>
-            </CardContent>
-          </Card>
+          <div className="space-y-3 rounded-xl border border-border/40 bg-muted/20 p-4 text-sm">
+            <div>
+              <h3 className="font-medium">发布状态</h3>
+              <p className="text-xs text-muted-foreground">公开页面读取当前单例配置。</p>
+            </div>
+            <div className="flex items-center justify-between gap-4 pt-1">
+              <span className="text-muted-foreground">更新时间</span>
+              <span className="text-right font-medium">{formatDateTime(profile.updatedAt)}</span>
+            </div>
+            <Button type="button" variant="outline" size="sm" className="w-full mt-2" asChild>
+              <a href="/about" target="_blank" rel="noopener noreferrer">
+                预览公开页面
+              </a>
+            </Button>
+          </div>
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>正文注记（下划线 / 高亮 + 悬停气泡）</CardTitle>
-          <CardDescription>
-            在「自我介绍」里把指定短语标成手绘下划线或荧光笔高亮，鼠标悬停时浮出手写小气泡。短语需与正文**完全一致**才会生效；气泡文案建议用英文短句（手写体渲染，留空则只显示标记）。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {profile.accents.length === 0 ? (
-            <p className="text-sm text-muted-foreground">暂无注记，点击下方「添加注记」。</p>
-          ) : (
-            profile.accents.map((accent, index) => (
-              <div key={index} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+      <div className="border-t border-border/40" />
+
+      {/* 底部：正文注记 */}
+      <div className="space-y-4">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-base font-semibold">正文注记（下划线 / 高亮 + 悬停气泡）</h3>
+            <p className="text-sm text-muted-foreground">
+              在「自我介绍」里把指定短语标成手绘下划线或荧光笔高亮，鼠标悬停时浮出手写小气泡。短语需与正文完全一致才会生效；气泡文案建议用英文短句（手写体渲染，留空则只显示标记）。
+            </p>
+          </div>
+          <Button type="button" variant="outline" size="sm" className="shrink-0 self-start sm:self-auto" disabled={loading} onClick={addAccent}>
+            <Plus className="mr-2 size-4" />
+            添加注记
+          </Button>
+        </div>
+
+        {profile.accents.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border/60 py-8 text-center text-sm text-muted-foreground">
+            暂无注记，点击上方或下方「添加注记」。
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {profile.accents.map((accent, index) => (
+              <div key={index} className="flex flex-col gap-2 rounded-xl border border-border/40 bg-card/60 p-3 sm:flex-row sm:items-end">
                 <div className="flex-1 space-y-1">
                   <Label className="text-xs text-muted-foreground">短语（需与正文一致）</Label>
                   <Input
@@ -414,14 +422,17 @@ export function AboutProfileConfigPage() {
                   <Trash2 className="size-4" />
                 </Button>
               </div>
-            ))
-          )}
+            ))}
+          </div>
+        )}
+
+        {profile.accents.length > 0 && (
           <Button type="button" variant="outline" size="sm" disabled={loading} onClick={addAccent}>
             <Plus className="mr-2 size-4" />
             添加注记
           </Button>
-        </CardContent>
-      </Card>
+        )}
+      </div>
     </div>
   )
 }

@@ -81,7 +81,7 @@ func ChatWithTools(ctx context.Context, rt RuntimeConfig, modelID string, msgs [
 	}
 }
 
-// ChatWithToolsOnce 带工具的非流式补全。主要供 Eino 的 Generate 接口使用；
+// ChatWithToolsOnce 带工具的非流式补全。供单次生成和模型协议校验使用；
 // 当前原生工具协议与流式入口保持同一支持面，避免同一模型在两种调用方式下行为漂移。
 func ChatWithToolsOnce(ctx context.Context, rt RuntimeConfig, modelID string, msgs []ChatMessage, opts GenerationOptions, tools []ToolDefinition) (*ChatResult, error) {
 	if len(tools) == 0 {

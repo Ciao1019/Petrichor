@@ -97,12 +97,12 @@
 
 .site-graph-label.is-active {
   color: var(--foreground);
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .site-graph-label--root,
 .site-graph-label--section {
   color: var(--foreground);
-  font-weight: 600;
+  font-weight: 400;
   font-size: 0.75rem;
 }

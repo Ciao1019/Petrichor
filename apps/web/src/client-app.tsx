@@ -5,7 +5,7 @@ import { LoginForm } from '@/components/login-form'
 import { AuthCallback } from '@/components/auth-callback'
 import { ThemeProvider } from '@/components/theme-provider'
 import { ThemeToggle } from '@/components/theme-toggle'
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/sonner'
@@ -21,9 +21,12 @@ import { RouteLoadingFallback } from '@/components/route-loading-fallback'
 import { SiteSetupGate } from '@/components/site-setup-gate'
 import { PublicWikiKnowledgeBasePage } from '@/features/pages/public-wiki/PublicWikiKnowledgeBasePage'
 import { PublicWikiRouteLayout } from "@/features/pages/public-wiki/PublicWikiRouteLayout"
+import { SettingsLayout } from "@/features/pages/settings/SettingsLayout"
+import { loadInboxPage } from '@/features/pages/inbox/load-inbox-page'
 
 // Next.js 迁移到 React Router 后不再自动按页面拆包；显式 lazy 才能避免把编辑器、
 // 文档查看器、图表和 AI 管理页全部塞进首个 Rollup chunk。
+const InboxPage = lazy(loadInboxPage)
 const AssistantChatPage = lazy(() =>
   import('@/features/pages/assistant/AssistantChatPage').then((module) => ({ default: module.AssistantChatPage }))
 )
@@ -114,9 +117,6 @@ const AboutProfileConfigPage = lazy(() =>
 )
 const ProjectsConfigPage = lazy(() =>
   import('@/features/pages/admin/ProjectsConfigPage').then((module) => ({ default: module.ProjectsConfigPage }))
-)
-const NotificationPage = lazy(() =>
-  import('@/features/pages/notification/NotificationPage').then((module) => ({ default: module.NotificationPage }))
 )
 const SiteAppearanceConfigPage = lazy(() =>
   import('@/features/pages/admin/SiteAppearanceConfigPage').then((module) => ({ default: module.SiteAppearanceConfigPage }))
@@ -254,6 +254,7 @@ function DashboardLayout() {
   return (
     <SidebarProvider
       ref={viewportShellRef}
+      style={{ "--sidebar-width": "14rem" } as React.CSSProperties}
       className={lockViewport ? 'h-dvh min-h-0 overflow-hidden' : undefined}
     >
       <AppSidebar variant="inset" />
@@ -277,23 +278,25 @@ function DashboardLayout() {
    页面组件不感知演示态，数据层由 demo adapter 全量接管。 */
 function DemoEntry() {
   enterDemoMode()
-  return <Navigate to={dashboardRoutes.knowledge} replace />
+  return <Navigate to={dashboardRoutes.inbox} replace />
 }
 
 function AppThemeScope() {
   const location = useLocation()
-  // 前台公开页固定暗色，后台仍可自由切换
   const publicSite = isPublicSitePath(location.pathname)
-  const forcedTheme = publicSite ? 'dark' : undefined
+
+  useLayoutEffect(() => {
+    document.documentElement.toggleAttribute('data-public-site', publicSite)
+  }, [publicSite])
 
   return (
-    <ThemeProvider defaultTheme="system" forcedTheme={forcedTheme}>
+    <ThemeProvider defaultTheme="system">
       <TooltipProvider>
         <Toaster />
-        <SiteSetupGate silentChecking={publicSite}>
+        <SiteSetupGate>
           <div style={{ position: 'relative', minHeight: '100vh' }}>
             <RouteLoadErrorBoundary resetKey={location.pathname}>
-              <Suspense fallback={<RouteLoadingFallback silent={publicSite} />}>
+              <Suspense fallback={<RouteLoadingFallback />}>
                 <Routes>
               <Route path="/" element={<BlogHomePage />} />
               <Route path="/tags" element={<TagsPage />} />
@@ -317,11 +320,9 @@ function AppThemeScope() {
               <Route path="/login" element={<LoginPage />} />
               <Route path="/auth/callback" element={<AuthCallback />} />
               <Route path="/dashboard" element={<DashboardLayout />}>
-                <Route index element={<Navigate to={dashboardRoutes.assistant} replace />} />
+                <Route index element={<Navigate to={dashboardRoutes.inbox} replace />} />
+                <Route path="inbox" element={<InboxPage />} />
                 <Route path="assistant" element={<AssistantChatPage />} />
-                <Route path="metrics" element={<DashboardMetricsPage />} />
-                <Route path="account" element={<AccountPage />} />
-                <Route path="notifications" element={<NotificationPage />} />
                 <Route path="knowledge" element={<KnowledgeBasePage />} />
                 <Route path="knowledge/:knowledgeBaseId" element={<KnowledgeBaseTreePage />} />
                 <Route path="knowledge/:knowledgeBaseId/imports" element={<DocumentImportJobsPage />} />
@@ -332,20 +333,25 @@ function AppThemeScope() {
                 <Route path="wiki" element={<Navigate to={dashboardRoutes.knowledge} replace />} />
                 <Route path="knowledge/:knowledgeBaseId/articles/:articleId" element={<KnowledgeBaseArticleEditorPage />} />
                 <Route path="knowledge/:knowledgeBaseId/articles/:articleId/mindmap" element={<KnowledgeBaseArticleMindMapPage />} />
-                <Route path="admin/users" element={<UserManagementPage />} />
-                <Route path="admin/about" element={<AboutProfileConfigPage />} />
-                <Route path="admin/projects" element={<ProjectsConfigPage />} />
-                <Route path="admin/appearance" element={<SiteAppearanceConfigPage />} />
-                <Route path="admin/filing" element={<SiteFilingConfigPage />} />
-                <Route path="admin/site-graph" element={<Navigate to={dashboardRoutes.adminAppearance} replace />} />
-                <Route path="admin/document-import-dead-letters" element={<DocumentImportDeadLettersPage />} />
-                <Route path="ai/config" element={<AiModelConfigPage />} />
-                <Route path="agent" element={<AgentKeysPage />} />
-                <Route path="agent/keys" element={<AgentKeysPage />} />
-                <Route path="agent/logs" element={<AgentCallLogsPage />} />
-                <Route path="agent/mcp" element={<AgentMcpPage />} />
-                <Route path="agent/skill" element={<AgentSkillPage />} />
-                <Route path="agent/debug" element={<AgentDebugPage />} />
+                <Route element={<SettingsLayout />}>
+                  <Route path="settings" element={<Navigate to={dashboardRoutes.account} replace />} />
+                  <Route path="metrics" element={<DashboardMetricsPage />} />
+                  <Route path="account" element={<AccountPage />} />
+                  <Route path="admin/users" element={<UserManagementPage />} />
+                  <Route path="admin/about" element={<AboutProfileConfigPage />} />
+                  <Route path="admin/projects" element={<ProjectsConfigPage />} />
+                  <Route path="admin/appearance" element={<SiteAppearanceConfigPage />} />
+                  <Route path="admin/filing" element={<SiteFilingConfigPage />} />
+                  <Route path="admin/site-graph" element={<Navigate to={dashboardRoutes.adminAppearance} replace />} />
+                  <Route path="admin/document-import-dead-letters" element={<DocumentImportDeadLettersPage />} />
+                  <Route path="ai/config" element={<AiModelConfigPage />} />
+                  <Route path="agent" element={<Navigate to={dashboardRoutes.agentKeys} replace />} />
+                  <Route path="agent/keys" element={<AgentKeysPage />} />
+                  <Route path="agent/logs" element={<AgentCallLogsPage />} />
+                  <Route path="agent/mcp" element={<AgentMcpPage />} />
+                  <Route path="agent/skill" element={<AgentSkillPage />} />
+                  <Route path="agent/debug" element={<AgentDebugPage />} />
+                </Route>
               </Route>
                 </Routes>
                 <RouteLoadSuccessMarker />

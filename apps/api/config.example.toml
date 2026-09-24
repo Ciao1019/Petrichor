@@ -86,7 +86,41 @@ read_timeout_ms = 1000
 write_timeout_ms = 1000
 
 [agent]
+# 相对 config.toml；镜像内示例目录为 /app/agent-skills。修改后重启 API/Worker。
 skills_directory = ""
+
+[agent.pi]
+# API 与 Worker 共用 Pi Agent Core。镜像自带 Bun 和打包入口。
+# 本地先执行 bun run install:agent；留空 entry 自动查找源码或镜像内入口。
+command = "bun"
+entry = ""
+
+# 外部 MCP 使用 Streamable HTTP；URL 和 token 只留在 Go，默认仅操作员可用。
+# 浏览器完整示例见 docs/agent/extensions.md；没有通配符授权。
+# [[agent.integrations.mcp]]
+# name = "browser"
+# url = "http://127.0.0.1:8931/mcp"
+# token = ""
+# read_tools = ["browser_snapshot"]
+# write_tools = ["browser_navigate", "browser_click", "browser_type", "browser_press_key", "browser_tabs", "browser_close"]
+# allow_users = false
+# timeout_seconds = 30
+
+[agent.integrations.rerank]
+enabled = false
+# 完整 endpoint；支持 Jina /v1/rerank 兼容协议。发送已授权候选的截断正文。
+url = "https://api.jina.ai/v1/rerank"
+api_key = ""
+model = "jina-reranker-v2-base-multilingual"
+timeout_seconds = 8
+
+[agent.integrations.sandbox]
+enabled = false
+# 独立沙箱主机的 /execute 地址；不要把 Docker socket 挂入 API/Worker。
+url = "http://127.0.0.1:8099/execute"
+token = ""
+timeout_seconds = 20
+allow_users = false
 
 [agent.features]
 soft_router = true
@@ -130,3 +164,29 @@ provider = ""
 api_key = ""
 base_url = ""
 timeout_ms = 12000
+
+# Jev 随笔归档推荐。仅用户点击「智能推荐」时调用；密钥只在 Go API 服务端使用。
+# 英文训练为主，中文需验证；阈值是起点，不代表正确率保证。
+[typesafe]
+enabled = false
+base_url = "https://api.typesafe.ai"
+api_key = ""
+model = "jev-1.13.0"
+timeout_seconds = 20
+min_confidence = 0.7
+tag_threshold = 0.85
+
+# 随笔网页采集：API 与 Worker 必须使用相同配置。密钥仅保存在服务端。
+# 自托管可改 base_url；按实际部署确认 screenshot / actions / ai_formats。
+[firecrawl]
+enabled = false
+base_url = "https://api.firecrawl.dev"
+api_key = ""
+screenshot = true
+actions = true
+ai_formats = true
+timeout_seconds = 120
+concurrency = 4
+per_user_concurrency = 2
+daily_limit = 50
+max_batch = 10

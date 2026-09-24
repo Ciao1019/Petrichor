@@ -57,20 +57,20 @@ func extractDocumentCandidatesWithAgent(
 		return "", nil, nil, err
 	}
 	reportKnowledgeBuildAgentActivity(ctx, DocumentAgentActivity{
-		ID: "adk-output-validation", Kind: "validation", Status: knowledgeBuildStageRunning,
+		ID: "pi-output-validation", Kind: "validation", Status: knowledgeBuildStageRunning,
 		Title: "校验 Agent 抽取结果", Detail: "正在检查全文覆盖和知识来源",
 	})
 	parsed := extractJSONObjects(raw)
 	if len(parsed) == 0 {
 		reportKnowledgeBuildAgentActivity(ctx, DocumentAgentActivity{
-			ID: "adk-output-validation", Status: knowledgeBuildStageFailed,
+			ID: "pi-output-validation", Status: knowledgeBuildStageFailed,
 			Title: "Agent 输出格式校验未通过",
 		})
 		return "", nil, nil, fmt.Errorf("文档 Agent 输出不是有效 JSON: %w", errKnowledgeBuildInvalidJSON)
 	}
 	if err := validateDocumentAgentCoverage(parsed, chunks); err != nil {
 		reportKnowledgeBuildAgentActivity(ctx, DocumentAgentActivity{
-			ID: "adk-output-validation", Status: knowledgeBuildStageFailed,
+			ID: "pi-output-validation", Status: knowledgeBuildStageFailed,
 			Title: "Agent 全文覆盖校验未通过",
 		})
 		return "", nil, nil, err
@@ -83,13 +83,13 @@ func extractDocumentCandidatesWithAgent(
 	)
 	if err := validateDocumentAgentCandidateSources(parsed, candidates, chunks); err != nil {
 		reportKnowledgeBuildAgentActivity(ctx, DocumentAgentActivity{
-			ID: "adk-output-validation", Status: knowledgeBuildStageFailed,
+			ID: "pi-output-validation", Status: knowledgeBuildStageFailed,
 			Title: "Agent 知识来源校验未通过",
 		})
 		return "", nil, nil, err
 	}
 	reportKnowledgeBuildAgentActivity(ctx, DocumentAgentActivity{
-		ID: "adk-output-validation", Status: knowledgeBuildStageCompleted,
+		ID: "pi-output-validation", Status: knowledgeBuildStageCompleted,
 		Title:  "Agent 抽取结果校验通过",
 		Detail: fmt.Sprintf("全文 %d 个切片均已覆盖，%d 个候选来源有效", len(chunks), len(candidates)),
 	})

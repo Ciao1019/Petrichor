@@ -72,7 +72,7 @@ type DocumentAgentProgress struct {
 	Percent   int
 }
 
-// DocumentAgentActivity 是可以安全展示给用户的 ADK 行为，不包含正文、提示词、工具结果或思维链。
+// DocumentAgentActivity 是可以安全展示给用户的 Pi Agent 行为，不包含正文、提示词、工具结果或思维链。
 type DocumentAgentActivity struct {
 	ID        string
 	Kind      string

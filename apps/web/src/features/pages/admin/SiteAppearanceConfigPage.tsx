@@ -5,7 +5,6 @@ import { Loader2, RefreshCw, Save } from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import {
@@ -63,48 +62,48 @@ export function SiteAppearanceConfigPage() {
     }, [config.publicQaEnabled])
 
     return (
-        <div className="mx-auto w-full max-w-4xl space-y-6 p-4 md:p-8">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-semibold">外观设置</h1>
+        <div className="mx-auto w-full max-w-3xl space-y-8 p-4 md:py-8 md:px-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pb-6 border-b border-border/50">
+                <div className="space-y-1">
+                    <h1 className="text-xl font-semibold tracking-tight text-foreground">外观与公开功能</h1>
                     <p className="text-sm text-muted-foreground">
-                        配置前台公开页面的可用功能。
+                        配置前台公开主页与访客交互功能。
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={fetchConfig} disabled={loading}>
-                        {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                        <span className="ml-2">刷新</span>
+                    <Button variant="ghost" size="sm" onClick={fetchConfig} disabled={loading}>
+                        {loading ? <Loader2 className="size-3.5 animate-spin mr-1.5" /> : <RefreshCw className="size-3.5 mr-1.5" />}
+                        <span>刷新</span>
                     </Button>
                     <Button size="sm" onClick={handleSave} disabled={saving || loading}>
-                        {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-                        <span className="ml-2">保存</span>
+                        {saving ? <Loader2 className="size-3.5 animate-spin mr-1.5" /> : <Save className="size-3.5 mr-1.5" />}
+                        <span>保存</span>
                     </Button>
                 </div>
             </div>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle className="text-base">前台问答</CardTitle>
-                    <CardDescription>
-                        开启后，未登录访客可在前台「问答」页面（/ask）就你公开分享的文章进行 AI 问答；每个访客每小时限 10 次提问。
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className="flex items-center justify-between rounded-md border p-3">
-                        <div className="space-y-0.5">
-                            <Label className="text-sm font-medium">开启前台公开问答</Label>
-                            <p className="text-xs text-muted-foreground">关闭后 /ask 页面将提示功能已停用</p>
-                        </div>
-                        <Switch
-                            checked={config.publicQaEnabled}
-                            onCheckedChange={(value) =>
-                                setConfig((prev) => ({ ...prev, publicQaEnabled: value }))
-                            }
-                        />
+            <div className="space-y-3">
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+                    公开互动
+                </h2>
+                <div className="flex items-center justify-between py-3 border-b border-border/40 gap-4">
+                    <div className="space-y-1">
+                        <Label htmlFor="public-qa-toggle" className="text-sm font-medium text-foreground cursor-pointer">
+                            开启前台公开问答
+                        </Label>
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                            开启后，未登录访客可在前台「问答」页面（/ask）就公开分享的文章进行 AI 问答；每个访客每小时限 10 次提问。关闭后将提示已停用。
+                        </p>
                     </div>
-                </CardContent>
-            </Card>
+                    <Switch
+                        id="public-qa-toggle"
+                        checked={config.publicQaEnabled}
+                        onCheckedChange={(value) =>
+                            setConfig((prev) => ({ ...prev, publicQaEnabled: value }))
+                        }
+                    />
+                </div>
+            </div>
         </div>
     )
 }

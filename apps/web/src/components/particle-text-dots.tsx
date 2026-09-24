@@ -1,6 +1,7 @@
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
+import { LUO_FONT_FAMILY } from "@/lib/typography"
 
 type Variant = "dark" | "light"
 
@@ -47,7 +48,6 @@ interface StartAnimationOptions {
   frameRef: React.MutableRefObject<number | null>
 }
 
-const FONT_FAMILY = 'system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif'
 const FULL_CIRCLE = Math.PI * 2
 const START_OFFSET = 22
 const ALPHA_THRESHOLD = 70
@@ -108,7 +108,7 @@ function createParticlesFromText(width: number, height: number, text: string, va
   offscreenContext.fillStyle = variant === "dark" ? "#ffffff" : "#020617"
   offscreenContext.textAlign = "center"
   offscreenContext.textBaseline = "middle"
-  offscreenContext.font = `800 ${resolveFontSize(width, height, label)}px ${FONT_FAMILY}`
+  offscreenContext.font = `400 ${resolveFontSize(width, height, label)}px ${LUO_FONT_FAMILY}`
   offscreenContext.fillText(label, width / 2, height / 2)
 
   const imageData = offscreenContext.getImageData(0, 0, width, height)
@@ -242,6 +242,11 @@ function startAnimation(options: StartAnimationOptions) {
 
   const resize = () => resizeCanvas(runtime, options)
   resize()
+  void document.fonts?.load(`400 16px ${LUO_FONT_FAMILY}`, options.text).then(() => {
+    if (!runtime.disposed) resize()
+  }).catch(() => {
+    // 字体不可用时保留指定回退栈生成的文字。
+  })
 
   const observer = new ResizeObserver(resize)
   observer.observe(options.container)

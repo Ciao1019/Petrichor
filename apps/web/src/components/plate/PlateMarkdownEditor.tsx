@@ -1,8 +1,7 @@
 import * as React from "react"
-import { importDocx } from "@platejs/docx-io"
 import { DndProvider } from "react-dnd"
 import { HTML5Backend } from "react-dnd-html5-backend"
-import { KEYS, type Value } from "platejs"
+import { KEYS, type AnyPluginConfig, type Value } from "platejs"
 import {
     Plate,
     useEditorSelector,
@@ -16,7 +15,6 @@ import { CursorOverlayKit } from "@/components/editor/plugins/cursor-overlay-kit
 import { discussionPlugin } from "@/components/editor/plugins/discussion-kit"
 import { DndKit } from "@/components/editor/plugins/dnd-kit"
 import { DocxKit } from "@/components/editor/plugins/docx-kit"
-import { DocxExportKit } from "@/components/editor/plugins/docx-export-kit"
 import { EmojiKit } from "@/components/editor/plugins/emoji-kit"
 import { ExitBreakKit } from "@/components/editor/plugins/exit-break-kit"
 import { SlashKit } from "@/components/editor/plugins/slash-kit"
@@ -36,14 +34,16 @@ import { FloatingToolbar } from "@/components/ui/floating-toolbar"
 import { FloatingToolbarClassicButtons } from "@/components/ui/floating-toolbar-classic-buttons"
 import { FixedToolbarButtons } from "@/components/ui/fixed-toolbar-classic-buttons"
 import { AiAssistantProvider } from "@/components/editor/ai-assistant/ai-assistant-context"
-import { AiAssistantDialog } from "@/components/editor/ai-assistant/AiAssistantDialog"
 import { EmbedCardDialog } from "@/components/editor/embed-card/embed-card-insert"
 import { Editor, EditorContainer } from "@/components/ui/editor"
 import { Toolbar } from "@/components/ui/toolbar"
+import { PlateCompactToolbar } from "@/components/plate/PlateCompactToolbar"
 import { uploadFileToObjectStorage } from "@/lib/object-storage-upload"
 import { cn } from "@/lib/utils"
 
-type PlateContentState = {
+const AiAssistantDialog = React.lazy(() => import("@/components/editor/ai-assistant/AiAssistantDialog").then((module) => ({ default: module.AiAssistantDialog })))
+
+export type PlateContentState = {
     markdown: string
     contentJson: string
     contentMetaJson: string
@@ -57,33 +57,49 @@ type PlateDocxImportState = PlateContentState & {
 
 export type PlateMarkdownEditorHandle = {
     getContentState: () => PlateContentState
+    hasPendingMedia: () => boolean
     importDocx: (file: File) => Promise<PlateDocxImportState>
+    appendMarkdown: (markdown: string) => PlateContentState
     importMarkdown: (markdown: string) => PlateContentState
 }
 
 type PlateMarkdownEditorProps = {
+    ariaLabel?: string
     className?: string
+    /** 紧凑模式：去掉顶部固定工具栏，改为底部轻量操作条，适合随笔等快速记录场景。 */
+    compact?: boolean
+    /** 紧凑模式下渲染在底部操作条右侧的调用方操作（标签、字数、提交等）。 */
+    compactActions?: React.ReactNode
+    changeDelayMs?: number
     currentUser?: DiscussionUser
     disabled?: boolean
+    extraPlugins?: AnyPluginConfig[]
     initialContentJson?: string | null
     initialContentMetaJson?: string | null
     initialMarkdown: string
     onContentStateChange?: (next: PlateContentState) => void
     onMarkdownChange?: (next: string) => void
+    onPendingMediaChange?: (pending: boolean) => void
     placeholder?: string
 }
 
 const DISALLOWED_DOCX_NODE_TYPES = new Set(["script", "style"])
 
 export const PlateMarkdownEditor = React.forwardRef<PlateMarkdownEditorHandle, PlateMarkdownEditorProps>(function PlateMarkdownEditor({
+    ariaLabel,
     className,
+    compact = false,
+    compactActions,
+    changeDelayMs = 1000,
     currentUser,
     disabled,
+    extraPlugins,
     initialContentJson,
     initialContentMetaJson,
     initialMarkdown,
     onContentStateChange,
     onMarkdownChange,
+    onPendingMediaChange,
     placeholder,
 }, ref) {
     const initialMeta = React.useMemo(
@@ -112,14 +128,14 @@ export const PlateMarkdownEditor = React.forwardRef<PlateMarkdownEditorHandle, P
             ...ExitBreakKit,
             ...CursorOverlayKit,
             ...DocxKit,
-            ...DocxExportKit,
             ...SlashKit,
             ...EmojiKit,
             ...DndKit,
             ...TabbableKit,
             ...BlockMenuKit,
+            ...(extraPlugins ?? []),
         ],
-        [metaWithCurrentUser]
+        [extraPlugins, metaWithCurrentUser]
     )
     const editor = usePlateEditor({
         plugins: [...plugins],
@@ -134,13 +150,15 @@ export const PlateMarkdownEditor = React.forwardRef<PlateMarkdownEditorHandle, P
         <DndProvider backend={HTML5Backend}>
             <Plate editor={editor} readOnly={disabled}>
                 <AiAssistantProvider
-                    renderDialog={({ isOpen, context, initialAction, onClose }) => (
-                        <AiAssistantDialog
-                            isOpen={isOpen}
-                            context={context}
-                            initialAction={initialAction}
-                            onClose={onClose}
-                        />
+                    renderDialog={({ isOpen, context, initialAction, onClose }) => isOpen && (
+                        <React.Suspense fallback={null}>
+                            <AiAssistantDialog
+                                isOpen={isOpen}
+                                context={context}
+                                initialAction={initialAction}
+                                onClose={onClose}
+                            />
+                        </React.Suspense>
                     )}
                 >
                     <PlateEditorStateSync
@@ -148,10 +166,12 @@ export const PlateMarkdownEditor = React.forwardRef<PlateMarkdownEditorHandle, P
                         editorRef={ref}
                         onContentStateChange={onContentStateChange}
                         onMarkdownChange={onMarkdownChange}
+                        changeDelayMs={changeDelayMs}
+                        onPendingMediaChange={onPendingMediaChange}
                     />
                     <div className={cn("isolate overflow-clip rounded-lg border bg-card", className)}>
-                        {!disabled && (
-                            <div className="sticky top-0 z-10 border-b bg-background/95 py-1 backdrop-blur supports-[backdrop-filter]:bg-background/70 overflow-x-auto app-scrollbar">
+                        {!disabled && !compact && (
+                            <div className="sticky top-0 z-10 border-b bg-background/95 py-1 overflow-x-auto app-scrollbar backdrop-blur supports-[backdrop-filter]:bg-background/70">
                                 <Toolbar className="h-9 w-max min-w-full flex-nowrap gap-1 px-2">
                                     <FixedToolbarButtons />
                                 </Toolbar>
@@ -159,18 +179,22 @@ export const PlateMarkdownEditor = React.forwardRef<PlateMarkdownEditorHandle, P
                         )}
                         <EditorContainer
                             className={cn(
-                                "plate-editor-content app-scrollbar min-h-[36rem] overflow-y-auto",
+                                "plate-editor-content app-scrollbar overflow-y-auto",
+                                // 紧凑模式覆盖全局 .plate-editor-content 的文章级最小高度与内边距，由内部 Editor 控制留白。
+                                compact ? "max-h-[50vh] min-h-0 p-0" : "min-h-[36rem]",
                                 disabled ? "cursor-not-allowed opacity-80" : ""
                             )}
                         >
                             <Editor
-                                className="min-h-[36rem]"
+                                aria-label={ariaLabel}
+                                className={compact ? "min-h-40 px-4 pb-2 pt-3.5 sm:px-5" : "min-h-[36rem]"}
                                 disabled={disabled}
                                 placeholder={placeholder}
                                 readOnly={disabled}
-                                variant="fullWidth"
+                                variant={compact ? "none" : "fullWidth"}
                             />
                         </EditorContainer>
+                        {compact && <PlateCompactToolbar disabled={disabled}>{compactActions}</PlateCompactToolbar>}
                     </div>
                     <FloatingToolbar>
                         <FloatingToolbarClassicButtons />
@@ -187,17 +211,24 @@ function PlateEditorStateSync({
     editorRef,
     onContentStateChange,
     onMarkdownChange,
+    changeDelayMs,
+    onPendingMediaChange,
 }: {
     editor: Parameters<typeof serializeMarkdown>[0]
     editorRef?: React.Ref<PlateMarkdownEditorHandle>
     onContentStateChange?: (next: PlateContentState) => void
     onMarkdownChange?: (next: string) => void
+    changeDelayMs: number
+    onPendingMediaChange?: (pending: boolean) => void
 }) {
     const children = useEditorSelector((nextEditor) => nextEditor.children, [])
+    const pendingMedia = useEditorSelector((nextEditor) => nextEditor.api.some({ at: [], match: { type: KEYS.placeholder } }), [])
     const discussions = usePluginOption(discussionPlugin, "discussions")
     const users = usePluginOption(discussionPlugin, "users")
     const currentUserId = usePluginOption(discussionPlugin, "currentUserId")
     const lastPayloadRef = React.useRef<string>("")
+
+    React.useEffect(() => { onPendingMediaChange?.(pendingMedia) }, [onPendingMediaChange, pendingMedia])
 
     const buildContentState = React.useCallback(
         (metaOverride?: PlateContentMeta): PlateContentState => {
@@ -214,7 +245,8 @@ function PlateEditorStateSync({
             }
 
             return {
-                markdown: serializeMarkdown(editor),
+                // 空段落的 Markdown 占位符不是正文，不能生成空随笔或残留空草稿。
+                markdown: editor.api.isEmpty() ? "" : serializeMarkdown(editor),
                 contentJson: serializeContentJson(editor),
                 contentMetaJson: serializeContentMetaJson(meta),
             }
@@ -244,6 +276,7 @@ function PlateEditorStateSync({
         editorRef,
         () => ({
             getContentState: () => emitContentState({ force: true }),
+            hasPendingMedia: () => editor.api.some({ at: [], match: { type: KEYS.placeholder } }),
             importDocx: async (file: File) => {
                 const currentUsers =
                     typeof users === "object" && users !== null
@@ -256,7 +289,10 @@ function PlateEditorStateSync({
                     users: currentUsers,
                 }
 
-                const arrayBuffer = await file.arrayBuffer()
+                const [{ importDocx }, arrayBuffer] = await Promise.all([
+                    import("@platejs/docx-io"),
+                    file.arrayBuffer(),
+                ])
                 const result = await importDocx(editor, arrayBuffer)
                 const { nodes, uploadedImageCount } = await uploadDocxEmbeddedImages(
                     normalizeImportedDocxNodes(result.nodes)
@@ -271,6 +307,11 @@ function PlateEditorStateSync({
                     uploadedImageCount,
                     warnings: result.warnings,
                 }
+            },
+            appendMarkdown: (markdown: string) => {
+                // 单次插入保留原有节点、批注和撤销历史，不替换当前草稿。
+                editor.tf.insertNodes(deserializeMarkdown(editor, markdown), { at: [editor.children.length] })
+                return emitContentState({ force: true })
             },
             importMarkdown: (markdown: string) => {
                 const currentUsers =
@@ -298,11 +339,12 @@ function PlateEditorStateSync({
 
         const timer = setTimeout(() => {
             emitContentState()
-        }, 1000)
+        }, changeDelayMs)
 
         return () => clearTimeout(timer)
     }, [
         children,
+        changeDelayMs,
         emitContentState,
         onContentStateChange,
         onMarkdownChange,

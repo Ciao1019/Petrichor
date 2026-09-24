@@ -78,6 +78,8 @@ type ContextBuildInput struct {
 	RoutingHint            *RoutingHint
 	RemainingToolCalls     int
 	Budget                 *ContextBudgetConfig
+	// ProfileInstructions 场景约束，紧跟基础指令，优先级高于技能说明。
+	ProfileInstructions string
 }
 
 // SkillInstruction 已加载技能指令。
@@ -111,6 +113,9 @@ func (m *ContextManager) Build(input ContextBuildInput) BuiltContext {
 		budget = *input.Budget
 	}
 	sections := []string{baseAgentPrompt}
+	if trimSpace(input.ProfileInstructions) != "" {
+		sections = append(sections, input.ProfileInstructions)
+	}
 
 	if len(input.Tools) > 0 {
 		lines := make([]string, 0, len(input.Tools))
@@ -128,6 +133,30 @@ func (m *ContextManager) Build(input ContextBuildInput) BuiltContext {
 	}
 	if catalog := renderSkillCatalog(notLoaded); catalog != "" {
 		sections = append(sections, "## 可加载能力\n"+catalog)
+	}
+
+	// 已加载技能的说明必须随每次换段/恢复进入模型上下文；不能只保留工具 ID。
+	skillRemaining := budget.Skill
+	for _, skill := range input.SkillInstructions {
+		if skillRemaining <= 0 {
+			break
+		}
+		section := "## 技能说明：" + skill.SkillID + "\n" + skill.Instructions
+		if EstimateTokens(section) > skillRemaining {
+			runes := []rune(section)
+			low, high := 0, len(runes)
+			for low < high {
+				middle := (low + high + 1) / 2
+				if EstimateTokens(string(runes[:middle])) <= skillRemaining {
+					low = middle
+				} else {
+					high = middle - 1
+				}
+			}
+			section = string(runes[:low])
+		}
+		sections = append(sections, section)
+		skillRemaining -= EstimateTokens(section)
 	}
 
 	sections = append(sections, "## 当前目标\n"+input.State.Goal)

@@ -148,7 +148,9 @@ func loadReferencedS4ObjectKeys(ctx context.Context, q execQuerier, userID int64
 	}
 
 	articleRows, err := q.Query(ctx,
-		`SELECT content_json, content_md FROM petrichor_kb_article WHERE user_id = $1`, userID)
+		`SELECT content_json, content_md FROM petrichor_kb_article WHERE user_id = $1
+ UNION ALL SELECT content_json, content_md FROM petrichor_inbox_note WHERE user_id = $1
+ UNION ALL SELECT NULL::text, 's4key:' || (a->>'key') FROM petrichor_inbox_capture c CROSS JOIN LATERAL jsonb_array_elements(c.result->'assets') a WHERE c.user_id=$1 AND a->>'key' IS NOT NULL`, userID)
 	if err != nil {
 		return nil, err
 	}

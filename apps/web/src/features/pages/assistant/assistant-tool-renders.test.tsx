@@ -6,22 +6,22 @@ import { describe, expect, it } from "vitest"
 import { StepBudgetNotice } from "./step-budget-notice"
 
 describe("StepBudgetNotice", () => {
-  it("只在运行中显示 warning，并在 resolved 后立即隐藏", () => {
-    const { rerender } = render(
-      <StepBudgetNotice data={{ status: "warning", remaining: 2 }} />,
+  it("历史消息里的 warning/resolved 不再展示剩余次数提示", () => {
+    const { container, rerender } = render(
+      <StepBudgetNotice data={{ status: "warning", remaining: 2, label: "本轮还可调用 2 次工具" }} />,
     )
-    expect(screen.getByRole("status").textContent).toContain("当前任务仍在继续")
-
-    rerender(<StepBudgetNotice data={{ status: "warning", remaining: 2, label: "自定义运行提示" }} />)
-    expect(screen.getByRole("status").textContent).toContain("自定义运行提示")
+    expect(container.textContent).toBe("")
 
     rerender(<StepBudgetNotice data={{ status: "resolved", remaining: 2 }} />)
-    expect(screen.queryByRole("status")).toBeNull()
+    expect(container.textContent).toBe("")
   })
 
   it("真实耗尽时保留不误导的继续提示", () => {
-    render(<StepBudgetNotice data={{ status: "exhausted", remaining: 0 }} />)
+    const { rerender } = render(<StepBudgetNotice data={{ status: "exhausted", remaining: 0 }} />)
     expect(screen.getByRole("status").textContent).toContain("如答案不完整")
+
+    rerender(<StepBudgetNotice data={{ status: "exhausted", remaining: 0, label: "自定义用尽提示" }} />)
+    expect(screen.getByRole("status").textContent).toContain("自定义用尽提示")
   })
 
   it("忽略空数据和无效状态", () => {

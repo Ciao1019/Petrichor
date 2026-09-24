@@ -35,27 +35,28 @@ export function PublicSiteAuthor() {
   if (loading) {
     return (
       <div className="flex h-12 items-center gap-2" role="status" aria-label="加载作者信息">
-        <span className="size-8 shrink-0 rounded-lg bg-[var(--retypeset-surface-tint)] motion-safe:animate-pulse" />
+        <span className="size-8 shrink-0 rounded-lg bg-[var(--retypeset-surface)] motion-safe:animate-pulse" />
         <span className="grid gap-2" aria-hidden="true">
-          <span className="h-3 w-16 rounded bg-[var(--retypeset-surface-tint)] motion-safe:animate-pulse" />
-          <span className="h-2.5 w-28 rounded bg-[var(--retypeset-surface-tint)] motion-safe:animate-pulse" />
+          <span className="h-3 w-16 rounded bg-[var(--retypeset-surface)] motion-safe:animate-pulse" />
+          <span className="h-2.5 w-28 rounded bg-[var(--retypeset-surface)] motion-safe:animate-pulse" />
         </span>
       </div>
     )
   }
 
-  const displayName = profile?.displayName.trim() || "作者"
-  const signature = profile?.quote.trim() || profile?.roleTitle.trim() || "关于我"
+  // 资料字段可能缺省（旧数据或演示数据），逐项判空，避免整页渲染失败。
+  const displayName = profile?.displayName?.trim() || "作者"
+  const signature = profile?.quote?.trim() || profile?.roleTitle?.trim() || "关于我"
 
   return (
     <Link
       to="/about"
       aria-label={`关于作者：${displayName}`}
-      className="retypeset-font-navbar -ml-2 flex h-12 w-full min-w-0 items-center gap-2 rounded-xl px-2 text-left transition-colors hover:bg-[var(--retypeset-surface-tint)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--retypeset-accent)] motion-reduce:transition-none"
+      className="retypeset-font-navbar -ml-2 flex h-12 w-full min-w-0 items-center gap-2 rounded-xl px-2 text-left transition-colors hover:bg-[var(--retypeset-surface)] focus-visible:bg-[var(--retypeset-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--retypeset-accent)] motion-reduce:transition-none"
     >
       <span className="relative shrink-0" aria-hidden="true">
         <Avatar className="size-8 rounded-lg">
-          <AvatarFallback className="rounded-lg bg-[var(--retypeset-surface-tint)] text-[var(--retypeset-secondary)]">
+          <AvatarFallback className="rounded-lg bg-[var(--retypeset-surface)] text-[var(--retypeset-secondary)]">
             {Array.from(displayName).slice(0, 2).join("").toUpperCase()}
           </AvatarFallback>
           {/* 原生图片直接复用浏览器缓存，切页时无需重新等待 AvatarImage 的加载状态。 */}

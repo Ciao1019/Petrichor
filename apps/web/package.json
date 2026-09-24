@@ -52,6 +52,7 @@
     "@emoji-mart/data": "1.2.1",
     "@extend-ai/react-docx": "^0.7.5",
     "@extend-ai/react-xlsx": "0.12.1",
+    "@fingerprintjs/fingerprintjs": "5.2.0",
     "@lobehub/fluent-emoji": "^4.1.0",
     "@lobehub/ui": "^5.15.4",
     "@pierre/diffs": "^1.1.22",

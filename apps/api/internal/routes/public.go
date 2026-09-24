@@ -3,6 +3,7 @@ package routes
 import (
 	"github.com/gin-gonic/gin"
 
+	"petrichor/api/internal/assistantsvc"
 	"petrichor/api/internal/publicapi"
 )
 
@@ -50,7 +51,10 @@ func registerPublicRoutes(rg *gin.RouterGroup) {
 	burn.POST("/consume", publicapi.BurnConsume)
 
 	// 前台问答（本轮不做流式 → 503）
-	g.POST("/qa/chat", publicapi.QaChat)
+	g.POST("/qa/chat", assistantsvc.PublicChatHandler)
+	g.GET("/qa/scopes", publicapi.QaScopes)
+	// 公开文章 / Wiki 正文划词问 AI（单次模型调用，独立限流额度）
+	g.POST("/qa/selection", publicapi.SelectionAsk)
 
 	// 公开 Wiki
 	g.GET("/wiki/knowledge-bases", publicapi.WikiKnowledgeBases)

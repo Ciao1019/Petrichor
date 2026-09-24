@@ -14,7 +14,7 @@ import (
 )
 
 // 本文件补齐 Anthropic Messages 与 Google Gemini 的原生工具调用协议。
-// Eino 只负责编排循环；供应商 wire format 仍集中在 aicore，避免 Runtime 出现分叉实现。
+// Pi 负责编排 Agent 循环；供应商 wire format 仍集中在 aicore，避免 Runtime 出现分叉实现。
 
 // ===== Anthropic =====
 

@@ -1,5 +1,7 @@
 import type { DemoHandler, DemoHandlerResult } from "./demo-adapter"
 import { resolveLatestDemoHandler } from "./demo-latest-handlers"
+import { resolveCaptureDemoHandler } from "./demo-capture"
+import { resolveInboxDemoHandler } from "./demo-inbox"
 import {
     DEMO_USER,
     articleDetail,
@@ -71,8 +73,6 @@ const handlers: Record<string, DemoHandler> = {
     "GET /auth/me": () => ok(DEMO_USER),
     "GET /auth/profile": () => ok(DEMO_USER),
     "POST /auth/logout": () => ok({}),
-    "GET /notification/summary": () => ok({ unreadCount: 0, latestUnreadId: null }),
-    "POST /notification/list": () => ok({ total: 0, rows: [], code: 200, msg: "ok" }),
 
     /* ---------- 公开站：文章、搜索、外观与展示页 ---------- */
     "GET /public/article/list": () => ok({ items: buildDemoPublicArticleList() }),
@@ -102,6 +102,12 @@ const handlers: Record<string, DemoHandler> = {
     "GET /public/about/profile": () => ok(DEMO_ABOUT_PROFILE),
     "GET /public/projects": () => ok(DEMO_PROJECT_SHOWCASE),
     "GET /public/wiki/knowledge-bases": () => ok({ items: demoPublicWikiKnowledgeBases() }),
+    "GET /public/qa/scopes": () => ok({
+        items: demoPublicWikiKnowledgeBases().map((base) => ({
+            knowledgeBaseId: base.knowledgeBaseId, name: base.name,
+            articleCount: base.articleCount, wikiPageCount: base.pageCount,
+        })),
+    }),
     "GET /public/wiki/pages": (body) => {
         const result = demoPublicWikiPageList({
             knowledgeBaseId: str(body.knowledgeBaseId),
@@ -463,5 +469,5 @@ const handlers: Record<string, DemoHandler> = {
 }
 
 export function resolveDemoHandler(key: string): DemoHandler | undefined {
-    return resolveLatestDemoHandler(key) ?? handlers[key]
+    return resolveCaptureDemoHandler(key) ?? resolveInboxDemoHandler(key) ?? resolveLatestDemoHandler(key) ?? handlers[key]
 }

@@ -25,7 +25,7 @@ func TestAssistantSkillToolContractsStayAligned(t *testing.T) {
 			"knowledge.read_many", "knowledge.read", "knowledge.list_bases",
 		},
 		"memory":   {"memory.search", "memory.write", "memory.update", "memory.delete"},
-		"research": {"research.search", "research.fetch", "research.extract"},
+		"research": {"research.search", "research.fetch", "research.extract", "research.capture", "research.capture_result"},
 		"system":   {"system.overview"},
 		"writer":   {"writer.compose", "writer.rewrite", "writer.summarize", "writer.structure", "writer.save_artifact"},
 	}

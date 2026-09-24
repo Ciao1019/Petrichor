@@ -83,7 +83,7 @@ export function AgentDebugPage() {
     return (
         <div className="flex flex-col gap-4 p-4 md:p-6">
             <header className="flex flex-col gap-1">
-                <h1 className="text-lg font-semibold">Agent Debug</h1>
+                <h1 className="text-lg font-semibold">Agent 调试台</h1>
                 <p className="text-sm text-muted-foreground">
                     查看单次 Agent Run 的完整执行轨迹。仅超级管理员或开启 agent.features.debug 时可访问。
                 </p>

@@ -393,6 +393,19 @@ export const publicSiteAppearanceApi = {
   detail: () => api.get<SiteAppearanceResponse>("/public/appearance"),
 }
 
+/** 前台问答可选的提问范围：含公开文章或公开 Wiki 的知识库。 */
+export interface PublicQaScope {
+  knowledgeBaseId: string
+  name: string
+  articleCount: number
+  wikiPageCount: number
+}
+
+export const publicQaApi = {
+  scopes: (signal?: AbortSignal) =>
+    api.get<{ items: PublicQaScope[] }>("/public/qa/scopes", { signal }),
+}
+
 export interface SiteFilingResponse {
   enabled: boolean
   icpNumber: string

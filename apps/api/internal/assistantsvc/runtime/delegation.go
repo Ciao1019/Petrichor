@@ -205,7 +205,7 @@ func (r *PetrichorAgentRuntime) runSubagent(
 	}
 	segment, err := RunAgentSegment(ctx, &SegmentRequest{
 		AgentID: "petrichor-subagent", Model: request.Model,
-		Instructions: BuildSubagentInstructions(input, tools, contextEvidence), Prompt: input.Objective,
+		Instructions: joinNonEmpty(BuildSubagentInstructions(input, tools, contextEvidence), r.instructions), Prompt: input.Objective,
 		Tools: tools, Ctx: execCtx, Executor: executor, MaxSteps: maxSteps,
 	}, NewSegmentController())
 	if err != nil {
@@ -393,4 +393,15 @@ func firstText(value, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// joinNonEmpty 以空行连接非空段落，用于在子代理指令后追加场景约束。
+func joinNonEmpty(parts ...string) string {
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimSpace(part) != "" {
+			out = append(out, part)
+		}
+	}
+	return strings.Join(out, "\n\n")
 }

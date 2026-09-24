@@ -9,13 +9,12 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-
-	"github.com/cloudwego/eino/schema"
+	"time"
 
 	aicore "petrichor/api/internal/aicore"
 )
 
-func TestToEinoInputPreservesHistoricalToolConversation(t *testing.T) {
+func TestToPiInputPreservesHistoricalToolConversation(t *testing.T) {
 	request := &SegmentRequest{
 		Instructions: "system",
 		Messages: []map[string]any{
@@ -23,19 +22,19 @@ func TestToEinoInputPreservesHistoricalToolConversation(t *testing.T) {
 			{"role": "tool", "content": `{"ok":true}`, "toolCallId": "call-1", "toolName": "lookup"},
 		},
 	}
-	got := toEinoInput(request)
+	got := toPiInput(request)
 	if len(got) != 3 {
 		t.Fatalf("unexpected message count: %#v", got)
 	}
-	if len(got[1].ToolCalls) != 1 || got[1].ToolCalls[0].ID != "call-1" || got[1].ToolCalls[0].Function.Name != "lookup" {
+	if len(got[1].ToolCalls) != 1 || got[1].ToolCalls[0].ID != "call-1" || got[1].ToolCalls[0].Name != "lookup" {
 		t.Fatalf("assistant tool call was lost: %#v", got[1])
 	}
-	if got[2].Role != schema.Tool || got[2].ToolCallID != "call-1" || got[2].ToolName != "lookup" {
+	if got[2].Role != "tool" || got[2].ToolCallID != "call-1" || got[2].ToolName != "lookup" {
 		t.Fatalf("tool result was lost: %#v", got[2])
 	}
 }
 
-func TestRunAgentSegmentStreamsFinalAnswerThroughEino(t *testing.T) {
+func TestRunAgentSegmentStreamsFinalAnswerThroughPi(t *testing.T) {
 	server := newOpenAIStreamServer(t, func(call int, request map[string]any) []string {
 		if call != 1 {
 			t.Fatalf("unexpected model call: %d", call)
@@ -78,19 +77,7 @@ func TestRunAgentSegmentStreamsFinalAnswerThroughEino(t *testing.T) {
 	}
 }
 
-func TestCleanFloat32UsesShortestDecimalRepresentation(t *testing.T) {
-	for input, want := range map[float32]float64{
-		0.2:   0.2,
-		0.4:   0.4,
-		0.123: 0.123,
-	} {
-		if got := cleanFloat32(input); got != want {
-			t.Fatalf("cleanFloat32(%v)=%v want=%v", input, got, want)
-		}
-	}
-}
-
-func TestRunAgentSegmentUsesEinoToolLoopAndDropsNarration(t *testing.T) {
+func TestRunAgentSegmentUsesPiToolLoopAndDropsNarration(t *testing.T) {
 	server := newOpenAIStreamServer(t, func(call int, request map[string]any) []string {
 		switch call {
 		case 1:
@@ -243,6 +230,36 @@ func TestRunAgentSegmentTreatsPolicyStopAsSegmentBoundary(t *testing.T) {
 	}
 	if result.ToolCallCount != 1 {
 		t.Fatalf("tool execution should be recorded before stopping: %+v", result)
+	}
+}
+
+func TestPiSkillRestartWaitsForSuccessfulToolOutcome(t *testing.T) {
+	server := newOpenAIStreamServer(t, func(call int, _ map[string]any) []string {
+		if call > 1 {
+			t.Fatal("旧工具集不应再次请求模型")
+		}
+		return []string{`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"load","function":{"name":"echo_tool","arguments":"{}"}}]}}]}`}
+	})
+	defer server.Close()
+	definition, executor, executionCtx := testEchoExecutor()
+	controller := NewSegmentController()
+	definition.Execute = func(ctx *ToolExecutionContext, input any) (any, error) {
+		controller.Request("skill_loaded:test")
+		select {
+		case <-ctx.Context.Done():
+			return nil, ctx.Context.Err()
+		case <-time.After(20 * time.Millisecond):
+			return input, nil
+		}
+	}
+	toolOK := false
+	result, err := RunAgentSegment(context.Background(), &SegmentRequest{
+		Model: testResolvedModel(server.URL), Prompt: "加载技能", Tools: []*AgentToolDefinition{definition},
+		Ctx: executionCtx, Executor: executor, MaxSteps: 3,
+		OnToolOutcome: func(outcome *ToolRunOutcome) { toolOK = outcome.OK },
+	}, controller)
+	if err != nil || !toolOK || result.Stopped == nil || result.ToolCallCount != 1 {
+		t.Fatalf("换段丢失了成功工具结果: result=%+v ok=%v err=%v", result, toolOK, err)
 	}
 }
 

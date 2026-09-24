@@ -8,7 +8,6 @@ import type {
   AiGenerationOptions,
   AiModelResponse,
   AiProviderResponse,
-  NotificationItem,
   DocumentImportFinalizeResponse,
   DocumentImportJobResponse,
   DocumentImportPageResponse,
@@ -73,33 +72,6 @@ const sessions = [
     expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
     updatedAt: now(),
     current: true,
-  },
-]
-
-let notifications: NotificationItem[] = [
-  {
-    id: "demo-notice-1",
-    category: "KNOWLEDGE",
-    bizType: "WIKI_BUILD",
-    bizId: "demo-kb-product",
-    title: "工具手册 Wiki 已更新",
-    content: "Mole 与 Fastfetch 的概念、来源页和关联关系已完成编译。",
-    payload: { knowledgeBaseId: "demo-kb-product" },
-    read: false,
-    readAt: null,
-    createdAt: recentTime,
-  },
-  {
-    id: "demo-notice-2",
-    category: "IMPORT",
-    bizType: "DOCUMENT_IMPORT",
-    bizId: "demo-import-1",
-    title: "视觉文档导入完成",
-    content: "《Fastfetch 命令速查》共 6 页，已生成知识库文章。",
-    payload: { jobId: "demo-import-1" },
-    read: true,
-    readAt: recentTime,
-    createdAt: seedTime,
   },
 ]
 
@@ -369,7 +341,7 @@ let deadLetters = [
 ]
 
 const handlers: Record<string, DemoHandler> = {
-  /* 账户与通知 */
+  /* 账户 */
   "GET /auth/profile": () => ok(profile),
   "POST /auth/profile/update": (body) => {
     Object.assign(profile, { nickname: str(body.nickname) || null, avatar: str(body.avatar) || null, signature: str(body.signature) || null, updatedAt: now() })
@@ -380,22 +352,6 @@ const handlers: Record<string, DemoHandler> = {
   "GET /auth/sessions": () => ok({ sessions, currentSessionId: "demo-session-current" }),
   "POST /auth/sessions/revoke": () => ok({ success: true }),
   "POST /auth/sessions/revoke-others": () => ok({ success: true, revokedCount: 0 }),
-  "GET /notification/summary": () => ok({ unreadCount: notifications.filter((item) => !item.read).length, latestUnreadId: notifications.find((item) => !item.read)?.id ?? null }),
-  "POST /notification/list": (body) => {
-    const readStatus = str(body.readStatus)
-    const rows = notifications.filter((item) => readStatus === "UNREAD" ? !item.read : readStatus === "READ" ? item.read : true)
-    return ok({ total: rows.length, rows, code: 200, msg: "ok" })
-  },
-  "POST /notification/read": (body) => {
-    const item = notifications.find((notice) => notice.id === str(body.notificationId))
-    if (item) Object.assign(item, { read: true, readAt: now() })
-    return ok({ notificationId: str(body.notificationId), readAt: now() })
-  },
-  "POST /notification/read-all": () => {
-    const updatedCount = notifications.filter((item) => !item.read).length
-    notifications = notifications.map((item) => ({ ...item, read: true, readAt: item.readAt ?? now() }))
-    return ok({ updatedCount, readAt: now() })
-  },
 
   /* 文档库 */
   "GET /doc-library/library/list": () => ok({ libraries }),

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
-import { AgentEvidenceCard, evidenceHref } from "./agent-evidence"
+import { AgentEvidenceCard, EvidenceHrefProvider, evidenceHref } from "./agent-evidence"
 import type { EvidenceViewModel } from "@/features/agent-runs/types"
 
 const chapterEvidence: EvidenceViewModel = {
@@ -50,5 +50,21 @@ describe("知识库章节溯源", () => {
     it("有文章定位信息时优先使用章节链接，而不是笼统 URL", () => {
         const href = evidenceHref({ ...chapterEvidence, url: "https://example.com/article" })
         expect(href).toMatch(/^\/dashboard\/knowledge\/5\/articles\/12\?/)
+    })
+
+    it("前台注入的链接解析器生效：只跳公开链接，不暴露后台地址", () => {
+        const publicOnly = (evidence: EvidenceViewModel) => (evidence.url?.startsWith("/p/") ? evidence.url : null)
+        const { rerender } = render(
+            <EvidenceHrefProvider value={publicOnly}>
+                <AgentEvidenceCard evidence={{ ...chapterEvidence, url: "/p/share-1" }} chapterPosition={{ index: 1, total: 1 }} />
+            </EvidenceHrefProvider>,
+        )
+        expect(screen.getByRole("link", { name: /查看本章节/ }).getAttribute("href")).toBe("/p/share-1")
+        rerender(
+            <EvidenceHrefProvider value={publicOnly}>
+                <AgentEvidenceCard evidence={chapterEvidence} chapterPosition={{ index: 1, total: 1 }} />
+            </EvidenceHrefProvider>,
+        )
+        expect(screen.queryByRole("link", { name: /查看本章节/ })).toBeNull()
     })
 })

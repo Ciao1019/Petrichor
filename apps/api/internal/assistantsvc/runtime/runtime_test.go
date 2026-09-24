@@ -1,8 +1,6 @@
 package runtime
 
 import (
-	"encoding/json"
-	"strings"
 	"testing"
 )
 
@@ -48,6 +46,24 @@ func TestToolAndSkillRegistriesPreserveRegistrationOrder(t *testing.T) {
 	}
 }
 
+func TestLoadingNewSkillRequestsSegmentRestart(t *testing.T) {
+	skills := NewSkillRegistry()
+	skills.Register(AgentSkill{ID: "knowledge", ToolIDs: []string{"knowledge.read"}})
+	state := NewAgentStateStore("run", "thread", "1", "检索", ComplexitySimple, nowMs())
+	loader := NewSkillLoader(skills, nil, state, NewTraceCollector("run", "thread", "1", "model", nowMs()), NewAgentEventEmitter("run", nil))
+	restarts := 0
+	services := &RuntimeServices{Flags: AgentFeatureFlags{DynamicSkills: true}, SkillLoader: loader,
+		RequestRestart: func(string) { restarts++ }}
+	if !services.LoadSkill("knowledge").OK {
+		t.Fatal("技能加载失败")
+	}
+	services.LoadSkill("knowledge")
+	services.LoadSkill("missing")
+	if restarts != 1 {
+		t.Fatalf("新技能应换段一次，重复和失败不换段: %d", restarts)
+	}
+}
+
 // 合并普通 / Wiki 问答后，Wiki 工具不再由调用方在提问前拨开关决定，
 // 而是和核心工具一起常驻——该读页面还是读分片交给 Agent 判断。
 func TestResolveActiveToolsAlwaysExposesWikiTools(t *testing.T) {
@@ -88,85 +104,6 @@ func TestResolveActiveToolsAlwaysExposesWikiTools(t *testing.T) {
 	// direct 依旧不给任何工具：闲聊不该因为合并模式而多出工具选择空间。
 	if tools := runtime.resolveActiveTools(loader, ComplexityDirect, false); len(tools) != 0 {
 		t.Fatalf("direct 复杂度不应挂工具：%v", tools)
-	}
-}
-
-func TestStepBudgetNotifierAnnouncesEachStageOnce(t *testing.T) {
-	collected := []map[string]any{}
-	events := NewAgentEventEmitter("run-budget", func(event *AgentStreamEvent) {
-		if event.Type != "step_budget" {
-			return
-		}
-		payload := map[string]any{}
-		_ = json.Unmarshal(event.Payload, &payload)
-		collected = append(collected, payload)
-	})
-
-	notifier := &stepBudgetNotifier{}
-	// 预算充足时保持安静，别一开始就吓唬用户
-	notifier.observe(events, 6)
-	notifier.observe(events, 3)
-	if len(collected) != 0 {
-		t.Fatalf("预算充足不该播报：%v", collected)
-	}
-
-	// 进入告警档只播一次：预算单调递减，同一档反复发会刷屏
-	notifier.observe(events, 2)
-	notifier.observe(events, 1)
-	if len(collected) != 1 || collected[0]["status"] != "warning" {
-		t.Fatalf("告警应恰好一条：%v", collected)
-	}
-
-	notifier.exhaust(events)
-	notifier.exhaust(events)
-	if len(collected) != 2 || collected[1]["status"] != "exhausted" {
-		t.Fatalf("用尽应恰好一条：%v", collected)
-	}
-}
-
-func TestStepBudgetNotifierResolvesTransientWarningOnce(t *testing.T) {
-	collected := []map[string]any{}
-	events := NewAgentEventEmitter("run-budget-resolved", func(event *AgentStreamEvent) {
-		if event.Type != "step_budget" {
-			return
-		}
-		payload := map[string]any{}
-		_ = json.Unmarshal(event.Payload, &payload)
-		collected = append(collected, payload)
-	})
-
-	notifier := &stepBudgetNotifier{}
-	// 没发过告警时不制造一个无意义的 resolved part。
-	notifier.resolve(events, 6)
-	notifier.observe(events, 2)
-	notifier.resolve(events, 2)
-	notifier.resolve(events, 2)
-	notifier.exhaust(events)
-
-	if len(collected) != 2 {
-		t.Fatalf("warning/resolved 应各播一次：%v", collected)
-	}
-	if collected[0]["status"] != "warning" || collected[1]["status"] != "resolved" {
-		t.Fatalf("预算状态顺序错误：%v", collected)
-	}
-	if label, _ := collected[0]["label"].(string); label == "" || strings.Contains(label, "再发一条消息") {
-		t.Fatalf("运行中告警文案不应误导用户继续发消息：%q", label)
-	}
-}
-
-func TestStepBudgetNotifierStaysSilentWhenRemainingHitsZeroOnItsOwn(t *testing.T) {
-	count := 0
-	events := NewAgentEventEmitter("run-budget", func(event *AgentStreamEvent) {
-		if event.Type == "step_budget" {
-			count++
-		}
-	})
-
-	// remaining 归零由 Run 收尾时按 stopReason 判定；observe 自己不发 exhausted，
-	// 否则"证据够了提前收敛"也会被说成"步数用尽"，那是误导。
-	(&stepBudgetNotifier{}).observe(events, 0)
-	if count != 0 {
-		t.Fatalf("observe 不该自行播报用尽，发了 %d 条", count)
 	}
 }
 

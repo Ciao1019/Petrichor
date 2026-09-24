@@ -4,6 +4,7 @@ import { QRCodeSVG } from "qrcode.react"
 import type { MindElixirData } from "mind-elixir"
 import { ChevronUp, GalleryHorizontalEnd, ImageIcon } from "@/components/iconimate"
 
+import { SelectionAsk } from "@/components/public/selection-ask"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -19,6 +20,7 @@ import {
 import { useSignedUrl } from "@/hooks/use-signed-url"
 import type { TocItem } from "@/features/pages/public/public-article-utils"
 import { cn } from "@/lib/utils"
+import { LUO_FONT_FAMILY } from "@/lib/typography"
 
 const LazyPublicArticleSummaryMarkdown = lazy(async () => {
   const module = await import("@/features/pages/knowledge/QaMarkdown")
@@ -313,15 +315,20 @@ function PublicArticleTabPanels({
   return (
     <>
       <section hidden={model.tab !== "article"} aria-hidden={model.tab !== "article"}>
-        <PublicArticlePanel
-          contentJson={model.contentJson}
-          contentMetaJson={model.contentMetaJson}
-          contentMd={model.contentMd}
-          mediaAccessToken={model.mediaAccessToken}
-          toc={model.tocAll}
-          activeHeadingId={model.activeHeadingId}
-          onTocClick={model.onTocClick}
-        />
+        {/* 正文划词问 AI；带密码的分享把访客输入的密码一并交给服务端重新校验。 */}
+        <SelectionAsk
+          source={{ kind: "article", shareCode: model.shareCode ?? "", accessPassword: model.accessPassword || null }}
+        >
+          <PublicArticlePanel
+            contentJson={model.contentJson}
+            contentMetaJson={model.contentMetaJson}
+            contentMd={model.contentMd}
+            mediaAccessToken={model.mediaAccessToken}
+            toc={model.tocAll}
+            activeHeadingId={model.activeHeadingId}
+            onTocClick={model.onTocClick}
+          />
+        </SelectionAsk>
       </section>
 
       {mindmapMounted ? (
@@ -406,9 +413,7 @@ const CARD = {
   inkLight:    "#5A5A58",
   borderLight: "rgba(22,22,21,0.10)",
   borderDark:  "rgba(22,22,21,0.28)",
-  fontDisplay: "'Cormorant Garamond', Georgia, 'Times New Roman', serif",
-  fontSans:    "'Manrope', system-ui, sans-serif",
-  fontMono:    "'JetBrains Mono', 'Courier New', monospace",
+  fontFamily: LUO_FONT_FAMILY,
 } as const
 
 function ArticleCardPreview({
@@ -439,6 +444,8 @@ function ArticleCardPreview({
     setCopying(true)
     try {
       const { toPng } = await import("html-to-image")
+      const cardFont = getComputedStyle(cardRef.current)
+      await document.fonts?.load(`${cardFont.fontStyle} 400 16px ${LUO_FONT_FAMILY}`, cardRef.current.textContent || title)
       const dataUrl = await toPng(cardRef.current, { pixelRatio: 2 })
       const res = await fetch(dataUrl)
       const blob = await res.blob()
@@ -461,7 +468,8 @@ function ArticleCardPreview({
         borderRadius: 6,
         overflow: "hidden",
         boxShadow: "0 24px 48px rgba(0,0,0,0.22), 0 2px 8px rgba(0,0,0,0.12)",
-        fontFamily: CARD.fontSans,
+        fontFamily: CARD.fontFamily,
+        fontWeight: 400,
       }}
     >
       {/* 仅这个 div 会被截图，不含底部操作栏 */}
@@ -502,14 +510,14 @@ function ArticleCardPreview({
         <div style={{ height: 1, background: CARD.borderDark, marginBottom: 12 }} />
 
         {createdAt ? (
-          <p style={{ fontFamily: CARD.fontMono, fontSize: 8, letterSpacing: "0.08em", color: CARD.inkLight, marginBottom: 6 }}>
+          <p style={{ fontFamily: CARD.fontFamily, fontSize: 8, letterSpacing: "0.08em", color: CARD.inkLight, marginBottom: 6 }}>
             {createdAt}
           </p>
         ) : null}
 
         {/* 标题 */}
         <h2 style={{
-          fontFamily: CARD.fontDisplay,
+          fontFamily: CARD.fontFamily,
           fontSize: 26,
           fontWeight: 400,
           lineHeight: 1.05,
@@ -528,7 +536,7 @@ function ArticleCardPreview({
         <div style={{ display: "flex", gap: 14, alignItems: "flex-end" }}>
           <p style={{
             flex: 1,
-            fontFamily: CARD.fontSans,
+            fontFamily: CARD.fontFamily,
             fontSize: 10,
             lineHeight: 1.75,
             color: CARD.inkLight,
@@ -554,7 +562,7 @@ function ArticleCardPreview({
                     padding: "2px 8px",
                     borderRadius: 999,
                     fontSize: 9,
-                    fontFamily: CARD.fontSans,
+                    fontFamily: CARD.fontFamily,
                     letterSpacing: "0.03em",
                     background: color.bg,
                     color: color.fg,
@@ -579,7 +587,7 @@ function ArticleCardPreview({
         alignItems: "center",
         justifyContent: "space-between",
       }}>
-        <span style={{ fontFamily: CARD.fontMono, fontSize: 8, letterSpacing: "0.08em", textTransform: "uppercase", color: CARD.inkLight }}>
+        <span style={{ fontFamily: CARD.fontFamily, fontSize: 8, letterSpacing: "0.08em", textTransform: "uppercase", color: CARD.inkLight }}>
           生成可分享的文章卡片图片
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -648,7 +656,7 @@ function CopyImageButton({ copying, copied, onClick }: { copying: boolean; copie
           WebkitBackdropFilter: "blur(24px)",
           color: copied ? "var(--bc-ok)" : "var(--bc-hi)",
           fontSize: 12,
-          fontWeight: 500,
+          fontWeight: 400,
           cursor: copying ? "wait" : "pointer",
           outline: "none",
           userSelect: "none",
@@ -710,7 +718,7 @@ function ArticleCardQr({ url }: { url: string }) {
           marginSize={0}
         />
       </div>
-      <span style={{ fontFamily: CARD.fontMono, fontSize: 8, letterSpacing: "0.08em", textTransform: "uppercase", color: CARD.inkLight }}>
+      <span style={{ fontFamily: CARD.fontFamily, fontSize: 8, letterSpacing: "0.08em", textTransform: "uppercase", color: CARD.inkLight }}>
         扫码查看原文
       </span>
     </div>

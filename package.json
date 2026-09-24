@@ -5,6 +5,10 @@
   "type": "module",
   "packageManager": "bun@1.3.14",
   "scripts": {
+    "install:agent": "bun install --cwd apps/api/tools/pi-agent --frozen-lockfile --ignore-scripts",
+    "build:agent": "bun run --cwd apps/api/tools/pi-agent build",
+    "typecheck:agent": "bun run --cwd apps/api/tools/pi-agent typecheck",
+    "test:agent": "bun run --cwd apps/api/tools/pi-agent test",
     "dev": "bun run --cwd apps/web dev",
     "build": "bun run --cwd apps/web build",
     "build:demo": "bun run --cwd apps/web build:demo",

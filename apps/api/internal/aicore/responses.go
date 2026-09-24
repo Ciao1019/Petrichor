@@ -172,7 +172,7 @@ func OpenAIResponsesChatWithTools(ctx context.Context, rt RuntimeConfig, modelID
 	return openAIResponses(ctx, rt, buildOpenAIResponsesRequest(modelID, msgs, opts, tools, true), onDelta)
 }
 
-// OpenAIResponsesChatWithToolsOnce 是 Eino Generate 使用的非流式入口。
+// OpenAIResponsesChatWithToolsOnce 是工具调用的非流式入口。
 func OpenAIResponsesChatWithToolsOnce(ctx context.Context, rt RuntimeConfig, modelID string, msgs []ChatMessage, opts GenerationOptions, tools []ToolDefinition) (*ChatResult, error) {
 	return openAIResponses(ctx, rt, buildOpenAIResponsesRequest(modelID, msgs, opts, tools, false), nil)
 }

@@ -9,6 +9,7 @@ import (
 
 // registerKBRoutes 知识库组：全部 POST，鉴权 RequireUser。
 func registerKBRoutes(rg *gin.RouterGroup) {
+	registerInboxRoutes(rg)
 	kbGroup := rg.Group("/kb", auth.RequireUser())
 
 	// 知识库 CRUD

@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+
+	"petrichor/api/internal/piruntime"
 )
 
 type synthesizeFinalAnswerInput struct {
@@ -140,7 +142,9 @@ func (r *PetrichorAgentRuntime) Run(ctx context.Context, request *RunRequest) (*
 	state := NewAgentStateStore(runID, request.ConversationID, itoa(int(request.UserID)), request.Goal, complexity, startedAt)
 	observations := NewObservationStore()
 	evidenceStore := NewEvidenceStore()
+	restoreRunState(state, request.ResumeState, observations, evidenceStore)
 	budget := NewBudgetTracker(ResolveBudget(complexity), startedAt)
+	budget.subAgents = state.Current().DelegationCount
 	stopConfig := ResolveStopPolicyConfig(complexity)
 	loopDetector := NewLoopDetector(stopConfig.MaxNoProgressIterations + 1)
 	stopPolicy := NewStopPolicy(stopConfig, budget, loopDetector)
@@ -155,8 +159,10 @@ func (r *PetrichorAgentRuntime) Run(ctx context.Context, request *RunRequest) (*
 	})
 
 	skillLoader := NewSkillLoader(r.skills, r.permissions, state, trace, events)
+	loadedSkills := append([]string{}, state.Current().LoadedSkills...)
+	state.state.LoadedSkills = nil
+	skillLoader.Preload(loadedSkills)
 
-	budgetNotifier := &stepBudgetNotifier{}
 	var segmentRestartReason atomicValue
 	services := &RuntimeServices{
 		Runtime: r, Flags: flags, State: state, SkillLoader: skillLoader, Complexity: complexity,
@@ -202,7 +208,7 @@ func (r *PetrichorAgentRuntime) Run(ctx context.Context, request *RunRequest) (*
 	}
 
 	// 计划
-	if ShouldCreatePlan(complexity) {
+	if ShouldCreatePlan(complexity) && request.ResumeState == nil {
 		steps := state.SetPlan(DraftPlan(request.Goal))
 		trace.Event("plan_created", map[string]any{"steps": steps})
 		events.Emit("plan_created", map[string]any{"steps": steps})
@@ -213,6 +219,12 @@ func (r *PetrichorAgentRuntime) Run(ctx context.Context, request *RunRequest) (*
 	var fatalErr *AgentError
 	stopReason := AgentStopReason("")
 	stopDetail := ""
+	if err := checkpointRun(request, state, nil); err != nil {
+		return nil, err
+	}
+	if _, err := pollRunControls(ctx, request, state, events); err != nil {
+		return nil, err
+	}
 	if request.InjectionGuard != nil && IsPromptInjectionAttempt(request.Goal) {
 		fatalErr = PermissionDenied("检测到试图覆盖系统指令的输入，已阻止工具执行")
 		stopReason = StopPermissionDenied
@@ -250,6 +262,7 @@ func (r *PetrichorAgentRuntime) Run(ctx context.Context, request *RunRequest) (*
 			ConversationBackground: request.ConversationBackground,
 			RoutingHint:            actionableHint,
 			RemainingToolCalls:     stopPolicy.RemainingToolCalls(state.Current()),
+			ProfileInstructions:    r.instructions,
 		})
 
 		trimmedMessages := request.Messages
@@ -266,6 +279,18 @@ func (r *PetrichorAgentRuntime) Run(ctx context.Context, request *RunRequest) (*
 		}
 
 		segment, segmentErr := RunAgentSegment(ctx, &SegmentRequest{
+			Controls: func(c context.Context) ([]piruntime.Control, error) {
+				return pollRunControls(c, request, state, events)
+			},
+			BeforeTool: func(tool *AgentToolDefinition, callID string) error {
+				return checkpointRun(request, state, &PendingTool{ID: tool.ID, CallID: callID, SideEffect: tool.SideEffect || tool.RequiresConfirmation || tool.ID == "agent.delegate" || tool.ID == "agent.request_confirmation"})
+			},
+			AfterTool: func() error { return checkpointRun(request, state, nil) },
+			OnModelUsage: func(input, output int64) error {
+				state.AddTokenUsage(input, output)
+				trace.AddTokenUsage(input, output)
+				return checkpointRun(request, state, nil)
+			},
 			AgentID: "petrichor-agent", Model: request.Model,
 			Instructions: built.Instructions,
 			Messages:     trimmedMessages, Prompt: request.Goal,
@@ -294,7 +319,6 @@ func (r *PetrichorAgentRuntime) Run(ctx context.Context, request *RunRequest) (*
 					stopDetail = decision.Detail
 					segmentController.Request("stop_policy:" + string(decision.Reason))
 				}
-				budgetNotifier.observe(events, stopPolicy.RemainingToolCalls(state.Current()))
 			},
 		}, segmentController)
 		if segmentErr != nil {
@@ -305,8 +329,6 @@ func (r *PetrichorAgentRuntime) Run(ctx context.Context, request *RunRequest) (*
 			break
 		}
 
-		state.AddTokenUsage(segment.Usage.Input, segment.Usage.Output)
-		trace.AddTokenUsage(segment.Usage.Input, segment.Usage.Output)
 		trace.AddLlmLatency(segment.LlmMs)
 
 		if segment.Aborted {
@@ -424,12 +446,14 @@ func (r *PetrichorAgentRuntime) Run(ctx context.Context, request *RunRequest) (*
 		state.Finish(StatusCompleted, finalReason)
 	}
 
+	// 只在真的被步数卡住时告知用户；因证据够了提前收敛不算"用尽"，
+	// 运行中也不预告剩余次数——那条提示对用户没有可操作性。
 	if stopReason == StopMaxToolCalls {
-		budgetNotifier.exhaust(events)
-	} else {
-		// 预算告警只是运行中的状态；任务以其他原因收尾时立即覆盖为 resolved，
-		// 避免已经完成的回答仍提示用户“继续发消息”。
-		budgetNotifier.resolve(events, stopPolicy.RemainingToolCalls(state.Current()))
+		events.Emit("step_budget", map[string]any{
+			"status":    "exhausted",
+			"remaining": 0,
+			"label":     "本轮工具调用预算已用尽；如答案不完整，可继续发送消息",
+		})
 	}
 	if answer != "" {
 		events.Emit("final_answer_completed", map[string]any{"text": answer})
@@ -489,56 +513,6 @@ func IsPromptInjectionAttempt(text string) bool {
 		return false
 	}
 	return promptInjectionPattern.MatchString(text)
-}
-
-// stepBudgetWarnRemaining 剩余工具调用降到这个数就提前告知用户。
-// 取 2 是因为再少就来不及了：一次检索 + 一次深读就是 2 步。
-const stepBudgetWarnRemaining = 2
-
-// stepBudgetNotifier 步数预算播报。
-//
-// 每档只播一次：预算是单调递减的，同一档反复发只会让前端把同一条提示刷屏。
-// 只在真的被步数卡住时才发 exhausted——因证据够了而提前收敛不算"用尽"，
-// 那种情况告诉用户"步数用尽"是误导。
-type stepBudgetNotifier struct {
-	warned    bool
-	exhausted bool
-	resolved  bool
-}
-
-func (n *stepBudgetNotifier) observe(events *AgentEventEmitter, remaining int) {
-	if n.warned || n.exhausted || n.resolved || remaining > stepBudgetWarnRemaining || remaining <= 0 {
-		return
-	}
-	n.warned = true
-	events.Emit("step_budget", map[string]any{
-		"status":    "warning",
-		"remaining": remaining,
-		"label":     "本轮还可调用 " + itoa(remaining) + " 次工具，当前任务仍在继续",
-	})
-}
-
-func (n *stepBudgetNotifier) resolve(events *AgentEventEmitter, remaining int) {
-	if !n.warned || n.exhausted || n.resolved {
-		return
-	}
-	n.resolved = true
-	events.Emit("step_budget", map[string]any{
-		"status":    "resolved",
-		"remaining": remaining,
-	})
-}
-
-func (n *stepBudgetNotifier) exhaust(events *AgentEventEmitter) {
-	if n.exhausted || n.resolved {
-		return
-	}
-	n.exhausted = true
-	events.Emit("step_budget", map[string]any{
-		"status":    "exhausted",
-		"remaining": 0,
-		"label":     "本轮工具调用预算已用尽；如答案不完整，可继续发送消息",
-	})
 }
 
 type atomicValue struct {

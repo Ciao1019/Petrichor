@@ -21,14 +21,11 @@ const (
 	agentAnswerTextID      = "agent-answer"
 )
 
-// dataPartID 高频 delta 与可变状态复用同一个 data part，其余按 sequence 唯一。
+// dataPartID 高频 delta 复用同一个 data part，其余按 sequence 唯一。
 func dataPartID(event *rt.AgentStreamEvent) string {
 	switch event.Type {
 	case "final_answer_delta":
 		return event.RunID + ":answer-delta"
-	case "step_budget":
-		// warning → resolved/exhausted 必须原位更新，不能把运行中的警告永久留在完成消息中。
-		return event.RunID + ":step-budget"
 	default:
 		return event.RunID + ":" + strconv.FormatInt(int64(event.Sequence), 10)
 	}

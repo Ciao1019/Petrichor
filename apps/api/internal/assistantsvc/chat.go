@@ -22,14 +22,17 @@ import (
 	aicore "petrichor/api/internal/aicore"
 	rt "petrichor/api/internal/assistantsvc/runtime"
 	"petrichor/api/internal/auth"
+	"petrichor/api/internal/config"
 	httpx "petrichor/api/internal/httpx"
 )
 
 var toolsOnce sync.Once
+var toolsInitError error
 
 func ensureToolsRegistered() {
 	toolsOnce.Do(func() {
 		RegisterAssistantTools(rt.DefaultToolRegistry(), rt.DefaultSkills())
+		toolsInitError = loadAssistantSkills(rt.DefaultToolRegistry(), rt.DefaultSkills(), config.Get())
 	})
 }
 
@@ -46,6 +49,7 @@ const streamErrorCode = "stream_error"
 const genericStreamErrorText = "An error occurred."
 
 type chatRequest struct {
+	Resume       bool            `json:"resume"`
 	ThreadID     optFlexID       `json:"threadId"`
 	Messages     json.RawMessage `json:"messages"`
 	ConfigID     optFlexID       `json:"configId"`
@@ -55,6 +59,10 @@ type chatRequest struct {
 
 // AssistantChatHandler POST /api/assistant/chat。
 func AssistantChatHandler(c *gin.Context) {
+	if err := InitializeExtensions(); err != nil {
+		httpx.ErrorJSON(c, 503, "Agent 技能配置无效，请联系管理员")
+		return
+	}
 	requestStartedAt := time.Now()
 	var req chatRequest
 	if err := readBodyStrict(c, &req); err != nil {
@@ -81,6 +89,16 @@ func AssistantChatHandler(c *gin.Context) {
 	}
 	user := currentUserOf(c)
 	ctx := c.Request.Context()
+	var restored *continuationPayload
+	previousRunKey := ""
+	if req.Resume {
+		restored, previousRunKey, err = loadContinuation(ctx, user.ID, req.ThreadID.Int64())
+		if err != nil {
+			httpx.HandleError(c, err)
+			return
+		}
+		messages, focus = restored.Messages, restored.Focus
+	}
 	if err := assertFocusOwnership(ctx, user.ID, focus); err != nil {
 		httpx.HandleError(c, err)
 		return
@@ -89,23 +107,15 @@ func AssistantChatHandler(c *gin.Context) {
 	lastMessage := messages[len(messages)-1]
 	goal := extractLastUserText(messages)
 	shouldPersistUser := goal != "" && messageRoleIs(lastMessage, "user")
+	if restored != nil {
+		goal = restored.Goal
+		shouldPersistUser = false
+	}
 
 	thread, err := ensureAssistantThread(ctx, user.ID, req.ThreadID.Int64(), req.ThreadID.Present, goal, focus)
 	if err != nil {
 		httpx.HandleError(c, err)
 		return
-	}
-
-	if shouldPersistUser {
-		// 编辑重提时客户端会截断后续消息：先对齐库中历史，再写入本轮 user
-		if _, err := truncateAssistantThreadMessages(ctx, thread.ID, len(messages)-1); err != nil {
-			httpx.HandleError(c, err)
-			return
-		}
-		if err := persistAssistantMessage(ctx, user.ID, thread.ID, "user", json.RawMessage(lastMessage), goal); err != nil {
-			httpx.HandleError(c, err)
-			return
-		}
 	}
 
 	// 模型解析失败在流开始前返回；未配置对话模型类 BadRequest/NotFound 转 409 Conflict
@@ -114,6 +124,9 @@ func AssistantChatHandler(c *gin.Context) {
 		configRef = new(int64)
 		*configRef = req.ConfigID.Int64()
 	}
+	if restored != nil {
+		configRef = &restored.ModelID
+	}
 	resolved, err := aicore.ResolveModelForPurpose(ctx, user.ID, aicore.PurposeChat, configRef)
 	if err != nil {
 		if he, ok := err.(*httpx.HttpError); ok && (he.Status == http.StatusBadRequest || he.Status == http.StatusNotFound) {
@@ -121,6 +134,41 @@ func AssistantChatHandler(c *gin.Context) {
 		}
 		httpx.HandleError(c, err)
 		return
+	}
+
+	payload := continuationPayload{Goal: goal, Messages: messages, Focus: focus, ModelID: resolved.ModelID}
+	if restored != nil {
+		payload = *restored
+	}
+	lease, err := acquireContinuation(ctx, user.ID, thread.ID, payload, previousRunKey)
+	if err != nil {
+		httpx.HandleError(c, err)
+		return
+	}
+	ctx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
+	c.Request = c.Request.WithContext(ctx)
+	go lease.heartbeat(ctx, cancelRun)
+	defer func() {
+		cleanup, done := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer done()
+		lease.finish(cleanup, false)
+	}()
+	if shouldPersistUser {
+		if _, err := truncateAssistantThreadMessages(ctx, thread.ID, len(messages)-1); err != nil {
+			httpx.HandleError(c, err)
+			return
+		}
+		if err := persistAssistantMessage(ctx, user.ID, thread.ID, "user", json.RawMessage(lastMessage), goal); err != nil {
+			httpx.HandleError(c, err)
+			return
+		}
+	} else if restored != nil {
+		resumeMessage := mustJSON(map[string]any{"id": newStreamMessageID(), "role": "user", "parts": []map[string]string{{"type": "text", "text": "从上次检查点继续"}}})
+		if err := persistAssistantMessage(ctx, user.ID, thread.ID, "user", resumeMessage, "从上次检查点继续"); err != nil {
+			httpx.HandleError(c, err)
+			return
+		}
 	}
 
 	routingHint := resolveAssistantRoutingHint(ctx, thread.ID, goal, focus)
@@ -135,7 +183,7 @@ func AssistantChatHandler(c *gin.Context) {
 
 	// 危险操作确认回传：客户端只提供 confirmationId；真正的 tool/input 从服务端
 	// 原子票据读取并消费，防止伪造、篡改和重放。执行结果回填给模型及持久化消息。
-	if decisionResult := findPendingConfirmationDecision(messages); decisionResult != nil {
+	if decisionResult := findPendingConfirmationDecision(messages); decisionResult != nil && restored == nil {
 		ensureToolsRegistered()
 		execCtx := &rt.ToolExecutionContext{
 			Context: ctx, DBRunID: runID, ThreadID: thread.ID, UserID: user.ID,
@@ -173,7 +221,12 @@ func AssistantChatHandler(c *gin.Context) {
 		persistConfirmationExecutionOutcome(execCtx, thread.ID, decisionResult.ConfirmationID, decision, outcome)
 	}
 
+	retryOfRunKey := strings.TrimSpace(derefOrEmpty(req.RetryOfRunID))
+	if restored != nil {
+		retryOfRunKey = previousRunKey
+	}
 	streamChatCompletion(c, streamContext{
+		continuation: lease,
 		user:         user,
 		thread:       thread,
 		runID:        runID,
@@ -182,13 +235,14 @@ func AssistantChatHandler(c *gin.Context) {
 		goal:         goal,
 		focus:        focus,
 		startedAt:    requestStartedAt,
-		retryOfRunID: strings.TrimSpace(derefOrEmpty(req.RetryOfRunID)),
+		retryOfRunID: retryOfRunKey,
 		routingHint:  routingHint,
 		complexity:   complexity,
 	})
 }
 
 type streamContext struct {
+	continuation *continuationLease
 	user         *auth.User
 	thread       *assistantThreadRow
 	runID        int64
@@ -354,6 +408,9 @@ func streamChatCompletion(c *gin.Context, sc streamContext) {
 		},
 	)
 	runKey := rt.NewRunID()
+	if sc.continuation != nil {
+		runKey = sc.continuation.runKey
+	}
 	createAgentRunRecordBestEffort(ctx, agentRunCreateInput{
 		RunKey: runKey, ConversationID: idStr(sc.thread.ID), ThreadID: sc.thread.ID,
 		UserID: sc.user.ID, RetryOfRunKey: sc.retryOfRunID, Model: resolved.ModelRef,
@@ -416,6 +473,14 @@ func streamChatCompletion(c *gin.Context, sc streamContext) {
 			stepIndex++
 		},
 	}
+	if sc.continuation != nil {
+		runRequest.ResumeState = sc.continuation.payload.State
+		sc.continuation.payload.Messages = sc.messages
+		runRequest.Checkpoint = func(state *rt.AgentState, pending *rt.PendingTool) error {
+			return sc.continuation.save(ctx, state, pending)
+		}
+		runRequest.Controls = sc.continuation.controls
+	}
 
 	result, runErr := runtime.Run(ctx, runRequest)
 
@@ -455,8 +520,12 @@ func streamChatCompletion(c *gin.Context, sc streamContext) {
 	if result != nil {
 		persistAgentRunBestEffort(persistCtx, result)
 	}
+	if sc.continuation != nil {
+		complete := runErr == nil && result != nil && result.State != nil && result.State.Status == rt.StatusCompleted
+		sc.continuation.finish(persistCtx, complete)
+	}
 	// 落库不阻塞流关闭；失败只记录日志（fail-open）
-	if result != nil || persistedParts.len() > 0 {
+	if (result != nil || persistedParts.len() > 0) && (sc.continuation == nil || sc.continuation.owns(persistCtx)) {
 		content := buildAssistantPersistContent(result, runKey, persistedParts.all(), startedAt)
 		if perr := persistAssistantMessage(persistCtx, sc.user.ID, sc.thread.ID, "assistant", content, ""); perr != nil {
 			slog.Error("Assistant 消息写入失败",

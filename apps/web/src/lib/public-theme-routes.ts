@@ -1,6 +1,6 @@
 /**
- * 前台公开页统一强制暗色主题（配色对齐后台右侧内容区），不再提供浅色版本。
- * 后台 /dashboard 不在此列，仍由用户自行切换明暗。
+ * 前台公开页使用独立的纸色配色，明暗偏好与后台共用。
+ * 后台 /dashboard 不在此列，保留后台原有设计令牌。
  */
 const PUBLIC_SITE_PATHS = new Set(["/", "/about", "/tags", "/graph", "/ask", "/projects", "/petrichor", "/wiki", "/search"])
 
@@ -21,7 +21,7 @@ export function isPublicSitePath(pathname: string) {
 }
 
 /**
- * 首屏防闪脚本用的等价判定（见 app/layout.tsx）。
+ * 首屏防闪脚本用的等价判定（见 index.html）。
  * 那段脚本必须在 bundle 加载前跑，没法 import 本模块，所以改用「排除后台」的反向规则。
  * 这里导出同一份逻辑，由单测钉住两者对所有应用路由结论一致。
  */

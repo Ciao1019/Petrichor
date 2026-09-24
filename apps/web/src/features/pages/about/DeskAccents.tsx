@@ -53,7 +53,7 @@ function Annotation({ children, stroke }: { children: string; stroke: string }) 
             style={
                 {
                     color: stroke,
-                    fontFamily: '"Caveat", ui-sans-serif, cursive',
+                    fontFamily: "var(--font-luo)",
                     borderColor: `color-mix(in srgb, ${stroke} 55%, transparent)`,
                     backgroundColor: "var(--desk-paper)",
                     // 不规则圆角，读起来像手撕的纸，而非 CSS 胶囊
@@ -140,7 +140,7 @@ export function HandStamp({ children, color }: { children: string; color: Marker
     return (
         <span
             className="relative inline-flex -rotate-[8deg] items-center justify-center px-3 py-1 text-[0.95rem] leading-none"
-            style={{ color: MARKER[color], fontFamily: '"Caveat", ui-sans-serif, cursive' }}
+            style={{ color: MARKER[color], fontFamily: "var(--font-luo)" }}
         >
             <svg
                 viewBox="0 0 100 44"

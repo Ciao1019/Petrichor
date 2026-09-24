@@ -102,10 +102,13 @@ func RegisterAssistantTools(registry interface {
 	registerDocumentTools(registry)
 	registerMemoryTools(registry)
 	registerResearchTools(registry)
+	registerCaptureTools(registry)
 	registerWriterTools(registry)
 	registerAdminTools(registry)
 	registerAgentMetaTools(registry)
 	registerConfirmationTools(registry)
+	registerMCPTools(registry, skills)
+	registerSandboxTools(registry, skills)
 	registerBuiltinSkills(skills)
 }
 

@@ -12,6 +12,7 @@ import {
 import { Minus, Plus, Download, Maximize, ScanSearch, Loader2 } from "@/components/iconimate"
 import type { MindElixirData } from "mind-elixir"
 import { cn } from "@/lib/utils"
+import { LUO_FONT_FAMILY } from "@/lib/typography"
 
 /* ───────────────────────── Types ───────────────────────── */
 
@@ -60,7 +61,6 @@ const LIGHT_PALETTE = ["#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444", "#
 const DARK_PALETTE = ["#60a5fa", "#34d399", "#a78bfa", "#fbbf24", "#f87171", "#22d3ee", "#f472b6", "#a3e635"]
 const RADIUS = [34, 24, 19, 15, 13]
 const FONT_SIZE = [14, 12, 11, 10, 10]
-const FONT = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 
 const THEME_COLORS = {
   light: { bg: "#ffffff", fg: "#171717", muted: "#a3a3a3", border: "#e5e5e5", card: "#f5f5f5", rootBg: "#1c1c1c", rootFg: "#fafafa" },
@@ -484,7 +484,7 @@ function drawGraph(
     if (e.label) {
       const lx = (sx + tx) / 2 + nx * curvature * 0.5
       const ly = (sy + ty) / 2 + ny * curvature * 0.5
-      ctx.font = `10px ${FONT}`
+      ctx.font = `400 10px ${LUO_FONT_FAMILY}`
       const tw = ctx.measureText(e.label).width
       const ph = 6, pv = 3
 
@@ -551,8 +551,7 @@ function drawGraph(
 
     // Label
     const fontSize = itemAt(FONT_SIZE, Math.min(n.level, FONT_SIZE.length - 1))
-    const fontWeight = n.level <= 1 ? "600" : "400"
-    ctx.font = `${fontWeight} ${fontSize}px ${FONT}`
+    ctx.font = `400 ${fontSize}px ${LUO_FONT_FAMILY}`
     ctx.textAlign = "center"
     ctx.textBaseline = "middle"
 
@@ -579,7 +578,7 @@ function drawGraph(
     const sx = hovered.x * transform.k + transform.x
     const sy = hovered.y * transform.k + transform.y - hovered.radius * transform.k - 14
 
-    ctx.font = `500 12px ${FONT}`
+    ctx.font = `400 12px ${LUO_FONT_FAMILY}`
     const tw = ctx.measureText(hovered.topic).width
     const ph = 10, pv = 6
     const bw = tw + ph * 2

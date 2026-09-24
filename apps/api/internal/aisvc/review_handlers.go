@@ -343,7 +343,6 @@ func generateAndPersistReview(ctx context.Context, userID int64, period, periodK
 		return nil, err
 	}
 
-	isRegenerate := existing != nil
 	regenerateCount, lastRegeneratedAt := nextRegenerateCounters(existing, now)
 
 	var narrative string
@@ -426,36 +425,7 @@ func generateAndPersistReview(ctx context.Context, userID int64, period, periodK
 		return nil, err
 	}
 
-	if err := insertReviewNotification(ctx, userID, &saved, period, periodKey, isRegenerate, hasActivity, now); err != nil {
-		return nil, err
-	}
-
 	return buildReviewView(&saved, period, periodKey, stats, narrative, false, now), nil
-}
-
-// ===== 通知 =====
-
-func insertReviewNotification(ctx context.Context, userID int64, review *reviewRecord,
-	period, periodKey string, isRegenerate, hasActivity bool, now time.Time) error {
-	label := formatPeriodLabel(period, periodKey)
-	title := fmt.Sprintf("%s回顾已生成", label)
-	if isRegenerate {
-		title = fmt.Sprintf("%s回顾已重新生成", label)
-	}
-	content := fmt.Sprintf("已为你生成 %s 的 AI 写作回顾，点击查看详情。", label)
-	if !hasActivity {
-		content = fmt.Sprintf("%s写作活动较少，回顾以简短的提示形式生成。", label)
-	}
-	payload := jsonStringifyStrict(gin.H{
-		"reviewId":  idStr(review.ID),
-		"period":    period,
-		"periodKey": periodKey,
-	})
-	_, err := db.Pool().Exec(ctx, `
-		INSERT INTO petrichor_notification (user_id, category, biz_type, biz_id, title, content, payload_json, created_at, updated_at)
-		VALUES ($1, 'AI_REVIEW', 'AI_REVIEW', $2, $3, $4, $5, $6, $7)`,
-		userID, review.ID, title, content, payload, now, now)
-	return err
 }
 
 // ===== Prompt（prompt.ts 移植）=====

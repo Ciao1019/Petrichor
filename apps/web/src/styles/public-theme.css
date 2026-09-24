@@ -1,0 +1,113 @@
+/* 前台与 Portal 共用一套纸面色板；路由标记由启动脚本和主题 scope 同步。 */
+html[data-public-site] {
+  color-scheme: light;
+  background-color: var(--retypeset-background);
+}
+
+html[data-public-site].dark {
+  color-scheme: dark;
+}
+
+html[data-public-site]:not(.dark) {
+  --background: #f5f4ed;
+  --foreground: #141413;
+  --card: #faf9f5;
+  --card-foreground: #141413;
+  --popover: #faf9f5;
+  --popover-foreground: #141413;
+  --primary: #1b365d;
+  --primary-foreground: #faf9f5;
+  --secondary: #e8e6dc;
+  --secondary-foreground: #3d3d3a;
+  --muted: #f0eee6;
+  --muted-foreground: #6b6a64;
+  --accent: #e8e6dc;
+  --accent-foreground: #1b365d;
+  --border: #dedcd1;
+  --input: #dedcd1;
+  --ring: #1b365d;
+  --brand: #1b365d;
+  --highlight: #e1e4e4;
+}
+
+/* 浅色纸张只保留细微颗粒，避免暗色纹理让纸底发灰。 */
+html[data-public-site]:not(.dark) .retypeset-paper-noise {
+  opacity: 0.025 !important;
+  mix-blend-mode: multiply;
+}
+
+html[data-public-site] :is(input, textarea, button, select) {
+  font-family: inherit;
+}
+
+.retypeset-home .group:focus-within .group-focus-within\:text-white\/80,
+.retypeset-home .group:hover .motion-safe\:group-hover\:text-white {
+  color: var(--retypeset-primary) !important;
+}
+
+.retypeset-home .focus-within\:border-white\/35:focus-within,
+.retypeset-home .hover\:border-white\/20:hover {
+  border-color: color-mix(in srgb, var(--retypeset-accent) 45%, transparent) !important;
+}
+
+.retypeset-home .focus-within\:ring-white\/15:focus-within {
+  --tw-ring-color: color-mix(in srgb, var(--retypeset-accent) 15%, transparent);
+}
+
+.retypeset-home .border-white\/\[0\.06\] {
+  border-color: color-mix(in srgb, var(--retypeset-secondary) 12%, transparent) !important;
+}
+
+.retypeset-home .text-yellow-300\/80 {
+  color: var(--retypeset-accent) !important;
+}
+
+.retypeset-home .hover\:text-white:hover,
+.retypeset-home .focus\:text-white:focus,
+.retypeset-home .group:hover .group-hover\:text-white {
+  color: var(--retypeset-primary) !important;
+}
+
+.retypeset-home .hover\:text-white\/70:hover,
+.retypeset-home .hover\:text-white\/80:hover,
+.retypeset-home .hover\:text-white\/90:hover,
+.retypeset-home .hover\:text-white\/95:hover {
+  color: var(--retypeset-primary) !important;
+}
+
+.retypeset-home .placeholder\:text-white\/30::placeholder,
+.retypeset-home .placeholder\:text-white\/35::placeholder,
+.retypeset-home .placeholder\:text-white\/40::placeholder,
+.retypeset-home .placeholder\:text-white\/45::placeholder,
+.retypeset-home .placeholder\:text-white\/50::placeholder,
+.retypeset-home .placeholder\:text-white\/60::placeholder {
+  color: var(--muted-foreground) !important;
+}
+
+.retypeset-home .hover\:bg-white\/5:hover,
+.retypeset-home .hover\:bg-white\/10:hover,
+.retypeset-home .hover\:bg-white\/15:hover,
+.retypeset-home .hover\:bg-white\/20:hover {
+  background-color: color-mix(in srgb, var(--retypeset-primary) 7%, transparent) !important;
+}
+
+/* 原像素风实心按钮仍需反相文字，墨蓝底上不能使用墨色。 */
+.retypeset-home :is(.bg-yellow-300, .bg-yellow-200).text-blue-950,
+.retypeset-home .hover\:bg-yellow-300:hover,
+.retypeset-home .hover\:bg-white:hover {
+  color: var(--retypeset-background) !important;
+}
+
+.retypeset-home :is(a, button):focus-visible {
+  outline: 2px solid var(--retypeset-accent);
+  outline-offset: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .retypeset-home,
+  .retypeset-home *,
+  .retypeset-home *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

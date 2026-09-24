@@ -1,6 +1,8 @@
 package runtime
 
 import (
+	"context"
+	"petrichor/api/internal/piruntime"
 	"regexp"
 	"strings"
 )
@@ -20,6 +22,9 @@ var (
 
 // RunRequest Run 入参。
 type RunRequest struct {
+	ResumeState            *AgentState
+	Checkpoint             func(*AgentState, *PendingTool) error
+	Controls               func(context.Context, int64) ([]piruntime.Control, error)
 	RunKey                 string
 	ConversationID         string
 	UserID                 int64
@@ -226,14 +231,38 @@ type PetrichorAgentRuntime struct {
 	tools       *AgentToolRegistry
 	skills      *SkillRegistryImpl
 	permissions PermissionResolver
+	// instructions 追加在基础指令之后的场景约束（如公开问答边界），主 Agent 与子代理共用。
+	instructions string
+}
+
+// RuntimeProfile 描述一套独立的工具、技能与场景约束。
+// 编排、规划、证据与质量门逻辑与默认 Runtime 完全一致，只替换能力边界。
+type RuntimeProfile struct {
+	Tools        *AgentToolRegistry
+	Skills       *SkillRegistryImpl
+	Instructions string
 }
 
 // NewRuntime 构造（使用全局默认注册表）。
 func NewRuntime() *PetrichorAgentRuntime {
+	return NewRuntimeWithProfile(RuntimeProfile{Tools: defaultTools, Skills: defaultSkills})
+}
+
+// NewRuntimeWithProfile 使用指定工具与技能注册表构造 Runtime；权限解析也只认该注册表。
+func NewRuntimeWithProfile(profile RuntimeProfile) *PetrichorAgentRuntime {
+	tools := profile.Tools
+	if tools == nil {
+		tools = NewToolRegistry()
+	}
+	skills := profile.Skills
+	if skills == nil {
+		skills = NewSkillRegistry()
+	}
 	return &PetrichorAgentRuntime{
-		tools:       defaultTools,
-		skills:      defaultSkills,
-		permissions: NewDefaultPermissionResolver(func(toolID string) *AgentToolDefinition { return defaultTools.Get(toolID) }),
+		tools:        tools,
+		skills:       skills,
+		permissions:  NewDefaultPermissionResolver(func(toolID string) *AgentToolDefinition { return tools.Get(toolID) }),
+		instructions: trimSpace(profile.Instructions),
 	}
 }
 
@@ -261,7 +290,12 @@ func (s *RuntimeServices) LoadSkill(skillID string) SkillLoadResult {
 			Error: &AgentToolErrorShape{Code: CodeSkillNotFound, Message: "动态技能已关闭", Retryable: f},
 		}
 	}
-	return s.SkillLoader.Load(skillID)
+	result := s.SkillLoader.Load(skillID)
+	if result.OK && len(result.Loaded) > 0 {
+		// 先完成本次工具的结果与证据记录，再由段执行器同步换入新工具集。
+		s.RequestSegmentRestart("skill_loaded:" + skillID)
+	}
+	return result
 }
 
 // ListSkills 列出技能目录。

@@ -33,6 +33,7 @@
         "@emoji-mart/data": "1.2.1",
         "@extend-ai/react-docx": "^0.7.5",
         "@extend-ai/react-xlsx": "0.12.1",
+        "@fingerprintjs/fingerprintjs": "5.2.0",
         "@lobehub/fluent-emoji": "^4.1.0",
         "@lobehub/ui": "^5.15.4",
         "@pierre/diffs": "^1.1.22",
@@ -525,6 +526,8 @@
     "@extend-ai/react-docx": ["@extend-ai/react-docx@0.7.6", "", { "dependencies": { "@chenglou/pretext": "^0.0.5", "@tanstack/react-virtual": "^3.13.12", "fast-png": "^8.0.0", "utif": "^3.1.0" }, "peerDependencies": { "react": ">=18", "react-dom": ">=18" } }, "sha512-P4z41fDRx/X4r/TBnZTg1PeR9zpSTyV1fBokvpnU9w0XrvhYQGcNeEAb51Qjwqm1iVSH0TPWtR4ES9Oc5N/fLg=="],
 
     "@extend-ai/react-xlsx": ["@extend-ai/react-xlsx@0.12.1", "", { "dependencies": { "@dukelib/sheets-wasm": "0.1.16", "@tanstack/react-virtual": "3.14.4", "d3-geo": "3.1.1", "d3-hierarchy": "3.1.2", "d3-scale": "4.0.2", "d3-shape": "3.2.0", "fflate": "0.8.3", "regl": "2.1.1", "topojson-client": "3.1.0", "us-atlas": "3.0.1", "world-atlas": "2.0.2" }, "peerDependencies": { "react": "19.2.7", "react-dom": "19.2.7" } }, "sha512-G7s0f1DUs6NQPUPdgxOGYhl2NLx4XUFban8WzkzJvlyzfL2uA8O8THSNudtq9lRwzmNwTwQ2Ou5j9bm4Ly/D9w=="],
+
+    "@fingerprintjs/fingerprintjs": ["@fingerprintjs/fingerprintjs@5.2.0", "", {}, "sha512-j+2nInkwCQNTJcNhOjvkGM/nLRTuGJTC6xai4quqvUpjob2ssrGwBZjS7k55nOmKvge7qvJT2nS3i/IRvQSTQA=="],
 
     "@floating-ui/core": ["@floating-ui/core@1.7.5", "", { "dependencies": { "@floating-ui/utils": "0.2.11" } }, "sha512-1Ih4WTWyw0+lKyFMcBHGbb5U5FtuHJuujoyyr5zTaWS5EYMeT6Jb2AuDeftsCsEuchO+mM2ij5+q9crhydzLhQ=="],
 

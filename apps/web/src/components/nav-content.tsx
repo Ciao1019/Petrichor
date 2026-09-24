@@ -1,10 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { IconChevronRight, type Icon } from "@/components/iconimate"
+import { IconChevronRight } from "@/components/iconimate"
 import { Link, useLocation } from "react-router-dom"
 import {
   Collapsible,
+  CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { GsapCollapse } from "@/components/ui/gsap-collapse"
@@ -17,8 +18,11 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
+  useSidebar,
 } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
+
+type NavIcon = React.ComponentType<{ className?: string }>
 
 export function NavContent({
   groupLabel,
@@ -30,13 +34,13 @@ export function NavContent({
   items: {
     title: string
     url: string
-    icon: Icon
+    icon: NavIcon
     isActive?: boolean
     match?: (pathname: string) => boolean
     items?: {
       title: string
       url: string
-      icon?: Icon
+      icon?: NavIcon
       match?: (pathname: string) => boolean
     }[]
   }[]
@@ -46,6 +50,8 @@ export function NavContent({
   defaultGroupOpen?: boolean
 }) {
   const location = useLocation()
+  const { isMobile, setOpenMobile, state } = useSidebar()
+  const closeMobileMenu = () => { if (isMobile) setOpenMobile(false) }
   const matchNavItem = (item: {
     url: string
     match?: (pathname: string) => boolean
@@ -73,7 +79,10 @@ export function NavContent({
     if (hasActiveItem) {
       setGroupOpen(true)
     }
-  }, [hasActiveItem])
+  }, [hasActiveItem, location.pathname])
+
+  // 图标模式没有分组标题，保持入口可达；展开侧栏后恢复用户的折叠选择。
+  const open = groupOpen || (!isMobile && state === "collapsed")
 
   const menu = (
     <SidebarMenu>
@@ -85,7 +94,7 @@ export function NavContent({
           return (
             <SidebarMenuItem key={item.title}>
               <SidebarMenuButton asChild isActive={isActive} tooltip={item.title}>
-                <Link to={item.url}>
+                <Link to={item.url} aria-current={isActive ? "page" : undefined} onClick={closeMobileMenu}>
                   <item.icon />
                   <span>{item.title}</span>
                 </Link>
@@ -99,6 +108,7 @@ export function NavContent({
             key={item.title}
             item={item}
             matchNavItem={matchNavItem}
+            onNavigate={closeMobileMenu}
           />
         )
       })}
@@ -109,31 +119,36 @@ export function NavContent({
     return (
       <SidebarGroup>
         <SidebarGroupLabel>{groupLabel}</SidebarGroupLabel>
-        {menu}
+        <nav aria-label={groupLabel}>{menu}</nav>
       </SidebarGroup>
     )
   }
 
   return (
     <SidebarGroup>
-      <Collapsible open={groupOpen} onOpenChange={setGroupOpen} className="group/nav-group">
+      <Collapsible open={open} onOpenChange={setGroupOpen} className="group/nav-group">
         <CollapsibleTrigger asChild>
           <SidebarGroupLabel
+            asChild
             className={cn(
               "cursor-pointer select-none hover:text-sidebar-foreground",
-              "flex w-full items-center justify-between pr-1",
+              "flex w-full items-center justify-between pr-1 group-data-[collapsible=icon]:hidden",
             )}
           >
-            <span>{groupLabel}</span>
-            <IconChevronRight
-              className={cn(
-                "size-3.5 opacity-50 transition-transform duration-200",
-                groupOpen && "rotate-90",
-              )}
-            />
+            <button type="button">
+              <span>{groupLabel}</span>
+              <IconChevronRight
+                className={cn(
+                  "size-3.5 opacity-50 transition-transform duration-200 motion-reduce:transition-none",
+                  open && "rotate-90",
+                )}
+              />
+            </button>
           </SidebarGroupLabel>
         </CollapsibleTrigger>
-        <GsapCollapse open={groupOpen}>{menu}</GsapCollapse>
+        <CollapsibleContent forceMount inert={!open} aria-hidden={!open}>
+          <GsapCollapse open={open}><nav aria-label={groupLabel}>{menu}</nav></GsapCollapse>
+        </CollapsibleContent>
       </Collapsible>
     </SidebarGroup>
   )
@@ -142,17 +157,18 @@ export function NavContent({
 function NavCollapsibleItem({
   item,
   matchNavItem,
+  onNavigate,
 }: {
   item: {
     title: string
     url: string
-    icon: Icon
+    icon: NavIcon
     isActive?: boolean
-    items?: { title: string; url: string; icon?: Icon; match?: (pathname: string) => boolean }[]
+    items?: { title: string; url: string; icon?: NavIcon; match?: (pathname: string) => boolean }[]
   }
   matchNavItem: (item: { url: string; match?: (pathname: string) => boolean }) => boolean
+  onNavigate: () => void
 }) {
-  // Radix 控制状态、GSAP 接管视觉过渡。
   const [open, setOpen] = React.useState(Boolean(item.isActive))
 
   return (
@@ -166,26 +182,28 @@ function NavCollapsibleItem({
           <SidebarMenuButton tooltip={item.title} isActive={item.isActive}>
             <item.icon />
             <span>{item.title}</span>
-            <IconChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+            <IconChevronRight className="ml-auto transition-transform duration-200 motion-reduce:transition-none group-data-[state=open]/collapsible:rotate-90" />
           </SidebarMenuButton>
         </CollapsibleTrigger>
-        <GsapCollapse open={open}>
-          <SidebarMenuSub>
-            {item.items?.map((subItem) => {
-              const isActive = matchNavItem(subItem)
-              return (
-                <SidebarMenuSubItem key={subItem.title}>
-                  <SidebarMenuSubButton asChild isActive={isActive}>
-                    <Link to={subItem.url}>
-                      {subItem.icon && <subItem.icon />}
-                      <span>{subItem.title}</span>
-                    </Link>
-                  </SidebarMenuSubButton>
-                </SidebarMenuSubItem>
-              )
-            })}
-          </SidebarMenuSub>
-        </GsapCollapse>
+        <CollapsibleContent forceMount inert={!open} aria-hidden={!open}>
+          <GsapCollapse open={open}>
+            <SidebarMenuSub>
+              {item.items?.map((subItem) => {
+                const isActive = matchNavItem(subItem)
+                return (
+                  <SidebarMenuSubItem key={subItem.title}>
+                    <SidebarMenuSubButton asChild isActive={isActive}>
+                      <Link to={subItem.url} aria-current={isActive ? "page" : undefined} onClick={onNavigate}>
+                        {subItem.icon && <subItem.icon />}
+                        <span>{subItem.title}</span>
+                      </Link>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                )
+              })}
+            </SidebarMenuSub>
+          </GsapCollapse>
+        </CollapsibleContent>
       </SidebarMenuItem>
     </Collapsible>
   )

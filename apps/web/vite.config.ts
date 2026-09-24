@@ -43,6 +43,12 @@ export default defineConfig(({ mode }) => ({
         format: "es",
     },
     server: {
+        warmup: {
+            clientFiles: [
+                "./src/features/pages/inbox/InboxPage.tsx",
+                "./src/components/plate/PlateMarkdownEditor.tsx",
+            ],
+        },
         host: "127.0.0.1",
         port: 5173,
         strictPort: true,

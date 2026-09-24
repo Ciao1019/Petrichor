@@ -42,6 +42,15 @@ jobs:
         working-directory: apps/api
     steps:
       - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: 安装和验证 Pi Agent
+        run: |
+          bun install --cwd tools/pi-agent --frozen-lockfile --ignore-scripts
+          bun run --cwd tools/pi-agent typecheck
+          bun run --cwd tools/pi-agent test
+          bun run --cwd tools/pi-agent build
       - uses: actions/setup-go@v5
         with:
           go-version-file: apps/api/go.mod

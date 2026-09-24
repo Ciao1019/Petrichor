@@ -24,17 +24,19 @@ const (
 )
 
 var dangerousToolNames = map[string]string{
-	"delete_article":        "danger.article_delete",
-	"revoke_article_share":  "danger.share_revoke",
-	"delete_document":       "danger.document_delete",
-	"delete_ai_provider":    "danger.ai_provider_delete",
-	"update_ai_credential":  "danger.ai_credential_update",
-	"revoke_agent_api_key":  "danger.agent_api_key_revoke",
-	"set_public_qa_enabled": "danger.public_qa_set_enabled",
+	"call_external_write_tool": "mcp.write",
+	"delete_article":           "danger.article_delete",
+	"revoke_article_share":     "danger.share_revoke",
+	"delete_document":          "danger.document_delete",
+	"delete_ai_provider":       "danger.ai_provider_delete",
+	"update_ai_credential":     "danger.ai_credential_update",
+	"revoke_agent_api_key":     "danger.agent_api_key_revoke",
+	"set_public_qa_enabled":    "danger.public_qa_set_enabled",
 }
 
 var destructiveCriticalTools = map[string]bool{
-	"delete_article": true, "revoke_article_share": true, "delete_document": true,
+	"call_external_write_tool": true,
+	"delete_article":           true, "revoke_article_share": true, "delete_document": true,
 	"delete_ai_provider": true, "revoke_agent_api_key": true, "set_public_qa_enabled": true,
 }
 
@@ -43,7 +45,7 @@ func registerConfirmationTools(registry interface {
 }) {
 	registry.Register(&rt.AgentToolDefinition{
 		ID: "agent.request_confirmation", Name: "request_user_confirmation", Namespace: rt.NamespaceAgent,
-		Description: "为危险操作发起确认卡。action.toolName 只允许 delete_article、revoke_article_share、delete_document、delete_ai_provider、update_ai_credential、revoke_agent_api_key、set_public_qa_enabled；确认后由服务端票据执行。",
+		Description: "为危险操作发起确认卡。action.toolName 只允许 delete_article、revoke_article_share、delete_document、delete_ai_provider、update_ai_credential、revoke_agent_api_key、set_public_qa_enabled、call_external_write_tool；确认后由服务端票据执行。",
 		InputSchema: schemaJSON(requestConfirmationSchema), RiskLevel: rt.RiskLow,
 		AllowedInSubAgent: toolPtr(false), Execute: executeRequestUserConfirmation,
 		Normalize: func(output any, _ any) rt.ToolNormalizerResult {

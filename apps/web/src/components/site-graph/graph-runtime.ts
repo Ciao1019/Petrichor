@@ -1,4 +1,5 @@
 import type { SiteGraphPayload, SiteGraphPayloadNode } from "@/lib/api"
+import { LUO_FONT_FAMILY } from "@/lib/typography"
 import { loadForceModule } from "./graph-force-loader"
 import type { RuntimeLink, RuntimeNode, SiteGraphRuntime, SiteGraphRuntimeOptions } from "./graph-runtime-types"
 
@@ -510,7 +511,7 @@ export async function createSiteGraphRuntime(options: SiteGraphRuntimeOptions): 
             if (focused && !structure && view.zoom > 0.7) {
                 ctx.globalAlpha = 0.9
                 ctx.fillStyle = palette.relation
-                ctx.font = `${Math.round(10 * zoomScale)}px system-ui, sans-serif`
+                ctx.font = `400 ${Math.round(10 * zoomScale)}px ${LUO_FONT_FAMILY}`
                 ctx.textAlign = "center"
                 ctx.textBaseline = "middle"
                 ctx.fillText(link.relation, control.x, control.y)

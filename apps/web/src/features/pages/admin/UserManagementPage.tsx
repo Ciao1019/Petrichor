@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Loader2, Plus, RefreshCw, Search, Trash2, UserCog, X } from "@/components/iconimate"
+import { Loader2, Plus, RefreshCw, Search, Trash2, X } from "@/components/iconimate"
 import { toast } from "sonner"
 
 import { PasswordFields } from "@/components/account/PasswordFields"
@@ -19,7 +19,6 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -189,10 +188,6 @@ export function UserManagementPage() {
     }
   }, [confirmPassword, email, fetchData, name, password, resetDialog, systemRole])
 
-  const handleDelete = React.useCallback((user: AdminUserItem) => {
-    setDeleteTarget(user)
-  }, [])
-
   const confirmDelete = React.useCallback(async () => {
     if (!deleteTarget) return
     setDeletingUserId(deleteTarget.id)
@@ -216,25 +211,24 @@ export function UserManagementPage() {
   }, [deleteTarget, fetchData])
 
   return (
-    <div className="flex w-full flex-col gap-6 px-4 py-6 sm:px-6 lg:px-10">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 p-4 md:py-8 md:px-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pb-6 border-b border-border/50">
         <div className="space-y-1">
-          <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <UserCog className="size-6 text-primary" />
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
             用户管理
           </h1>
           <p className="text-sm text-muted-foreground">
-            仅超级管理员可创建和删除系统用户。用户 ID 为 1 已在后端固定为超级管理员。
+            管理系统用户与权限角色，用户 ID 为 1 固定为超级管理员。
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
             <Input
               value={keywordInput}
               onChange={(e) => setKeywordInput(e.target.value)}
               placeholder="按邮箱、昵称或用户名搜索"
-              className="pl-9 pr-9 w-full sm:w-72"
+              className="pl-8.5 pr-8 w-full sm:w-64 h-9 text-xs"
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   setPageIndex(0)
@@ -246,124 +240,115 @@ export function UserManagementPage() {
               <button
                 type="button"
                 onClick={() => { setKeywordInput(""); setKeyword(""); setPageIndex(0) }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
               >
-                <X className="size-4" />
+                <X className="size-3.5" />
               </button>
             ) : null}
           </div>
           <Button
             type="button"
-            variant="outline"
-            onClick={() => { setPageIndex(0); setKeyword(keywordInput) }}
-          >
-            查询
-          </Button>
-          <Button
-            type="button"
+            size="sm"
             onClick={() => {
               resetDialog()
               setDialogOpen(true)
             }}
           >
-            <Plus className="mr-2 size-4" />
+            <Plus className="mr-1.5 size-3.5" />
             新建用户
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => void fetchData()} disabled={loading}>
+            {loading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
           </Button>
         </div>
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle>用户列表</CardTitle>
-            <CardDescription>共 {total} 个用户</CardDescription>
-          </div>
-          <Button type="button" variant="outline" size="sm" onClick={() => void fetchData()} disabled={loading}>
-            {loading ? <Loader2 className="mr-2 size-4 animate-spin" /> : <RefreshCw className="mr-2 size-4" />}
-            刷新
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[240px]">用户</TableHead>
-                  <TableHead>邮箱</TableHead>
-                  <TableHead className="w-[120px]">系统角色</TableHead>
-                  <TableHead className="w-[120px]">登录类型</TableHead>
-                  <TableHead className="w-[180px]">创建时间</TableHead>
-                  <TableHead className="w-[100px] text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  Array.from({ length: 6 }).map((_, index) => (
-                    <TableRow key={`user-skeleton-${index}`} className="animate-pulse">
-                      <TableCell><div className="h-4 w-28 rounded bg-muted" /></TableCell>
-                      <TableCell><div className="h-4 w-40 rounded bg-muted" /></TableCell>
-                      <TableCell><div className="h-4 w-20 rounded bg-muted" /></TableCell>
-                      <TableCell><div className="h-4 w-16 rounded bg-muted" /></TableCell>
-                      <TableCell><div className="h-4 w-28 rounded bg-muted" /></TableCell>
-                      <TableCell><div className="ml-auto h-8 w-8 rounded bg-muted" /></TableCell>
-                    </TableRow>
-                  ))
-                ) : rows.length > 0 ? (
-                  rows.map((user) => {
-                    const isSelf = currentUser?.id === user.id
-                    return (
-                      <TableRow key={user.id}>
-                        <TableCell className="space-y-1">
-                          <div className="font-medium">{getDisplayName(user)}</div>
-                          <div className="text-xs text-muted-foreground">ID: {user.id}</div>
-                        </TableCell>
-                        <TableCell>{user.email}</TableCell>
-                        <TableCell>
-                          <Badge variant={user.systemRole === "SUPER_ADMIN" ? "default" : "secondary"}>
-                            {getRoleLabel(user.systemRole)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{user.userType || "-"}</TableCell>
-                        <TableCell>{formatDateTime(user.createdAt)}</TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            disabled={isSelf || deletingUserId === user.id}
-                            onClick={() => handleDelete(user)}
-                          >
-                            {deletingUserId === user.id ? (
-                              <Loader2 className="size-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="size-4 text-destructive" />
-                            )}
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
-                      暂无用户数据
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>共 {total} 个系统用户</span>
+        </div>
 
-          <AppPagination
-            page={pageIndex}
-            totalPages={totalPages}
-            total={total}
-            pageSize={pageSize}
-            disabled={loading}
-            onChange={(nextPageIndex) => setPageIndex(nextPageIndex)}
-          />
-        </CardContent>
-      </Card>
+        <div className="rounded-lg border border-border/40 overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/30">
+                <TableHead className="w-[240px]">用户</TableHead>
+                <TableHead>邮箱</TableHead>
+                <TableHead className="w-[120px]">系统角色</TableHead>
+                <TableHead className="w-[120px]">登录类型</TableHead>
+                <TableHead className="w-[180px]">创建时间</TableHead>
+                <TableHead className="w-[100px] text-right">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                Array.from({ length: 6 }).map((_, index) => (
+                  <TableRow key={`user-skeleton-${index}`} className="animate-pulse">
+                    <TableCell><div className="h-4 w-28 rounded bg-muted" /></TableCell>
+                    <TableCell><div className="h-4 w-40 rounded bg-muted" /></TableCell>
+                    <TableCell><div className="h-4 w-20 rounded bg-muted" /></TableCell>
+                    <TableCell><div className="h-4 w-16 rounded bg-muted" /></TableCell>
+                    <TableCell><div className="h-4 w-28 rounded bg-muted" /></TableCell>
+                    <TableCell><div className="ml-auto h-8 w-8 rounded bg-muted" /></TableCell>
+                  </TableRow>
+                ))
+              ) : rows.length > 0 ? (
+                rows.map((user) => {
+                  const isSelf = currentUser?.id === user.id
+                  return (
+                    <TableRow key={user.id}>
+                      <TableCell className="space-y-1">
+                        <div className="font-medium text-sm">{getDisplayName(user)}</div>
+                        <div className="text-xs text-muted-foreground">ID: {user.id}</div>
+                      </TableCell>
+                      <TableCell className="text-sm">{user.email}</TableCell>
+                      <TableCell>
+                        <Badge variant={user.systemRole === "SUPER_ADMIN" ? "default" : "secondary"}>
+                          {getRoleLabel(user.systemRole)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm">{user.userType || "-"}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{formatDateTime(user.createdAt)}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          disabled={isSelf || user.id === "1" || deletingUserId === user.id}
+                          title={isSelf ? "不可删除当前登录账号" : user.id === "1" ? "不可删除初始超级管理员" : "删除用户"}
+                          onClick={() => setDeleteTarget(user)}
+                        >
+                          {deletingUserId === user.id ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="size-4" />
+                          )}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={6} className="py-10 text-center text-muted-foreground text-sm">
+                    暂无用户数据
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        <AppPagination
+          page={pageIndex}
+          totalPages={totalPages}
+          total={total}
+          pageSize={pageSize}
+          disabled={loading}
+          onChange={(nextPageIndex) => setPageIndex(nextPageIndex)}
+        />
+      </div>
 
       <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
         <DialogContent className="sm:max-w-[480px]">

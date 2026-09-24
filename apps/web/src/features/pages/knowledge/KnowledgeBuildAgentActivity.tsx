@@ -19,7 +19,7 @@ import type { ArticleKnowledgeBuildAgentActivity } from "@/lib/api"
 import * as React from "react"
 
 /**
- * 知识构建的 ADK 执行动态（assistant-ui Elements 的 Tool timeline 形态）。
+ * 知识构建的 Agent 执行动态（assistant-ui Elements 的 Tool timeline 形态）。
  *
  * 与 Agent 运行页共用 ToolTimeline，但映射更简单：后端已经把"工具动作与校验
  * 状态"整理成人类可读的 title/detail，这里只做字段对位。正文、提示词、工具
@@ -105,7 +105,7 @@ export function KnowledgeBuildAgentActivity({
     if (activities.length === 0) return null
 
     return (
-        <section aria-label="ADK 执行动态">
+        <section aria-label="Agent 执行动态">
             <ToolTimeline
                 steps={ordered.map(toStep)}
                 visibleSteps={ordered.length}
@@ -124,12 +124,12 @@ export function KnowledgeBuildAgentActivity({
                 leading={(
                     <span className="flex items-center gap-1.5">
                         <Brain aria-hidden className="size-3.5 shrink-0 text-primary" />
-                        ADK 执行动态
+                        Agent 执行动态
                     </span>
                 )}
             />
             <p className="sr-only" aria-live="polite">
-                {current ? `当前：${current.title}` : "ADK 执行动态已更新"}
+                {current ? `当前：${current.title}` : "Agent 执行动态已更新"}
             </p>
         </section>
     )

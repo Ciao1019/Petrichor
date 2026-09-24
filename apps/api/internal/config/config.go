@@ -121,6 +121,8 @@ type AgentResearchConfig struct {
 }
 
 type AgentConfig struct {
+	Integrations    AgentIntegrationsConfig
+	Pi              AgentPiConfig
 	SkillsDirectory string
 	Features        AgentFeatureConfig
 	Budget          AgentBudgetConfig
@@ -152,6 +154,8 @@ type Config struct {
 	LinuxDo              LinuxDoConfig
 	LocalDevelopmentAuth LocalDevelopmentAuthConfig
 	Agent                AgentConfig
+	Firecrawl            FirecrawlConfig
+	TypeSafe             TypeSafeConfig
 }
 
 type fileConfig struct {
@@ -164,6 +168,8 @@ type fileConfig struct {
 	KnowledgeBuild knowledgeBuildFileConfig `toml:"knowledge_build"`
 	DocumentImport documentImportFileConfig `toml:"document_import"`
 	Agent          agentFileConfig          `toml:"agent"`
+	Firecrawl      FirecrawlConfig          `toml:"firecrawl"`
+	TypeSafe       TypeSafeConfig           `toml:"typesafe"`
 }
 
 type serverFileConfig struct {
@@ -232,6 +238,8 @@ type s3FileConfig struct {
 }
 
 type agentFileConfig struct {
+	Integrations    AgentIntegrationsConfig `toml:"integrations"`
+	Pi              AgentPiConfig           `toml:"pi"`
 	SkillsDirectory string                  `toml:"skills_directory"`
 	Features        agentFeaturesFileConfig `toml:"features"`
 	Budget          agentBudgetFileConfig   `toml:"budget"`
@@ -336,6 +344,11 @@ func Get() *Config {
 }
 
 func normalizeAndValidate(raw fileConfig, path string) (*Config, error) {
+	integrations, err := normalizeIntegrations(raw.Agent.Integrations)
+	if err != nil {
+		return nil, err
+	}
+	raw.Agent.Integrations = integrations
 	environment := strings.ToLower(strings.TrimSpace(raw.Server.Environment))
 	if environment == "" {
 		environment = "development"
@@ -377,6 +390,14 @@ func normalizeAndValidate(raw fileConfig, path string) (*Config, error) {
 		return nil, err
 	}
 	documentImport, err := normalizeDocumentImport(raw.DocumentImport)
+	if err != nil {
+		return nil, err
+	}
+	firecrawl, err := normalizeFirecrawl(raw.Firecrawl)
+	if err != nil {
+		return nil, err
+	}
+	typeSafe, err := normalizeTypeSafe(raw.TypeSafe)
 	if err != nil {
 		return nil, err
 	}
@@ -431,6 +452,8 @@ func normalizeAndValidate(raw fileConfig, path string) (*Config, error) {
 		DatabasePool:         databasePool,
 		KnowledgeBuild:       knowledgeBuild,
 		DocumentImport:       documentImport,
+		Firecrawl:            firecrawl,
+		TypeSafe:             typeSafe,
 		LocalStorageDir:      strings.TrimSpace(raw.Storage.LocalDirectory),
 		S3:                   s3,
 		SessionExpire:        time.Duration(sessionExpire) * time.Second,
@@ -644,6 +667,8 @@ func normalizeAgent(raw agentFileConfig) AgentConfig {
 		researchTimeout = 12_000
 	}
 	return AgentConfig{
+		Integrations:    raw.Integrations,
+		Pi:              raw.Pi,
 		SkillsDirectory: strings.TrimSpace(raw.SkillsDirectory),
 		Features: AgentFeatureConfig{
 			SoftRouter:    boolOrDefault(raw.Features.SoftRouter, true),

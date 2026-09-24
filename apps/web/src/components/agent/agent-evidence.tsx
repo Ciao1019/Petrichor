@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { createContext, useContext, useState } from "react"
 import { BookOpen, ExternalLink, Globe, Network, Brain, Wrench } from "@/components/iconimate"
 import { Button } from "@/components/ui/button"
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer"
@@ -97,7 +97,7 @@ export function AgentEvidenceCard({
     evidence: EvidenceViewModel
     chapterPosition?: { index: number; total: number }
 }) {
-    const href = evidenceHref(evidence)
+    const href = useContext(EvidenceHrefContext)(evidence)
     return (
         <article className="rounded-md border border-border/60 bg-muted/20 p-3">
             <header className="flex items-start gap-2">
@@ -148,7 +148,7 @@ export function AgentEvidenceCard({
  * 桌面端 hover 预览，移动端点击打开来源。
  */
 export function AgentCitation({ evidence }: { evidence: EvidenceViewModel }) {
-    const href = evidenceHref(evidence)
+    const href = useContext(EvidenceHrefContext)(evidence)
     return (
         <HoverCard openDelay={120}>
             <HoverCardTrigger asChild>
@@ -185,6 +185,16 @@ function EvidenceSourceIcon({ source }: { source: EvidenceViewModel["source"] })
             return <Wrench className={common} aria-label="工具结果" />
     }
 }
+
+/**
+ * 来源链接解析器：后台默认跳到知识库文章；前台公开问答注入只认公开链接的解析器，
+ * 避免把后台地址暴露给访客。
+ */
+export type EvidenceHrefResolver = (evidence: EvidenceViewModel) => string | null
+
+const EvidenceHrefContext = createContext<EvidenceHrefResolver>(evidenceHref)
+
+export const EvidenceHrefProvider = EvidenceHrefContext.Provider
 
 export function evidenceHref(evidence: EvidenceViewModel): string | null {
     if (evidence.knowledgeBaseId && evidence.articleId) {

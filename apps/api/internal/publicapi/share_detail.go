@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/sync/singleflight"
 
 	"petrichor/api/internal/cache"
 	httpx "petrichor/api/internal/httpx"
@@ -191,45 +192,54 @@ func generatedOrNil(present bool, t *time.Time) any {
 	return httpx.FormatISO(*t)
 }
 
-// loadPublicShareDetailResponse 对应 loadPublicShareDetailResponse：
-// 校验存在性 / 过期 / 密码后组装详情。allowPassword=false 时带密码的链接直接拒绝。
-func loadPublicShareDetailResponse(ctx context.Context, shareCode, accessPassword string, allowPassword bool) (map[string]any, error) {
+// loadAccessibleSharedArticle 校验分享存在性 / 过期 / 密码后读取文章；
+// allowPassword=false 时带密码的链接直接拒绝。详情页与划词问 AI 共用这一道访问判定。
+func loadAccessibleSharedArticle(ctx context.Context, shareCode, accessPassword string, allowPassword bool) (*shareDetailRecord, *articleDetailRow, error) {
 	code, verr := validateShareCode(shareCode)
 	if verr != nil {
-		return nil, verr
+		return nil, nil, verr
 	}
 	if perr := validateAccessPassword(accessPassword); perr != nil {
-		return nil, perr
+		return nil, nil, perr
 	}
 
 	share, err := loadShareByCode(ctx, code)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if share == nil {
-		return nil, notFoundErr("分享不存在或已撤销")
+		return nil, nil, notFoundErr("分享不存在或已撤销")
 	}
 	now := timeNow()
 	if share.expiresAt != nil && !share.expiresAt.After(now) {
-		return nil, notFoundErr("分享已过期")
+		return nil, nil, notFoundErr("分享已过期")
 	}
 	// TS 侧在输入校验阶段已对密码做 trim，这里保持一致。
 	trimmedPassword := strings.TrimSpace(accessPassword)
 	if hash := strings.TrimSpace(derefStr(share.passwordHash)); hash != "" {
 		if !allowPassword || trimmedPassword == "" {
-			return nil, forbiddenErr("该链接需要访问密码")
+			return nil, nil, forbiddenErr("该链接需要访问密码")
 		}
 		if bcrypt.CompareHashAndPassword([]byte(hash), []byte(trimmedPassword)) != nil {
-			return nil, forbiddenErr("访问密码错误")
+			return nil, nil, forbiddenErr("访问密码错误")
 		}
 	}
 
 	article, aerr := loadArticleByID(ctx, share.articleID)
 	if aerr != nil {
-		return nil, aerr
+		return nil, nil, aerr
 	}
 	if article == nil {
-		return nil, notFoundErr("文章不存在")
+		return nil, nil, notFoundErr("文章不存在")
+	}
+	return share, article, nil
+}
+
+// loadPublicShareDetailResponse 对应 loadPublicShareDetailResponse：通过访问判定后组装详情。
+func loadPublicShareDetailResponse(ctx context.Context, shareCode, accessPassword string, allowPassword bool) (map[string]any, error) {
+	share, article, err := loadAccessibleSharedArticle(ctx, shareCode, accessPassword, allowPassword)
+	if err != nil {
+		return nil, err
 	}
 
 	repost := buildRepostAttribution(share.isRepost, share.originalURL, share.originalAuthorName)
@@ -272,7 +282,7 @@ func ShareDetailGet(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	resp, derr := cache.ReadThrough(sitecontent.ArticleDetailCacheKey(code), sitecontent.TTLSeconds,
+	resp, derr := readCachedPublicShareDetail(code,
 		func() (map[string]any, error) {
 			return loadPublicShareDetailResponse(ctx, code, "", false)
 		})
@@ -282,4 +292,32 @@ func ShareDetailGet(c *gin.Context) {
 	}
 	c.Header("Cache-Control", publicArticleDetailCacheControl)
 	httpx.OK(c, resp)
+}
+
+// 预留详情 HTTP 缓存 15 分钟（含 stale-while-revalidate）和客户端缓存 5 分钟。
+const publicMediaTokenRenewBefore = 20 * time.Minute
+
+var publicShareDetailRenewal singleflight.Group
+
+func readCachedPublicShareDetail(code string, loader func() (map[string]any, error)) (map[string]any, error) {
+	key := sitecontent.ArticleDetailCacheKey(code)
+	value, err, _ := publicShareDetailRenewal.Do(key, func() (any, error) {
+		resp, err := cache.ReadThrough(key, sitecontent.TTLSeconds, loader)
+		if err != nil {
+			return nil, err
+		}
+		token, _ := resp["mediaAccessToken"].(string)
+		claims, err := verifyMediaAccessToken(token)
+		if err == nil && claims.Kind == mediaKindArticle && claims.Exp > timeNow().Add(publicMediaTokenRenewBefore).Unix() {
+			return resp, nil
+		}
+		// 仅在凭证临近过期或已失效时静默续期，并重新校验分享状态。
+		// 复用原缓存键和响应格式，让部署前已缓存的旧凭证也能自动恢复。
+		cache.Drop(key)
+		return cache.ReadThrough(key, sitecontent.TTLSeconds, loader)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return value.(map[string]any), nil
 }

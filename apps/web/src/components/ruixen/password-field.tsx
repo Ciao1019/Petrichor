@@ -184,7 +184,7 @@ export default function PasswordField({
                 top: value || focused ? 8 : "50%",
                 transform: value || focused ? "none" : "translateY(-50%)",
                 fontSize: value || focused ? 10 : 14,
-                fontWeight: 500,
+                fontWeight: 400,
                 color: "var(--pf-dim)",
                 transition: "all 0.2s",
                 pointerEvents: "none",
@@ -212,7 +212,7 @@ export default function PasswordField({
                 border: "none",
                 outline: "none",
                 fontSize: 15,
-                fontWeight: 500,
+                fontWeight: 400,
                 color: "var(--pf-hi)",
               }}
             />
@@ -348,7 +348,7 @@ export default function PasswordField({
             <span
               style={{
                 fontSize: 11,
-                fontWeight: 500,
+                fontWeight: 400,
                 color: "var(--pf-dim)",
               }}
             >

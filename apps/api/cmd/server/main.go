@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"petrichor/api/internal/aicore"
+	"petrichor/api/internal/assistantsvc"
 	"petrichor/api/internal/auth"
 	"petrichor/api/internal/bootstrap"
 	"petrichor/api/internal/cache"
@@ -22,6 +23,7 @@ import (
 	"petrichor/api/internal/db"
 	"petrichor/api/internal/dbmigrate"
 	httpx "petrichor/api/internal/httpx"
+	"petrichor/api/internal/ratelimit"
 	"petrichor/api/internal/routes"
 	"petrichor/api/internal/taskqueue"
 )
@@ -40,6 +42,9 @@ func run() error {
 
 	startupCtx, cancelStartup := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancelStartup()
+	if err := assistantsvc.InitializeExtensions(); err != nil {
+		return fmt.Errorf("初始化 Agent 技能失败: %w", err)
+	}
 	if err := migrateDatabase(startupCtx, cfg); err != nil {
 		return fmt.Errorf("数据库自动迁移失败，Go API 未启动: %w", err)
 	}
@@ -55,6 +60,10 @@ func run() error {
 		return fmt.Errorf("初始化 Asynq 任务队列失败: %w", err)
 	}
 	defer taskqueue.Close()
+	if err := ratelimit.Initialize(startupCtx); err != nil {
+		return fmt.Errorf("初始化限流存储失败: %w", err)
+	}
+	defer ratelimit.Close()
 	if err := auth.InitializeSaToken(); err != nil {
 		return err
 	}
@@ -109,7 +118,6 @@ func run() error {
 	api := r.Group("/api")
 	routes.RegisterPublic(api)
 	routes.RegisterAuth(api)
-	routes.RegisterNotification(api)
 	routes.RegisterDashboard(api)
 	routes.RegisterKB(api)
 	routes.RegisterDocLibrary(api)

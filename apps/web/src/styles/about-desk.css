@@ -5,11 +5,31 @@
  *
  * 这些 class / 变量都带 `desk-` 前缀，只服务于 About / 开源项目页，互不污染全站。
  *
- * 前台已统一为暗色主题：纸面/便签这类"承载面"改为暗色层（对齐 --card 一档），
- * 墨色翻转为浅色；马克笔本身是手绘语义色，只做提亮以适配暗底，色相保持不变。
+ * 白天使用暖纸与深墨，夜间翻转承载面与墨色；马克笔保留原有语义色。
  */
 
 :root {
+  --desk-marker-red: #b55042;
+  --desk-marker-orange: #a86c2e;
+  --desk-marker-green: #477c55;
+  --desk-marker-teal: #3b7971;
+  --desk-marker-blue: #345780;
+  --desk-marker-purple: #73568e;
+  --desk-marker-pink: #a65380;
+  --desk-note-bg: #e6eaf0;
+  --desk-note-ink: #1b365d;
+  --desk-sticky: #eee4b7;
+  --desk-sticky-ink: #5d4d28;
+  --desk-paper: #faf9f5;
+  --desk-stamp: #86754b;
+  --desk-sheet: #faf9f5;
+  --desk-sheet-ink: #141413;
+  --desk-sheet-soft: #504e49;
+  --desk-sheet-muted: #6b6a64;
+  --desk-sheet-hair: #e5e3d8;
+}
+
+.dark {
   /* 马克笔色板 —— 保持红/绿/蓝等语义可辨识，整体提亮以在暗底上拉开对比 */
   --desk-marker-red: #f0806e;
   --desk-marker-orange: #f0a95f;

@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useReducedMotion } from "motion/react"
 import { gsap } from "@/lib/gsap"
 import { cn } from "@/lib/utils"
 
@@ -22,15 +23,15 @@ export function GsapCollapse({
 }: React.ComponentProps<"div"> & { open: boolean; duration?: number }) {
   const outerRef = React.useRef<HTMLDivElement | null>(null)
   const innerRef = React.useRef<HTMLDivElement | null>(null)
-  const tweenRef = React.useRef<gsap.core.Tween | null>(null)
   const mountedRef = React.useRef(false)
+  const reducedMotion = useReducedMotion()
 
   React.useLayoutEffect(() => {
     const outer = outerRef.current
     const inner = innerRef.current
     if (!outer || !inner) return
 
-    if (!mountedRef.current) {
+    if (!mountedRef.current || reducedMotion) {
       mountedRef.current = true
       gsap.set(outer, {
         height: open ? "auto" : 0,
@@ -40,34 +41,20 @@ export function GsapCollapse({
       return
     }
 
-    tweenRef.current?.kill()
-    const measured = inner.offsetHeight
-
-    if (open) {
-      gsap.set(outer, { overflow: "hidden", display: "block" })
-      tweenRef.current = gsap.fromTo(
-        outer,
-        { height: 0, opacity: 0 },
-        {
-          height: measured,
-          opacity: 1,
-          duration,
-          ease: "power3.out",
-          onComplete: () => {
-            gsap.set(outer, { height: "auto", overflow: "visible" })
-          },
-        },
-      )
-    } else {
-      gsap.set(outer, { height: measured, overflow: "hidden" })
-      tweenRef.current = gsap.to(outer, {
-        height: 0,
-        opacity: 0,
-        duration,
-        ease: "power3.in",
-      })
-    }
-  }, [open, duration])
+    // 连续点击时从当前高度接续，避免每次强制归零或跳回完整高度。
+    gsap.set(outer, { overflow: "hidden" })
+    const tween = gsap.to(outer, {
+      height: open ? inner.offsetHeight : 0,
+      opacity: open ? 1 : 0,
+      duration,
+      ease: open ? "power3.out" : "power3.in",
+      overwrite: "auto",
+      onComplete: () => {
+        if (open) gsap.set(outer, { height: "auto", overflow: "visible" })
+      },
+    })
+    return () => { tween.kill() }
+  }, [open, duration, reducedMotion])
 
   return (
     <div

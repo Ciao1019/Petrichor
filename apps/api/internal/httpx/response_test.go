@@ -78,11 +78,11 @@ func TestErrorJSONShape(t *testing.T) {
 func TestTableDataShape(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.POST("/api/notification/list", func(c *gin.Context) {
+	r.POST("/api/example/list", func(c *gin.Context) {
 		TableData(c, []map[string]any{{"id": "1"}}, 10)
 	})
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/notification/list", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/example/list", nil)
 	r.ServeHTTP(w, req)
 
 	body := w.Body.String()

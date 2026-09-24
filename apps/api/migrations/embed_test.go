@@ -20,6 +20,12 @@ func TestEmbeddedMigrations(t *testing.T) {
 		"202609020001_drop_document_import_jobs.sql",
 		"202609020002_site_filing.sql",
 		"202609040001_default_project_showcase.sql",
+		"202609160001_inbox_notes.sql",
+		"202609160002_inbox_rich_content.sql",
+		"202609160003_drop_notification.sql",
+		"202609170001_inbox_capture.sql",
+		"202609220001_agent_continuation.sql",
+		"202609220002_inbox_capture_delete.sql",
 	}
 	if !reflect.DeepEqual(entries, want) {
 		t.Fatalf("内嵌迁移不符合预期\n实际: %v\n期望: %v", entries, want)

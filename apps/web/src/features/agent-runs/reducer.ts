@@ -86,6 +86,21 @@ function applyEvent(state: AgentRunViewModel, event: AgentStreamEvent): AgentRun
         case "complexity_detected":
             return { ...state, complexity: payload.complexity as AgentRunViewModel["complexity"] }
 
+        case "user_instruction":
+            return {
+                ...state,
+                activities: upsertActivity(state.activities, {
+                    id: `instruction-${String(payload.sequence)}`,
+                    type: "analysis",
+                    title: "已保存补充要求",
+                    description: String(payload.text ?? ""),
+                    status: "completed",
+                    group: "user_instruction",
+                    startedAt: event.timestamp,
+                    completedAt: event.timestamp,
+                }),
+            }
+
         case "plan_created":
         case "plan_updated":
             return { ...state, plan: toPlan(payload.steps) }

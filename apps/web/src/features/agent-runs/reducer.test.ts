@@ -28,6 +28,14 @@ beforeEach(() => {
 })
 
 describe("agentRunReducer", () => {
+    it("补充要求在运行记录中可追溯", () => {
+        const run = reduce([
+            event("agent_started", { goal: "整理资料" }),
+            event("user_instruction", { sequence: 1, mode: "steer", text: "保留引用" }),
+        ])
+        expect(run.activities[0]?.description).toBe("保留引用")
+        expect(run.activities[0]?.status).toBe("completed")
+    })
     it("从 agent_started 建立运行态", () => {
         const run = reduce([event("agent_started", { goal: "Redis 怎么部署" })])
         expect(run.status).toBe("running")

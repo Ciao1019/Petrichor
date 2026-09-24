@@ -1,12 +1,22 @@
 /*
  * Retypeset 前台样式。
- * 配色对齐后台右侧内容区（SidebarInset）：底色用 dark 主题的 --background，
- * 文字用 --foreground / --muted-foreground，配合 StaticNoise 噪点得到同款质感。
- * 前台不再提供浅色主题，这里只有一套暗色取值。
+ * 白天采用 Kami 的暖纸色、墨色与墨蓝；夜间保留现有炭黑纸面。
+ * 配色参考：https://kami.tw93.fun/index-zh.html（仅采用色板）。
  * 容器内还接管了原蓝色像素风遗留的写死颜色类（见文件末尾兼容层）。
  */
 
 :root {
+  --retypeset-primary: #141413;
+  --retypeset-secondary: #504e49;
+  --retypeset-background: #f5f4ed;
+  /* 实心表面与混色基色分开，避免 hover 直接铺满深色墨灰。 */
+  --retypeset-surface: #e8e6dc;
+  --retypeset-surface-tint: #504e49;
+  --retypeset-accent: #1b365d;
+  --retypeset-highlight: rgb(27 54 93 / 0.14);
+}
+
+.dark {
   /* 与 .dark 的 --foreground 一致：标题与强调文字 */
   --retypeset-primary: oklch(0.985 0 0);
   /* 与 .dark 的 --muted-foreground 一致：正文 */
@@ -14,6 +24,7 @@
   /* 与 .dark 的 --background 一致：后台右侧内容区同款底色 */
   --retypeset-background: oklch(0.145 0 0);
   /* 与 .dark 的 --card 一致：浮起的卡片面 */
+  --retypeset-surface: oklch(0.205 0 0);
   --retypeset-surface-tint: oklch(0.205 0 0);
   /* 强调色对齐后台的 --brand（暗色档）。
      原 sakura 玫红在近黑底上偏艳、且低透明度会糊成暗红块，观感不佳。
@@ -25,14 +36,7 @@
 .retypeset-home {
   background-color: var(--retypeset-background);
   color: var(--retypeset-secondary);
-  font-family:
-    "Maple Mono",
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
+  font-family: var(--font-luo);
   text-autospace: normal;
   transition: background-color 280ms ease, color 280ms ease;
 }
@@ -56,57 +60,11 @@
   color: var(--retypeset-secondary);
 }
 
-.retypeset-home .retypeset-font-title {
-  font-family:
-    "Maple Mono",
-    "Snell-Black",
-    "EarlySummer-Subset",
-    "EarlySummer",
-    ui-serif,
-    Georgia,
-    Cambria,
-    "Times New Roman",
-    Times,
-    serif;
-}
-
-.retypeset-home .retypeset-font-navbar {
-  font-family:
-    "Maple Mono",
-    "STIX-Italic",
-    "EarlySummer-Subset",
-    "EarlySummer",
-    ui-serif,
-    Georgia,
-    Cambria,
-    "Times New Roman",
-    Times,
-    serif;
-}
-
-.retypeset-home .retypeset-font-time {
-  font-family:
-    "Maple Mono",
-    "Snell-Bold",
-    ui-serif,
-    Georgia,
-    Cambria,
-    "Times New Roman",
-    Times,
-    serif;
-}
-
+.retypeset-home .retypeset-font-title,
+.retypeset-home .retypeset-font-navbar,
+.retypeset-home .retypeset-font-time,
 .retypeset-home .retypeset-font-serif {
-  font-family:
-    "Maple Mono",
-    "STIX",
-    "EarlySummer",
-    ui-serif,
-    Georgia,
-    Cambria,
-    "Times New Roman",
-    Times,
-    serif;
+  font-family: var(--font-luo);
 }
 
 .retypeset-home .retypeset-highlight-static,
@@ -182,9 +140,9 @@
   border-radius: 0.3rem;
   background-color: color-mix(in oklab, var(--retypeset-accent) 11%, transparent);
   color: color-mix(in oklab, var(--retypeset-accent) 88%, var(--retypeset-primary));
-  font-family: "Maple Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-luo);
   font-size: 0.62rem;
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1;
   white-space: nowrap;
 }
@@ -204,7 +162,7 @@
   color: var(--retypeset-accent);
 }
 
-/* ── Retypeset 标签：纯文本 + hover/选中加粗 + 选中态荧光笔高亮 ── */
+/* ── Retypeset 标签：纯文本 + 选中态高亮 ── */
 
 .retypeset-home .retypeset-tag-pill {
   display: inline-block;
@@ -229,13 +187,12 @@
   position: relative;
   z-index: 0;
   display: inline-block;
-  transition: font-weight 200ms ease-out;
 }
 
 .retypeset-home .retypeset-tag-pill:hover .retypeset-tag-pill-name,
 .retypeset-home .retypeset-tag-pill:focus-visible .retypeset-tag-pill-name,
 .retypeset-home .retypeset-tag-pill[aria-pressed="true"] .retypeset-tag-pill-name {
-  font-weight: 700;
+  font-weight: 400;
 }
 
 /* 选中态：荧光笔高亮，覆盖字符下半部
@@ -276,8 +233,12 @@
 }
 
 .retypeset-home .text-white\/25,
+.retypeset-home .text-white\/30,
+.retypeset-home .text-white\/35,
+.retypeset-home .text-white\/40,
 .retypeset-home .text-white\/45,
 .retypeset-home .text-white\/50,
+.retypeset-home .text-white\/55,
 .retypeset-home .text-white\/60,
 .retypeset-home .text-white\/65,
 .retypeset-home .text-white\/70,
@@ -449,28 +410,28 @@
 
 /* 分类选中态覆盖前台兼容样式，保持文字与背景对比。 */
 .public-wiki .wiki-kind-pill {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background-color: rgba(255, 255, 255, 0.03);
-  color: rgba(255, 255, 255, 0.6);
+  border: 1px solid color-mix(in srgb, var(--retypeset-secondary) 18%, transparent);
+  background-color: color-mix(in srgb, var(--retypeset-primary) 3%, transparent);
+  color: var(--retypeset-secondary);
   transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease;
 }
 
 .public-wiki .wiki-kind-pill:hover {
-  border-color: rgba(255, 255, 255, 0.22);
-  background-color: rgba(255, 255, 255, 0.07);
-  color: rgba(255, 255, 255, 0.9);
+  border-color: color-mix(in srgb, var(--retypeset-secondary) 30%, transparent);
+  background-color: color-mix(in srgb, var(--retypeset-primary) 7%, transparent);
+  color: var(--retypeset-primary);
 }
 
 .public-wiki .wiki-kind-pill[data-active="true"] {
-  border-color: rgba(255, 255, 255, 0.5) !important;
-  background-color: rgba(255, 255, 255, 0.2) !important;
-  color: #ffffff !important;
-  font-weight: 600 !important;
-  box-shadow: 0 0 14px rgba(255, 255, 255, 0.1) !important;
+  border-color: color-mix(in srgb, var(--retypeset-accent) 50%, transparent) !important;
+  background-color: var(--retypeset-highlight) !important;
+  color: var(--retypeset-primary) !important;
+  font-weight: 400;
+  box-shadow: none !important;
 }
 
 .public-wiki .wiki-kind-pill[data-active="true"] svg {
-  color: #ffffff !important;
+  color: var(--retypeset-primary) !important;
   opacity: 1 !important;
 }
 
@@ -479,7 +440,7 @@
     margin-bottom: 0;
   }
 
-  .public-wiki [data-public-site-navigation] nav > ul {
+  .retypeset-home [data-public-site-navigation] nav > ul {
     display: flex;
     flex-wrap: wrap;
     gap: 0.25rem 1.25rem;

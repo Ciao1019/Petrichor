@@ -23,6 +23,8 @@ func registerAssistantRoutes(rg *gin.RouterGroup) {
 
 	// 对话（UIMessage 流协议）
 	a.POST("/chat", assistantsvc.AssistantChatHandler)
+	a.POST("/run/control", assistantsvc.AssistantRunControlHandler)
+	a.POST("/run/recovery", assistantsvc.AssistantRunRecoveryHandler)
 
 	// Agent Run 查询
 	a.POST("/agent-run/list", assistantsvc.AgentRunListHandler)

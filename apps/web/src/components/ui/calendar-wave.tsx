@@ -217,7 +217,7 @@ export function CalendarWave({ value, onChange, sound = true, className }: Calen
                     width: CELL_SIZE,
                     height: CELL_SIZE,
                     boxShadow: shadow,
-                    fontWeight: selectedDay || isToday ? 600 : lift > 2 ? 500 : 400,
+                    fontWeight: 400,
                     fontVariantNumeric: "tabular-nums",
                     lineHeight: 1,
                   }}

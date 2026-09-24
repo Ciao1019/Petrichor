@@ -6,6 +6,7 @@ import { RadicalIcon } from '@/components/iconimate';
 import { SlateElement } from 'platejs/static';
 
 import { cn } from '@/lib/utils';
+import { LUO_FONT_FAMILY } from '@/lib/typography';
 
 export function EquationElementStatic(
   props: SlateElementProps<TEquationElement>
@@ -119,7 +120,7 @@ export function EquationElementDocx(
     <SlateElement {...props}>
       <p
         style={{
-          fontFamily: 'Cambria Math, Consolas, monospace',
+          fontFamily: LUO_FONT_FAMILY,
           fontSize: '12pt',
           margin: '8pt 0',
           textAlign: 'center',
@@ -154,7 +155,7 @@ export function InlineEquationElementDocx(
     <SlateElement {...props} as="span">
       <span
         style={{
-          fontFamily: 'Cambria Math, Consolas, monospace',
+          fontFamily: LUO_FONT_FAMILY,
         }}
       >
         {element.texExpression}

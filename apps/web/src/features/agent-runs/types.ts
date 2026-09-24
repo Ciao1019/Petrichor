@@ -125,6 +125,7 @@ export type AgentRunViewModel = {
 // ---------------------------------------------------------------------------
 
 export type AgentStreamEventType =
+    | "user_instruction"
     | "agent_started"
     | "complexity_detected"
     | "plan_created"

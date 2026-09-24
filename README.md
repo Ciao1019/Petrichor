@@ -34,6 +34,7 @@
 
 ## 🧩 核心能力
 
+- **随笔** — 后台首页随手记录 Markdown、图片和标签，支持草稿恢复、搜索与置顶；整理后归档为指定知识库和文件夹中的正式文章。
 - **结构化写作** — PlateJS、Markdown、代码块、公式、表格、白板、思维导图与媒体嵌入。
 - **知识库与发布** — 多级目录、标签、全文搜索、文章分享、公开问答，以及标准 [`/rss.xml`](https://wl.do/rss.xml) / [`/atom.xml`](https://wl.do/atom.xml) 订阅。
 - **Agentic RAG** — 标题感知切片、推荐问题、BM25 / Vector / Wiki 融合、目录导航、Evidence / Trace。
@@ -54,7 +55,7 @@ bun run build:demo
 bunx vercel --prod
 ```
 
-它覆盖前台文章与问答、后台知识库与编辑器、Wiki 知识空间和图谱；全部数据在浏览器内生成，刷新即重置，不需要数据库、Redis、S3 或模型密钥。详细说明见 [`docs/vercel-static-demo.md`](docs/vercel-static-demo.md)。
+它覆盖前台文章与问答、后台随笔、知识库与编辑器、Wiki 知识空间和图谱；已保存的数据在浏览器内生成，刷新即重置，未保存的随笔草稿会保留在当前浏览器。不需要数据库、Redis、S3 或模型密钥。详细说明见 [`docs/vercel-static-demo.md`](docs/vercel-static-demo.md)。
 
 ### Docker Compose 部署
 
@@ -110,6 +111,7 @@ Compose 默认使用以下公开镜像；API 镜像同时包含 Server、Asynq W
 
 ```bash
 bun install --cwd apps/web
+bun run install:agent
 cp apps/web/.env.example apps/web/.env.local
 cp apps/api/config.example.toml apps/api/config.toml
 
@@ -170,6 +172,7 @@ flowchart TB
 
 - **Web**：`apps/web` 是 React + Vite + TypeScript SPA；Bun 负责依赖、测试和构建，生产静态资源由 Caddy 提供。
 - **API**：`apps/api` 是 Go + Gin 服务，负责认证、数据库、对象存储和 Agent Runtime；监听前自动执行 Goose 迁移，并把后台任务写入 Asynq。
+- **Pi Agent**：聊天助手、助手子任务及 Wiki 全文抽取共用 Pi Agent Core 0.87.0。Go 通过私有 stdio 子进程提供模型和受限业务工具；API/Worker 镜像自带 Bun 与运行器，无需单独部署 Agent 服务。
 - **Worker**：`apps/api/cmd/worker` 分别以 8 路和 2 路并发消费知识构建、视觉导入队列；视觉导入任务、页面进度、重试和业务死信也统一保存在 Redis。
 - **Redis / Asynq**：Redis 同时保存热点缓存、排队/重试任务、视觉导入状态和知识构建的一小时轮询结果；Compose 启用 AOF 与 `noeviction`，不得把任务 Redis 当作可随时清空的缓存。
 - **asynqmon**：Compose 默认启动官方 Web UI，端口只绑定宿主机回环地址；不经 Caddy 暴露到公网。
@@ -221,6 +224,10 @@ bun run build           # Vite 生产构建 + Brotli / Gzip 预压缩
 bun run check:bundle    # 首屏与 chunk 传输体积预算
 bun run test:api        # Go 测试
 bun run build:api       # Go 构建
+bun run install:agent   # 安装独立 Pi 运行器依赖
+bun run typecheck:agent # Pi 运行器类型检查
+bun run test:agent      # Pi 消息协议测试
+bun run build:agent     # 打包 Pi 运行器和第三方许可证
 bun run check:size      # 单文件行数约束
 
 docker compose up -d --build
@@ -248,6 +255,7 @@ go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 │   │   ├── cmd/worker/             # Asynq 知识构建与视觉导入 Worker
 │   │   ├── cmd/migrate/            # Goose 迁移命令
 │   │   ├── internal/               # 鉴权、业务、存储、检索与 Agent
+│   │   ├── tools/pi-agent/          # Pi Agent Core 运行器与独立 Bun 锁文件
 │   │   ├── migrations/             # 数据库迁移
 │   │   └── config.example.toml     # 后端配置模板
 │   └── web/
@@ -264,7 +272,7 @@ go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 └── CONTRIBUTING.md                 # 贡献流程
 ```
 
-根目录不安装 Node 依赖；`package.json` 只把命令转发到对应应用。Web 依赖、锁文件和补丁全部保存在 `apps/web`。
+根目录不安装 Node 依赖；`package.json` 只把命令转发到对应应用。Web 依赖保存在 `apps/web`，Pi 运行器依赖保存在 `apps/api/tools/pi-agent`，两者使用独立锁文件。
 
 </details>
 

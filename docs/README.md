@@ -20,6 +20,10 @@
 2. [运维手册](./operations.md)：探针、优雅关停、Worker、指标和发布检查。
 3. [数据库迁移](./database-migrations.md)：Goose 基线、自动迁移和首次管理员初始化。
 
+### 📝 我想使用随笔网页采集
+
+1. [网页采集](./inbox-web-capture.md)：Firecrawl 配置、三个用途、模型整理、来源与任务恢复。
+
 ### 🧠 我想理解知识与问答
 
 1. [Agentic RAG 全流程](./agent/rag.md)：切片、推荐问题、Wiki、混合召回和 Evidence。
@@ -36,6 +40,7 @@
 1. [Agent Runtime](./agent/runtime.md)：ReAct 循环、状态、预算、Trace 和安全边界。
 2. [工具协议](./agent/tools.md)：命名空间、输入输出、确认票据与归一化。
 3. [子 Agent](./agent/subagents.md) 与 [Skill 机制](./agent/skills.md)：委派和动态能力加载。
+4. [Agent 扩展配置](./agent/extensions.md)：外部 MCP、文件化 Skills、模型重排、代码沙箱、浏览器和检查点恢复。
 4. [调试指南](./agent/debug.md)：Run、Trace、Evidence 和常见故障。
 
 ### 🖥️ 我想了解桌面端计划
@@ -87,6 +92,7 @@ flowchart LR
 
 ### 知识与 RAG
 
+- [`knowledge-inbox.md`](./knowledge-inbox.md)：首页随笔、草稿、图片与归档到知识库的流程、边界和验证。
 - [`agent/rag.md`](./agent/rag.md)：数据进入、切片、推荐问题、产品内 Wiki、混合召回和新鲜度。
 - [`knowledge-portability.md`](./knowledge-portability.md)：OKF / Obsidian、知识 Skill、编译说明书和陈旧检测。
 - [`ai-model-setup.md`](./ai-model-setup.md)：Chat、Embedding 等模型用途绑定与供应商配置。

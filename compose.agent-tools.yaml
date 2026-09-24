@@ -1,0 +1,27 @@
+# 独立可选工具服务：docker compose -f compose.agent-tools.yaml up -d
+# 正式环境建议部署在独立工具主机；不与数据库/Redis 共用网络。
+name: petrichor-agent-tools
+services:
+  browser:
+    image: mcr.microsoft.com/playwright/mcp
+    init: true
+    restart: unless-stopped
+    entrypoint: node
+    command:
+      - /app/cli.js
+      - --headless
+      - --browser
+      - chromium
+      - --no-sandbox
+      - --isolated
+      - --port
+      - "8931"
+      - --host
+      - 0.0.0.0
+      - --allowed-hosts
+      - localhost:8931,127.0.0.1:8931
+    ports:
+      - "127.0.0.1:8931:8931"
+    shm_size: 256mb
+    mem_limit: 1g
+    pids_limit: 256
