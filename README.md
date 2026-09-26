@@ -24,6 +24,12 @@
 
 ---
 
+## 🎬 一分钟了解 Petrichor
+
+https://github.com/user-attachments/assets/b26e8c06-3dac-4cc9-ba9c-17d21558783b
+
+*写作 → 编译语义 Wiki → 可追溯问答 → 划词问 AI → 交给你的 Agent。画面取自 [wl.do](https://wl.do) 的真实公开页面。*
+
 ## ✨ 为什么是 Petrichor
 
 - **知识不是一次性向量。** 原文分片、推荐问题、语义 Wiki 和文章目录并存，分别处理事实、用户问法、概念关系与结构性问题。
@@ -34,12 +40,13 @@
 
 ## 🧩 核心能力
 
-- **随笔** — 后台首页随手记录 Markdown、图片和标签，支持草稿恢复、搜索与置顶；整理后归档为指定知识库和文件夹中的正式文章。
+- **随笔与网页采集** — 后台首页随手记录 Markdown、图片和标签，也可粘贴网址交给 Firecrawl 抓取并由模型整理；支持草稿恢复、搜索、置顶和智能归档推荐，整理后归档为指定知识库和文件夹中的正式文章。
 - **结构化写作** — PlateJS、Markdown、代码块、公式、表格、白板、思维导图与媒体嵌入。
-- **知识库与发布** — 多级目录、标签、全文搜索、文章分享、公开问答，以及标准 [`/rss.xml`](https://wl.do/rss.xml) / [`/atom.xml`](https://wl.do/atom.xml) 订阅。
+- **知识库与发布** — 多级目录、标签、全文搜索、文章分享、公开问答、正文划词问 AI，以及标准 [`/rss.xml`](https://wl.do/rss.xml) / [`/atom.xml`](https://wl.do/atom.xml) 订阅。
 - **Agentic RAG** — 标题感知切片、推荐问题、BM25 / Vector / Wiki 融合、目录导航、Evidence / Trace。
 - **语义 Wiki** — 实体与概念抽取、多文章聚合、关系图谱、来源引用、补丁审计与结构检查。
-- **Agent Runtime** — ReAct 工具循环、计划、子 Agent、动态 Skill、预算控制和外部研究。
+- **Pi Agent Runtime** — 站内助手、前台公开问答、子 Agent 与 Wiki 文档 Agent 统一基于 [Pi Agent Core](https://github.com/earendil-works/pi)；计划、动态 Skill、预算、Evidence 与权限由 Go 掌控，支持运行中补充要求和检查点恢复。
+- **Agent 扩展** — 外部 MCP Client、文件化 `SKILL.md`、Jina 兼容模型重排、隔离代码沙箱与 Playwright 浏览器执行，凭据和白名单只保存在 Go。
 - **开放集成** — API Key、MCP、REST、知识 Skill 包、能力清单与完整调用审计。
 - **自托管基础设施** — Go + Gin、Goose、Sa-Token-Go、PostgreSQL、Redis + Asynq、S3 兼容存储和 Caddy。
 
@@ -168,11 +175,13 @@ flowchart TB
   worker["Asynq Worker<br/>知识构建 · 视觉导入"] --> redis
   worker --> postgres
   worker --> storage
+  api -. "stdio JSONL" .-> pi["Pi Agent Core 运行器<br/>每个推理段一个子进程"]
+  worker -. "stdio JSONL" .-> pi
 ```
 
 - **Web**：`apps/web` 是 React + Vite + TypeScript SPA；Bun 负责依赖、测试和构建，生产静态资源由 Caddy 提供。
 - **API**：`apps/api` 是 Go + Gin 服务，负责认证、数据库、对象存储和 Agent Runtime；监听前自动执行 Goose 迁移，并把后台任务写入 Asynq。
-- **Pi Agent**：聊天助手、助手子任务及 Wiki 全文抽取共用 Pi Agent Core 0.87.0。Go 通过私有 stdio 子进程提供模型和受限业务工具；API/Worker 镜像自带 Bun 与运行器，无需单独部署 Agent 服务。
+- **Pi Agent**：站内助手、前台公开问答、子 Agent 与 Wiki 全文抽取统一使用 Pi Agent Core 0.87.0。每个推理段启动独立的 Bun 子进程，只通过私有 stdio JSONL 与 Go 通信，不监听端口；模型凭据、权限、确认票据、Evidence 和业务工具始终留在 Go。API/Worker 镜像自带 Bun 与打包运行器，无需单独部署 Agent 服务。
 - **Worker**：`apps/api/cmd/worker` 分别以 8 路和 2 路并发消费知识构建、视觉导入队列；视觉导入任务、页面进度、重试和业务死信也统一保存在 Redis。
 - **Redis / Asynq**：Redis 同时保存热点缓存、排队/重试任务、视觉导入状态和知识构建的一小时轮询结果；Compose 启用 AOF 与 `noeviction`，不得把任务 Redis 当作可随时清空的缓存。
 - **asynqmon**：Compose 默认启动官方 Web UI，端口只绑定宿主机回环地址；不经 Caddy 暴露到公网。
@@ -192,7 +201,8 @@ flowchart TB
 ### 理解 Agent 与知识系统
 
 - [Agentic RAG](docs/agent/rag.md) — 数据进入、结构切片、Wiki 编译、混合召回和深读。
-- [Agent Runtime](docs/agent/runtime.md) — ReAct、状态、预算、Evidence、Trace、SSE 与安全边界。
+- [Agent Runtime](docs/agent/runtime.md) — Pi Agent Core 接入、状态、预算、Evidence、Trace、SSE 与安全边界。
+- [Agent 扩展配置](docs/agent/extensions.md) — 外部 MCP、文件化 Skills、模型重排、代码沙箱、浏览器、运行中补充与检查点恢复。
 - [知识可移植性](docs/knowledge-portability.md) — OKF、Obsidian、Agent Skill 包、编译说明书和新鲜度。
 
 ### 接入其它工具
@@ -206,7 +216,7 @@ flowchart TB
 
 Go 后端只读取 `apps/api/config.toml`；Web 公开变量只写入 `apps/web/.env.local`：
 
-- **`apps/api/config.toml`** — PostgreSQL、Session、加密、存储、LinuxDo、Redis、Agent 与模型凭证。
+- **`apps/api/config.toml`** — PostgreSQL、Session、加密、存储、LinuxDo、Redis、Agent 与模型凭证；Pi 运行器位于 `[agent.pi]`，外部 MCP、重排与沙箱位于 `[agent.integrations.*]`。
 - **`apps/web/.env.local`** — 浏览器公开变量与本地 Go API 代理地址，只用于 Web 开发和构建。
 - **根目录 `.env`** — Compose 域名、公开端口、Redis 本机端口与 Go 模块代理。
 
@@ -254,8 +264,11 @@ go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 │   │   ├── cmd/server/             # Go API 入口
 │   │   ├── cmd/worker/             # Asynq 知识构建与视觉导入 Worker
 │   │   ├── cmd/migrate/            # Goose 迁移命令
+│   │   ├── cmd/sandbox/            # 独立代码沙箱执行服务
 │   │   ├── internal/               # 鉴权、业务、存储、检索与 Agent
-│   │   ├── tools/pi-agent/          # Pi Agent Core 运行器与独立 Bun 锁文件
+│   │   ├── agent-skills/           # 文件化 Agent Skill 示例
+│   │   ├── tools/pi-agent/         # Pi Agent Core 运行器与独立 Bun 锁文件
+│   │   ├── tools/sandbox/          # 沙箱执行镜像
 │   │   ├── migrations/             # 数据库迁移
 │   │   └── config.example.toml     # 后端配置模板
 │   └── web/
@@ -268,6 +281,7 @@ go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 ├── docs/                            # 可版本化的完整文档
 ├── wiki/                            # GitHub Wiki 发布源
 ├── compose.yaml                    # Caddy、Go API、Worker、Redis、asynqmon
+├── compose.agent-tools.yaml        # 可选 Playwright MCP 浏览器服务
 ├── package.json                    # 根命令入口
 └── CONTRIBUTING.md                 # 贡献流程
 ```

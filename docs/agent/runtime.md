@@ -43,8 +43,9 @@ Go 对回调工具再次校验白名单；取消、停止策略和错误都会�
 自定义部署可以填写绝对路径。API 与 Worker 的共享镜像自带 Bun、运行器和许可证，
 Compose 不需要新增服务。修改 Pi 包后重建 API 镜像并更新 API/Worker。
 
-当前采用 Pi 核心循环；会话持久化、技能、计划和权限由 Petrichor 的业务适配层管理。
-没有启用 Pi CLI 会话目录，也没有向前端新增运行中插话接口。
+当前只采用 Pi 核心循环；会话持久化、技能、计划和权限由 Petrichor 的业务适配层管理，
+没有启用 Pi CLI 会话目录。运行中的“补充要求”映射为 Pi 的 `steer`（当前步骤结束后处理）或
+`followUp`（本轮工作结束后处理），详见 [Agent 扩展配置](./extensions.md#运行中补充与检查点恢复)。
 
 ## Wiki 文档 Agent
 
@@ -88,6 +89,7 @@ Context Manager（会话 / 技能 / 证据 / 观察分区预算）
   ↓
 ┌─ Pi Agent Core 段
 │    Model → ToolExecutor → Observation / Evidence / Trace → Model
+│    （站内助手：补充要求经 steer / followUp 注入，模型与工具步骤前后写检查点）
 │    ↓
 │  load_skill / StopPolicy 命中时结束本段
 └─ 需要继续？用最新状态与工具集重建下一段
@@ -164,8 +166,13 @@ Go 服务不读取 Agent 环境变量。功能开关和预算统一配置在
 ## 持久化与恢复
 
 Run、计划、工具 Trace、Evidence、评价和统计写入 Agent Runtime 相关表。刷新页面后通过
-`agent-run/detail` 恢复执行面板；当前不重连已经断开的 SSE，也不在后台重新启动同一个 Run。
-数据库持久化异常按 fail-open 处理，不阻断当前回答，但会记录可诊断日志。
+`agent-run/detail` 恢复执行面板。审计持久化异常按 fail-open 处理，不阻断当前回答，但会记录可诊断日志。
+
+每次模型结束和工具执行前后，Runtime 还会把目标、计划、技能、证据、工具观察、累计预算和补充指令
+序号写入 `petrichor_agent_continuation` 检查点（不含凭据与角色）。断线、取消或服务重启后，
+用户可显式“从检查点继续”：以新 Run 接续，已完成的工具结果作为上下文保留、不会重复执行；
+结果未知的写操作或委派会拒绝自动恢复。系统不重连已经断开的 SSE，也不在后台自动续跑。
+接口与租约规则见 [Agent 扩展配置](./extensions.md#运行中补充与检查点恢复)。
 
 ## 验证
 

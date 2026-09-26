@@ -13,7 +13,8 @@ Runtime 不把全部工具和详细指令一次性塞进模型上下文，而是
 1. `agent.list_skills` 只展示 Skill ID 与一句话描述；
 2. Agent 判断任务需要某个领域时调用 `agent.load_skill`；
 3. Runtime 解析依赖链，把 Skill 标记为已加载；
-4. 后续模型轮次加入该 Skill 的完整 `instructions` 和对应 `toolIds`；
+4. 当前 Pi 推理段随即结束，Runtime 用加入该 Skill 完整 `instructions` 和 `toolIds` 的新工具集
+   重建下一段；
 5. 工具真正执行时仍经过权限、子 Agent 范围、超时和确认票据检查。
 
 Skill 只扩大“可见能力”，不会绕过权限，也不会赋予子 Agent 新权限。

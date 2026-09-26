@@ -6,6 +6,10 @@
 `apps/api/internal/assistantsvc/runtime/delegation.go`，主循环接线位于
 `apps/api/internal/assistantsvc/runtime/runtime_run.go`。
 
+每个子任务都作为一次独立的 Pi Agent Core 推理段运行（`RunAgentSegment`，Agent ID 为
+`petrichor-subagent`），拥有自己的状态、Evidence 与 Trace 收集器；Pi 发起的每次工具调用仍回到
+Go 的 `ToolExecutor`，经过与主 Agent 相同的权限、Schema 校验、超时和循环检测。
+
 ## 1. 何时可委派
 
 必须同时满足：

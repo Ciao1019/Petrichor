@@ -137,7 +137,17 @@ fatal_error
 - `TOOL_TIMEOUT`：检查工具级和 `agent.budget.tool_timeout_ms`；
 - 重复参数调用：检查 `repeated_action` 与 `max_no_progress`。
 
-### 5.4 检查 Evidence 与回答
+### 5.4 检查 Pi 运行器
+
+Pi 在每个推理段启动 `agent.pi.command`（默认 `bun`）子进程，常见错误：
+
+- `启动 Pi 失败，请安装 Agent 依赖`：本地执行 `bun run install:agent`，或确认镜像内存在 Bun；
+- `未找到 Pi 入口，请配置 agent.pi.entry`：源码开发在仓库内运行，自定义部署填写打包入口的绝对路径；
+- `Pi 进程在完成前退出`：检查依赖版本与入口路径，再用 `bun run test:agent` 验证消息协议；
+- `Pi 请求了未授权的工具`：模型调用了当前段未注册的工具，检查 Skill 与 `allowedToolIds`；
+- `Pi 已达到模型轮次上限`：助手内会转为 `max_iterations` 停止，文档 Agent 内表示子任务轮次耗尽；结合 `stopReason` 与迭代数判断是否需要调整预算。
+
+### 5.5 检查 Evidence 与回答
 
 - 工具成功但 Evidence 为 0：检查归一化器是否返回 Evidence；
 - Evidence 相关度低：查看 `retrieval_diagnostics`；
@@ -151,6 +161,10 @@ fatal_error
 | 责任 | 文件 |
 | --- | --- |
 | Runtime 主循环 | `apps/api/internal/assistantsvc/runtime/runtime_run.go` |
+| Pi 推理段适配 | `apps/api/internal/assistantsvc/runtime/pi_segment.go` |
+| Pi 子进程协议与回收 | `apps/api/internal/piruntime/runtime.go` |
+| Pi 运行器 | `apps/api/tools/pi-agent/src/index.ts` |
+| 检查点与运行控制 | `apps/api/internal/assistantsvc/continuation.go`、`continuation_handlers.go` |
 | 流式事件与脱敏 | `apps/api/internal/assistantsvc/runtime/events.go` |
 | 工具执行 | `apps/api/internal/assistantsvc/runtime/executor.go` |
 | Run 持久化 | `apps/api/internal/assistantsvc/agentrun-store.go` |

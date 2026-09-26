@@ -37,11 +37,11 @@
 
 ### 🤖 我想理解 Agent Runtime
 
-1. [Agent Runtime](./agent/runtime.md)：ReAct 循环、状态、预算、Trace 和安全边界。
+1. [Agent Runtime](./agent/runtime.md)：Pi Agent Core 接入、主循环、状态、预算、Trace 和安全边界。
 2. [工具协议](./agent/tools.md)：命名空间、输入输出、确认票据与归一化。
 3. [子 Agent](./agent/subagents.md) 与 [Skill 机制](./agent/skills.md)：委派和动态能力加载。
-4. [Agent 扩展配置](./agent/extensions.md)：外部 MCP、文件化 Skills、模型重排、代码沙箱、浏览器和检查点恢复。
-4. [调试指南](./agent/debug.md)：Run、Trace、Evidence 和常见故障。
+4. [Agent 扩展配置](./agent/extensions.md)：外部 MCP、文件化 Skills、模型重排、代码沙箱、浏览器、运行中补充和检查点恢复。
+5. [调试指南](./agent/debug.md)：Run、Trace、Evidence、Pi 运行器和常见故障。
 
 ### 🖥️ 我想了解桌面端计划
 
@@ -66,11 +66,15 @@ flowchart TB
   worker["Asynq Worker<br/>知识构建 · 视觉导入"] --> redis
   worker --> postgres
   worker --> storage
+  api -. "stdio JSONL" .-> pi["Pi Agent Core 运行器<br/>每个推理段一个子进程"]
+  worker -. "stdio JSONL" .-> pi
 ```
 
 生产部署只公开 Caddy。Go API 在监听前执行 Goose 迁移并向 Redis 写入任务；Asynq Worker 消费
-知识构建与视觉导入两个队列，视觉导入的任务、页进度和死信也统一以 Redis 为事实来源。完整边界见
-[运维手册](./operations.md)。
+知识构建与视觉导入两个队列，视觉导入的任务、页进度和死信也统一以 Redis 为事实来源。站内助手、
+前台公开问答、子 Agent 和 Wiki 文档 Agent 统一使用 Pi Agent Core：API/Worker 为每个推理段拉起
+私有 stdio 子进程，模型凭据、权限与业务工具始终留在 Go。完整边界见 [运维手册](./operations.md)
+与 [Agent Runtime](./agent/runtime.md)。
 
 ## 核心知识链路
 
@@ -99,7 +103,8 @@ flowchart LR
 
 ### Agent Runtime 与工具
 
-- [`agent/runtime.md`](./agent/runtime.md)：主循环、状态、预算、Evidence、Trace、SSE 和安全边界。
+- [`agent/runtime.md`](./agent/runtime.md)：Pi Agent Core 接入、主循环、状态、预算、Evidence、Trace、SSE 和安全边界。
+- [`agent/extensions.md`](./agent/extensions.md)：外部 MCP Client、文件化 Skills、模型重排、代码沙箱、浏览器、运行中补充与检查点恢复。
 - [`agent/tools.md`](./agent/tools.md)：工具命名空间、协议、确认票据与归一化。
 - [`agent/subagents.md`](./agent/subagents.md)：复杂任务委派与子 Agent 协作。
 - [`agent/skills.md`](./agent/skills.md)：动态 Skill 加载与工具集重建。
