@@ -26,7 +26,7 @@
 
 ## 🎬 一分钟了解 Petrichor
 
-[https://github.com/user-attachments/assets/b26e8c06-3dac-4cc9-ba9c-17d21558783b](https://streamable.com/w2v5x2)
+https://streamable.com/w2v5x2
 
 *写作 → 编译语义 Wiki → 可追溯问答 → 划词问 AI → 交给你的 Agent。画面取自 [wl.do](https://wl.do) 的真实公开页面。*
 
