@@ -105,6 +105,7 @@ flowchart LR
 
 - [`agent/runtime.md`](./agent/runtime.md)：Pi Agent Core 接入、主循环、状态、预算、Evidence、Trace、SSE 和安全边界。
 - [`agent/extensions.md`](./agent/extensions.md)：外部 MCP Client、文件化 Skills、模型重排、代码沙箱、浏览器、运行中补充与检查点恢复。
+- [`agent/baizhi-mcp.md`](./agent/baizhi-mcp.md)：为已选择百智服务的站点操作员配置外部 MCP 白名单与确认调用。
 - [`agent/tools.md`](./agent/tools.md)：工具命名空间、协议、确认票据与归一化。
 - [`agent/subagents.md`](./agent/subagents.md)：复杂任务委派与子 Agent 协作。
 - [`agent/skills.md`](./agent/skills.md)：动态 Skill 加载与工具集重建。
